@@ -1,0 +1,518 @@
+
+import React, { useState, useEffect, useMemo } from 'react';
+import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
+import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType } from '../types';
+import { supabase } from '../supabase';
+
+
+interface NewShipmentModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (shipmentData: any) => void;
+  cargo: Cargo | null;
+  drivers: Driver[];
+  clients: Client[];
+  vehicles: Vehicle[];
+  currentUser: User | null;
+  shipments: Shipment[];
+  users: User[];
+}
+
+const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users }) => {
+  const [driverName, setDriverName] = useState('');
+  const [driverCpf, setDriverCpf] = useState('');
+  const [ownerContact, setOwnerContact] = useState('');
+  const [horsePlate, setHorsePlate] = useState('');
+  const [trailer1Plate, setTrailer1Plate] = useState('');
+  const [trailer2Plate, setTrailer2Plate] = useState('');
+  const [trailer3Plate, setTrailer3Plate] = useState('');
+  const [shipmentTonnage, setShipmentTonnage] = useState<number>(0);
+  const [driverContact, setDriverContact] = useState('');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+  const [embarcadorId, setEmbarcadorId] = useState('');
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [vehicleSetType, setVehicleSetType] = useState<VehicleSetType | ''>('');
+  const [vehicleBodyType, setVehicleBodyType] = useState<VehicleBodyType | ''>('');
+  const [bankDetails, setBankDetails] = useState('');
+  const [vehicleTag, setVehicleTag] = useState('');
+  const [filesToAttach, setFilesToAttach] = useState<File[]>([]);
+  const [driverReferences, setDriverReferences] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScanDocument = async (files: File[]) => {
+    if (files.length === 0) {
+        alert('Selecione um arquivo primeiro.');
+        return;
+    }
+    
+    setIsScanning(true);
+    try {
+        for (const file of files) {
+            const reader = new FileReader();
+            const base64Promise = new Promise<string>((resolve) => {
+                reader.onload = () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    resolve(base64);
+                };
+            });
+            reader.readAsDataURL(file);
+            const base64Image = await base64Promise;
+
+            const { data, error } = await supabase.functions.invoke('process-document', {
+                body: { image: base64Image, fileType: file.type }
+            });
+
+            if (error) throw error;
+
+            if (data) {
+                if (data.driverName) setDriverName(data.driverName);
+                if (data.driverCpf) setDriverCpf(data.driverCpf);
+                if (data.horsePlate) setHorsePlate(data.horsePlate.toUpperCase());
+                if (data.trailerPlates && Array.isArray(data.trailerPlates)) {
+                    if (data.trailerPlates[0]) setTrailer1Plate(data.trailerPlates[0].toUpperCase());
+                    if (data.trailerPlates[1]) setTrailer2Plate(data.trailerPlates[1].toUpperCase());
+                    if (data.trailerPlates[2]) setTrailer3Plate(data.trailerPlates[2].toUpperCase());
+                }
+                
+                let refs = driverReferences;
+                if (data.driverCnh) refs += `\nCNH: ${data.driverCnh}`;
+                if (data.ownerName) refs += `\nProprietário: ${data.ownerName}`;
+                if (data.ownerCpfCnpj) refs += `\nCPF/CNPJ Proprietário: ${data.ownerCpfCnpj}`;
+                setDriverReferences(refs.trim());
+            }
+        }
+        alert('Digitalização concluída! Por favor, revise os campos preenchidos.');
+    } catch (err: any) {
+        console.error('Erro ao digitalizar:', err);
+        alert(`Erro na Digitalização: ${err.message || 'Ocorreu um erro ao processar o documento.'}\n\nCertifique-se de que a GEMINI_API_KEY está configurada no Supabase.`);
+    } finally {
+        setIsScanning(false);
+    }
+  };
+
+  const embarcadores = useMemo(() => {
+    return users.filter(u => u.profile === UserProfile.Embarcador);
+  }, [users]);
+
+  const prevIsOpen = React.useRef(isOpen);
+
+  useEffect(() => {
+    if (isOpen && !prevIsOpen.current) {
+      setDriverName('');
+      setDriverCpf('');
+      setOwnerContact('');
+      setHorsePlate('');
+      setTrailer1Plate('');
+      setTrailer2Plate('');
+      setTrailer3Plate('');
+      setShipmentTonnage(0);
+      setDriverContact('');
+      setScheduledDate('');
+      setScheduledTime('');
+      setSelectedVehicle(null);
+      setVehicleSetType('');
+      setVehicleBodyType('');
+      setBankDetails('');
+      setVehicleTag('');
+      setFilesToAttach([]);
+      setDriverReferences('');
+      setEmbarcadorId(
+          currentUser?.profile === UserProfile.Embarcador
+              ? currentUser.id
+              : ''
+      );
+    }
+    prevIsOpen.current = isOpen;
+  }, [isOpen, currentUser]);
+
+    // Driver selection & Autofill logic
+  const [lastAlertedDriverId, setLastAlertedDriverId] = useState<string>('');
+  const [lastAutofilledDriverId, setLastAutofilledDriverId] = useState<string>('');
+  const [lastAutofilledPlate, setLastAutofilledPlate] = useState<string>('');
+
+  useEffect(() => {
+    const cleanName = driverName.trim().toLowerCase();
+    const cleanCpf = driverCpf.replace(/\D/g, '');
+
+    const driverByName = cleanName ? drivers.find(d => d.name.trim().toLowerCase() === cleanName) : undefined;
+    const driverByCpf = cleanCpf.length === 11 ? drivers.find(d => d.cpf.replace(/\D/g, '') === cleanCpf) : undefined;
+
+    const selectedDriver = driverByName || driverByCpf;
+
+    if (selectedDriver) {
+        // Sync Fields
+        if (driverByName && selectedDriver.cpf && selectedDriver.cpf.replace(/\D/g, '') !== cleanCpf) {
+            setDriverCpf(selectedDriver.cpf);
+        } else if (driverByCpf && selectedDriver.name.trim().toLowerCase() !== cleanName) {
+            setDriverName(selectedDriver.name);
+        }
+
+        setDriverContact(selectedDriver.phone || '');
+
+        // Instant Restriction Alert
+        if (!selectedDriver.active && lastAlertedDriverId !== selectedDriver.id) {
+            alert(`ATENÇÃO: Este motorista encontra-se RESTRITO!\n\nMotivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}.\n\nO sistema impedirá a criação desta ordem.`);
+            setLastAlertedDriverId(selectedDriver.id);
+        } else if (selectedDriver.active) {
+            setLastAlertedDriverId(''); 
+        }
+
+        // History Autofill
+        if (lastAutofilledDriverId !== selectedDriver.id && selectedDriver.active) {
+            const selectedCleanCpf = selectedDriver.cpf ? selectedDriver.cpf.replace(/\D/g, '') : '';
+            const lastShipment = shipments
+                .filter(s => 
+                    (s.driverCpf && s.driverCpf.replace(/\D/g, '') === selectedCleanCpf) || 
+                    (s.driverName.trim().toLowerCase() === selectedDriver.name.trim().toLowerCase())
+                )
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+            if (lastShipment) {
+                setHorsePlate(lastShipment.horsePlate || '');
+                setTrailer1Plate(lastShipment.trailer1Plate || '');
+                setTrailer2Plate(lastShipment.trailer2Plate || '');
+                setTrailer3Plate(lastShipment.trailer3Plate || '');
+                setOwnerContact(lastShipment.ownerContact || '');
+                setBankDetails(lastShipment.bankDetails || '');
+                setVehicleTag(lastShipment.vehicleTag || '');
+            }
+            setLastAutofilledDriverId(selectedDriver.id);
+        } else if (!selectedDriver.active) {
+            setLastAutofilledDriverId(selectedDriver.id); // Prevent repeated alerts/lookups if restricted
+        }
+    } else {
+        setLastAutofilledDriverId('');
+        setLastAlertedDriverId('');
+    }
+  }, [driverName, driverCpf, drivers, shipments, lastAlertedDriverId, lastAutofilledDriverId]);
+  
+  useEffect(() => {
+    const cleanPlate = horsePlate.trim().toLowerCase();
+    const vehicle = vehicles.find(v => v.plate.trim().toLowerCase() === cleanPlate);
+    setSelectedVehicle(vehicle || null);
+    
+    if (vehicle) {
+        setVehicleSetType(vehicle.setType);
+        setVehicleBodyType(vehicle.bodyType);
+    } else {
+        setVehicleSetType('');
+        setVehicleBodyType('');
+    }
+
+    if (cleanPlate && cleanPlate.length >= 7 && lastAutofilledPlate !== cleanPlate) {
+        const lastShipmentByPlate = shipments
+            .filter(s => s.horsePlate && s.horsePlate.trim().toLowerCase() === cleanPlate)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+        if (lastShipmentByPlate) {
+            setTrailer1Plate(lastShipmentByPlate.trailer1Plate || '');
+            setTrailer2Plate(lastShipmentByPlate.trailer2Plate || '');
+            setTrailer3Plate(lastShipmentByPlate.trailer3Plate || '');
+        }
+        setLastAutofilledPlate(cleanPlate);
+    } else if (!cleanPlate) {
+        setLastAutofilledPlate('');
+    }
+  }, [horsePlate, vehicles, shipments, lastAutofilledPlate]);
+
+
+  const calculatedFreight = useMemo(() => {
+    if (!cargo || shipmentTonnage <= 0) return 0;
+    return cargo.driverFreightValuePerTon * shipmentTonnage;
+  }, [cargo, shipmentTonnage]);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Check for Restricted Driver
+    const selectedDriverObj = drivers.find(d => 
+        (d.name.trim().toLowerCase() === driverName.trim().toLowerCase() && driverName.trim() !== '') || 
+        (d.cpf.replace(/\D/g, '') === driverCpf.replace(/\D/g, '') && driverCpf.trim() !== '')
+    );
+
+    if (selectedDriverObj && !selectedDriverObj.active) {
+        alert(`Motorista com Restrição: ${selectedDriverObj.restrictionReason || 'Sem motivo especificado'}. Não é permitido criar ordens para este motorista.`);
+        return;
+    }
+
+    if (!driverName || !horsePlate || shipmentTonnage <= 0 || !scheduledDate || !embarcadorId || !scheduledTime) {
+        alert('Por favor, preencha todos os campos obrigatórios do formulário.');
+        return;
+    }
+    
+    const isNewDriver = !drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase());
+    if (isNewDriver && !driverCpf) {
+        alert('Para novos motoristas, o CPF é obrigatório.');
+        return;
+    }
+    
+    let vehicleInfo: { setType?: VehicleSetType | '', bodyType?: VehicleBodyType | '' };
+
+    if (selectedVehicle) {
+        vehicleInfo = selectedVehicle;
+    } else {
+        if (!vehicleSetType || !vehicleBodyType) {
+            alert('Para novos veículos, o Tipo de Veículo e Carroceria são obrigatórios.');
+            return;
+        }
+        vehicleInfo = { setType: vehicleSetType, bodyType: vehicleBodyType };
+    }
+
+    if (cargo?.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && vehicleInfo.setType && vehicleInfo.bodyType) {
+        const isAllowed = cargo.allowedVehicleTypes.some(allowed => 
+            allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
+        );
+        if (!isAllowed) {
+            alert(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga.`);
+            return;
+        }
+    }
+
+    if (cargo?.dailySchedule) {
+        const scheduleRule = cargo.dailySchedule.find(rule => rule.date === scheduledDate);
+        if (!scheduleRule) {
+            alert('Não é permitido criar ordens para datas sem programação lançada na carga. Verifique a Data Programada.');
+            return;
+        }
+
+        if (scheduleRule.type === DailyScheduleType.Verificar) {
+            alert('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.');
+        } else if (scheduleRule.type === DailyScheduleType.Fixo && scheduleRule.tonnage) {
+            const alreadyScheduledTonnage = shipments
+                .filter(s => s.cargoId === cargo.id && s.scheduledDate === scheduledDate)
+                .reduce((sum, s) => sum + s.shipmentTonnage, 0);
+            
+            if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage) {
+                alert(`Erro: A tonelagem para este dia excede o limite programado de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage} ton programadas.`);
+                return;
+            }
+        }
+    }
+
+    // Validation: Only allow future date/time
+    const now = new Date();
+    const inputDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
+    if (inputDateTime <= now) {
+        alert('Data/Hora Inválida: A data e hora programada deve ser posterior ao momento atual.');
+        return;
+    }
+
+
+    onSave({
+      driverName,
+      driverCpf,
+      driverContact,
+      ownerContact: ownerContact || undefined,
+      horsePlate,
+      trailer1Plate,
+      trailer2Plate,
+      trailer3Plate,
+      shipmentTonnage,
+      driverFreightValue: calculatedFreight,
+      embarcadorId: embarcadorId,
+      scheduledDate,
+      scheduledTime,
+      vehicleSetType: vehicleSetType || undefined,
+      vehicleBodyType: vehicleBodyType || undefined,
+      bankDetails: bankDetails || undefined,
+      vehicleTag: vehicleTag || undefined,
+      filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
+      driverReferences: driverReferences || undefined,
+    });
+  };
+
+  if (!isOpen || !cargo) return null;
+
+  const clientName = clients.find(c => c.id === cargo.clientId)?.nomeFantasia || 'Cliente não encontrado';
+  const isExistingDriver = !!drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase() && driverName.trim() !== '');
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">Solicitação de Embarque</h2>
+        <div className="mb-6 p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
+          <p className="text-sm text-gray-600 dark:text-gray-400">Cliente: <span className="font-semibold text-gray-800 dark:text-gray-200">{clientName}</span></p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Rota: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.origin} → {cargo.destination}</span></p>
+          {cargo.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && (
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Veículos Permitidos: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>
+              </p>
+          )}
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data Programada</label>
+                  <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Horário Previsto</label>
+                  <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
+                </div>
+            </div>
+            
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Embarcador Responsável</label>
+                <select
+                    value={embarcadorId}
+                    onChange={(e) => setEmbarcadorId(e.target.value)}
+                    className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600"
+                    required
+                >
+                    <option value="" disabled>Selecione um responsável...</option>
+                    {embarcadores.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">CPF do Motorista</label>
+                <input type="text" value={driverCpf} onChange={(e) => setDriverCpf(e.target.value)} placeholder="Digite o CPF do motorista" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
+              </div>
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contato (WhatsApp)</label>
+                  <input type="text" value={driverContact} onChange={(e) => setDriverContact(e.target.value)} placeholder="Contato (auto-preenchido)" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" disabled={isExistingDriver} required />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Motorista</label>
+                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Digite o nome do motorista" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required list="driver-names" />
+                  <datalist id="driver-names">{drivers.map(d => <option key={d.id} value={d.name} />)}</datalist>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contato do Proprietário</label>
+                <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(e.target.value)} placeholder="Telefone/WhatsApp do proprietário" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
+              </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Cavalo</label>
+                <input value={horsePlate} onChange={(e) => setHorsePlate(e.target.value.toUpperCase())} placeholder="AAA-1234" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required list="vehicle-plates" />
+                <datalist id="vehicle-plates">{vehicles.map(v => <option key={v.id} value={v.plate} />)}</datalist>
+            </div>
+          
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Veículo</label>
+                    <select value={vehicleSetType} onChange={(e) => setVehicleSetType(e.target.value as VehicleSetType)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required={!selectedVehicle} disabled={!!selectedVehicle}>
+                        <option value="" disabled>Selecione...</option>
+                        {Object.values(VehicleSetType).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Carroceria</label>
+                    <select value={vehicleBodyType} onChange={(e) => setVehicleBodyType(e.target.value as VehicleBodyType)} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required={!selectedVehicle} disabled={!!selectedVehicle}>
+                        <option value="" disabled>Selecione...</option>
+                        {Object.values(VehicleBodyType).map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 1</label><input type="text" value={trailer1Plate} onChange={(e) => setTrailer1Plate(e.target.value.toUpperCase())} placeholder="Obrigatório" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required /></div>
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 2</label><input type="text" value={trailer2Plate} onChange={(e) => setTrailer2Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Placa Carreta 3</label><input type="text" value={trailer3Plate} onChange={(e) => setTrailer3Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" /></div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dados Bancários</label>
+                  <textarea 
+                    value={bankDetails} 
+                    onChange={(e) => setBankDetails(e.target.value)} 
+                    placeholder="Banco, Agência, Conta, PIX, etc." 
+                    className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y" 
+                    rows={2} 
+                    required
+                  />
+              </div>
+              
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Anexar Documentos</label>
+                  <div className="mt-1 flex items-center h-full">
+                      <label className="cursor-pointer bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-lg inline-flex items-center transition-colors">
+                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                          Anexar
+                          <input type="file" multiple className="hidden" onChange={(e) => {
+                              if (e.target.files) {
+                                  setFilesToAttach(Array.from(e.target.files));
+                              }
+                          }} />
+                      </label>
+                      <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">
+                          {filesToAttach.length > 0 ? `${filesToAttach.length} arquivo(s) selecionado(s)` : 'Nenhum'}
+                      </span>
+                      {filesToAttach.length > 0 && (
+                          <button
+                              type="button"
+                              onClick={() => handleScanDocument(filesToAttach)}
+                              disabled={isScanning}
+                              className={`ml-4 text-xs font-bold uppercase py-1 px-3 rounded border transition-all ${
+                                  isScanning 
+                                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
+                                  : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-600 hover:text-white'
+                              }`}
+                          >
+                              {isScanning ? (
+                                  <span className="flex items-center">
+                                      <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                      Processando...
+                                  </span>
+                              ) : 'Digitalizar com IA'}
+                          </button>
+                      )}
+                  </div>
+              </div>
+            </div>
+          
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Toneladas do Embarque</label>
+                  <input type="number" value={shipmentTonnage || ''} onChange={(e) => setShipmentTonnage(parseFloat(e.target.value) || 0)} placeholder="Ex: 35.5" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" step="0.01" required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tag do Veículo</label>
+                    <input type="text" value={vehicleTag} onChange={(e) => setVehicleTag(e.target.value)} placeholder="Obrigatório" className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
+                </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-gray-100 dark:bg-gray-900/50 rounded-lg text-center">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Valor do Frete (Motorista)</p>
+                <div className="flex flex-col items-center">
+                    <p className="text-2xl font-bold text-gray-800 dark:text-white">
+                        {formatCurrency(cargo.driverFreightValuePerTon)} <span className="text-sm font-normal text-gray-500">/ TON</span>
+                    </p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Referências do Motorista</label>
+                <textarea
+                  value={driverReferences}
+                  onChange={(e) => setDriverReferences(e.target.value)}
+                  placeholder="Indicações, referências ou observações sobre o motorista..."
+                  className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 resize-y"
+                  rows={3}
+                  required
+                />
+              </div>
+            </div>
+          
+            <div className="mt-8 flex justify-end space-x-4">
+              <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">Cancelar</button>
+              <button type="submit" className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Solicitar Embarque</button>
+            </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default NewShipmentModal;

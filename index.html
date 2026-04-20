@@ -1,0 +1,38 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR" translate="no" class="notranslate">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rodochagas Logística</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#1D3B8D',       // Rodo-Chagas Deep Blue
+              'primary-dark': '#142B6A',   // Darker Blue for hover
+              'accent': '#F16421',        // Rodo-Chagas Orange
+              'accent-dark': '#D1541C',    // Darker Orange for hover
+              'secondary': '#6B7280',     // Gray from logo subtext
+              'light-bg': '#F8FAFC',      // slate-50
+              'light-card': '#FFFFFF',
+              'dark-bg': '#0F172A',      // slate-900
+              'dark-card': '#1E293B',     // slate-800
+            },
+          },
+        },
+      }
+    </script>
+    <link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-light-bg dark:bg-dark-bg">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
