@@ -140,14 +140,14 @@ export const generateLoadingOrderPDF = (
   // Authority signature
   doc.line(pageWidth - margin - 80, footerY, pageWidth - margin, footerY);
   doc.setFontSize(8);
-  doc.text("RODO CHAGAS - LOGÍSTICA", pageWidth - margin - 40, footerY + 5, { align: 'center' });
+  doc.text("DLLOG - LOGÍSTICA", pageWidth - margin - 40, footerY + 5, { align: 'center' });
   doc.setFontSize(7);
   doc.text("AUTORIZAÇÃO DE CARREGAMENTO", pageWidth - margin - 40, footerY + 9, { align: 'center' });
 
   // Final Footer Note
   doc.setFontSize(7);
   doc.setTextColor(150);
-  const footerText = "Este documento é exclusivo para controle interno de carregamento da RODO CHAGAS LOGÍSTICA. As informações aqui contidas são confidenciais.";
+  const footerText = "Este documento é exclusivo para controle interno de carregamento da DLLOG LOGÍSTICA. As informações aqui contidas são confidenciais.";
   doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
 
   // Save PDF

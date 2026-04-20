@@ -5,7 +5,7 @@ const SUPABASE_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.me
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   throw new Error(
-    '[RODO-CHAGAS] Variáveis de ambiente do Supabase não encontradas!\n' +
+    '[DLLOG] Variáveis de ambiente do Supabase não encontradas!\n' +
     'Configure as seguintes variáveis no seu painel ou arquivo .env:\n' +
     '  • VITE_SUPABASE_URL\n' +
     '  • VITE_SUPABASE_PUBLISHABLE_KEY (recomendado) ou VITE_SUPABASE_ANON_KEY'
