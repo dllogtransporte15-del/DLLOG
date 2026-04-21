@@ -27,6 +27,7 @@ export const INITIAL_PERMISSIONS: ProfilePermissions = {
   [UserProfile.Cliente]: createPermissions(['dashboard', 'loads', 'shipments', 'shipment-history', 'load-history'], true),
   [UserProfile.Supervisor]: createPermissions(supervisorAndDiretorPages),
   [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages, true),
+  [UserProfile.Demonstracao]: createPermissions(allPages.filter(p => p !== 'users-register')),
 };
 
 if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']) {
@@ -47,8 +48,10 @@ export const can = (
 ): boolean => {
   if (!user) return false;
   
-  // Admin can do everything, always.
+  // Admin can do everything. Demonstracao can do everything except user registration.
   if (user.profile === UserProfile.Admin) return true;
+  if (user.profile === UserProfile.Demonstracao && page === 'users-register') return false;
+  if (user.profile === UserProfile.Demonstracao) return true;
 
   const userProfilePermissions = permissions[user.profile];
   if (!userProfilePermissions) return false;

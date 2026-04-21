@@ -12,6 +12,7 @@ export enum UserProfile {
   Financeiro = "Financeiro",
   Cliente = "Cliente",
   Admin = "Administrador do Sistema",
+  Demonstracao = "Demonstração",
 }
 
 export interface User {
