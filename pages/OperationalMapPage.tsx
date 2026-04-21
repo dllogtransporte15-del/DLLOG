@@ -20,7 +20,7 @@ interface OperationalMapPageProps {
   products: Product[];
   drivers: Driver[];
   vehicles: Vehicle[];
-  onCreateShipment: (data: Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => void;
+  onCreateShipment: (data: Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => Promise<boolean>;
   currentUser: User | null;
   users: User[];
   onModalStateChange: (isOpen: boolean) => void;
@@ -93,14 +93,16 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
     setSelectedCargoForShipment(null);
   };
 
-  const handleSaveShipment = (shipmentData: Omit<Shipment, 'id' | 'orderId' | 'cargoId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => {
+  const handleSaveShipment = async (shipmentData: Omit<Shipment, 'id' | 'orderId' | 'cargoId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => {
     if (selectedCargoForShipment) {
-      onCreateShipment({
+      const success = await onCreateShipment({
         cargoId: selectedCargoForShipment.id,
         ...shipmentData,
       });
+      if (success) {
+        handleCloseShipmentModal();
+      }
     }
-    handleCloseShipmentModal();
   };
 
   const loadsWithCoords = useMemo(() => {

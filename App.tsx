@@ -490,8 +490,8 @@ const App: React.FC = () => {
 
   
   // --- CRUD HANDLERS ---
-  const handleCreateShipment = async (data: NewShipmentRequestData) => {
-    if (!currentUser) return;
+  const handleCreateShipment = async (data: NewShipmentRequestData): Promise<boolean> => {
+    if (!currentUser) return false;
     
     let currentNextIds = { ...nextIds };
     let historyId = currentNextIds.history;
@@ -531,7 +531,7 @@ const App: React.FC = () => {
     const defaultOwner = owners.find(o => o.name === 'PROPRIETÁRIO PADRÃO TERCEIRO');
     if (!defaultOwner) {
         alert("Erro crítico: Proprietário padrão para veículos de terceiros não encontrado. Contate o suporte.");
-        return;
+        return false;
     }
 
     const processVehicle = (plate: string, isHorse: boolean) => {
@@ -653,10 +653,12 @@ const App: React.FC = () => {
       console.error('Erro ao salvar embarque no Supabase:', err);
       const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
       alert(`[ERRO CRÍTICO] O embarque não pôde ser salvo no banco de dados: ${errorMessage}. Verifique sua conexão ou contate o suporte.`);
+      return false;
     }
 
     setCurrentPage('shipments');
     alert(`Novo embarque ${newShipmentId} criado com sucesso! Motoristas/Veículos não cadastrados foram adicionados automaticamente.`);
+    return true;
   };
 
   const handleMarkArrival = async (shipmentId: string) => {

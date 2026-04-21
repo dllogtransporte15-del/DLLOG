@@ -39,6 +39,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [filesToAttach, setFilesToAttach] = useState<File[]>([]);
   const [driverReferences, setDriverReferences] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleScanDocument = async (files: File[]) => {
     if (files.length === 0) {
@@ -226,8 +227,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
 
     // Check for Restricted Driver
     const selectedDriverObj = drivers.find(d => 
@@ -303,27 +305,32 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
 
-    onSave({
-      driverName,
-      driverCpf,
-      driverContact,
-      ownerContact: ownerContact || undefined,
-      horsePlate,
-      trailer1Plate,
-      trailer2Plate,
-      trailer3Plate,
-      shipmentTonnage,
-      driverFreightValue: calculatedFreight,
-      embarcadorId: embarcadorId,
-      scheduledDate,
-      scheduledTime,
-      vehicleSetType: vehicleSetType || undefined,
-      vehicleBodyType: vehicleBodyType || undefined,
-      bankDetails: bankDetails || undefined,
-      vehicleTag: vehicleTag || undefined,
-      filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
-      driverReferences: driverReferences || undefined,
-    });
+    setIsSaving(true);
+    try {
+      await onSave({
+        driverName,
+        driverCpf,
+        driverContact,
+        ownerContact: ownerContact || undefined,
+        horsePlate,
+        trailer1Plate,
+        trailer2Plate,
+        trailer3Plate,
+        shipmentTonnage,
+        driverFreightValue: calculatedFreight,
+        embarcadorId: embarcadorId,
+        scheduledDate,
+        scheduledTime,
+        vehicleSetType: vehicleSetType || undefined,
+        vehicleBodyType: vehicleBodyType || undefined,
+        bankDetails: bankDetails || undefined,
+        vehicleTag: vehicleTag || undefined,
+        filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
+        driverReferences: driverReferences || undefined,
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isOpen || !cargo) return null;
@@ -507,7 +514,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           
             <div className="mt-8 flex justify-end space-x-4">
               <button type="button" onClick={onClose} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">Cancelar</button>
-              <button type="submit" className="py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark">Solicitar Embarque</button>
+              <button 
+                type="submit" 
+                disabled={isSaving} 
+                className={`py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary-dark transition-all flex items-center ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+              >
+                {isSaving ? (
+                    <>
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        Processando...
+                    </>
+                ) : 'Solicitar Embarque'}
+              </button>
             </div>
         </form>
       </div>

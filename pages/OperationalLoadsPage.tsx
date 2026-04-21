@@ -19,7 +19,7 @@ interface OperationalLoadsPageProps {
   drivers: Driver[];
   vehicles: Vehicle[];
   shipments: Shipment[];
-  onCreateShipment: (data: any) => void;
+  onCreateShipment: (data: any) => Promise<boolean>;
   onSaveLoad: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
   currentUser: User;
   profilePermissions: ProfilePermissions;
@@ -110,14 +110,16 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
     handleCloseLoadFormModal();
   };
 
-  const handleSaveShipment = (shipmentData: any) => {
+  const handleSaveShipment = async (shipmentData: any) => {
     if (selectedCargo) {
-      onCreateShipment({
+      const success = await onCreateShipment({
         cargoId: selectedCargo.id,
         ...shipmentData,
       });
+      if (success) {
+        handleCloseShipmentModal();
+      }
     }
-    handleCloseShipmentModal();
   };
   
   const handleShareLoads = () => {
