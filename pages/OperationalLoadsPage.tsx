@@ -11,6 +11,7 @@ import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePe
 import { can } from '../auth';
 import { CopyIcon } from '../components/icons/CopyIcon';
 import { CargoStatus, UserProfile } from '../types';
+import { useToast } from '../hooks/useToast';
 
 interface OperationalLoadsPageProps {
   loads: Cargo[];
@@ -56,6 +57,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   onUpdatePrice,
   onModalStateChange,
 }) => {
+  const toast = useToast();
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
   const [copyButtonText, setCopyButtonText] = useState('Divulgar Cargas');
@@ -125,7 +127,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const handleShareLoads = () => {
     const activeLoads = loads.filter(load => load.status === CargoStatus.EmAndamento);
     if (activeLoads.length === 0) {
-      alert('Nenhuma carga em andamento para divulgar.');
+      toast.info('Nenhuma carga em andamento para divulgar.');
       return;
     }
 
@@ -153,10 +155,11 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
 
     navigator.clipboard.writeText(textToCopy).then(() => {
       setCopyButtonText('Copiado!');
+      toast.success('Lista de cargas copiada para o clipboard!');
       setTimeout(() => setCopyButtonText('Divulgar Cargas'), 3000);
     }, (err) => {
       console.error('Falha ao copiar: ', err);
-      alert('Não foi possível copiar as cargas. Verifique as permissões do navegador.');
+      toast.error('Não foi possível copiar as cargas. Verifique as permissões do navegador.');
     });
   };
 

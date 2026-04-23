@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
 import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType } from '../types';
 import { supabase } from '../supabase';
+import { useToast } from '../hooks/useToast';
 
 
 interface NewShipmentModalProps {
@@ -40,10 +41,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [driverReferences, setDriverReferences] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const toast = useToast();
 
   const handleScanDocument = async (files: File[]) => {
     if (files.length === 0) {
-        alert('Selecione um arquivo primeiro.');
+        toast.warning('Selecione um arquivo primeiro.');
         return;
     }
     
@@ -85,10 +87,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         }
         alert('Digitalização concluída! Por favor, revise os campos preenchidos.');
     } catch (err: any) {
-        console.error('Erro ao digitalizar:', err);
-        alert(`Erro na Digitalização: ${err.message || 'Ocorreu um erro ao processar o documento.'}\n\nCertifique-se de que a GEMINI_API_KEY está configurada no Supabase.`);
+      console.error('Erro ao digitalizar:', err);
+      toast.error(`Erro na Digitalização: ${err.message || 'Ocorreu um erro ao processar o documento.'}\n\nCertifique-se de que a GEMINI_API_KEY está configurada no Supabase.`);
     } finally {
-        setIsScanning(false);
+      setIsScanning(false);
     }
   };
 
@@ -153,7 +155,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
         // Instant Restriction Alert
         if (!selectedDriver.active && lastAlertedDriverId !== selectedDriver.id) {
-            alert(`ATENÇÃO: Este motorista encontra-se RESTRITO!\n\nMotivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}.\n\nO sistema impedirá a criação desta ordem.`);
+            toast.error(`ATENÇÃO: Este motorista encontra-se RESTRITO!\n\nMotivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}.\n\nO sistema impedirá a criação desta ordem.`);
             setLastAlertedDriverId(selectedDriver.id);
         } else if (selectedDriver.active) {
             setLastAlertedDriverId(''); 
@@ -238,18 +240,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     );
 
     if (selectedDriverObj && !selectedDriverObj.active) {
-        alert(`Motorista com Restrição: ${selectedDriverObj.restrictionReason || 'Sem motivo especificado'}. Não é permitido criar ordens para este motorista.`);
+        toast.error(`Motorista com Restrição: ${selectedDriverObj.restrictionReason || 'Sem motivo especificado'}. Não é permitido criar ordens para este motorista.`);
         return;
     }
 
     if (!driverName || !horsePlate || shipmentTonnage <= 0 || !scheduledDate || !embarcadorId || !scheduledTime) {
-        alert('Por favor, preencha todos os campos obrigatórios do formulário.');
+        toast.warning('Por favor, preencha todos os campos obrigatórios do formulário.');
         return;
     }
     
     const isNewDriver = !drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase());
     if (isNewDriver && !driverCpf) {
-        alert('Para novos motoristas, o CPF é obrigatório.');
+        toast.warning('Para novos motoristas, o CPF é obrigatório.');
         return;
     }
     
@@ -259,7 +261,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         vehicleInfo = selectedVehicle;
     } else {
         if (!vehicleSetType || !vehicleBodyType) {
-            alert('Para novos veículos, o Tipo de Veículo e Carroceria são obrigatórios.');
+            toast.warning('Para novos veículos, o Tipo de Veículo e Carroceria são obrigatórios.');
             return;
         }
         vehicleInfo = { setType: vehicleSetType, bodyType: vehicleBodyType };
@@ -270,7 +272,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
         );
         if (!isAllowed) {
-            alert(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga.`);
+            toast.error(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga.`);
             return;
         }
     }
@@ -278,29 +280,38 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     if (cargo?.dailySchedule) {
         const scheduleRule = cargo.dailySchedule.find(rule => rule.date === scheduledDate);
         if (!scheduleRule) {
-            alert('Não é permitido criar ordens para datas sem programação lançada na carga. Verifique a Data Programada.');
+            toast.warning('Não é permitido criar ordens para datas sem programação lançada na carga. Verifique a Data Programada.');
             return;
         }
 
         if (scheduleRule.type === DailyScheduleType.Verificar) {
-            alert('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.');
+            toast.info('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.');
         } else if (scheduleRule.type === DailyScheduleType.Fixo && scheduleRule.tonnage) {
             const alreadyScheduledTonnage = shipments
                 .filter(s => s.cargoId === cargo.id && s.scheduledDate === scheduledDate)
                 .reduce((sum, s) => sum + s.shipmentTonnage, 0);
             
             if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage) {
-                alert(`Erro: A tonelagem para este dia excede o limite programado de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage} ton programadas.`);
+                toast.error(`Erro: A tonelagem para este dia excede o limite programado de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage} ton programadas.`);
                 return;
             }
         }
+    }
+
+    // Validação de Saldo Geral
+    if (!cargo) return;
+    const availableTonnage = cargo.totalVolume - cargo.scheduledVolume;
+
+    if (shipmentTonnage > availableTonnage) {
+        toast.error(`Saldo Insuficiente na Carga: O saldo disponível é de ${availableTonnage.toLocaleString('pt-BR')} ton. Você está tentando solicitar ${shipmentTonnage.toLocaleString('pt-BR')} ton.`);
+        return;
     }
 
     // Validation: Only allow future date/time
     const now = new Date();
     const inputDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
     if (inputDateTime <= now) {
-        alert('Data/Hora Inválida: A data e hora programada deve ser posterior ao momento atual.');
+        toast.warning('Data/Hora Inválida: A data e hora programada deve ser posterior ao momento atual.');
         return;
     }
 
@@ -345,6 +356,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         <div className="mb-6 p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
           <p className="text-sm text-gray-600 dark:text-gray-400">Cliente: <span className="font-semibold text-gray-800 dark:text-gray-200">{clientName}</span></p>
           <p className="text-sm text-gray-600 dark:text-gray-400">Rota: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.origin} → {cargo.destination}</span></p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Saldo Disponível: <span className="font-bold text-primary dark:text-blue-400">{Math.max(0, cargo.totalVolume - cargo.scheduledVolume).toLocaleString('pt-BR')} ton</span>
+          </p>
           {cargo.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && (
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Veículos Permitidos: <span className="font-semibold text-gray-800 dark:text-gray-200">{cargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>

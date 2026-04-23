@@ -308,7 +308,10 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 <div className="min-w-[180px] space-y-1">
                   <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase">
                     <span>Geral</span>
-                    <span className="text-gray-700 dark:text-gray-300">{formatNumber(load.loadedVolume)} / {formatNumber(load.totalVolume)}</span>
+                    <div className="flex flex-col items-end">
+                      <span className="text-gray-700 dark:text-gray-300">{formatNumber(load.loadedVolume)} / {formatNumber(load.totalVolume)}</span>
+                      <span className="text-primary dark:text-blue-400">Saldo: {formatNumber(Math.max(0, load.totalVolume - load.scheduledVolume))} ton</span>
+                    </div>
                   </div>
                   <VolumeBar
                     loaded={load.loadedVolume}
