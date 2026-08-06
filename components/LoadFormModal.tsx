@@ -66,15 +66,15 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         loadedVolume: 0,
         companyFreightValuePerTon: companyVal,
         driverFreightValuePerTon: 0,
-        hasIcms: false,
-        icmsPercentage: 0,
+        hasIcms: offerToConvert.hasIcms ?? false,
+        icmsPercentage: offerToConvert.icmsPercentage ?? 0,
         requiresScheduling: false,
         type: CargoType.Spot,
         status: CargoStatus.EmAndamento,
         loadingDeadline: '',
         allowedVehicleTypes: DEFAULT_ALLOWED_VEHICLE_TYPES,
         freightLegs: [
-          { companyFreightValuePerTon: companyVal, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 },
+          { companyFreightValuePerTon: companyVal, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: offerToConvert.hasIcms ?? false, icmsPercentage: offerToConvert.icmsPercentage ?? 0 },
           { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 }
         ],
         dailySchedule: [],

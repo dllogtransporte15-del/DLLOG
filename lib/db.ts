@@ -13,6 +13,9 @@ const toFreightOffer = (row: any): FreightOffer => {
   let additionalDestinations = undefined;
   let observations = undefined;
   let attachments = undefined;
+  let freightType: 'CIF' | 'FOB' | undefined = row.freight_type || undefined;
+  let hasIcms: boolean | undefined = row.has_icms !== undefined ? row.has_icms : undefined;
+  let icmsPercentage: number | undefined = row.icms_percentage !== undefined ? Number(row.icms_percentage) : undefined;
 
   if (metaLog) {
     try {
@@ -24,6 +27,9 @@ const toFreightOffer = (row: any): FreightOffer => {
       if (parsed.cargoId) row.cargoId = parsed.cargoId;
       if (parsed.requestedEmbarcadorId) row.requestedEmbarcadorId = parsed.requestedEmbarcadorId;
       if (parsed.requestTimestamp) row.requestTimestamp = parsed.requestTimestamp;
+      if (parsed.freightType) freightType = parsed.freightType;
+      if (parsed.hasIcms !== undefined) hasIcms = parsed.hasIcms;
+      if (parsed.icmsPercentage !== undefined) icmsPercentage = parsed.icmsPercentage;
     } catch (e) {
       console.error('Error parsing freight offer metadata:', e);
     }
@@ -51,6 +57,9 @@ const toFreightOffer = (row: any): FreightOffer => {
     cargoId: row.cargoId,
     requestedEmbarcadorId: row.requestedEmbarcadorId,
     requestTimestamp: row.requestTimestamp,
+    freightType,
+    hasIcms,
+    icmsPercentage,
   };
 };
 
@@ -91,7 +100,7 @@ export const fetchFreightOffers = async (): Promise<FreightOffer[]> => {
 const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
   const history = [...(o.history || [])].filter(h => h.id !== 'meta_dest_obs');
   
-  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp) {
+  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined) {
     history.push({
       id: 'meta_dest_obs',
       userId: 'system',
@@ -103,7 +112,10 @@ const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
         driverId: o.driverId,
         cargoId: o.cargoId,
         requestedEmbarcadorId: o.requestedEmbarcadorId,
-        requestTimestamp: o.requestTimestamp
+        requestTimestamp: o.requestTimestamp,
+        freightType: o.freightType,
+        hasIcms: o.hasIcms,
+        icmsPercentage: o.icmsPercentage,
       })
     });
   }

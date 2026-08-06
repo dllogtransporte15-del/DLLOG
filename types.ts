@@ -445,5 +445,8 @@ export interface FreightOffer {
   attachments?: string[];
   requestedEmbarcadorId?: string;
   requestTimestamp?: string;
+  freightType?: 'CIF' | 'FOB';
+  hasIcms?: boolean;
+  icmsPercentage?: number;
 }
 

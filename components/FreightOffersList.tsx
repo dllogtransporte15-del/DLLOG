@@ -165,7 +165,23 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                     {renderLocationValue(offer.destinationLocation, "block text-xs text-gray-500 mt-1")}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{getProductName(offer.productId)}</td>
+                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                  <div>{getProductName(offer.productId)}</div>
+                  {(offer.freightType || offer.hasIcms !== undefined) && (
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      {offer.freightType && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded">
+                          {offer.freightType}
+                        </span>
+                      )}
+                      {offer.hasIcms !== undefined && (
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold border rounded ${offer.hasIcms ? 'text-amber-700 bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800' : 'text-gray-600 bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600'}`}>
+                          {offer.hasIcms ? `ICMS ${offer.icmsPercentage ? offer.icmsPercentage + '%' : 'Sim'}` : 'Sem ICMS'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                   {matchedCargo ? (
                     <div className="w-32 space-y-1">
@@ -513,6 +529,16 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                  <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
                     <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Volume Total:</span>
                     <span className="font-medium text-gray-900 dark:text-gray-100">{detailsModal.totalTonnage} Ton</span>
+                 </div>
+                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
+                    <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Tipo de Frete:</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{detailsModal.freightType || 'CIF'}</span>
+                 </div>
+                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
+                    <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Incidência de ICMS:</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {detailsModal.hasIcms ? `Sim (${detailsModal.icmsPercentage || 0}%)` : 'Não (Sem ICMS)'}
+                    </span>
                  </div>
                  <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600">
                     <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Valor (R$/Ton):</span>

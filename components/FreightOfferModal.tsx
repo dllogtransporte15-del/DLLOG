@@ -24,6 +24,9 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
     totalTonnage: '',
     dailySchedule: '',
     productId: '',
+    freightType: 'CIF' as 'CIF' | 'FOB',
+    hasIcms: false,
+    icmsPercentage: '',
     observations: '',
   });
 
@@ -110,6 +113,9 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
         totalTonnage: Number(formData.totalTonnage),
         dailySchedule: formData.dailySchedule,
         productId: formData.productId,
+        freightType: formData.freightType,
+        hasIcms: formData.hasIcms,
+        icmsPercentage: formData.hasIcms ? Number(formData.icmsPercentage) || 0 : undefined,
         status: FreightOfferStatus.AguardandoPreco,
         observations: formData.observations,
         additionalDestinations: additionalDestinations.filter(d => d.city.trim() !== ''),
@@ -225,6 +231,51 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de Frete</label>
+                <select name="freightType" value={formData.freightType} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium">
+                  <option value="CIF">CIF (Pago pelo Remetente)</option>
+                  <option value="FOB">FOB (Pago pelo Destinatário)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Incidência de ICMS</label>
+                <div className="flex gap-2">
+                  <select
+                    name="hasIcms"
+                    value={formData.hasIcms ? 'true' : 'false'}
+                    onChange={(e) => {
+                      const val = e.target.value === 'true';
+                      setFormData(prev => ({
+                        ...prev,
+                        hasIcms: val,
+                        icmsPercentage: val ? prev.icmsPercentage : ''
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium"
+                  >
+                    <option value="false">Não (Sem ICMS / Isento)</option>
+                    <option value="true">Sim (Com ICMS)</option>
+                  </select>
+                  {formData.hasIcms && (
+                    <div className="w-1/2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        name="icmsPercentage"
+                        value={formData.icmsPercentage}
+                        onChange={handleChange}
+                        placeholder="% ICMS"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
