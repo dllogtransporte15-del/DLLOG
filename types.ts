@@ -258,6 +258,20 @@ export enum ShipmentStatus {
   Cancelado = "Cancelado",
 }
 
+export enum RiskQueryType {
+  Siga = 'SIGA',
+  ConsultaBiometria = 'Consulta + Biometria',
+  CadastroConsultaGeral = 'Cadastro + Consulta Geral',
+  Vitimologia = 'Vitimologia',
+}
+
+export const RISK_QUERY_COST_MAP: Record<RiskQueryType, number> = {
+  [RiskQueryType.Siga]: 7.00,
+  [RiskQueryType.ConsultaBiometria]: 15.00,
+  [RiskQueryType.CadastroConsultaGeral]: 33.00,
+  [RiskQueryType.Vitimologia]: 70.00,
+};
+
 export const REQUIRED_DOCUMENT_MAP: Partial<Record<ShipmentStatus, string>> = {
     [ShipmentStatus.PreCadastro]: 'Comprovante de Cadastro',
     [ShipmentStatus.AguardandoSeguradora]: 'Comprovação da Liberação da Seguradora',
@@ -273,6 +287,9 @@ export interface Shipment {
   id: string;
   orderId: string;
   cargoId: string;
+  riskReleaseCode?: string;
+  riskQueryType?: RiskQueryType | string;
+  riskQueryCost?: number;
   driverName: string;
   driverContact?: string;
   driverCpf?: string;

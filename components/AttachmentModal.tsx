@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP } from '../types';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr } from '../utils';
@@ -20,7 +20,10 @@ interface AttachmentModalProps {
     discountValue?: number,
     netBalanceValue?: number,
     unloadedTonnage?: number,
-    route?: string 
+    route?: string,
+    riskReleaseCode?: string,
+    riskQueryType?: string,
+    riskQueryCost?: number,
   }) => Promise<void>;
   shipment: Shipment;
   documentName: string;
@@ -77,6 +80,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   const [netBalanceValue, setNetBalanceValue] = useState<number | ''>('');
   const [unloadedTonnage, setUnloadedTonnage] = useState<number | ''>('');
   const [route, setRoute] = useState('');
+  const [riskReleaseCode, setRiskReleaseCode] = useState('');
+  const [riskQueryType, setRiskQueryType] = useState<RiskQueryType | ''>('');
   const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -106,6 +111,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
       setUnloadedTonnage(shipment.unloadedTonnage || '');
       
       setRoute(shipment.route || '');
+      setRiskReleaseCode(shipment.riskReleaseCode || '');
+      setRiskQueryType((shipment.riskQueryType as RiskQueryType) || '');
     }
   }, [isOpen, shipment]);
 
@@ -310,6 +317,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           return;
         }
       }
+      if (shipment.status === ShipmentStatus.AguardandoSeguradora) {
+        if (!riskReleaseCode.trim()) {
+          setError('O Código de Liberação da Gerenciadora é obrigatório para avançar.');
+          return;
+        }
+        if (!riskQueryType) {
+          setError('O Tipo de Consulta Realizada é obrigatório para avançar.');
+          return;
+        }
+      }
       filesToAttach = { [documentName]: singleFiles };
     }
     
@@ -326,6 +343,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
         }
     }
 
+    const calculatedRiskCost = riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0) : undefined;
+
     setError('');
     setIsSaving(true);
     try {
@@ -340,7 +359,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
         discountValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(discountValue) : undefined,
         netBalanceValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(netBalanceValue) : undefined,
         unloadedTonnage: shipment.status === ShipmentStatus.AguardandoDescarga ? Number(unloadedTonnage) : undefined,
-        route: (showRouteField || isReadOnlyRoute) ? route : undefined
+        route: (showRouteField || isReadOnlyRoute) ? route : undefined,
+        riskReleaseCode: shipment.status === ShipmentStatus.AguardandoSeguradora ? riskReleaseCode : undefined,
+        riskQueryType: shipment.status === ShipmentStatus.AguardandoSeguradora ? riskQueryType : undefined,
+        riskQueryCost: shipment.status === ShipmentStatus.AguardandoSeguradora ? calculatedRiskCost : undefined,
       });
     } catch (err: any) {
       console.error('Error in handleSave:', err);
@@ -436,7 +458,53 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                 <input type="number" step="0.01" value={loadedTonnage} onChange={(e) => setLoadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
                             </div>
                         </div>
+                    </div>
+                ) : shipment.status === ShipmentStatus.AguardandoSeguradora ? (
+                    <div className="space-y-4">
+                        <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Código de Liberação da Gerenciadora <span className="text-red-500">*</span>
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={riskReleaseCode} 
+                                    onChange={(e) => setRiskReleaseCode(e.target.value)} 
+                                    placeholder="Ex: LIB-984721" 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                                    required
+                                />
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Tipo de Consulta Realizada <span className="text-red-500">*</span>
+                                </label>
+                                <select 
+                                    value={riskQueryType} 
+                                    onChange={(e) => setRiskQueryType(e.target.value as RiskQueryType)} 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                                    required
+                                >
+                                    <option value="" disabled>Selecione o tipo de consulta...</option>
+                                    <option value={RiskQueryType.Siga}>1 - SIGA (Valor: R$ 7,00)</option>
+                                    <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (Valor: R$ 15,00)</option>
+                                    <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (Valor: R$ 33,00)</option>
+                                    <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (Valor: R$ 70,00)</option>
+                                </select>
+                            </div>
+                        </div>
 
+                        {riskQueryType && (
+                            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
+                                <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
+                                <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
+                                    R$ {(RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0).toFixed(2).replace('.', ',')}
+                                </span>
+                            </div>
+                        )}
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

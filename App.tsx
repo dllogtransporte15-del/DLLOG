@@ -1224,9 +1224,12 @@ const App: React.FC = () => {
     discountValue?: number,
     netBalanceValue?: number,
     unloadedTonnage?: number,
-    route?: string 
+    route?: string,
+    riskReleaseCode?: string,
+    riskQueryType?: string,
+    riskQueryCost?: number,
   }) => {
-    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, netBalanceValue, unloadedTonnage, route } = data;
+    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, netBalanceValue, unloadedTonnage, route, riskReleaseCode, riskQueryType, riskQueryCost } = data;
     const originalShipment = shipments.find(s => s.id === shipmentId);
     
     if (!originalShipment) {
@@ -1237,6 +1240,18 @@ const App: React.FC = () => {
     if (!currentUser) {
       showToast('Usuário não autenticado.', 'error');
       throw new Error('Usuário não autenticado');
+    }
+
+    // Validation for "Aguardando Seguradora" transition
+    if (originalShipment.status === ShipmentStatus.AguardandoSeguradora) {
+        if (!riskReleaseCode?.trim()) {
+            showToast('O Código de Liberação da Gerenciadora é obrigatório.', 'warning');
+            return;
+        }
+        if (!riskQueryType) {
+            showToast('O Tipo de Consulta Realizada é obrigatório.', 'warning');
+            return;
+        }
     }
 
     // Validation for "Aguardando Nota" transition
@@ -1362,6 +1377,7 @@ const App: React.FC = () => {
     }
     
     if (route) historyLogs.push(`Rota informada: ${route}`);
+    if (riskReleaseCode) historyLogs.push(`Liberação de Seguradora: Cód ${riskReleaseCode} (${riskQueryType} - R$ ${riskQueryCost})`);
 
     const isStatusSame = nextStatus === originalShipment.status;
     const logMessage = isStatusSame
@@ -1384,6 +1400,9 @@ const App: React.FC = () => {
         netBalanceValue: finalNetBalanceValue,
         unloadedTonnage: finalUnloadedTonnage,
         route: route || originalShipment.route,
+        riskReleaseCode: riskReleaseCode || originalShipment.riskReleaseCode,
+        riskQueryType: riskQueryType || originalShipment.riskQueryType,
+        riskQueryCost: riskQueryCost !== undefined ? riskQueryCost : originalShipment.riskQueryCost,
         history: [...originalShipment.history, statusChangeLog],
         statusHistory: isStatusSame
             ? (originalShipment.statusHistory || [])

@@ -355,9 +355,11 @@ const toShipment = (row: any): Shipment => ({
   discountValue: row.discount_value !== null ? Number(row.discount_value) : undefined,
   netBalanceValue: row.net_balance_value !== null ? Number(row.net_balance_value) : undefined,
   unloadedTonnage: row.unloaded_tonnage !== null ? Number(row.unloaded_tonnage) : undefined,
-  branchId: row.branch_id,
   vehicleSetType: row.vehicle_set_type,
   vehicleBodyType: row.vehicle_body_type,
+  riskReleaseCode: row.risk_release_code || row.documents?.risk_release_code,
+  riskQueryType: row.risk_query_type || row.documents?.risk_query_type,
+  riskQueryCost: row.risk_query_cost !== null && row.risk_query_cost !== undefined ? Number(row.risk_query_cost) : (row.documents?.risk_query_cost !== undefined ? Number(row.documents.risk_query_cost) : undefined),
 });
 
 const fromShipment = (s: Shipment) => ({
@@ -378,7 +380,12 @@ const fromShipment = (s: Shipment) => ({
   scheduled_date: s.scheduledDate,
   scheduled_time: s.scheduledTime,
   arrival_time: s.arrivalTime,
-  documents: s.documents || {},
+  documents: {
+    ...(s.documents || {}),
+    ...(s.riskReleaseCode ? { risk_release_code: s.riskReleaseCode } : {}),
+    ...(s.riskQueryType ? { risk_query_type: s.riskQueryType } : {}),
+    ...(s.riskQueryCost !== undefined ? { risk_query_cost: s.riskQueryCost } : {}),
+  },
   history: s.history,
   created_at: s.createdAt,
   created_by_id: s.createdById,
@@ -403,6 +410,9 @@ const fromShipment = (s: Shipment) => ({
   branch_id: s.branchId || null,
   vehicle_set_type: s.vehicleSetType,
   vehicle_body_type: s.vehicleBodyType,
+  risk_release_code: s.riskReleaseCode,
+  risk_query_type: s.riskQueryType,
+  risk_query_cost: s.riskQueryCost,
 });
 
 export const toUser = (row: any): User => ({
