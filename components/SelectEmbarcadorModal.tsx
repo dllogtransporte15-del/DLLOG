@@ -15,7 +15,9 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
 
   if (!isOpen) return null;
 
-  const embarcadores = users.filter(u => u.profile === UserProfile.Embarcador && u.active !== false);
+  const embarcadores = users
+    .filter(u => u.active !== false && u.profile !== UserProfile.Motorista && u.profile !== UserProfile.Cliente)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
   const handleConfirm = () => {
     if (selectedEmbarcador) {

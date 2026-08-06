@@ -42,12 +42,18 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
-    const shippers = users.filter(u => u.profile === UserProfile.Embarcador);
+    const shipperIds = new Set<string>([
+      ...users.filter(u => u.profile === UserProfile.Embarcador).map(u => u.id),
+      ...shipments.map(s => s.embarcadorId).filter(Boolean) as string[],
+      ...shipments.map(s => s.createdById).filter(Boolean) as string[]
+    ]);
+
+    const shippers = users.filter(u => shipperIds.has(u.id));
     // Explicitly type `cargoMap` to ensure correct type inference.
     const cargoMap: Map<string, Cargo> = new Map(cargos.map(c => [c.id, c]));
 
     const stats = shippers.map(shipper => {
-      const shipperShipments = shipments.filter(s => s.embarcadorId === shipper.id);
+      const shipperShipments = shipments.filter(s => s.embarcadorId === shipper.id || s.createdById === shipper.id);
       
       const uniqueVehicles = new Set<string>();
       let netMargin = 0;

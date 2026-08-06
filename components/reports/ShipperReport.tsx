@@ -60,11 +60,14 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
     const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
 
     const operatorStats = useMemo<OperatorStats[]>(() => {
-        const creatorIds = [...new Set(shipments.map(s => s.createdById))];
+        const creatorIds = [...new Set([
+            ...shipments.map(s => s.embarcadorId).filter(Boolean) as string[],
+            ...shipments.map(s => s.createdById).filter(Boolean) as string[]
+        ])];
 
         return creatorIds.map(creatorId => {
             const creator = users.find(u => u.id === creatorId);
-            const creatorShipments = shipments.filter(s => s.createdById === creatorId);
+            const creatorShipments = shipments.filter(s => s.embarcadorId === creatorId || s.createdById === creatorId);
           
             const stats = creatorShipments.reduce((acc, shipment) => {
                 if (shipment.status === ShipmentStatus.Finalizado) {
@@ -76,6 +79,8 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                 }
 
                 const isEffective = [
+                    ShipmentStatus.PreCadastro,
+                    ShipmentStatus.AguardandoSeguradora,
                     ShipmentStatus.AguardandoNota,
                     ShipmentStatus.AguardandoAdiantamento,
                     ShipmentStatus.AguardandoAgendamento,
@@ -103,14 +108,14 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
 
     const getShipmentsForPdfAndList = (embarcadorId?: string) => {
         if (embarcadorId && embarcadorId !== 'ALL') {
-            return shipments.filter(s => s.createdById === embarcadorId);
+            return shipments.filter(s => s.embarcadorId === embarcadorId || s.createdById === embarcadorId);
         }
         return shipments;
     };
 
     const baseModalShipments = useMemo(() => {
         if (selectedEmbarcadorId && selectedEmbarcadorId !== 'ALL') {
-            return shipments.filter(s => s.createdById === selectedEmbarcadorId);
+            return shipments.filter(s => s.embarcadorId === selectedEmbarcadorId || s.createdById === selectedEmbarcadorId);
         }
         return shipments;
     }, [shipments, selectedEmbarcadorId]);
