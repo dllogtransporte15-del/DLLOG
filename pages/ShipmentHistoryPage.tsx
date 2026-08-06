@@ -211,8 +211,13 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
             documentName="Documento"
             currentUser={currentUser}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
         />
       )}
+
        {detailsModalCargo && (
           <CargoDetailsModal
             isOpen={!!detailsModalCargo}

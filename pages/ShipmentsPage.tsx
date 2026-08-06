@@ -243,9 +243,14 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
 
     if (userProfile === UserProfile.Admin) return defaultResponse;
 
-    if (currentStatus === ShipmentStatus.PreCadastro || currentStatus === ShipmentStatus.AguardandoSeguradora) {
+    if (currentStatus === ShipmentStatus.PreCadastro) {
         if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor].includes(userProfile)) return defaultResponse;
         return { allowed: false, reason: 'Apenas Fiscal, Diretor, Supervisor ou Admin podem avançar este status.' };
+    }
+
+    if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
+        if (userProfile === UserProfile.GerenciadoraDeRisco) return defaultResponse;
+        return { allowed: false, reason: 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
@@ -253,9 +258,9 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         return { allowed: false, reason: 'Apenas Financeiro, Diretor, Supervisor ou Admin podem avançar.' };
     }
 
-
     return defaultResponse;
   };
+
 
   return (
     <>
@@ -311,8 +316,13 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
           canSave={canUserAdvanceStatus(selectedShipment).allowed}
+          requiresRiskManagement={
+            products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
+              ?.requiresRiskManagement !== false
+          }
         />
       )}
+
       {selectedShipment && (
         <CadastroAnttModal
           isOpen={isCadastroAnttModalOpen}

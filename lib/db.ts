@@ -239,6 +239,8 @@ const toProduct = (row: any): Product => ({
   id: row.id,
   name: row.name,
   unit: row.unit,
+  // Retrocompatibilidade: se a coluna for null (antes da migration), assume true (fluxo completo)
+  requiresRiskManagement: row.requires_risk_management !== false,
 });
 
 const toCargo = (row: any): Cargo => ({
@@ -945,7 +947,12 @@ export async function deleteBranch(id: string): Promise<void> {
 }
 
 export async function upsertProduct(product: Product): Promise<void> {
-  const { error } = await supabase.from('products').upsert({ id: product.id, name: product.name, unit: product.unit });
+  const { error } = await supabase.from('products').upsert({
+    id: product.id,
+    name: product.name,
+    unit: product.unit,
+    requires_risk_management: product.requiresRiskManagement !== false, // default true
+  });
   if (error) throw error;
 }
 

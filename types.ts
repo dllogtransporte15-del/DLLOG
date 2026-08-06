@@ -13,7 +13,9 @@ export enum UserProfile {
   Admin = "Administrador do Sistema",
   Motorista = "Motorista",
   Demonstracao = "Demonstração",
+  GerenciadoraDeRisco = "Gerenciadora de Risco",
 }
+
 
 export interface Branch {
   id: string;
@@ -145,6 +147,9 @@ export interface Product {
   id: string;
   name: string;
   unit: ProductUnit;
+  /** Se true (padrão), o embarque exige fluxo completo de Gerenciamento de Risco (código + tipo de consulta).
+   *  Se false, basta o envio do documento de liberação (Liberação Simplificada). */
+  requiresRiskManagement?: boolean;
 }
 
 export enum CargoType {

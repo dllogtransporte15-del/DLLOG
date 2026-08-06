@@ -130,7 +130,7 @@ export function useDatabase(currentUser: User | null) {
         setFreightOffers(dbFreightOffers);
         setUsers(dbUsers);
 
-        if (dbPermissions) setProfilePermissions(dbPermissions);
+        if (dbPermissions) setProfilePermissions({ ...INITIAL_PERMISSIONS, ...dbPermissions });
         if (dbSettings) {
           if (dbSettings.company_logo) setCompanyLogo(dbSettings.company_logo);
           if (dbSettings.theme_image) setThemeImage(dbSettings.theme_image);
@@ -162,7 +162,7 @@ export function useDatabase(currentUser: User | null) {
         setBranches(dbBranches);
         setActiveLocks(dbLocks);
 
-        if (dbPermissions) setProfilePermissions(dbPermissions);
+        if (dbPermissions) setProfilePermissions({ ...INITIAL_PERMISSIONS, ...dbPermissions });
         if (dbSettings) {
           if (dbSettings.company_logo) setCompanyLogo(dbSettings.company_logo);
           if (dbSettings.theme_image) setThemeImage(dbSettings.theme_image);

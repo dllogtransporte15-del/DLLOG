@@ -443,8 +443,13 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
           cargo={loads.find(c => c.id === selectedShipment.cargoId)}
+          requiresRiskManagement={
+            products.find(p => p.id === loads.find(c => c.id === selectedShipment.cargoId)?.productId)
+              ?.requiresRiskManagement !== false
+          }
         />
       )}
+
     </>
   );
 };

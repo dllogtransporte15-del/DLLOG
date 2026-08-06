@@ -679,7 +679,7 @@ const App: React.FC = () => {
       return cargos.filter(c => c.clientId === currentUser.clientId);
     }
     // Profiles that see everything
-    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal].includes(currentUser.profile as UserProfile)) {
+    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
       return cargos;
     }
     
@@ -710,7 +710,7 @@ const App: React.FC = () => {
         return shipments.filter(s => clientCargoIds.has(s.cargoId));
     }
     // Profiles that see everything
-    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal].includes(currentUser.profile as UserProfile)) {
+    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
       return shipments;
     }
 
@@ -1244,15 +1244,26 @@ const App: React.FC = () => {
 
     // Validation for "Aguardando Seguradora" transition
     if (originalShipment.status === ShipmentStatus.AguardandoSeguradora) {
-        if (!riskReleaseCode?.trim()) {
-            showToast('O Código de Liberação da Gerenciadora é obrigatório.', 'warning');
-            return;
+        // Resolve the product linked to this shipment's cargo
+        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
+        const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
+        // requiresRiskManagement defaults to true when undefined (retrocompatibilidade)
+        const needsFullRiskFlow = relatedProduct?.requiresRiskManagement !== false;
+
+        if (needsFullRiskFlow) {
+            // Fluxo completo: exige código de liberação + tipo de consulta
+            if (!riskReleaseCode?.trim()) {
+                showToast('O Código de Liberação da Gerenciadora é obrigatório.', 'warning');
+                return;
+            }
+            if (!riskQueryType) {
+                showToast('O Tipo de Consulta Realizada é obrigatório.', 'warning');
+                return;
+            }
         }
-        if (!riskQueryType) {
-            showToast('O Tipo de Consulta Realizada é obrigatório.', 'warning');
-            return;
-        }
+        // Liberação Simplificada: apenas o documento é obrigatório (validado pelo AttachmentModal)
     }
+
 
     // Validation for "Aguardando Nota" transition
     if (originalShipment.status === ShipmentStatus.AguardandoNota && !originalShipment.bankDetails && !bankDetails) {
@@ -1295,13 +1306,17 @@ const App: React.FC = () => {
     let alertMessage = '';
 
     // Check permissions based on the current status
-    if (currentStatus === ShipmentStatus.PreCadastro || currentStatus === ShipmentStatus.AguardandoSeguradora) {
+    if (currentStatus === ShipmentStatus.PreCadastro) {
         isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Fiscal, Diretor, Supervisor ou Administrador podem realizar esta ação.';
+    } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
+        isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin].includes(currentUser.profile);
+        alertMessage = 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.';
     } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
         isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor ou Administrador do Sistema podem realizar esta ação.';
     }
+
 
     if (!isUserAllowed) {
         showToast(`Você não tem permissão para alterar o status deste embarque. ${alertMessage}`, 'error');
