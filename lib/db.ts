@@ -225,6 +225,7 @@ const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
   owner_id: d.ownerId || null,
   active: d.active !== undefined ? d.active : true,
   restriction_reason: d.restrictionReason,
+  has_app: (d as Driver).has_app ?? false,
 });
 
 const toVehicle = (row: any): Vehicle => ({

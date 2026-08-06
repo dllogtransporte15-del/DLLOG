@@ -50,23 +50,30 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
 
   const renderLocationValue = (text: string | undefined, className: string, prefix?: React.ReactNode) => {
     if (!text) return null;
-    const isUrl = text.startsWith('http://') || text.startsWith('https://');
-    if (isUrl) {
+
+    const urlMatch = text.match(/(https?:\/\/[^\s]+)/i);
+    const url = urlMatch ? urlMatch[0] : null;
+    const cleanText = url ? text.replace(url, '').trim() : text.trim();
+
+    if (url) {
       return (
-        <div className="flex items-center gap-2">
-          {prefix && <span className={className}>{prefix}</span>}
+        <div className="flex flex-col gap-1 items-start">
+          {cleanText && <span className={className}>{prefix}{cleanText}</span>}
+          {!cleanText && prefix && <span className={className}>{prefix}</span>}
           <a 
-            href={text} 
+            href={url} 
             target="_blank" 
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:text-blue-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:text-blue-800 transition-colors dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/50"
+            title={url}
           >
-            <MapPinIcon className="w-3 h-3" />
+            <MapPinIcon className="w-3 h-3 flex-shrink-0 text-blue-600 dark:text-blue-400" />
             Ver Localização
           </a>
         </div>
       );
     }
+
     return <span className={className}>{prefix}{text}</span>;
   };
 
