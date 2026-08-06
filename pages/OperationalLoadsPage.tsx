@@ -1,0 +1,452 @@
+
+import React, { useState, useCallback } from 'react';
+import Header from '../components/Header';
+import LoadTable from '../components/LoadTable';
+import NewShipmentModal from '../components/NewShipmentModal';
+import LoadFormModal from '../components/LoadFormModal';
+import HistoryModal from '../components/HistoryModal';
+import CargoDetailsModal from '../components/CargoDetailsModal';
+import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
+import RecommendedDriversModal from '../components/RecommendedDriversModal';
+import AttachmentModal from '../components/AttachmentModal';
+import { REQUIRED_DOCUMENT_MAP } from '../types';
+import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch } from '../types';
+import { can } from '../auth';
+import { CopyIcon } from '../components/icons/CopyIcon';
+import { CargoStatus, UserProfile, ShipmentStatus } from '../types';
+import ShipmentTable from '../components/ShipmentTable';
+import { StayRecord } from '../utils/toolStorage';
+import { formatFretebrasVehicleTypes } from '../utils/formatters';
+import type { Ticket } from '../types';
+
+interface OperationalLoadsPageProps {
+  loads: Cargo[];
+  clients: Client[];
+  products: Product[];
+  drivers: Driver[];
+  vehicles: Vehicle[];
+  shipments: Shipment[];
+  allShipments: Shipment[];
+  onCreateShipment: (data: any) => void;
+  onSaveLoad: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
+  currentUser: User;
+  profilePermissions: ProfilePermissions;
+  users: User[];
+  onDeleteLoad: (cargoId: string) => void;
+  onReactivateLoad?: (cargo: Cargo) => void;
+  onSuspendLoad?: (cargo: Cargo) => void;
+  onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
+  onModalStateChange: (isOpen: boolean) => void;
+  onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  branches: Branch[];
+  stays?: StayRecord[];
+  tickets?: Ticket[];
+  onRequestLoadOrder?: (cargo: Cargo) => void;
+  onUpdateAttachment?: (shipmentId: string, data: { 
+    filesToAttach: { [key: string]: File[] }, 
+    bankDetails?: string, 
+    loadedTonnage?: number, 
+    advancePercentage?: number, 
+    advanceValue?: number,
+    tollValue?: number, 
+    balanceToReceiveValue?: number,
+    discountValue?: number,
+    netBalanceValue?: number,
+    unloadedTonnage?: number,
+    route?: string 
+  }) => Promise<void>;
+  onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
+}
+
+const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
+    if (!allowed || allowed.length === 0) return 'N/A';
+    const allBodyTypes = allowed.flatMap(type => type.bodyTypes);
+    const uniqueBodyTypes = [...new Set(allBodyTypes)];
+    return uniqueBodyTypes.join(', ');
+};
+
+const formatAllowedSetTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
+    if (!allowed || allowed.length === 0) return '';
+    const allSetTypes = allowed.map(type => type.setType);
+    const uniqueSetTypes = [...new Set(allSetTypes)];
+    return uniqueSetTypes.join(', ');
+};
+
+const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
+  loads,
+  clients,
+  products,
+  drivers,
+  vehicles,
+  shipments,
+  allShipments,
+  onCreateShipment,
+  onSaveLoad,
+  currentUser,
+  profilePermissions,
+  users,
+  onDeleteLoad,
+  onReactivateLoad,
+  onSuspendLoad,
+  onUpdatePrice,
+  onModalStateChange,
+  onDeleteAttachment,
+  branches,
+  stays = [],
+  tickets = [],
+  onRequestLoadOrder,
+  onUpdateAttachment,
+  onAddAttachments,
+}) => {
+  const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
+  const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
+  const [copyButtonText, setCopyButtonText] = useState('Divulgar Cargas');
+  const [fretebrasButtonText, setFretebrasButtonText] = useState('Prompt Fretebras');
+  const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const canCreateShipment = can('create', currentUser, 'shipments', profilePermissions);
+  const [displayedLoads, setDisplayedLoads] = useState<Cargo[]>([]);
+
+  const handleFilteredLoadsChange = useCallback((filteredLoads: Cargo[]) => {
+    setDisplayedLoads(filteredLoads);
+  }, []);
+
+  const [isLoadFormModalOpen, setIsLoadFormModalOpen] = useState(false);
+  const [loadToEdit, setLoadToEdit] = useState<Cargo | null>(null);
+  const [initialModalStep, setInitialModalStep] = useState(1);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [selectedLoadForHistory, setSelectedLoadForHistory] = useState<Cargo | null>(null);
+  const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
+  const [isShipmentsPanelOpen, setIsShipmentsPanelOpen] = useState(false);
+  const [selectedCargoForShipments, setSelectedCargoForShipments] = useState<Cargo | null>(null);
+  const [isRecommendedDriversModalOpen, setIsRecommendedDriversModalOpen] = useState(false);
+  const [selectedCargoForRecommendations, setSelectedCargoForRecommendations] = useState<Cargo | null>(null);
+
+  const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
+  const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
+
+  React.useEffect(() => {
+    if (selectedShipment) {
+      const updated = allShipments.find(s => s.id === selectedShipment.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedShipment)) {
+        setSelectedShipment(updated);
+      }
+    }
+  }, [allShipments, selectedShipment]);
+
+  const handleOpenAttachmentModal = (shipment: Shipment) => {
+    setSelectedShipment(shipment);
+    setAttachmentModalOpen(true);
+  };
+
+  const handleCloseAttachmentModal = () => {
+    setAttachmentModalOpen(false);
+    setSelectedShipment(null);
+  };
+
+  const handleSaveAttachment = async (data: any) => {
+    if (!selectedShipment || !onUpdateAttachment) return;
+    await onUpdateAttachment(selectedShipment.id, data);
+    handleCloseAttachmentModal();
+  };
+
+  React.useEffect(() => {
+    const isAnyOpen = isShipmentModalOpen || isLoadFormModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isRecommendedDriversModalOpen || isAttachmentModalOpen;
+    onModalStateChange(isAnyOpen);
+  }, [isShipmentModalOpen, isLoadFormModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isRecommendedDriversModalOpen, isAttachmentModalOpen, onModalStateChange]);
+
+  const handleShowCargoDetails = (cargo: Cargo) => {
+    setDetailsModalCargo(cargo);
+  };
+
+  const handleShowShipments = (cargo: Cargo) => {
+    setSelectedCargoForShipments(cargo);
+    setIsShipmentsPanelOpen(true);
+  };
+
+  const handleOpenRecommendations = (cargo: Cargo) => {
+    setSelectedCargoForRecommendations(cargo);
+    setIsRecommendedDriversModalOpen(true);
+  };
+
+  const handleOpenNewShipmentModal = (cargo: Cargo) => {
+    setSelectedCargo(cargo);
+    setIsShipmentModalOpen(true);
+  };
+
+  const handleCloseShipmentModal = () => {
+    setIsShipmentModalOpen(false);
+    setSelectedCargo(null);
+  };
+
+  const handleCloseLoadFormModal = () => {
+    setIsLoadFormModalOpen(false);
+    setLoadToEdit(null);
+  };
+
+  const handleShowHistory = (load: Cargo) => {
+    setSelectedLoadForHistory(load);
+    setIsHistoryModalOpen(true);
+  };
+
+  const handleSaveAndCloseModal = (load: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
+    onSaveLoad(load);
+    handleCloseLoadFormModal();
+  };
+
+  const handleSaveShipment = (shipmentData: any) => {
+    if (selectedCargo) {
+      onCreateShipment({
+        cargoId: selectedCargo.id,
+        ...shipmentData,
+      });
+    }
+    handleCloseShipmentModal();
+  };
+  
+  const handleShareLoads = () => {
+    const loadsToShare = displayedLoads.filter(load => load.status === CargoStatus.EmAndamento);
+    if (loadsToShare.length === 0) {
+      alert('Nenhuma carga em andamento para divulgar.');
+      return;
+    }
+
+    const header = '🌐 *LIBERADOS TRANSCUNHA* 🌐\n';
+
+    const loadsText = loadsToShare.map(load => {
+      const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
+      const origin = load.origin.toUpperCase();
+      const destination = load.destination.toUpperCase();
+      const price = load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
+
+      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
+      
+      if (load.originMapLink) {
+        text += `\n📍Coleta - ${load.originMapLink}`;
+      }
+      if (load.destinationMapLink) {
+        text += `\n📍Entrega - ${load.destinationMapLink}`;
+      }
+      return text;
+    }).join('\n\n');
+
+    const textToCopy = header + '\n' + loadsText;
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopyButtonText('Copiado!');
+      setTimeout(() => setCopyButtonText('Divulgar Cargas'), 3000);
+    }, (err) => {
+      console.error('Falha ao copiar: ', err);
+      alert('Não foi possível copiar as cargas. Verifique as permissões do navegador.');
+    });
+  };
+
+  const handleShareFretebras = () => {
+    const loadsToShare = displayedLoads.filter(load => load.status === CargoStatus.EmAndamento);
+    if (loadsToShare.length === 0) {
+      alert('Nenhuma carga em andamento para divulgar.');
+      return;
+    }
+
+    const loadsText = loadsToShare.map(load => {
+      const product = products.find(p => p.id === load.productId)?.name || '';
+      const origin = load.origin;
+      const destination = load.destination;
+      const price = `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      
+      const allowed = load.allowedVehicleTypes || [];
+      const vehicleTypes = formatFretebrasVehicleTypes(load.allowedVehicleTypes);
+      const bodyTypes = allowed.length > 0
+        ? [...new Set(allowed.flatMap(t => t.bodyTypes))].join(', ')
+        : '';
+      const rastreada = load.requiresTracker ? 'Sim' : 'Não';
+
+      return [
+        `ORIGEM: ${origin}`,
+        `DESTINO: ${destination}`,
+        `PRODUTO: ${product}`,
+        `VALOR: ${price}`,
+        `VEÍCULO: ${vehicleTypes}`,
+        `CARROCERIA: ${bodyTypes}`,
+        `RASTREADA: ${rastreada}`,
+        `LONA: Sim`,
+        `FORMA DE PAGAMENTO: Pix, Cartão`,
+        `OBSERVAÇÕES:`,
+      ].join('\n');
+    }).join('\n\n---\n\n');
+
+    navigator.clipboard.writeText(loadsText).then(() => {
+      setFretebrasButtonText('Copiado!');
+      setTimeout(() => setFretebrasButtonText('Prompt Fretebras'), 3000);
+    }, (err) => {
+      console.error('Falha ao copiar: ', err);
+      alert('Não foi possível copiar as cargas. Verifique as permissões do navegador.');
+    });
+  };
+
+  const driverActiveShipments = currentUser.profile === UserProfile.Motorista
+    ? (() => {
+        const driverCpfClean = (currentUser.email || '').replace(/\D/g, '');
+        return allShipments.filter(s =>
+          (s.driverCpf || '').replace(/\D/g, '') === driverCpfClean &&
+          s.status !== ShipmentStatus.Finalizado &&
+          s.status !== ShipmentStatus.Cancelado
+        );
+      })()
+    : [];
+
+  return (
+    <>
+      <Header title="Cargas em Operação">
+        {currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleShareLoads}
+              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200"
+            >
+              <CopyIcon className="w-5 h-5 mr-2" />
+              {copyButtonText}
+            </button>
+            <button
+              onClick={handleShareFretebras}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200"
+            >
+              <CopyIcon className="w-5 h-5 mr-2" />
+              {fretebrasButtonText}
+            </button>
+          </div>
+        )}
+      </Header>
+      
+      {currentUser.profile === UserProfile.Motorista && driverActiveShipments.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-2xl font-semibold text-primary dark:text-blue-400 mb-4 border-b-2 border-primary pb-2">Meu Embarque em Andamento</h2>
+          <ShipmentTable
+            shipments={driverActiveShipments}
+            cargos={loads}
+            drivers={drivers}
+            clients={clients}
+            users={users}
+            vehicles={vehicles}
+            products={products}
+            currentUser={currentUser}
+            onShowCargoDetails={handleShowCargoDetails}
+            onAttach={handleOpenAttachmentModal}
+            stays={stays}
+            activeStatus="all"
+          />
+        </div>
+      )}
+
+      <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Oportunidades de Carga</h2>
+      <LoadTable 
+        loads={loads} 
+        clients={clients} 
+        products={products}
+        shipments={shipments}
+        dailyBalanceDate={dailyBalanceDate}
+        onDailyBalanceDateChange={setDailyBalanceDate}
+        onCreateShipment={canCreateShipment ? handleOpenNewShipmentModal : undefined} 
+        onShowHistory={handleShowHistory}
+        onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
+        onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
+        onShowDetails={handleShowCargoDetails}
+        onShowShipments={handleShowShipments}
+        onDelete={onDeleteLoad}
+        currentUser={currentUser}
+        stays={stays}
+        tickets={tickets}
+        onRequestLoadOrder={onRequestLoadOrder}
+        onFilteredLoadsChange={handleFilteredLoadsChange}
+      />
+
+      <NewShipmentModal
+        isOpen={isShipmentModalOpen}
+        onClose={handleCloseShipmentModal}
+        onSave={handleSaveShipment}
+        cargo={selectedCargo}
+        drivers={drivers}
+        clients={clients}
+        vehicles={vehicles}
+        currentUser={currentUser}
+        shipments={shipments}
+        users={users}
+      />
+
+      <LoadFormModal
+        isOpen={isLoadFormModalOpen}
+        onClose={handleCloseLoadFormModal}
+        onSave={handleSaveAndCloseModal}
+        loadToEdit={loadToEdit}
+        clients={clients}
+        products={products}
+        currentUser={currentUser}
+        users={users}
+        loads={loads}
+        branches={branches}
+        initialStep={initialModalStep}
+      />
+      
+      {selectedLoadForHistory && (
+          <HistoryModal
+            isOpen={isHistoryModalOpen}
+            onClose={() => setIsHistoryModalOpen(false)}
+            history={selectedLoadForHistory.history}
+            users={users}
+            title={`Histórico da Carga ${selectedLoadForHistory.sequenceId}`}
+          />
+      )}
+
+      <CargoDetailsModal
+        isOpen={!!detailsModalCargo}
+        onClose={() => setDetailsModalCargo(null)}
+        cargo={detailsModalCargo}
+        client={detailsModalCargo ? clients.find(c => c.id === detailsModalCargo.clientId) : undefined}
+        product={detailsModalCargo ? products.find(p => p.id === detailsModalCargo.productId) : undefined}
+        commercialUser={detailsModalCargo ? users.find(u => u.id === detailsModalCargo.createdById) : undefined}
+        stays={stays}
+        shipments={shipments}
+        currentUser={currentUser}
+      />
+
+      <CargoShipmentsSidePanel
+        isOpen={isShipmentsPanelOpen}
+        onClose={() => setIsShipmentsPanelOpen(false)}
+        cargo={selectedCargoForShipments}
+        shipments={shipments}
+        users={users}
+        currentUser={currentUser}
+        onUpdatePrice={onUpdatePrice}
+        clients={clients}
+        products={products}
+        vehicles={vehicles}
+        onDeleteAttachment={onDeleteAttachment}
+      />
+
+      <RecommendedDriversModal
+        isOpen={isRecommendedDriversModalOpen}
+        onClose={() => {
+          setIsRecommendedDriversModalOpen(false);
+          setSelectedCargoForRecommendations(null);
+        }}
+        currentCargo={selectedCargoForRecommendations}
+        drivers={drivers}
+        shipments={allShipments}
+        cargos={loads}
+      />
+      {selectedShipment && (
+        <AttachmentModal
+          isOpen={isAttachmentModalOpen}
+          onClose={handleCloseAttachmentModal}
+          onSave={handleSaveAttachment}
+          shipment={selectedShipment}
+          documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
+          currentUser={currentUser}
+          cargo={loads.find(c => c.id === selectedShipment.cargoId)}
+        />
+      )}
+    </>
+  );
+};
+
+export default OperationalLoadsPage;

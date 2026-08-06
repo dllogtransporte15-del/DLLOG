@@ -1,0 +1,41 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR" translate="no" class="notranslate">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Transcunha Logística</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+      if (window.tailwind) {
+        tailwind.config = {
+          theme: {
+          extend: {
+            colors: {
+              'primary': '#0B66E4',       // Transcunha Vivid Electric Blue
+              'primary-dark': '#0047AB',   // Darker Electric Blue for hover
+              'accent': '#0284C7',        // Transcunha Sky Accent
+              'accent-dark': '#0369A1',    // Darker Sky Accent for hover
+              'secondary': '#64748B',     // Slate Gray from subtext
+              'light-bg': '#F8FAFC',      // slate-50
+              'light-card': '#FFFFFF',
+              'dark-bg': '#0F172A',      // slate-900
+              'dark-card': '#1E293B',     // slate-800
+            },
+          },
+        },
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-light-bg dark:bg-dark-bg">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
