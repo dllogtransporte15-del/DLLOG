@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Header from '../components/Header';
 import type { Product, User, ProfilePermissions } from '../types';
@@ -59,8 +58,13 @@ const ProductFormModal: React.FC<{
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
             {productToEdit ? 'Editar Produto' : 'Novo Produto'}
+            {productToEdit && (
+              <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
+                ID: {productToEdit.id}
+              </span>
+            )}
           </h2>
           <button
             onClick={onClose}
@@ -201,7 +205,8 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
   };
 
   const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -221,7 +226,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
       <div className="my-4">
         <input
           type="text"
-          placeholder="Buscar produto..."
+          placeholder="Buscar produto por nome ou ID..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           className="w-full max-w-sm px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -250,6 +255,7 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 uppercase text-xs tracking-wider">
               <tr>
+                <th className="px-6 py-3 text-left">ID</th>
                 <th className="px-6 py-3 text-left">Nome do Produto</th>
                 <th className="px-6 py-3 text-left">Unidade</th>
                 <th className="px-6 py-3 text-left">Ger. de Risco</th>
@@ -259,6 +265,11 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filteredProducts.map(product => (
                 <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      {product.id}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     {product.name}
                   </td>
@@ -306,10 +317,6 @@ const ProductsPage: React.FC<ProductsPageProps> = ({
           </table>
         )}
       </div>
-
-      <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
-        {filteredProducts.length} produto(s) encontrado(s)
-      </p>
 
       <ProductFormModal
         isOpen={isModalOpen}

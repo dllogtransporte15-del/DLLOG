@@ -36,6 +36,7 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
   const [selectedVehicleForHistory, setSelectedVehicleForHistory] = useState<Vehicle | null>(null);
   
   const [filters, setFilters] = useState<VehicleFilters>({
+    id: '',
     plate: '',
     setType: '',
     bodyType: '',
@@ -50,13 +51,14 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
 
   const filteredVehicles = useMemo(() => {
     return vehicles.filter(vehicle => {
+      const idMatch = !filters.id || (vehicle.id && vehicle.id.toLowerCase().includes(filters.id.toLowerCase()));
       const plateMatch = !filters.plate || vehicle.plate.toLowerCase().includes(filters.plate.toLowerCase());
       const setTypeMatch = !filters.setType || vehicle.setType === filters.setType;
       const bodyTypeMatch = !filters.bodyType || vehicle.bodyType === filters.bodyType;
       const classificationMatch = !filters.classification || vehicle.classification === filters.classification;
       const ownerMatch = !filters.ownerId || vehicle.ownerId === filters.ownerId;
 
-      return plateMatch && setTypeMatch && bodyTypeMatch && classificationMatch && ownerMatch;
+      return idMatch && plateMatch && setTypeMatch && bodyTypeMatch && classificationMatch && ownerMatch;
     });
   }, [vehicles, filters]);
 

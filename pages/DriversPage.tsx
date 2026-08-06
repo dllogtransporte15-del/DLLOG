@@ -39,6 +39,7 @@ const DriversPage: React.FC<DriversPageProps> = ({
   const [selectedDriverForHistory, setSelectedDriverForHistory] = useState<Driver | null>(null);
   
   const [filters, setFilters] = useState<DriverFilters>({
+    id: '',
     name: '',
     cpf: '',
     cnh: '',
@@ -56,6 +57,7 @@ const DriversPage: React.FC<DriversPageProps> = ({
 
   const filteredDrivers = useMemo(() => {
     return drivers.filter(driver => {
+      const idMatch = !filters.id || (driver.id && driver.id.toLowerCase().includes(filters.id.toLowerCase()));
       const nameMatch = !filters.name || driver.name.toLowerCase().includes(filters.name.toLowerCase());
       const cpfMatch = !filters.cpf || driver.cpf.includes(filters.cpf);
       const cnhMatch = !filters.cnh || driver.cnh.includes(filters.cnh);
@@ -75,7 +77,7 @@ const DriversPage: React.FC<DriversPageProps> = ({
           statusMatch = filters.status.includes(isDriverActive);
       }
 
-      return nameMatch && cpfMatch && cnhMatch && phoneMatch && dddMatch && classificationMatch && ownerMatch && statusMatch;
+      return idMatch && nameMatch && cpfMatch && cnhMatch && phoneMatch && dddMatch && classificationMatch && ownerMatch && statusMatch;
     });
   }, [drivers, filters]);
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import type { Client } from '../types';
 import { PaymentMethod } from '../types';
@@ -76,7 +75,16 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">{clientToEdit ? 'Editar Cliente' : 'Novo Cliente'}</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
+            {clientToEdit ? 'Editar Cliente' : 'Novo Cliente'}
+            {clientToEdit && (
+              <span className="text-sm font-mono font-bold px-3 py-1 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
+                ID: {clientToEdit.id}
+              </span>
+            )}
+          </h2>
+        </div>
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <input name="razaoSocial" value={client.razaoSocial} onChange={handleChange} placeholder="Razão Social" className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required />

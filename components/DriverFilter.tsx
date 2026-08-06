@@ -5,6 +5,7 @@ import { DriverClassification } from '../types';
 import MultiSelectDropdown from './MultiSelectDropdown';
 
 export interface DriverFilters {
+  id: string;
   name: string;
   cpf: string;
   cnh: string;
@@ -30,6 +31,7 @@ const DriverFilter: React.FC<DriverFilterProps> = ({ drivers, owners, filters, o
 
   const clearFilters = () => {
     onFilterChange({
+      id: '',
       name: '',
       cpf: '',
       cnh: '',
@@ -57,8 +59,19 @@ const DriverFilter: React.FC<DriverFilterProps> = ({ drivers, owners, filters, o
 
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-6 border dark:border-gray-700">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Text Filters */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">ID de Registro</label>
+          <input 
+            type="text" 
+            name="id" 
+            value={filters.id} 
+            onChange={handleInputChange} 
+            placeholder="Ex: DRV-100..." 
+            className="mt-1 p-2 w-full border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+          />
+        </div>
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Nome</label>
           <input 

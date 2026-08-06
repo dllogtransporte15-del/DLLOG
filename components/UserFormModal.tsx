@@ -90,7 +90,16 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-2xl w-full">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">{userToEdit ? 'Editar Usuário' : 'Novo Usuário'}</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
+            {userToEdit ? 'Editar Usuário' : 'Novo Usuário'}
+            {userToEdit && (
+              <span className="text-sm font-mono font-bold px-3 py-1 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
+                ID: {userToEdit.id}
+              </span>
+            )}
+          </h2>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input name="name" value={user.name} onChange={handleChange} placeholder="Nome Completo" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
           <input name="email" value={user.email} onChange={handleChange} type="email" placeholder="Email de Acesso" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />

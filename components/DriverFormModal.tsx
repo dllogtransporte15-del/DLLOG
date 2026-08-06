@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { History } from 'lucide-react';
 import type { Driver, Owner } from '../types';
@@ -83,8 +82,13 @@ const DriverFormModal: React.FC<DriverFormModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start mb-6">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
             {driverToEdit ? 'Editar Motorista' : 'Novo Motorista'}
+            {driverToEdit && (
+              <span className="text-sm font-mono font-bold px-3 py-1 bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800">
+                ID: {driverToEdit.id}
+              </span>
+            )}
           </h2>
           {driverToEdit && onShowHistory && (
              <button

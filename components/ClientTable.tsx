@@ -20,10 +20,11 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
     return [...clients].sort((a, b) => {
       let valA = '';
       let valB = '';
-      if (sortKey === 'name') { valA = a.nomeFantasia || ''; valB = b.nomeFantasia || ''; }
+      if (sortKey === 'id') { valA = a.id || ''; valB = b.id || ''; }
+      else if (sortKey === 'name') { valA = a.nomeFantasia || ''; valB = b.nomeFantasia || ''; }
       else if (sortKey === 'city') { valA = a.city || ''; valB = b.city || ''; }
       else if (sortKey === 'state') { valA = a.state || ''; valB = b.state || ''; }
-      const cmp = valA.localeCompare(valB, 'pt-BR');
+      const cmp = valA.localeCompare(valB, 'pt-BR', { numeric: true });
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [clients, sortKey, sortDir]);
@@ -49,6 +50,7 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
           onChange={e => { setSortKey(e.target.value); setCurrentPage(1); }}
           className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary outline-none"
         >
+          <option value="id">ID de Registro</option>
           <option value="name">Nome Fantasia</option>
           <option value="city">Cidade</option>
           <option value="state">UF</option>
@@ -67,6 +69,9 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
+                ID
+              </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
                 Nome Fantasia
               </th>
@@ -89,6 +94,11 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {paginatedClients.map((client) => (
               <tr key={client.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    {client.id}
+                  </span>
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">{client.nomeFantasia}</div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">{client.razaoSocial}</div>

@@ -22,10 +22,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
     return [...drivers].sort((a, b) => {
       let valA = '';
       let valB = '';
-      if (sortKey === 'name') { valA = a.name; valB = b.name; }
+      if (sortKey === 'id') { valA = a.id || ''; valB = b.id || ''; }
+      else if (sortKey === 'name') { valA = a.name; valB = b.name; }
       else if (sortKey === 'classification') { valA = a.classification || ''; valB = b.classification || ''; }
       else if (sortKey === 'status') { valA = a.active ? 'Ativo' : 'Restrito'; valB = b.active ? 'Ativo' : 'Restrito'; }
-      const cmp = valA.localeCompare(valB, 'pt-BR');
+      const cmp = valA.localeCompare(valB, 'pt-BR', { numeric: true });
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [drivers, sortKey, sortDir]);
@@ -46,7 +47,6 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
   const formatWhatsAppLink = (phone: string) => {
     const cleanPhone = phone.replace(/\D/g, '');
     if (!cleanPhone) return '#';
-    // Se já tiver código do país (começa com 55 e tem 12 ou 13 dígitos)
     if (cleanPhone.startsWith('55') && cleanPhone.length > 11) {
         return `https://wa.me/${cleanPhone}`;
     }
@@ -66,6 +66,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
           onChange={e => { setSortKey(e.target.value); setCurrentPage(1); }}
           className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary outline-none"
         >
+          <option value="id">ID de Registro</option>
           <option value="name">Nome</option>
           <option value="classification">Classificação</option>
           <option value="status">Status</option>
@@ -84,6 +85,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">ID</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Nome</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">CPF / CNH</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Telefone</th>
@@ -97,6 +99,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers, owners, onEdit, onDe
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {paginatedDrivers.map((driver) => (
               <tr key={driver.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    {driver.id}
+                  </span>
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{driver.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <div className="text-gray-900 dark:text-white">{driver.cpf}</div>

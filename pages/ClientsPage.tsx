@@ -21,6 +21,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [clientToEdit, setClientToEdit] = useState<Client | null>(null);
   const [filters, setFilters] = useState<ClientFilters>({
+    id: '',
     nomeFantasia: '',
     cnpj: '',
     cityState: '',
@@ -34,6 +35,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
 
   const filteredClients = useMemo(() => {
     return clients.filter(client => {
+      const idMatch = !filters.id || (client.id && client.id.toLowerCase().includes(filters.id.toLowerCase()));
       const nomeFantasiaMatch = !filters.nomeFantasia || client.nomeFantasia.toLowerCase().includes(filters.nomeFantasia.toLowerCase());
       const cnpjMatch = !filters.cnpj || client.cnpj.includes(filters.cnpj);
       
@@ -47,7 +49,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
         client.phone.toLowerCase().includes(contactLower) || 
         client.email.toLowerCase().includes(contactLower);
 
-      return nomeFantasiaMatch && cnpjMatch && cityStateMatch && contactMatch;
+      return idMatch && nomeFantasiaMatch && cnpjMatch && cityStateMatch && contactMatch;
     });
   }, [clients, filters]);
 

@@ -20,6 +20,7 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [ownerToEdit, setOwnerToEdit] = useState<Owner | null>(null);
   const [filters, setFilters] = useState<OwnerFilters>({
+    id: '',
     name: '',
     cpfCnpj: '',
     phone: '',
@@ -33,12 +34,13 @@ const OwnersPage: React.FC<OwnersPageProps> = ({ owners, setOwners, onSaveOwner,
 
   const filteredOwners = useMemo(() => {
     return owners.filter(owner => {
+      const idMatch = !filters.id || (owner.id && owner.id.toLowerCase().includes(filters.id.toLowerCase()));
       const nameMatch = !filters.name || owner.name.toLowerCase().includes(filters.name.toLowerCase());
       const cpfCnpjMatch = !filters.cpfCnpj || owner.cpfCnpj.includes(filters.cpfCnpj);
       const phoneMatch = !filters.phone || owner.phone.includes(filters.phone);
       const typeMatch = !filters.type || owner.type === filters.type;
 
-      return nameMatch && cpfCnpjMatch && phoneMatch && typeMatch;
+      return idMatch && nameMatch && cpfCnpjMatch && phoneMatch && typeMatch;
     });
   }, [owners, filters]);
 
