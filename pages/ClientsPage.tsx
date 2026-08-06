@@ -12,11 +12,12 @@ interface ClientsPageProps {
   clients: Client[];
   setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   onSaveClient: (clientData: Client | Omit<Client, 'id'>) => void;
+  onDeleteClient: (clientId: string) => void;
   currentUser: User;
   profilePermissions: ProfilePermissions;
 }
 
-const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveClient, currentUser, profilePermissions }) => {
+const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveClient, onDeleteClient, currentUser, profilePermissions }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [clientToEdit, setClientToEdit] = useState<Client | null>(null);
   const [filters, setFilters] = useState<ClientFilters>({
@@ -66,7 +67,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({ clients, setClients, onSaveCl
   
   const handleDeleteClient = (clientId: string) => {
     if (window.confirm('Tem certeza que deseja excluir este cliente?')) {
-        setClients(prevClients => prevClients.filter(c => c.id !== clientId));
+        onDeleteClient(clientId);
     }
   };
 

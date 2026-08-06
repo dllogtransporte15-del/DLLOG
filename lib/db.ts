@@ -142,18 +142,18 @@ export const upsertFreightOffer = async (offer: FreightOffer | Omit<FreightOffer
 
 const toClient = (row: any): Client => ({
   id: row.id,
-  razaoSocial: row.razao_social,
-  nomeFantasia: row.nome_fantasia,
-  cnpj: row.cnpj,
-  phone: row.phone,
-  email: row.email,
-  address: row.address,
-  city: row.city,
-  state: row.state,
-  paymentMethod: row.payment_method,
-  paymentTerm: row.payment_term,
-  requiresExternalOrder: row.requires_external_order,
-  requiresScheduling: row.requires_scheduling,
+  razaoSocial: row.razao_social || '',
+  nomeFantasia: row.nome_fantasia || '',
+  cnpj: row.cnpj || '',
+  phone: row.phone || '',
+  email: row.email || '',
+  address: row.address || '',
+  city: row.city || '',
+  state: row.state || '',
+  paymentMethod: row.payment_method || 'Prazo',
+  paymentTerm: typeof row.payment_term === 'number' ? row.payment_term : (parseInt(row.payment_term, 10) || 0),
+  requiresExternalOrder: !!row.requires_external_order,
+  requiresScheduling: !!row.requires_scheduling,
 });
 
 const fromClient = (c: Client | Omit<Client, 'id'>) => ({
@@ -161,15 +161,15 @@ const fromClient = (c: Client | Omit<Client, 'id'>) => ({
   razao_social: c.razaoSocial,
   nome_fantasia: c.nomeFantasia,
   cnpj: c.cnpj,
-  phone: c.phone,
-  email: c.email,
-  address: c.address,
-  city: c.city,
-  state: c.state,
+  phone: c.phone || '',
+  email: c.email || '',
+  address: c.address || '',
+  city: c.city || '',
+  state: c.state || '',
   payment_method: c.paymentMethod,
-  payment_term: c.paymentTerm,
-  requires_external_order: c.requiresExternalOrder,
-  requires_scheduling: c.requiresScheduling,
+  payment_term: c.paymentTerm !== undefined && c.paymentTerm !== null ? String(c.paymentTerm) : '0',
+  requires_external_order: c.requiresExternalOrder ?? false,
+  requires_scheduling: c.requiresScheduling ?? false,
 });
 
 const toOwner = (row: any): Owner => ({
@@ -953,6 +953,11 @@ export async function upsertProduct(product: Product): Promise<void> {
     unit: product.unit,
     requires_risk_management: product.requiresRiskManagement !== false, // default true
   });
+  if (error) throw error;
+}
+
+export async function deleteClient(id: string): Promise<void> {
+  const { error } = await supabase.from('clients').delete().eq('id', id);
   if (error) throw error;
 }
 

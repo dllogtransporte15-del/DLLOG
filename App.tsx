@@ -46,7 +46,7 @@ import {
   upsertManyDrivers, upsertManyVehicles, upsertManyShipments, upsertManyCargos,
   uploadShipmentAttachment, getShipmentAttachmentUrl,
   saveAppSettings,
-  deleteCargo, deleteShipment, deleteUser, upsertProduct, deleteProduct,
+  deleteCargo, deleteShipment, deleteUser, deleteClient, upsertProduct, deleteProduct,
   tryAcquireShipmentLock, releaseShipmentLock, toUser,
   deleteShipmentAttachmentFromStorage, upsertBranch, deleteBranch, deleteTicket,
   upsertFreightOffer, deleteFreightOffer, fetchFreightOffers
@@ -1826,7 +1826,24 @@ const App: React.FC = () => {
       setClients(prev => [saved, ...prev]);
       setNextIds((prev: any) => ({ ...prev, client: prev.client + 1 }));
     }
-    try { await upsertClient(saved); } catch(err) { console.error('Erro ao salvar cliente:', err); }
+    try { 
+      await upsertClient(saved); 
+      showToast('Cliente salvo com sucesso!', 'success');
+    } catch(err: any) { 
+      console.error('Erro ao salvar cliente:', err); 
+      showToast(`Erro ao salvar cliente: ${err.message || 'Erro desconhecido'}`, 'error');
+    }
+  };
+
+  const handleDeleteClient = async (clientId: string) => {
+    try {
+      await deleteClient(clientId);
+      setClients(prev => prev.filter(c => c.id !== clientId));
+      showToast('Cliente excluído com sucesso.', 'success');
+    } catch (err: any) {
+      console.error('Erro ao excluir cliente:', err);
+      showToast(`Erro ao excluir cliente: ${err.message || 'Erro desconhecido'}`, 'error');
+    }
   };
   
   const handleDeleteCargo = async (cargoId: string) => {
@@ -1953,8 +1970,13 @@ const App: React.FC = () => {
       setProducts(prev => [saved, ...prev]);
       setNextIds((prev: any) => ({ ...prev, product: prev.product + 1 }));
     }
-    try { await upsertProduct(saved); } catch(err) { console.error('Erro ao salvar produto:', err); }
-    showToast('Produto salvo com sucesso!', 'success');
+    try { 
+      await upsertProduct(saved); 
+      showToast('Produto salvo com sucesso!', 'success');
+    } catch(err: any) { 
+      console.error('Erro ao salvar produto:', err); 
+      showToast(`Erro ao salvar produto: ${err.message || 'Erro desconhecido'}`, 'error');
+    }
   };
 
   const handleDeleteProduct = async (productId: string) => {
@@ -2297,7 +2319,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<DashboardPage cargos={visibleLoads} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdatePrice={handleUpdateShipmentPrice} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} />} />
         <Route path="/dashboard" element={<Navigate to="/" replace />} />
-        <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} currentUser={currentUser} profilePermissions={profilePermissions} />} />
+        <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/drivers" element={<DriversPage drivers={drivers} setDrivers={setDrivers} onSaveDriver={handleSaveDriver} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
         <Route path="/vehicles" element={<VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
