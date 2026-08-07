@@ -1192,7 +1192,6 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 {step === STEPS.length && (
                   <button 
                     type="submit" 
-                    onClick={handleSubmit} 
                     className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95"
                   >
                     Salvar Carga

@@ -256,6 +256,18 @@ const toProduct = (row: any): Product => ({
   requiresRiskManagement: row.requires_risk_management !== false,
 });
 
+const safeParseJson = (val: any, fallback: any) => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'string') {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return fallback;
+    }
+  }
+  return val;
+};
+
 const toCargo = (row: any): Cargo => ({
   id: row.id,
   sequenceId: row.sequence_id,
@@ -279,15 +291,15 @@ const toCargo = (row: any): Cargo => ({
   status: row.status,
   createdAt: row.created_at,
   createdById: row.created_by_id,
-  history: row.history || [],
+  history: safeParseJson(row.history, []),
   loadingDeadline: row.loading_deadline,
-  allowedVehicleTypes: row.allowed_vehicle_types,
-  freightLegs: row.freight_legs,
-  dailySchedule: row.daily_schedule,
+  allowedVehicleTypes: safeParseJson(row.allowed_vehicle_types, undefined),
+  freightLegs: safeParseJson(row.freight_legs, undefined),
+  dailySchedule: safeParseJson(row.daily_schedule, undefined),
   observations: row.observations,
-  attachments: row.attachments || [],
-  originCoords: row.origin_coords,
-  destinationCoords: row.destination_coords,
+  attachments: safeParseJson(row.attachments, []),
+  originCoords: safeParseJson(row.origin_coords, undefined),
+  destinationCoords: safeParseJson(row.destination_coords, undefined),
   salespersonName: row.salesperson_name,
   salespersonCommissionPerTon: Number(row.salesperson_commission_per_ton),
   branchId: row.branch_id,
@@ -316,15 +328,15 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => ({
   status: c.status,
   created_at: c.createdAt,
   created_by_id: c.createdById,
-  history: c.history,
+  history: c.history || [],
   loading_deadline: c.loadingDeadline,
   allowed_vehicle_types: c.allowedVehicleTypes,
   freight_legs: c.freightLegs,
   daily_schedule: c.dailySchedule,
   observations: c.observations,
   attachments: c.attachments || [],
-  origin_coords: c.originCoords,
-  destination_coords: c.destinationCoords,
+  origin_coords: c.originCoords ? (typeof c.originCoords === 'string' ? c.originCoords : JSON.stringify(c.originCoords)) : null,
+  destination_coords: c.destinationCoords ? (typeof c.destinationCoords === 'string' ? c.destinationCoords : JSON.stringify(c.destinationCoords)) : null,
   salesperson_name: c.salespersonName,
   salesperson_commission_per_ton: c.salespersonCommissionPerTon,
   branch_id: c.branchId || null,

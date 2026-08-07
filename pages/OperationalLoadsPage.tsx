@@ -104,6 +104,13 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const [fretebrasButtonText, setFretebrasButtonText] = useState('Prompt Fretebras');
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
   const canCreateShipment = can('create', currentUser, 'shipments', profilePermissions);
+  const canUpdateLoad = can('update', currentUser, 'loads', profilePermissions);
+
+  const handleEditLoad = (load: Cargo) => {
+    setLoadToEdit(load);
+    setInitialModalStep(1);
+    setIsLoadFormModalOpen(true);
+  };
   const [displayedLoads, setDisplayedLoads] = useState<Cargo[]>([]);
 
   const handleFilteredLoadsChange = useCallback((filteredLoads: Cargo[]) => {
@@ -347,6 +354,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         dailyBalanceDate={dailyBalanceDate}
         onDailyBalanceDateChange={setDailyBalanceDate}
         onCreateShipment={canCreateShipment ? handleOpenNewShipmentModal : undefined} 
+        onEdit={canUpdateLoad ? handleEditLoad : undefined}
         onShowHistory={handleShowHistory}
         onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
         onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}

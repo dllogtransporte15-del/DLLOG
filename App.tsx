@@ -2009,7 +2009,8 @@ const App: React.FC = () => {
         const oldValue: any = oldCargo[key];
         const newValue: any = loadData[key];
 
-        if (key !== 'id' && key !== 'history' && key !== 'createdAt' && oldValue !== newValue) {
+        const isChanged = JSON.stringify(oldValue ?? null) !== JSON.stringify(newValue ?? null);
+        if (key !== 'id' && key !== 'history' && key !== 'createdAt' && isChanged) {
           const fieldName = FIELD_TRANSLATIONS[key] || key;
           let oldDisplayValue = oldValue;
           let newDisplayValue = newValue;
@@ -2074,6 +2075,7 @@ const App: React.FC = () => {
       setCargos(prev => prev.map(l => l.id === loadData.id ? updatedCargo : l));
       try {
         await upsertCargo(updatedCargo);
+        showToast('Carga atualizada com sucesso!', 'success');
       } catch (err: any) {
         console.error('Erro ao salvar carga no Supabase:', err);
         const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
