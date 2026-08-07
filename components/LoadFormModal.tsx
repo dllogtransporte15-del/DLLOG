@@ -139,6 +139,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   // State for allowed vehicle types rules UI
   const [currentSetType, setCurrentSetType] = useState<VehicleSetType>(VehicleSetType.LSSimples);
   const [currentBodyTypes, setCurrentBodyTypes] = useState<VehicleBodyType[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { showToast } = useToast();
 
   const commercialUsers = useMemo(() => {
@@ -285,39 +286,47 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-    const activeLegs = hasMultiLeg ? (load.freightLegs || []).slice(0, 2) : (load.freightLegs || []).slice(0, 1);
+    try {
+      const activeLegs = hasMultiLeg ? (load.freightLegs || []).slice(0, 2) : (load.freightLegs || []).slice(0, 1);
 
-    // Geocode origin and destination
-    const [originCoords, destinationCoords] = await Promise.all([
-        geocodeCity(load.origin),
-        geocodeCity(load.destination)
-    ]);
+      // Geocode origin and destination
+      const [originCoords, destinationCoords] = await Promise.all([
+          geocodeCity(load.origin),
+          geocodeCity(load.destination)
+      ]);
 
-    const finalLoadData = {
-        ...load,
-        companyFreightValuePerTon: totalCompanyFreight,
-        driverFreightValuePerTon: totalDriverFreightPj,
-        freightLegs: activeLegs,
-        hasIcms: activeLegs[0]?.hasIcms || false,
-        icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
-        originCoords: originCoords || undefined,
-        destinationCoords: destinationCoords || undefined,
-    };
+      const finalLoadData = {
+          ...load,
+          companyFreightValuePerTon: totalCompanyFreight,
+          driverFreightValuePerTon: totalDriverFreightPj,
+          freightLegs: activeLegs,
+          hasIcms: activeLegs[0]?.hasIcms || false,
+          icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
+          originCoords: originCoords || undefined,
+          destinationCoords: destinationCoords || undefined,
+      };
 
-    if (loadToEdit) {
-      onSave({
-        ...loadToEdit, 
-        ...finalLoadData,
-        scheduledVolume: loadToEdit.scheduledVolume,
-        loadedVolume: loadToEdit.loadedVolume,
-      });
-    } else {
-      onSave({
-        ...finalLoadData,
-        scheduledVolume: 0,
-        loadedVolume: 0,
-      });
+      if (loadToEdit) {
+        onSave({
+          ...loadToEdit, 
+          ...finalLoadData,
+          scheduledVolume: loadToEdit.scheduledVolume,
+          loadedVolume: loadToEdit.loadedVolume,
+        });
+      } else {
+        onSave({
+          ...finalLoadData,
+          scheduledVolume: 0,
+          loadedVolume: 0,
+        });
+      }
+    } catch (err) {
+      console.error('Error saving load:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -474,8 +483,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
             })}
         </div>
         
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto space-y-6 pr-2">
           
           {/* STEP 1: Informações da Carga */}
           {step === 1 && (
@@ -1155,50 +1165,52 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
             </div>
           )}
+          </div>
+
+          {/* Footer Navigation */}
+          <div className="mt-6 flex justify-between items-center border-t dark:border-gray-700 pt-4">
+              <div>
+                  {step > 1 && (
+                    <button 
+                      type="button" 
+                      onClick={prevStep} 
+                      className="py-2.5 px-5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold rounded-xl transition-all"
+                    >
+                      Anterior
+                    </button>
+                  )}
+              </div>
+              <div className="flex items-center space-x-3">
+                  <button 
+                    type="button" 
+                    onClick={onClose} 
+                    className="py-2.5 px-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white font-semibold transition-all"
+                  >
+                    Cancelar
+                  </button>
+
+                  {step < STEPS.length && (
+                    <button 
+                      type="button" 
+                      onClick={nextStep} 
+                      className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-md transition-all active:scale-95"
+                    >
+                      Próximo
+                    </button>
+                  )}
+
+                  {step === STEPS.length && (
+                    <button 
+                      type="submit" 
+                      disabled={isSubmitting}
+                      className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isSubmitting ? 'Salvando...' : 'Salvar Carga'}
+                    </button>
+                  )}
+              </div>
+          </div>
         </form>
-
-        {/* Footer Navigation */}
-        <div className="mt-6 flex justify-between items-center border-t dark:border-gray-700 pt-4">
-            <div>
-                {step > 1 && (
-                  <button 
-                    type="button" 
-                    onClick={prevStep} 
-                    className="py-2.5 px-5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold rounded-xl transition-all"
-                  >
-                    Anterior
-                  </button>
-                )}
-            </div>
-            <div className="flex items-center space-x-3">
-                <button 
-                  type="button" 
-                  onClick={onClose} 
-                  className="py-2.5 px-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white font-semibold transition-all"
-                >
-                  Cancelar
-                </button>
-
-                {step < STEPS.length && (
-                  <button 
-                    type="button" 
-                    onClick={nextStep} 
-                    className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-md transition-all active:scale-95"
-                  >
-                    Próximo
-                  </button>
-                )}
-
-                {step === STEPS.length && (
-                  <button 
-                    type="submit" 
-                    className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95"
-                  >
-                    Salvar Carga
-                  </button>
-                )}
-            </div>
-        </div>
 
       </div>
     </div>
