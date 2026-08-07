@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import UserTable from '../components/UserTable';
+import UserFilter, { UserFilters } from '../components/UserFilter';
 import UserFormModal from '../components/UserFormModal';
 import PermissionsModal from '../components/PermissionsModal';
 import type { User, ProfilePermissions, Client, Branch } from '../types';
@@ -24,10 +25,27 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [filters, setFilters] = useState<UserFilters>({
+    id: '',
+    name: '',
+    profile: '',
+    status: '',
+  });
 
   const canCreateUser = can('create', currentUser, 'users-register', profilePermissions);
   const canUpdateUser = can('update', currentUser, 'users-register', profilePermissions);
   const canDeleteUser = can('delete', currentUser, 'users-register', profilePermissions);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter(user => {
+      const idMatch = !filters.id || (user.id && user.id.toLowerCase().includes(filters.id.toLowerCase()));
+      const nameMatch = !filters.name || (user.name && user.name.toLowerCase().includes(filters.name.toLowerCase()));
+      const profileMatch = !filters.profile || user.profile === filters.profile;
+      const statusMatch = !filters.status || (filters.status === 'active' ? user.active === true : user.active === false);
+
+      return idMatch && nameMatch && profileMatch && statusMatch;
+    });
+  }, [users, filters]);
 
   const handleOpenUserModal = () => {
     setUserToEdit(null);
@@ -67,8 +85,10 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
           )}
       </Header>
 
+      <UserFilter filters={filters} onFilterChange={setFilters} />
+
       <UserTable 
-        users={users} 
+        users={filteredUsers} 
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined} 
       />
