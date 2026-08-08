@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
-import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod } from '../types';
+import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
+import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 
 
 interface NewShipmentModalProps {
@@ -44,6 +45,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [driverReferences, setDriverReferences] = useState('');
   const [driverFreightType, setDriverFreightType] = useState<'PJ' | 'PF'>('PJ');
   const [isScanning, setIsScanning] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [activeShipmentsFound, setActiveShipmentsFound] = useState<Shipment[]>([]);
+  const [pendingPayload, setPendingPayload] = useState<any>(null);
   const { showToast } = useToast();
 
   const handleScanDocument = async (files: File[]) => {
@@ -144,6 +148,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setDriverReferences(lastShipment?.driverReferences || '');
       setDriverFreightType(lastShipment?.driverFreightType || 'PJ');
       setEmbarcadorId(currentUser?.id || '');
+      setShowConfirmModal(false);
+      setActiveShipmentsFound([]);
+      setPendingPayload(null);
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, currentUser]);
@@ -368,7 +375,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         return;
     }
 
-    onSave({
+    const shipmentData = {
       cargoId: cargo.id,
       driverName,
       driverCpf,
@@ -394,7 +401,42 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
       driverReferences: driverReferences || undefined,
+    };
+
+    // Check for active shipments for this driver
+    const cleanCpf = driverCpf.replace(/\D/g, '');
+    const cleanName = driverName.trim().toLowerCase();
+
+    const activeShipments = (shipments || []).filter(s => {
+      if (s.status === ShipmentStatus.Finalizado || s.status === ShipmentStatus.Cancelado) {
+        return false;
+      }
+      const sCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
+      const sName = s.driverName ? s.driverName.trim().toLowerCase() : '';
+
+      const matchesCpf = cleanCpf.length === 11 && sCpf === cleanCpf;
+      const matchesName = cleanName.length > 0 && sName === cleanName;
+
+      return matchesCpf || matchesName;
     });
+
+    if (activeShipments.length > 0) {
+      setPendingPayload(shipmentData);
+      setActiveShipmentsFound(activeShipments);
+      setShowConfirmModal(true);
+      return;
+    }
+
+    onSave(shipmentData);
+  };
+
+  const handleConfirmSave = () => {
+    if (pendingPayload) {
+      onSave(pendingPayload);
+      setPendingPayload(null);
+      setShowConfirmModal(false);
+      setActiveShipmentsFound([]);
+    }
   };
 
   if (!isOpen) return null;
@@ -785,6 +827,91 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             </div>
         </form>
       </div>
+
+      {/* Confirmation Modal: Driver has Active Shipment */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-amber-300 dark:border-amber-700/60 relative space-y-5 transform transition-all scale-100">
+            
+            {/* Header */}
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl flex-shrink-0">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Atenção: Motorista com Embarque Ativo
+                </h3>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-0.5">
+                  Este motorista já possui viagem em andamento no sistema.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Driver & Active Shipments Details */}
+            <div className="bg-amber-50/70 dark:bg-amber-950/30 rounded-xl p-4 border border-amber-200/80 dark:border-amber-800/40 space-y-3">
+              <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">
+                <strong>Motorista:</strong> {driverName} {driverCpf ? `(CPF: ${driverCpf})` : ''}
+              </div>
+              
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-amber-900 dark:text-amber-300 uppercase tracking-wider">
+                  Embarque(s) ativo(s) localizado(s):
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                  {activeShipmentsFound.map((s) => (
+                    <div 
+                      key={s.id} 
+                      className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-amber-200 dark:border-gray-700 text-xs flex items-center justify-between shadow-sm"
+                    >
+                      <div>
+                        <span className="font-bold text-gray-900 dark:text-white">{s.id}</span>
+                        {s.horsePlate && <span className="ml-2 font-mono text-gray-500 dark:text-gray-400">({s.horsePlate})</span>}
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          Data Programada: {s.scheduledDate ? `${s.scheduledDate} ${s.scheduledTime || ''}` : 'N/A'}
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">
+                        {s.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Deseja confirmar a criação deste novo embarque mesmo assim?
+            </p>
+
+            {/* Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSave}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2 active:scale-95"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Sim, Criar Embarque
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
