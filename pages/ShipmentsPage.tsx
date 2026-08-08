@@ -244,8 +244,8 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     if (userProfile === UserProfile.Admin) return defaultResponse;
 
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor].includes(userProfile)) return defaultResponse;
-        return { allowed: false, reason: 'Apenas Fiscal, Diretor, Supervisor ou Admin podem avançar este status.' };
+        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'Apenas Fiscal, Diretor, Supervisor, Embarcador ou Admin podem avançar este status.' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
