@@ -48,6 +48,12 @@ export enum PaymentMethod {
   Prazo = "Prazo",
 }
 
+export enum DriverPaymentMethod {
+  PixEFrete = "PIX - E-FRETE",
+  DepositoConta = "DEPOSITO EM CONTA",
+  SmsCartaFrete = "SMS CARTA FRETE",
+}
+
 export interface Client {
   id: string;
   razaoSocial: string;
@@ -319,6 +325,8 @@ export interface Shipment {
       userId: string;
   }[];
   anttOwnerIdentifier?: string;
+  paymentMethod?: DriverPaymentMethod | string;
+  pixKey?: string;
   advancePercentage?: number;
   advanceValue?: number;
   tollValue?: number;

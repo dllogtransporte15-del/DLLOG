@@ -101,7 +101,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
       setMultiFiles({});
       setBankDetails(shipment.bankDetails || '');
       setLoadedTonnage(shipment.shipmentTonnage || '');
-      setAdvancePercentage(shipment.advancePercentage || '');
+      setAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
       setAdvanceValue(shipment.advanceValue || '');
       setTollValue(shipment.tollValue || '');
       
@@ -422,7 +422,30 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
             <X className="w-6 h-6" />
         </button>
         <h2 className="text-2xl font-bold mb-2">Gerenciar Anexos</h2>
-        <p className="mb-6 text-sm text-gray-500">Embarque: {shipment.id}</p>
+        <p className="mb-4 text-sm text-gray-500">Embarque: {shipment.id}</p>
+
+        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div>
+                <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Forma de Pagamento:</span>
+                <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">
+                    {shipment.paymentMethod || 'PIX - E-FRETE'}
+                </span>
+            </div>
+            <div>
+                <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Porcentagem de Adiantamento:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                    {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
+                </span>
+            </div>
+            <div>
+                <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">
+                    {shipment.paymentMethod === 'DEPOSITO EM CONTA' ? 'Dados Bancários:' : 'Chave Pix / Dados:'}
+                </span>
+                <span className="font-semibold text-gray-800 dark:text-gray-200 truncate block">
+                    {shipment.paymentMethod === 'DEPOSITO EM CONTA' ? (shipment.bankDetails || 'Não informados') : (shipment.pixKey || shipment.bankDetails || 'Não informada')}
+                </span>
+            </div>
+        </div>
         
         {documentsToShow.length > 0 && (
           <div className="mb-6 border rounded-md dark:border-gray-600 overflow-hidden">

@@ -117,7 +117,28 @@ export const generateLoadingOrderPDF = (
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
   });
 
-  let currentY = (doc as any).lastAutoTable.finalY + 12;
+  const paymentY = (doc as any).lastAutoTable.finalY + 8;
+
+  // --- Pagamento & Adiantamento ---
+  doc.setFontSize(11);
+  doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+  doc.text("3. CONDIÇÕES DE PAGAMENTO E ADIANTAMENTO", margin, paymentY);
+
+  autoTable(doc, {
+    startY: paymentY + 3,
+    head: [["Item de Pagamento", "Detalhamento"]],
+    body: [
+      ["FORMA DE PAGAMENTO", (shipment.paymentMethod || "PIX - E-FRETE").toUpperCase()],
+      ["ADIANTAMENTO (%)", `${shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%`],
+      ["CHAVE PIX / DADOS BANCÁRIOS", (shipment.paymentMethod === 'PIX - E-FRETE' ? (shipment.pixKey || shipment.bankDetails || "N/A") : (shipment.bankDetails || shipment.pixKey || "N/A")).toUpperCase()],
+    ],
+    theme: "striped",
+    headStyles: { fillColor: primaryBlue, fontSize: 10, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 9 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: primaryBlue } }
+  });
+
+  let currentY = (doc as any).lastAutoTable.finalY + 8;
 
   // Espaço antes do rodapé
   currentY += 5;

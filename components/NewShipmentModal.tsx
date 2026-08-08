@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
-import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType } from '../types';
+import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
 
@@ -35,7 +35,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [vehicleSetType, setVehicleSetType] = useState<VehicleSetType | ''>('');
   const [vehicleBodyType, setVehicleBodyType] = useState<VehicleBodyType | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<DriverPaymentMethod | string>(DriverPaymentMethod.PixEFrete);
+  const [pixKey, setPixKey] = useState('');
   const [bankDetails, setBankDetails] = useState('');
+  const [advancePercentage, setAdvancePercentage] = useState<number>(70);
   const [vehicleTag, setVehicleTag] = useState('');
   const [filesToAttach, setFilesToAttach] = useState<File[]>([]);
   const [driverReferences, setDriverReferences] = useState('');
@@ -132,7 +135,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setSelectedVehicle(null);
       setVehicleSetType(lastShipment?.vehicleSetType || '');
       setVehicleBodyType(lastShipment?.vehicleBodyType || '');
+      setPaymentMethod(lastShipment?.paymentMethod || DriverPaymentMethod.PixEFrete);
+      setPixKey(lastShipment?.pixKey || '');
       setBankDetails(lastShipment?.bankDetails || '');
+      setAdvancePercentage(lastShipment?.advancePercentage !== undefined ? lastShipment.advancePercentage : 70);
       setVehicleTag(lastShipment?.vehicleTag || '');
       setFilesToAttach([]);
       setDriverReferences(lastShipment?.driverReferences || '');
@@ -187,7 +193,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 setTrailer2Plate(lastShipment.trailer2Plate || '');
                 setTrailer3Plate(lastShipment.trailer3Plate || '');
                 setOwnerContact(lastShipment.ownerContact || '');
-                setBankDetails(lastShipment.bankDetails || '');
+                if (lastShipment.paymentMethod) setPaymentMethod(lastShipment.paymentMethod);
+                if (lastShipment.pixKey) setPixKey(lastShipment.pixKey);
+                if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
+                if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
                 setVehicleTag(lastShipment.vehicleTag || '');
                 if (lastShipment.driverFreightType) {
                   setDriverFreightType(lastShipment.driverFreightType);
@@ -349,6 +358,16 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         return;
     }
 
+    if (paymentMethod === DriverPaymentMethod.PixEFrete && !pixKey.trim()) {
+        showToast('Para pagamento via PIX - E-FRETE, a Chave Pix é obrigatória.', 'warning');
+        return;
+    }
+
+    if (paymentMethod === DriverPaymentMethod.DepositoConta && !bankDetails.trim()) {
+        showToast('Para depósito em conta, os Dados Bancários são obrigatórios.', 'warning');
+        return;
+    }
+
     onSave({
       cargoId: cargo.id,
       driverName,
@@ -368,7 +387,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       scheduledTime,
       vehicleSetType: vehicleSetType || undefined,
       vehicleBodyType: vehicleBodyType || undefined,
-      bankDetails: bankDetails || undefined,
+      paymentMethod,
+      pixKey: paymentMethod === DriverPaymentMethod.PixEFrete ? pixKey : undefined,
+      bankDetails: (paymentMethod === DriverPaymentMethod.DepositoConta || bankDetails) ? bankDetails : undefined,
+      advancePercentage,
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
       driverReferences: driverReferences || undefined,
@@ -506,51 +528,140 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               <div><label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Placa Carreta 3</label><input type="text" value={trailer3Plate} onChange={(e) => setTrailer3Plate(e.target.value.toUpperCase())} placeholder="Opcional" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" /></div>
             </div>
             
-            {/* Bank details & Attachments */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Dados Bancários</label>
-                  <textarea 
-                    value={bankDetails} 
-                    onChange={(e) => setBankDetails(e.target.value)} 
-                    placeholder="Banco, Agência, Conta, PIX, etc." 
-                    className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y text-sm" 
-                    rows={2} 
-                    required
-                  />
-              </div>
-              
-              <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Anexar Documentos</label>
-                  <div className="mt-1 flex items-center h-full">
-                      <label className="cursor-pointer bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 py-2.5 px-4 rounded-xl inline-flex items-center transition-colors font-medium text-sm border border-gray-300 dark:border-gray-600">
-                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                          Anexar
-                          <input type="file" multiple className="hidden" onChange={(e) => {
-                              if (e.target.files) {
-                                  setFilesToAttach(Array.from(e.target.files));
-                              }
-                          }} />
-                      </label>
-                      <span className="ml-3 text-xs text-gray-500 dark:text-gray-400">
-                          {filesToAttach.length > 0 ? `${filesToAttach.length} arquivo(s) selecionado(s)` : 'Nenhum'}
-                      </span>
-                      {filesToAttach.length > 0 && (
-                          <button
-                              type="button"
-                              onClick={() => handleScanDocument(filesToAttach)}
-                              disabled={isScanning}
-                              className={`ml-3 text-xs font-bold uppercase py-1.5 px-3 rounded-lg border transition-all ${
-                                  isScanning 
-                                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                                  : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-600 hover:text-white'
-                              }`}
-                          >
-                              {isScanning ? 'Processando...' : 'Digitalizar com IA'}
-                          </button>
-                      )}
-                  </div>
-              </div>
+            {/* Formas de Pagamento & Adiantamento */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/40 rounded-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+                <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      FORMA DE PAGAMENTO & ADIANTAMENTO <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                        <span>Adiantamento:</span>
+                        <div className="relative w-24">
+                            <input 
+                                type="number" 
+                                value={advancePercentage} 
+                                onChange={(e) => setAdvancePercentage(parseFloat(e.target.value) || 0)} 
+                                className="p-1.5 pr-6 w-full text-right font-bold text-emerald-600 dark:text-emerald-400 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-emerald-500"
+                                min="0"
+                                max="100"
+                                required
+                            />
+                            <span className="absolute right-2 top-1.5 text-xs font-bold text-gray-400">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod(DriverPaymentMethod.PixEFrete)}
+                        className={`p-3 rounded-xl border text-center transition-all text-xs font-bold flex flex-col items-center justify-center gap-1 ${
+                            paymentMethod === DriverPaymentMethod.PixEFrete
+                            ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                        }`}
+                    >
+                        <span className="text-sm">⚡ PIX - E-FRETE</span>
+                        <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Via Chave Pix</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod(DriverPaymentMethod.DepositoConta)}
+                        className={`p-3 rounded-xl border text-center transition-all text-xs font-bold flex flex-col items-center justify-center gap-1 ${
+                            paymentMethod === DriverPaymentMethod.DepositoConta
+                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                        }`}
+                    >
+                        <span className="text-sm">🏦 DEPÓSITO EM CONTA</span>
+                        <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Dados Bancários</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod(DriverPaymentMethod.SmsCartaFrete)}
+                        className={`p-3 rounded-xl border text-center transition-all text-xs font-bold flex flex-col items-center justify-center gap-1 ${
+                            paymentMethod === DriverPaymentMethod.SmsCartaFrete
+                            ? 'border-purple-600 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/20'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                        }`}
+                    >
+                        <span className="text-sm">📱 SMS CARTA FRETE</span>
+                        <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Carta Frete</span>
+                    </button>
+                </div>
+
+                {paymentMethod === DriverPaymentMethod.PixEFrete && (
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                            Chave Pix <span className="text-red-500">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            value={pixKey} 
+                            onChange={(e) => setPixKey(e.target.value)} 
+                            placeholder="CPF, CNPJ, Telefone, E-mail ou Chave Aleatória" 
+                            className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                            required
+                        />
+                    </div>
+                )}
+
+                {paymentMethod === DriverPaymentMethod.DepositoConta && (
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                            Dados Bancários <span className="text-red-500">*</span>
+                        </label>
+                        <textarea 
+                            value={bankDetails} 
+                            onChange={(e) => setBankDetails(e.target.value)} 
+                            placeholder="Banco, Agência, Conta Corrente/Poupança, Favorecido, CPF/CNPJ..." 
+                            className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y text-sm" 
+                            rows={2} 
+                            required
+                        />
+                    </div>
+                )}
+
+                {paymentMethod === DriverPaymentMethod.SmsCartaFrete && (
+                    <div className="p-3 bg-purple-50/50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800 rounded-xl text-xs text-purple-800 dark:text-purple-300 flex items-center gap-2">
+                        <span>ℹ️ Pagamento via SMS Carta Frete para o condutor.</span>
+                    </div>
+                )}
+            </div>
+
+            {/* Document Attachment & Scan */}
+            <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Anexar Documentos</label>
+                <div className="mt-1 flex items-center h-full">
+                    <label className="cursor-pointer bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 py-2.5 px-4 rounded-xl inline-flex items-center transition-colors font-medium text-sm border border-gray-300 dark:border-gray-600">
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                        Anexar
+                        <input type="file" multiple className="hidden" onChange={(e) => {
+                            if (e.target.files) {
+                                setFilesToAttach(Array.from(e.target.files));
+                            }
+                        }} />
+                    </label>
+                    <span className="ml-3 text-xs text-gray-500 dark:text-gray-400">
+                        {filesToAttach.length > 0 ? `${filesToAttach.length} arquivo(s) selecionado(s)` : 'Nenhum'}
+                    </span>
+                    {filesToAttach.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => handleScanDocument(filesToAttach)}
+                            disabled={isScanning}
+                            className={`ml-3 text-xs font-bold uppercase py-1.5 px-3 rounded-lg border transition-all ${
+                                isScanning 
+                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
+                                : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-600 hover:text-white'
+                            }`}
+                        >
+                            {isScanning ? 'Processando...' : 'Digitalizar com IA'}
+                        </button>
+                    )}
+                </div>
             </div>
           
             {/* Target Layout from Screenshot: 2-Column Grid */}

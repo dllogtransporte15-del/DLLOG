@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
-import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType } from '../types';
+import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod } from '../types';
 import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
 import { FileTextIcon, Trash2 } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
@@ -100,7 +100,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       vehicleSetType: shipment.vehicleSetType || mainVehicle?.setType,
       vehicleBodyType: shipment.vehicleBodyType || mainVehicle?.bodyType,
       shipmentTonnage: shipment.shipmentTonnage,
-      bankDetails: shipment.bankDetails,
+      paymentMethod: shipment.paymentMethod || DriverPaymentMethod.PixEFrete,
+      pixKey: shipment.pixKey || '',
+      bankDetails: shipment.bankDetails || '',
+      advancePercentage: shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70,
       driverReferences: shipment.driverReferences,
       ownerContact: shipment.ownerContact,
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
@@ -489,23 +492,85 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             </div>
                         )}
 
-                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <DetailItem label="Dados Bancários">
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border dark:border-gray-700">
+                            <DetailItem label="Forma de Pagamento">
                                 {isEditingData ? (
-                                    <textarea 
-                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[80px]"
-                                        value={editedData.bankDetails || ''}
-                                        onChange={e => setEditedData({...editedData, bankDetails: e.target.value})}
-                                        placeholder="Informe os dados bancários..."
-                                    />
+                                    <select
+                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-semibold"
+                                        value={editedData.paymentMethod || DriverPaymentMethod.PixEFrete}
+                                        onChange={e => setEditedData({...editedData, paymentMethod: e.target.value})}
+                                    >
+                                        {Object.values(DriverPaymentMethod).map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
                                 ) : (
-                                    <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-md border dark:border-gray-700">
-                                        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
-                                            {shipment.bankDetails || <span className="text-gray-400 italic">Não informados</span>}
-                                        </p>
-                                    </div>
+                                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                                        {shipment.paymentMethod || 'PIX - E-FRETE'}
+                                    </p>
                                 )}
                             </DetailItem>
+
+                            <DetailItem label="Adiantamento (%)">
+                                {isEditingData ? (
+                                    <input 
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold"
+                                        value={editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70}
+                                        onChange={e => setEditedData({...editedData, advancePercentage: Number(e.target.value)})}
+                                    />
+                                ) : (
+                                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                                        {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
+                                    </p>
+                                )}
+                            </DetailItem>
+
+                            {(editedData.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.pixKey) && (
+                                <div className="md:col-span-2">
+                                    <DetailItem label="Chave Pix">
+                                        {isEditingData ? (
+                                            <input 
+                                                type="text"
+                                                className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                value={editedData.pixKey || ''}
+                                                onChange={e => setEditedData({...editedData, pixKey: e.target.value})}
+                                                placeholder="Informe a Chave Pix..."
+                                            />
+                                        ) : (
+                                            <div className="mt-1 p-2.5 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-700">
+                                                <p className="text-sm font-mono text-gray-800 dark:text-gray-200">
+                                                    {shipment.pixKey || <span className="text-gray-400 italic">Não informada</span>}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </DetailItem>
+                                </div>
+                            )}
+
+                            <div className="md:col-span-2">
+                                <DetailItem label="Dados Bancários">
+                                    {isEditingData ? (
+                                        <textarea 
+                                            className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[70px]"
+                                            value={editedData.bankDetails || ''}
+                                            onChange={e => setEditedData({...editedData, bankDetails: e.target.value})}
+                                            placeholder="Informe os dados bancários..."
+                                        />
+                                    ) : (
+                                        <div className="mt-1 p-2.5 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-700">
+                                            <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                                                {shipment.bankDetails || <span className="text-gray-400 italic">Não informados</span>}
+                                            </p>
+                                        </div>
+                                    )}
+                                </DetailItem>
+                            </div>
+                        </div>
+
+                        <div className="md:col-span-2">
                             <DetailItem label="Referências do Motorista">
                                 {isEditingData ? (
                                     <textarea 
