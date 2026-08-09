@@ -404,6 +404,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             products={products}
             cargos={cargos}
+            users={users}
             isClientProfile={false}
             onAccept={async (offer) => {
               // Mark offer as accepted in the DB, then open the shipment modal
@@ -516,6 +517,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               clients={clients}
               products={products}
               cargos={cargos}
+              users={users}
               isClientProfile={false}
               onAccept={async (offer) => {
                 if (onAcceptFreightOffer) {
@@ -817,6 +819,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             products={products}
             cargos={cargos}
+            users={users}
             isClientProfile={true}
             onAccept={async (offer) => {
               if (onSaveFreightOffer) {
@@ -890,6 +893,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             products={products}
             cargos={cargos}
+            users={users}
             isClientProfile={true}
             onAccept={async () => {}} 
             onRefuse={async () => {}}
@@ -906,6 +910,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             products={products}
             cargos={cargos}
+            users={users}
             isClientProfile={false}
             onAccept={async (offer) => {
               if (onAcceptFreightOffer) {
@@ -940,6 +945,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onDelete={onDeleteFreightOffer}
             onConvertToCargo={onConvertToCargo}
             onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
+            onSaveFreightOffer={onSaveFreightOffer}
           />
         </div>
       )}

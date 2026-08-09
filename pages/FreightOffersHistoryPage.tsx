@@ -10,6 +10,7 @@ interface FreightOffersHistoryPageProps {
   clients: Client[];
   products: Product[];
   cargos: Cargo[];
+  users?: User[];
   currentUser?: User | null;
   onSaveFreightOffer?: (offer: Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
   onDeleteFreightOffer?: (offer: FreightOffer) => void;
@@ -21,6 +22,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
   clients, 
   products, 
   cargos,
+  users,
   currentUser,
   onSaveFreightOffer,
   onDeleteFreightOffer,
@@ -157,6 +159,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
           clients={clients}
           products={products}
           cargos={cargos}
+          users={users}
           isClientProfile={currentUser?.profile === UserProfile.Cliente}
           currentUser={currentUser || undefined}
           onAccept={async () => {}} // Disabled actions for history
@@ -164,6 +167,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
           onCounterOffer={async () => {}} // Disabled actions for history
           onDelete={onDeleteFreightOffer}
           onConvertToCargo={onConvertToCargo}
+          onSaveFreightOffer={onSaveFreightOffer}
         />
 
 

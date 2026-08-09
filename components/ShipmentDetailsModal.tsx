@@ -6,6 +6,8 @@ import { FileTextIcon, Trash2 } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
+import DocumentPreviewModal from './DocumentPreviewModal';
+import { openDocumentInNewTab } from '../utils/documentViewer';
 
 
 interface ShipmentDetailsModalProps {
@@ -45,6 +47,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [filesToAttach, setFilesToAttach] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [shipmentStays, setShipmentStays] = useState<StayRecord[]>([]);
+  const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
 
   React.useEffect(() => {
     if (isOpen && shipment) {
@@ -460,14 +463,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                             {(stay.cteUrl || stay.paymentProofUrl) && (
                                                 <div className="flex gap-4 pt-2 mt-1 border-t border-gray-200 dark:border-gray-700/50">
                                                     {stay.cteUrl && (
-                                                        <a href={getShipmentAttachmentUrl(stay.cteUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] flex items-center font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:underline">
+                                                        <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(stay.cteUrl!), 'CTe Complementar')} className="text-[10px] flex items-center font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:underline text-left cursor-pointer">
                                                             <FileTextIcon className="w-3 h-3 mr-1" /> CTe Complementar
-                                                        </a>
+                                                        </button>
                                                     )}
                                                     {stay.paymentProofUrl && (
-                                                        <a href={getShipmentAttachmentUrl(stay.paymentProofUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] flex items-center font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:underline">
+                                                        <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(stay.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] flex items-center font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 hover:underline text-left cursor-pointer">
                                                             <FileTextIcon className="w-3 h-3 mr-1" /> Comprovante de Pagamento
-                                                        </a>
+                                                        </button>
                                                     )}
                                                 </div>
                                             )}
@@ -658,15 +661,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                     
                                                     return (
                                                         <div key={idx} className="flex items-center gap-1 group">
-                                                            <a 
-                                                                href={url} 
-                                                                target="_blank" 
-                                                                rel="noopener noreferrer"
-                                                                className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => openDocumentInNewTab(url, fileName)}
+                                                                className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
                                                             >
                                                                 <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
                                                                 <span className="truncate">{fileName}</span>
-                                                            </a>
+                                                            </button>
                                                             {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
                                                                 <button
                                                                     onClick={() => {
@@ -761,6 +763,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
           </button>
         </div>
       </div>
+
+      <DocumentPreviewModal
+        isOpen={!!previewDocument}
+        onClose={() => setPreviewDocument(null)}
+        fileUrl={previewDocument?.url || null}
+        fileName={previewDocument?.name}
+        category={previewDocument?.category}
+      />
     </div>
   );
 };

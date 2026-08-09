@@ -427,7 +427,8 @@ export enum FreightOfferStatus {
   Recusada = "Recusada",
   Contraproposta = "Contraproposta",
   ContrapropostaAceita = "Contraproposta Aceita", // Mantido para retrocompatibilidade
-  AguardandoFechamento = "Aguardando Fechamento"
+  AguardandoFechamento = "Aguardando Fechamento",
+  SolicitadoExclusao = "Exclusão Solicitada"
 }
 
 export interface FreightOffer {
@@ -445,6 +446,7 @@ export interface FreightOffer {
   driverId?: string;
   cargoId?: string;
   status: FreightOfferStatus;
+  previousStatus?: FreightOfferStatus;
   counterOfferValue?: number;
   createdAt: string;
   history?: HistoryLog[];

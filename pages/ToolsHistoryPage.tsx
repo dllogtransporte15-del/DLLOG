@@ -18,6 +18,8 @@ import {
 import { getShipmentAttachmentUrl } from '../lib/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { openDocumentInNewTab } from '../utils/documentViewer';
 
 interface ToolsHistoryPageProps {
   currentUser: AppUser | null;
@@ -32,6 +34,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
   const [clients, setClients] = useState<ToolClient[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
 
   const [editValues, setEditValues] = useState<{
     id: string, 
@@ -589,7 +592,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.cteFile.name}</div>
                                    )}
                                    {item.cteUrl && !(editValues?.id === item.id && editValues?.cteFile) && (
-                                     <a href={getShipmentAttachmentUrl(item.cteUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:underline mt-1 block">Ver CTe Anexado</a>
+                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl!), 'CTe Complementar')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver CTe Anexado</button>
                                    )}
                                  </div>
                                  <div>
@@ -618,7 +621,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.paymentFile.name}</div>
                                    )}
                                    {item.paymentProofUrl && !(editValues?.id === item.id && editValues?.paymentFile) && (
-                                     <a href={getShipmentAttachmentUrl(item.paymentProofUrl)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 hover:underline mt-1 block">Ver Comprovante Anexado</a>
+                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.paymentProofUrl!), 'Comprovante de Pagamento')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver Comprovante Anexado</button>
                                    )}
                                  </div>
                                  <div className="flex items-center justify-between pt-2">
@@ -720,6 +723,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
           )}
         </div>
       </div>
+
+      <DocumentPreviewModal
+        isOpen={!!previewDocument}
+        onClose={() => setPreviewDocument(null)}
+        fileUrl={previewDocument?.url || null}
+        fileName={previewDocument?.name}
+        category={previewDocument?.category}
+      />
     </>
   );
 }
