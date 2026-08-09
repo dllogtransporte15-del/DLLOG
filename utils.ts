@@ -83,3 +83,59 @@ export const formatWeightPtBr = (num: number): string => {
 
   return (result || 'zero toneladas').toUpperCase();
 };
+
+import type { FreightOffer, Cargo } from './types';
+import { FreightOfferStatus } from './types';
+
+export const getMatchedCargo = (offer: FreightOffer, cargosList?: Cargo[]): Cargo | null => {
+  if (!cargosList || cargosList.length === 0) return null;
+
+  // 1. Direct cargoId link on offer
+  if (offer.cargoId) {
+    const targetCargoId = offer.cargoId;
+    const cleanNum = targetCargoId.replace(/\D/g, '');
+    const cargoByDirectId = cargosList.find(c => 
+      c.id === targetCargoId || 
+      `CRG-${c.sequenceId}` === targetCargoId ||
+      (cleanNum ? c.sequenceId?.toString() === cleanNum : false)
+    );
+    if (cargoByDirectId) return cargoByDirectId;
+  }
+
+
+  // 2. Extract cargo ID / sequenceId from history log description (e.g. "Carga #104 criada a partir da oferta.")
+  if (offer.history && offer.history.length > 0) {
+    for (const h of offer.history) {
+      if (h.description && (h.description.includes('criada a partir da oferta') || h.description.includes('Carga #'))) {
+        const match = h.description.match(/Carga\s+#?(CRG-\d+|\d+)/i);
+        if (match) {
+          const cargoIdOrNum = match[1];
+          const cargoByHistory = cargosList.find(c => 
+            c.id.toLowerCase() === cargoIdOrNum.toLowerCase() ||
+            `CRG-${c.sequenceId}`.toLowerCase() === cargoIdOrNum.toLowerCase() ||
+            c.sequenceId?.toString() === cargoIdOrNum.replace(/\D/g, '')
+          );
+          if (cargoByHistory) return cargoByHistory;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback matching by client, product, origin, destination
+  const normalize = (str?: string) => str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+  const offerOrigin = normalize(offer.origin);
+  const offerDest = normalize(offer.destination);
+
+  return cargosList.find(c => {
+    const matchClient = c.clientId === offer.clientId;
+    const matchProduct = c.productId === offer.productId;
+    const cargoOrigin = normalize(c.origin);
+    const cargoDest = normalize(c.destination);
+    
+    const matchOrigin = cargoOrigin === offerOrigin || (cargoOrigin && offerOrigin && (cargoOrigin.includes(offerOrigin) || offerOrigin.includes(cargoOrigin)));
+    const matchDest = cargoDest === offerDest || (cargoDest && offerDest && (cargoDest.includes(offerDest) || offerDest.includes(cargoDest)));
+
+    return matchClient && matchProduct && matchOrigin && matchDest;
+  }) || null;
+};
+

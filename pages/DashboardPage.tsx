@@ -15,6 +15,8 @@ import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOf
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
+import { getMatchedCargo } from '../utils';
+
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
 
@@ -660,12 +662,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const myOffers = freightOffers.filter(o => {
       if (o.clientId !== currentUser.clientId) return false;
       if (o.status === FreightOfferStatus.Aceita) {
-        const matchedCargo = cargos.find(c => 
-          c.clientId === o.clientId && 
-          c.productId === o.productId && 
-          c.origin === o.origin && 
-          c.destination === o.destination
-        );
+        const matchedCargo = getMatchedCargo(o, cargos);
         if (!matchedCargo || matchedCargo.status === CargoStatus.Fechada) {
           return false;
         }
