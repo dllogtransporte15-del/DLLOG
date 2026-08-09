@@ -36,7 +36,20 @@ const DetailItem: React.FC<{ label: string; value?: string | number | null; chil
 );
 
 const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({ 
-  isOpen, onClose, shipment, cargo, currentUser, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onDeleteAttachment, clients, products, vehicles, users, companyLogo 
+  isOpen, 
+  onClose, 
+  shipment, 
+  cargo, 
+  currentUser, 
+  onUpdatePrice, 
+  onUpdateShipmentData, 
+  onAddAttachments, 
+  onDeleteAttachment, 
+  clients = [], 
+  products = [], 
+  vehicles = [], 
+  users = [], 
+  companyLogo 
 }) => {
 
   const [isEditing, setIsEditing] = useState(false);
@@ -50,12 +63,23 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
 
   React.useEffect(() => {
+    let isMounted = true;
     if (isOpen && shipment) {
-      getToolStaysByShipment(shipment.id).then(setShipmentStays);
+      getToolStaysByShipment(shipment.id)
+        .then(stays => {
+          if (isMounted) setShipmentStays(stays || []);
+        })
+        .catch(err => {
+          console.warn('Erro ao buscar estadias:', err);
+          if (isMounted) setShipmentStays([]);
+        });
     } else {
       setShipmentStays([]);
     }
-  }, [isOpen, shipment]);
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, shipment?.id]);
 
   if (!isOpen || !shipment) return null;
 
@@ -133,8 +157,18 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col">
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/60 z-[9998]"
+        onClick={onClose}
+      />
+      {/* Modal Container */}
+      <div className="fixed inset-0 z-[9999] flex justify-center items-start pointer-events-none overflow-y-auto p-4">
+        <div 
+          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-2xl w-full flex flex-col border border-gray-200 dark:border-gray-700 my-auto pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className="flex justify-between items-start mb-4 border-b pb-4 dark:border-gray-700">
             <div>
                 <div className="flex items-center gap-3">
@@ -762,6 +796,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
             Fechar
           </button>
         </div>
+        </div>
       </div>
 
       <DocumentPreviewModal
@@ -771,7 +806,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
         fileName={previewDocument?.name}
         category={previewDocument?.category}
       />
-    </div>
+    </>
   );
 };
 

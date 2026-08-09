@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import Card from '../components/Card';
 import Header from '../components/Header';
 import DonutChartCard from '../components/DonutChartCard';
@@ -10,15 +10,82 @@ import { PackageIcon } from '../components/icons/PackageIcon';
 import { DollarSignIcon } from '../components/icons/DollarSignIcon';
 import { ClientsIcon } from '../components/icons/ClientsIcon';
 import { WhatsAppIcon } from '../components/icons/WhatsAppIcon';
-import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus } from '../types';
+import { DashboardIcon } from '../components/icons/DashboardIcon';
+import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
+import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
+import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
 import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
+import AttachmentModal from '../components/AttachmentModal';
+import CadastroAnttModal from '../components/CadastroAnttModal';
+import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/OptimizedShipmentsBoard';
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
 import { getMatchedCargo } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
+
+type DashboardViewMode = 'geral' | 'fiscal' | 'financeiro' | 'supervisor';
+
+interface ViewModeConfig {
+  id: DashboardViewMode;
+  label: string;
+  title: string;
+  shortBadge: string;
+  description: string;
+  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  color: string;
+  badgeBg: string;
+  badgeText: string;
+}
+
+const VIEW_MODES: ViewModeConfig[] = [
+  {
+    id: 'geral',
+    label: 'Dashboard Geral',
+    title: 'Dashboard',
+    shortBadge: 'Geral',
+    description: 'Indicadores, ofertas de frete, gráficos operacionais e ranking',
+    icon: DashboardIcon,
+    color: 'from-blue-600 to-indigo-600',
+    badgeBg: 'bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700/50',
+    badgeText: 'text-blue-700 dark:text-blue-300'
+  },
+  {
+    id: 'fiscal',
+    label: 'Dashboard Fiscal',
+    title: 'Dashboard Fiscal',
+    shortBadge: 'Fiscal',
+    description: 'Controle de seguradora, cadastro ANTT e documentação fiscal',
+    icon: CheckCircleIcon,
+    color: 'from-emerald-600 to-teal-600',
+    badgeBg: 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-200 dark:border-emerald-700/50',
+    badgeText: 'text-emerald-700 dark:text-emerald-300'
+  },
+  {
+    id: 'financeiro',
+    label: 'Dashboard Financeiro',
+    title: 'Dashboard Financeiro',
+    shortBadge: 'Financeiro',
+    description: 'Controle de adiantamentos, liquidação de saldos e trânsito',
+    icon: DollarSignIcon,
+    color: 'from-amber-500 to-orange-600',
+    badgeBg: 'bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-700/50',
+    badgeText: 'text-amber-700 dark:text-amber-300'
+  },
+  {
+    id: 'supervisor',
+    label: 'Dashboard do Supervisor',
+    title: 'Dashboard do Supervisor',
+    shortBadge: 'Supervisor',
+    description: 'Acompanhamento operacional e pesagem/carregamento de veículos',
+    icon: TruckIcon,
+    color: 'from-purple-600 to-indigo-600',
+    badgeBg: 'bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700/50',
+    badgeText: 'text-purple-700 dark:text-purple-300'
+  }
+];
 
 interface DashboardPageProps {
   cargos: Cargo[];
@@ -31,6 +98,10 @@ interface DashboardPageProps {
   vehicles: Vehicle[];
   drivers?: Driver[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
+  onUpdateAnttAndBankDetails?: (shipmentId: string, data: { anttOwnerIdentifier: string; bankDetails?: string }) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   freightOffers?: FreightOffer[];
   onSaveFreightOffer?: (offer: Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
@@ -181,18 +252,22 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   currentUser, 
   clients, 
   products, 
-  companyLogo,
-  vehicles,
-  drivers = [],
-  onDeleteAttachment,
-  onUpdatePrice,
-  freightOffers = [],
-  onSaveFreightOffer,
-  onAcceptFreightOffer,
-  onDeleteFreightOffer,
-  onConvertToCargo,
-  onCreateShipment,
-  allShipments
+  companyLogo, 
+  vehicles, 
+  drivers = [], 
+  onDeleteAttachment, 
+  onUpdateAttachment,
+  onUpdateShipmentData,
+  onAddAttachments,
+  onUpdateAnttAndBankDetails,
+  onUpdatePrice, 
+  freightOffers = [], 
+  onSaveFreightOffer, 
+  onAcceptFreightOffer, 
+  onDeleteFreightOffer, 
+  onConvertToCargo, 
+  onCreateShipment, 
+  allShipments 
 }) => {
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
   const [isOfferModalOpen, setIsOfferModalOpen] = React.useState(false);
@@ -202,6 +277,110 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [selectedDriverForHistoryId, setSelectedDriverForHistoryId] = React.useState<string | null>(null);
   const [offerForNewShipment, setOfferForNewShipment] = React.useState<FreightOffer | null>(null);
   
+  // Modals state for quick direct actions (Attachment and ANTT)
+  const [selectedShipmentForAttachment, setSelectedShipmentForAttachment] = useState<Shipment | null>(null);
+  const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
+  const [selectedShipmentForAntt, setSelectedShipmentForAntt] = useState<Shipment | null>(null);
+  const [isAnttModalOpen, setAnttModalOpen] = useState(false);
+
+  const handleOpenAttachmentModal = useCallback((shipment: Shipment) => {
+    setSelectedShipmentForAttachment(shipment);
+    setAttachmentModalOpen(true);
+  }, []);
+
+  const handleCloseAttachmentModal = useCallback(() => {
+    setAttachmentModalOpen(false);
+    setSelectedShipmentForAttachment(null);
+  }, []);
+
+  const handleSaveAttachment = useCallback(async (data: any) => {
+    if (!selectedShipmentForAttachment || !onUpdateAttachment) return;
+    await onUpdateAttachment(selectedShipmentForAttachment.id, data);
+    handleCloseAttachmentModal();
+  }, [selectedShipmentForAttachment, onUpdateAttachment, handleCloseAttachmentModal]);
+
+  const handleOpenCadastroAntt = useCallback((shipment: Shipment) => {
+    setSelectedShipmentForAntt(shipment);
+    setAnttModalOpen(true);
+  }, []);
+
+  const handleSaveAntt = useCallback(async (data: { anttOwnerIdentifier: string; bankDetails?: string }) => {
+    if (!selectedShipmentForAntt) return;
+    if (onUpdateAnttAndBankDetails) {
+      await onUpdateAnttAndBankDetails(selectedShipmentForAntt.id, data);
+    } else if (onUpdateShipmentData) {
+      await onUpdateShipmentData(selectedShipmentForAntt.id, data);
+    }
+    setAnttModalOpen(false);
+    setSelectedShipmentForAntt(null);
+  }, [selectedShipmentForAntt, onUpdateAnttAndBankDetails, onUpdateShipmentData]);
+
+  // Kanban Column Configs for different profiles
+  const fiscalColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-seguradora',
+      title: 'Aguardando Seguradora',
+      statuses: [ShipmentStatus.AguardandoSeguradora],
+      thresholds: { yellow: 30, red: 50 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
+    },
+    {
+      id: 'aguardando-cadastro',
+      title: 'Aguardando Cadastro',
+      statuses: [ShipmentStatus.PreCadastro],
+      thresholds: { yellow: 60, red: 90 },
+      accentColor: '#f59e0b',
+      emptyText: 'Nenhum embarque aguardando cadastro ANTT'
+    },
+    {
+      id: 'aguardando-nota',
+      title: 'Aguardando Nota Fiscal',
+      statuses: [ShipmentStatus.AguardandoNota],
+      thresholds: { yellow: 120, red: 240 },
+      accentColor: '#8b5cf6',
+      emptyText: 'Nenhum embarque aguardando documentação fiscal'
+    }
+  ], []);
+
+  const financeiroColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-adiantamento',
+      title: 'Aguardando Pagamento de Adiantamento',
+      statuses: [ShipmentStatus.AguardandoAdiantamento],
+      thresholds: { yellow: 30, red: 60 },
+      accentColor: '#f59e0b',
+      emptyText: 'Nenhum embarque aguardando adiantamento'
+    },
+    {
+      id: 'aguardando-saldo',
+      title: 'Aguardando Pagamento de Saldo',
+      statuses: [ShipmentStatus.AguardandoPagamentoSaldo],
+      thresholds: { yellow: 24 * 60, red: 47 * 60 },
+      accentColor: '#ef4444',
+      emptyText: 'Nenhum embarque aguardando liquidação de saldo'
+    },
+    {
+      id: 'em-transito',
+      title: 'Em Trânsito / Entrega',
+      statuses: [ShipmentStatus.AguardandoDescarga],
+      thresholds: { yellow: 24 * 60, red: 48 * 60 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque em trânsito'
+    }
+  ], []);
+
+  const supervisorColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-carregamento',
+      title: 'Embarques Aguardando Carregamento',
+      statuses: [ShipmentStatus.AguardandoCarregamento],
+      thresholds: { yellow: 60, red: 120 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando carregamento'
+    }
+  ], []);
+
   const addOfferHistory = (offer: FreightOffer, description: string) => {
     const newLog = {
       id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -213,7 +392,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   };
 
   // Sync modal shipment with latest data from props
-  React.useEffect(() => {
+  useEffect(() => {
     if (detailsModalShipment) {
       const updated = shipments.find(s => s.id === detailsModalShipment.id);
       if (updated && JSON.stringify(updated) !== JSON.stringify(detailsModalShipment)) {
@@ -381,6 +560,150 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [cargos, shipments, currentUser]);
 
+  // View mode switcher for Admin / Diretor
+  const canSwitchView = useMemo(() => {
+    if (!currentUser) return false;
+    return [
+      UserProfile.Admin,
+      UserProfile.Diretor,
+    ].includes(currentUser.profile);
+  }, [currentUser]);
+
+  const [viewMode, setViewMode] = useState<DashboardViewMode>(() => {
+    if (currentUser?.profile === UserProfile.Fiscal) return 'fiscal';
+    if (currentUser?.profile === UserProfile.Financeiro) return 'financeiro';
+    if (currentUser?.profile === UserProfile.Supervisor) return 'supervisor';
+
+    const saved = localStorage.getItem('transcunha_dashboard_view_mode');
+    if (saved && ['geral', 'fiscal', 'financeiro', 'supervisor'].includes(saved)) {
+      return saved as DashboardViewMode;
+    }
+    return 'geral';
+  });
+
+  const [isViewSelectorOpen, setIsViewSelectorOpen] = useState(false);
+  const viewSelectorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (viewSelectorRef.current && !viewSelectorRef.current.contains(event.target as Node)) {
+        setIsViewSelectorOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsViewSelectorOpen(false);
+      }
+    };
+    if (isViewSelectorOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isViewSelectorOpen]);
+
+  const currentViewConfig = VIEW_MODES.find(m => m.id === viewMode) || VIEW_MODES[0];
+
+  const renderHeaderTitle = () => {
+    if (!canSwitchView) {
+      return currentViewConfig.title;
+    }
+
+    return (
+      <div className="relative inline-block text-left" ref={viewSelectorRef}>
+        <button
+          type="button"
+          onClick={() => setIsViewSelectorOpen(prev => !prev)}
+          className="group flex items-center gap-3 px-3 py-1.5 -ml-3 rounded-2xl hover:bg-gray-100/90 dark:hover:bg-gray-800/90 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/40 active:scale-[0.99]"
+          aria-expanded={isViewSelectorOpen}
+          aria-haspopup="true"
+          title="Clique para alternar o modo de visualização do Dashboard"
+        >
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight group-hover:text-primary dark:group-hover:text-blue-400 transition-colors">
+              {currentViewConfig.title}
+            </h1>
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-all ${currentViewConfig.badgeBg} ${currentViewConfig.badgeText}`}>
+              {currentViewConfig.shortBadge}
+            </span>
+          </div>
+          <div className={`p-1.5 rounded-xl bg-gray-100 dark:bg-gray-700/80 text-gray-600 dark:text-gray-300 group-hover:bg-primary group-hover:text-white dark:group-hover:bg-blue-600 transition-all duration-200 shadow-sm ${isViewSelectorOpen ? 'bg-primary text-white dark:bg-blue-600 rotate-180' : ''}`}>
+            <ChevronDownIcon className="w-4 h-4" />
+          </div>
+        </button>
+
+        {isViewSelectorOpen && (
+          <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-black/10 dark:ring-white/10 z-50 p-2 border border-gray-100 dark:border-gray-700 backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/60 mb-1 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                  Modo de Visualização
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Selecione o Dashboard desejado
+                </p>
+              </div>
+              <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                Admin
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              {VIEW_MODES.map((mode) => {
+                const isSelected = viewMode === mode.id;
+                const Icon = mode.icon;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => {
+                      setViewMode(mode.id);
+                      localStorage.setItem('transcunha_dashboard_view_mode', mode.id);
+                      setIsViewSelectorOpen(false);
+                    }}
+                    className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition-all duration-150 group ${
+                      isSelected
+                        ? 'bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 shadow-sm'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 border border-transparent'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl flex-shrink-0 transition-all ${
+                      isSelected
+                        ? 'bg-gradient-to-br ' + mode.color + ' text-white shadow-md'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary dark:group-hover:text-blue-400'
+                    }`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-bold ${
+                          isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white'
+                        }`}>
+                          {mode.label}
+                        </span>
+                        {isSelected && (
+                          <span className="flex items-center text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                            Ativo
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                        {mode.description}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (currentUser?.profile === UserProfile.Embarcador) {
     const pendingRequests = freightOffers?.filter(o => {
        if (o.status !== FreightOfferStatus.Pendente) return false;
@@ -461,7 +784,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
           clients={clients}
           products={products}
           companyLogo={companyLogo}
@@ -469,6 +793,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           users={users}
           onDeleteAttachment={onDeleteAttachment}
           onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
         />
         {offerForNewShipment && onCreateShipment && (
           <NewShipmentModal
@@ -495,7 +821,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     );
   }
 
-  if (currentUser?.profile === UserProfile.Supervisor) {
+  if (!canSwitchView && currentUser?.profile === UserProfile.Supervisor) {
     const totalActiveLoads = cargos.filter(c => c.status === CargoStatus.EmAndamento || c.status === CargoStatus.Suspensa).length;
     const shipmentsAwaitingLoading = shipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento);
 
@@ -554,108 +880,220 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             />
           </div>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
            <Card
               title="Total de Cargas Ativas"
               value={totalActiveLoads.toString()}
               icon={<PackageIcon className="w-6 h-6 text-white" />}
               colorClass="bg-blue-500"
             />
-            <div className="lg:col-span-2">
-                <ShipmentListCard 
-                    title="Embarques Aguardando Carregamento"
-                    shipments={shipmentsAwaitingLoading}
-                    users={users}
-                />
-            </div>
+            <Card
+              title="Aguardando Carregamento"
+              value={shipmentsAwaitingLoading.length.toString()}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-primary"
+            />
         </div>
+
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Embarques Aguardando Carregamento"
+            description="Controle e acompanhamento de veículos agendados para pesagem e carregamento"
+            columns={supervisorColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+        <ShipmentDetailsModal
+          isOpen={!!detailsModalShipment}
+          onClose={() => setDetailsModalShipment(null)}
+          shipment={detailsModalShipment}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
+          clients={clients}
+          products={products}
+          companyLogo={companyLogo}
+          vehicles={vehicles}
+          users={users}
+          onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
+        />
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
       </>
     );
   }
 
-  if (currentUser?.profile === UserProfile.Fiscal) {
-    const shipmentsPreCadastro = shipments.filter(s => s.status === ShipmentStatus.PreCadastro);
-    const shipmentsAwaitingInsurance = shipments.filter(s => s.status === ShipmentStatus.AguardandoSeguradora);
-    const shipmentsAwaitingNote = shipments.filter(s => s.status === ShipmentStatus.AguardandoNota);
-
+  if (!canSwitchView && currentUser?.profile === UserProfile.Fiscal) {
     return (
       <>
         <Header title="Dashboard Fiscal" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <ShipmentListCard title="Aguardando Seguradora" shipments={shipmentsAwaitingInsurance} users={users} thresholds={{ yellow: 30, red: 50 }} onShowDetails={setDetailsModalShipment} />
-          <ShipmentListCard title="Aguardando Cadastro" shipments={shipmentsPreCadastro} users={users} thresholds={{ yellow: 60, red: 90 }} onShowDetails={setDetailsModalShipment} />
-          <ShipmentListCard title="Aguardando Nota" shipments={shipmentsAwaitingNote} users={users} thresholds={{ yellow: 120, red: 240 }} onShowDetails={setDetailsModalShipment} />
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Fiscal dos Embarques"
+            description="Controle e acompanhamento de autorizações de seguradora, cadastros e documentação fiscal"
+            columns={fiscalColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
           clients={clients}
           products={products}
           companyLogo={companyLogo}
           vehicles={vehicles}
           users={users}
           onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
         />
-
-
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
       </>
     );
   }
 
-  if (currentUser?.profile === UserProfile.Financeiro) {
-    const shipmentsAwaitingAdvance = shipments.filter(s => s.status === ShipmentStatus.AguardandoAdiantamento);
-    const shipmentsAwaitingBalance = shipments.filter(s => s.status === ShipmentStatus.AguardandoPagamentoSaldo);
-    const shipmentsInTransit = shipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga); // Added filter
-    const shipmentsUnloaded = shipments.filter(s => s.status === ShipmentStatus.AguardandoPagamentoSaldo); // Added filter
-
+  if (!canSwitchView && currentUser?.profile === UserProfile.Financeiro) {
     return (
       <>
         <Header title="Dashboard Financeiro" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ShipmentListCard 
-            title="Aguardando Pagamento de Adiantamento" 
-            shipments={shipmentsAwaitingAdvance} 
-            users={users} 
-            thresholds={{ yellow: 30, red: 60 }} 
-            onShowDetails={setDetailsModalShipment} // Added onShowDetails
-          />
-          <ShipmentListCard 
-            title="Aguardando Pagamento de Saldo" 
-            shipments={shipmentsAwaitingBalance} 
-            users={users} 
-            thresholds={{ yellow: 24 * 60, red: 47 * 60 }} 
-            onShowDetails={setDetailsModalShipment} // Added onShowDetails
-          />
-          <ShipmentListCard 
-            title="Em Trânsito / Entrega" 
-            shipments={shipmentsInTransit} 
-            users={users} 
-            thresholds={{ yellow: 24 * 60, red: 48 * 60 }}
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Financeira dos Embarques"
+            description="Controle e liquidação de adiantamentos, saldos e monitoramento de trânsito em tempo real"
+            columns={financeiroColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
             onShowDetails={setDetailsModalShipment}
-          />
-          <ShipmentListCard 
-            title="Descarga Pronta / Fechamento" 
-            shipments={shipmentsUnloaded} 
-            users={users} 
-            thresholds={{ yellow: 12 * 60, red: 24 * 60 }}
-            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
           />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
           clients={clients}
           products={products}
           companyLogo={companyLogo}
           vehicles={vehicles}
           users={users}
           onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
         />
-
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
       </>
     );
   }
@@ -862,6 +1300,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     )
   }
 
+  const totalActiveLoads = cargos.filter(c => c.status === CargoStatus.EmAndamento || c.status === CargoStatus.Suspensa).length;
+  const shipmentsAwaitingLoading = shipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento);
+
   const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
   const pendingOffers = freightOffers.filter(o => {
     if (o.status === FreightOfferStatus.Recusada || o.driverId) return false;
@@ -879,125 +1320,258 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   return (
     <>
-      <Header title="Dashboard" />
+      <Header title={renderHeaderTitle()} />
 
-      {isMotorista && driverOffers.length > 0 && (
+      {viewMode === 'fiscal' && (
         <div className="mb-8">
-          <div className="mb-4">
-            <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">Minhas Solicitações de Embarque</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Acompanhe o status dos embarques que você solicitou.</p>
+          <OptimizedShipmentsBoard
+            title="Gestão Fiscal dos Embarques"
+            description="Controle e acompanhamento de autorizações de seguradora, cadastros e documentação fiscal"
+            columns={fiscalColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+      )}
+
+      {viewMode === 'financeiro' && (
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão Financeira dos Embarques"
+            description="Controle e liquidação de adiantamentos, saldos e monitoramento de trânsito em tempo real"
+            columns={financeiroColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+      )}
+
+      {viewMode === 'supervisor' && (
+        <>
+          {pendingOffers.length > 0 && (
+            <div className="mb-8">
+              <FreightOffersList
+                offers={pendingOffers}
+                clients={clients}
+                products={products}
+                cargos={cargos}
+                users={users}
+                isClientProfile={false}
+                onAccept={async (offer) => {
+                  if (onAcceptFreightOffer) {
+                    onAcceptFreightOffer(offer);
+                  } else if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta aceita pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+                  }
+                }}
+                onRefuse={async (offer) => {
+                  if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta recusada pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                  }
+                }}
+                onCounterOffer={async (offer, newValue) => {
+                  if (onSaveFreightOffer) {
+                    if (offer.status === FreightOfferStatus.AguardandoPreco) {
+                      const history = addOfferHistory(offer, `Preço inicial de R$ ${newValue.toFixed(2)} enviado pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else if (offer.status === FreightOfferStatus.AnaliseCliente) {
+                      const oldPrice = offer.freightValuePerTon ? ` (era R$ ${offer.freightValuePerTon.toFixed(2)})` : '';
+                      const history = addOfferHistory(offer, `Preço inicial editado para R$ ${newValue.toFixed(2)} pela Transportadora${oldPrice}.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else {
+                      const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
+                    }
+                  }
+                }}
+                currentUser={currentUser || undefined}
+                onDelete={onDeleteFreightOffer}
+                onConvertToCargo={onConvertToCargo}
+                onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
+                onSaveFreightOffer={onSaveFreightOffer}
+              />
+            </div>
+          )}
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card
+              title="Total de Cargas Ativas"
+              value={totalActiveLoads.toString()}
+              icon={<PackageIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-blue-500"
+            />
+            <Card
+              title="Aguardando Carregamento"
+              value={shipmentsAwaitingLoading.length.toString()}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-primary"
+            />
           </div>
-          <FreightOffersList
-            title="Minhas Solicitações de Embarque"
-            offers={driverOffers}
-            clients={clients}
-            products={products}
-            cargos={cargos}
-            users={users}
-            isClientProfile={true}
-            onAccept={async () => {}} 
-            onRefuse={async () => {}}
-            onCounterOffer={async () => {}}
-            currentUser={currentUser || undefined}
-          />
-        </div>
+          <div className="mb-8">
+            <OptimizedShipmentsBoard
+              title="Embarques Aguardando Carregamento"
+              description="Controle e acompanhamento de veículos agendados para pesagem e carregamento"
+              columns={supervisorColumns}
+              shipments={shipments}
+              cargos={cargos}
+              clients={clients}
+              products={products}
+              users={users}
+              drivers={drivers}
+              vehicles={vehicles}
+              currentUser={currentUser}
+              onShowDetails={setDetailsModalShipment}
+              onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+              onOpenCadastroAntt={handleOpenCadastroAntt}
+              onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            />
+          </div>
+        </>
       )}
 
-      {canViewOffers && pendingOffers.length > 0 && (
-        <div className="mb-8">
-          <FreightOffersList
-            offers={pendingOffers}
-            clients={clients}
-            products={products}
-            cargos={cargos}
-            users={users}
-            isClientProfile={false}
-            onAccept={async (offer) => {
-              if (onAcceptFreightOffer) {
-                onAcceptFreightOffer(offer);
-              } else if (onSaveFreightOffer) {
-                const history = addOfferHistory(offer, `Oferta aceita pela Transportadora.`);
-                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
-              }
-            }}
-            onRefuse={async (offer) => {
-              if (onSaveFreightOffer) {
-                const history = addOfferHistory(offer, `Oferta recusada pela Transportadora.`);
-                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
-              }
-            }}
-            onCounterOffer={async (offer, newValue) => {
-              if (onSaveFreightOffer) {
-                if (offer.status === FreightOfferStatus.AguardandoPreco) {
-                  const history = addOfferHistory(offer, `Preço inicial de R$ ${newValue.toFixed(2)} enviado pela Transportadora.`);
-                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
-                } else if (offer.status === FreightOfferStatus.AnaliseCliente) {
-                  const oldPrice = offer.freightValuePerTon ? ` (era R$ ${offer.freightValuePerTon.toFixed(2)})` : '';
-                  const history = addOfferHistory(offer, `Preço inicial editado para R$ ${newValue.toFixed(2)} pela Transportadora${oldPrice}.`);
-                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
-                } else {
-                  const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pela Transportadora.`);
-                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
-                }
-              }
-            }}
-            currentUser={currentUser || undefined}
-            onDelete={onDeleteFreightOffer}
-            onConvertToCargo={onConvertToCargo}
-            onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
-            onSaveFreightOffer={onSaveFreightOffer}
-          />
-        </div>
+      {viewMode === 'geral' && (
+        <>
+          {isMotorista && driverOffers.length > 0 && (
+            <div className="mb-8">
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">Minhas Solicitações de Embarque</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Acompanhe o status dos embarques que você solicitou.</p>
+              </div>
+              <FreightOffersList
+                title="Minhas Solicitações de Embarque"
+                offers={driverOffers}
+                clients={clients}
+                products={products}
+                cargos={cargos}
+                users={users}
+                isClientProfile={true}
+                onAccept={async () => {}} 
+                onRefuse={async () => {}}
+                onCounterOffer={async () => {}}
+                currentUser={currentUser || undefined}
+              />
+            </div>
+          )}
+
+          {canViewOffers && pendingOffers.length > 0 && (
+            <div className="mb-8">
+              <FreightOffersList
+                offers={pendingOffers}
+                clients={clients}
+                products={products}
+                cargos={cargos}
+                users={users}
+                isClientProfile={false}
+                onAccept={async (offer) => {
+                  if (onAcceptFreightOffer) {
+                    onAcceptFreightOffer(offer);
+                  } else if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta aceita pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+                  }
+                }}
+                onRefuse={async (offer) => {
+                  if (onSaveFreightOffer) {
+                    const history = addOfferHistory(offer, `Oferta recusada pela Transportadora.`);
+                    await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                  }
+                }}
+                onCounterOffer={async (offer, newValue) => {
+                  if (onSaveFreightOffer) {
+                    if (offer.status === FreightOfferStatus.AguardandoPreco) {
+                      const history = addOfferHistory(offer, `Preço inicial de R$ ${newValue.toFixed(2)} enviado pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else if (offer.status === FreightOfferStatus.AnaliseCliente) {
+                      const oldPrice = offer.freightValuePerTon ? ` (era R$ ${offer.freightValuePerTon.toFixed(2)})` : '';
+                      const history = addOfferHistory(offer, `Preço inicial editado para R$ ${newValue.toFixed(2)} pela Transportadora${oldPrice}.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.AnaliseCliente, freightValuePerTon: newValue, history });
+                    } else {
+                      const history = addOfferHistory(offer, `Contraproposta de R$ ${newValue.toFixed(2)} enviada pela Transportadora.`);
+                      await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Contraproposta, counterOfferValue: newValue, history });
+                    }
+                  }
+                }}
+                currentUser={currentUser || undefined}
+                onDelete={onDeleteFreightOffer}
+                onConvertToCargo={onConvertToCargo}
+                onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
+                onSaveFreightOffer={onSaveFreightOffer}
+              />
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card
+              title="Embarques Ativos"
+              value={activeShipments.toString()}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-primary"
+            />
+            <Card
+              title="Cargas em Andamento"
+              value={pendingLoads.toString()}
+              icon={<PackageIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-secondary"
+            />
+            <Card
+              title="Tons Efetivadas (Mês)"
+              value={`${dashboardStats.monthlyEffectiveTonnage.toLocaleString('pt-BR')} t`}
+              icon={<TruckIcon className="w-6 h-6 text-white" />}
+              colorClass="bg-green-500"
+            />
+            {dashboardStats.canViewCommission ? (
+              <Card
+                title="Comissão (Mês)"
+                value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardStats.monthlyCommission)}
+                icon={<DollarSignIcon className="w-6 h-6 text-white" />}
+                colorClass="bg-accent"
+              />
+            ) : (
+              <Card
+                title="Clientes Ativos"
+                value="0"
+                icon={<ClientsIcon className="w-6 h-6 text-white" />}
+                colorClass="bg-gray-400"
+              />
+            )}
+          </div>
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
+                <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
+                <DonutChartCard title="Volume Carregado por Cliente (Mês)" data={clientVolumeData} unit="t" />
+            </div>
+            <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
+            {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
+          </div>
+        </>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card
-          title="Embarques Ativos"
-          value={activeShipments.toString()}
-          icon={<TruckIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-primary"
-        />
-        <Card
-          title="Cargas em Andamento"
-          value={pendingLoads.toString()}
-          icon={<PackageIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-secondary"
-        />
-        <Card
-          title="Tons Efetivadas (Mês)"
-          value={`${dashboardStats.monthlyEffectiveTonnage.toLocaleString('pt-BR')} t`}
-          icon={<TruckIcon className="w-6 h-6 text-white" />}
-          colorClass="bg-green-500"
-        />
-        {dashboardStats.canViewCommission ? (
-          <Card
-            title="Comissão (Mês)"
-            value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardStats.monthlyCommission)}
-            icon={<DollarSignIcon className="w-6 h-6 text-white" />}
-            colorClass="bg-accent"
-          />
-        ) : (
-          <Card
-            title="Clientes Ativos"
-            value="0"
-            icon={<ClientsIcon className="w-6 h-6 text-white" />}
-            colorClass="bg-gray-400"
-          />
-        )}
-      </div>
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-            <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
-            <DonutChartCard title="Volume Carregado por Cliente (Mês)" data={clientVolumeData} unit="t" />
-        </div>
-        <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
-        {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
-      </div>
 
       <ShipmentDetailsModal
         isOpen={!!detailsModalShipment}
         onClose={() => setDetailsModalShipment(null)}
         shipment={detailsModalShipment}
-        cargo={detailsModalShipment ? cargos.find(c => c.id === detailsModalShipment.cargoId) : undefined}
+        cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+        currentUser={currentUser}
         clients={clients}
         products={products}
         companyLogo={companyLogo}
@@ -1005,6 +1579,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         users={users}
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
+        onUpdateShipmentData={onUpdateShipmentData}
+        onAddAttachments={onAddAttachments}
       />
 
       <ShipmentHistoryModal
@@ -1020,6 +1596,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         cargos={cargos}
         title={`Histórico de ${users.find(u => u.id === selectedDriverForHistoryId)?.name || 'Motorista'}`}
       />
+
+      {selectedShipmentForAttachment && currentUser && (
+        <AttachmentModal
+          isOpen={isAttachmentModalOpen}
+          onClose={handleCloseAttachmentModal}
+          onSave={handleSaveAttachment}
+          shipment={selectedShipmentForAttachment}
+          documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+          currentUser={currentUser}
+          cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+          requiresRiskManagement={
+            products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+              ?.requiresRiskManagement !== false
+          }
+        />
+      )}
+
+      {selectedShipmentForAntt && (
+        <CadastroAnttModal
+          isOpen={isAnttModalOpen}
+          onClose={() => {
+            setAnttModalOpen(false);
+            setSelectedShipmentForAntt(null);
+          }}
+          onSave={handleSaveAntt}
+          shipment={selectedShipmentForAntt}
+        />
+      )}
     </>
   );
 };
