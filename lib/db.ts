@@ -268,7 +268,7 @@ const safeParseJson = (val: any, fallback: any) => {
   return val;
 };
 
-const toCargo = (row: any): Cargo => ({
+export const toCargo = (row: any): Cargo => ({
   id: row.id,
   sequenceId: row.sequence_id,
   clientId: row.client_id,

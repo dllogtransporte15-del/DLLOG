@@ -3,7 +3,8 @@ import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
 import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
-import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { toCargo } from '../lib/db';
+import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
 
 
 interface NewShipmentModalProps {
@@ -21,6 +22,10 @@ interface NewShipmentModalProps {
 }
 
 const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users, offer }) => {
+  const [activeCargo, setActiveCargo] = useState<Cargo | null>(cargo);
+  const [isUpdatingCargoPermission, setIsUpdatingCargoPermission] = useState(false);
+  const [isSyncingCargo, setIsSyncingCargo] = useState(false);
+
   const [driverName, setDriverName] = useState('');
   const [driverCpf, setDriverCpf] = useState('');
   const [ownerContact, setOwnerContact] = useState('');
@@ -49,6 +54,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [activeShipmentsFound, setActiveShipmentsFound] = useState<Shipment[]>([]);
   const [pendingPayload, setPendingPayload] = useState<any>(null);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (cargo) {
+      setActiveCargo(cargo);
+    }
+  }, [cargo]);
 
   const handleScanDocument = async (files: File[]) => {
     if (files.length === 0) {
@@ -248,26 +259,125 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
   }, [horsePlate, vehicles, shipments, lastAutofilledPlate]);
 
-  // Freight Rate Calculations for PJ and PF
-  const leg1 = cargo?.freightLegs?.[0] || {
-    companyFreightValuePerTon: cargo?.companyFreightValuePerTon || 0,
-    driverFreightValuePerTon: cargo?.driverFreightValuePerTon || 0,
-    driverFreightValuePerTonPf: cargo?.driverFreightValuePerTon || 0,
-    disablePfFreight: false,
-    hasIcms: cargo?.hasIcms || false,
-    icmsPercentage: cargo?.icmsPercentage || 0,
+  // Live Vehicle Compatibility Validator
+  const vehicleValidationInfo = useMemo(() => {
+    const setType = vehicleSetType || selectedVehicle?.setType || '';
+    const bodyType = vehicleBodyType || selectedVehicle?.bodyType || '';
+
+    if (!activeCargo?.allowedVehicleTypes || activeCargo.allowedVehicleTypes.length === 0) {
+      return { hasRules: false, isAllowed: true, setType, bodyType };
+    }
+
+    if (!setType || !bodyType) {
+      return { hasRules: true, isAllowed: true, setType, bodyType };
+    }
+
+    const isAllowed = activeCargo.allowedVehicleTypes.some(allowed => 
+      allowed.setType === setType && allowed.bodyTypes.includes(bodyType as VehicleBodyType)
+    );
+
+    return { hasRules: true, isAllowed, setType, bodyType };
+  }, [activeCargo, vehicleSetType, vehicleBodyType, selectedVehicle]);
+
+  // Sync Cargo Data on Demand without losing form state
+  const handleSyncCargo = async () => {
+    if (!activeCargo?.id) return;
+    setIsSyncingCargo(true);
+    try {
+      const { data, error } = await supabase
+        .from('cargos')
+        .select('*')
+        .eq('id', activeCargo.id)
+        .single();
+      if (error) throw error;
+      if (data) {
+        const updated = toCargo(data);
+        setActiveCargo(updated);
+        showToast('Dados e permissões da carga sincronizados com sucesso!', 'success');
+      }
+    } catch (err: any) {
+      console.error('Erro ao sincronizar carga:', err);
+      showToast(`Erro ao sincronizar carga: ${err.message || err}`, 'error');
+    } finally {
+      setIsSyncingCargo(false);
+    }
   };
 
-  const ratePj = leg1.driverFreightValuePerTon || cargo?.driverFreightValuePerTon || 0;
+  // 1-Click Allow Vehicle Type on Cargo
+  const handleAllowCurrentVehicleOnCargo = async () => {
+    if (!activeCargo) return;
+    const currentSetType = vehicleSetType || selectedVehicle?.setType;
+    const currentBodyType = vehicleBodyType || selectedVehicle?.bodyType;
+
+    if (!currentSetType || !currentBodyType) {
+      showToast('Selecione primeiro o Tipo de Veículo e Carroceria.', 'warning');
+      return;
+    }
+
+    setIsUpdatingCargoPermission(true);
+    try {
+      const existingAllowed = [...(activeCargo.allowedVehicleTypes || [])];
+      const existingIndex = existingAllowed.findIndex(item => item.setType === currentSetType);
+
+      if (existingIndex >= 0) {
+        const bodyTypes = [...existingAllowed[existingIndex].bodyTypes];
+        if (!bodyTypes.includes(currentBodyType as VehicleBodyType)) {
+          bodyTypes.push(currentBodyType as VehicleBodyType);
+          existingAllowed[existingIndex] = {
+            ...existingAllowed[existingIndex],
+            bodyTypes
+          };
+        }
+      } else {
+        existingAllowed.push({
+          setType: currentSetType as VehicleSetType,
+          bodyTypes: [currentBodyType as VehicleBodyType]
+        });
+      }
+
+      const { error } = await supabase
+        .from('cargos')
+        .update({
+          allowed_vehicle_types: existingAllowed
+        })
+        .eq('id', activeCargo.id);
+
+      if (error) throw error;
+
+      const updatedCargo: Cargo = {
+        ...activeCargo,
+        allowedVehicleTypes: existingAllowed
+      };
+      setActiveCargo(updatedCargo);
+      showToast(`Veículo (${currentSetType} - ${currentBodyType}) permitido nesta carga com sucesso!`, 'success');
+    } catch (err: any) {
+      console.error('Erro ao atualizar permissão de veículo na carga:', err);
+      showToast(`Erro ao atualizar carga: ${err.message || err}`, 'error');
+    } finally {
+      setIsUpdatingCargoPermission(false);
+    }
+  };
+
+  // Freight Rate Calculations for PJ and PF
+  const leg1 = activeCargo?.freightLegs?.[0] || {
+    companyFreightValuePerTon: activeCargo?.companyFreightValuePerTon || 0,
+    driverFreightValuePerTon: activeCargo?.driverFreightValuePerTon || 0,
+    driverFreightValuePerTonPf: activeCargo?.driverFreightValuePerTon || 0,
+    disablePfFreight: false,
+    hasIcms: activeCargo?.hasIcms || false,
+    icmsPercentage: activeCargo?.icmsPercentage || 0,
+  };
+
+  const ratePj = leg1.driverFreightValuePerTon || activeCargo?.driverFreightValuePerTon || 0;
   const isPfDisabled = leg1.disablePfFreight || false;
-  const ratePf = isPfDisabled ? 0 : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || cargo?.driverFreightValuePerTon || 0));
+  const ratePf = isPfDisabled ? 0 : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || activeCargo?.driverFreightValuePerTon || 0));
 
   const currentFreightRate = (driverFreightType === 'PF' && !isPfDisabled) ? ratePf : ratePj;
 
   const calculatedFreight = useMemo(() => {
-    if (!cargo || shipmentTonnage <= 0) return 0;
+    if (!activeCargo || shipmentTonnage <= 0) return 0;
     return currentFreightRate * shipmentTonnage;
-  }, [cargo, shipmentTonnage, currentFreightRate]);
+  }, [activeCargo, shipmentTonnage, currentFreightRate]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -275,7 +385,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cargo) {
+    if (!activeCargo) {
       showToast('Esta carga não existe mais no sistema ou foi removida. Não é possível criar o embarque.', 'error');
       return;
     }
@@ -319,18 +429,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         vehicleInfo = { setType: vehicleSetType, bodyType: vehicleBodyType };
     }
 
-    if (cargo?.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && vehicleInfo.setType && vehicleInfo.bodyType) {
-        const isAllowed = cargo.allowedVehicleTypes.some(allowed => 
+    if (activeCargo?.allowedVehicleTypes && activeCargo.allowedVehicleTypes.length > 0 && vehicleInfo.setType && vehicleInfo.bodyType) {
+        const isAllowed = activeCargo.allowedVehicleTypes.some(allowed => 
             allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
         );
         if (!isAllowed) {
-            showToast(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga.`, 'error');
+            showToast(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Use o botão "Permitir Este Veículo" acima para liberar.`, 'error');
             return;
         }
     }
 
-    if (cargo?.dailySchedule) {
-        const scheduleRule = cargo.dailySchedule.find(rule => rule.date === scheduledDate);
+    if (activeCargo?.dailySchedule) {
+        const scheduleRule = activeCargo.dailySchedule.find(rule => rule.date === scheduledDate);
         if (!scheduleRule) {
             showToast('Não é permitido criar ordens para datas sem programação lançada na carga. Verifique a Data Programada.', 'error');
             return;
@@ -340,7 +450,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             showToast('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.', 'warning');
         } else if (scheduleRule.type === DailyScheduleType.Fixo && scheduleRule.tonnage) {
             const alreadyScheduledTonnage = shipments
-                .filter(s => s.cargoId === cargo.id && s.scheduledDate === scheduledDate)
+                .filter(s => s.cargoId === activeCargo.id && s.scheduledDate === scheduledDate)
                 .reduce((sum, s) => sum + s.shipmentTonnage, 0);
             
             if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage) {
@@ -359,7 +469,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     // Hard Validation: Balance Check
-    const availableBalance = cargo.totalVolume - cargo.scheduledVolume;
+    const availableBalance = activeCargo.totalVolume - activeCargo.scheduledVolume;
     if (shipmentTonnage > (availableBalance + 0.001)) {
         showToast(`SALDO INSUFICIENTE: Esta carga possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis. Você está tentando solicitar ${shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
         return;
@@ -376,7 +486,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     const shipmentData = {
-      cargoId: cargo.id,
+      cargoId: activeCargo.id,
       driverName,
       driverCpf,
       driverContact,
@@ -469,22 +579,38 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     );
   }
 
-  const clientName = clients.find(c => c.id === cargo.clientId)?.nomeFantasia || 'Cliente não encontrado';
+  const clientName = clients.find(c => c.id === activeCargo.clientId)?.nomeFantasia || 'Cliente não encontrado';
   const isExistingDriver = !!drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase() && driverName.trim() !== '');
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-3xl w-full max-h-[92vh] overflow-y-auto border border-gray-100 dark:border-gray-700">
-        <h2 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white">Solicitação de Embarque</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Solicitação de Embarque</h2>
+          <button
+            type="button"
+            onClick={handleSyncCargo}
+            disabled={isSyncingCargo}
+            className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
+            title="Atualizar dados da carga direto do banco sem perder o que digitou"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCargo ? 'animate-spin text-primary' : 'text-gray-500'}`} />
+            <span>{isSyncingCargo ? 'Atualizando...' : 'Atualizar Carga'}</span>
+          </button>
+        </div>
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <p className="text-gray-600 dark:text-gray-400">Cliente: <span className="font-bold text-gray-900 dark:text-gray-100">{clientName}</span></p>
-            <p className="text-gray-600 dark:text-gray-400">Rota: <span className="font-bold text-gray-900 dark:text-gray-100">{cargo.origin} → {cargo.destination}</span></p>
-            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{(cargo.totalVolume - cargo.scheduledVolume).toLocaleString('pt-BR')} ton</span></p>
+            <p className="text-gray-600 dark:text-gray-400">Rota: <span className="font-bold text-gray-900 dark:text-gray-100">{activeCargo.origin} → {activeCargo.destination}</span></p>
+            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{(activeCargo.totalVolume - activeCargo.scheduledVolume).toLocaleString('pt-BR')} ton</span></p>
           </div>
-          {cargo.allowedVehicleTypes && cargo.allowedVehicleTypes.length > 0 && (
+          {activeCargo.allowedVehicleTypes && activeCargo.allowedVehicleTypes.length > 0 ? (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                Veículos Permitidos: <span className="font-semibold text-gray-700 dark:text-gray-300">{cargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>
+                Veículos Permitidos: <span className="font-semibold text-gray-700 dark:text-gray-300">{activeCargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>
+              </p>
+          ) : (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-medium">
+                ✓ Todos os tipos de veículos são permitidos nesta carga
               </p>
           )}
         </div>
@@ -563,6 +689,54 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     </select>
                 </div>
             </div>
+
+            {/* Live Vehicle Compatibility & 1-Click Permission Banner */}
+            {vehicleValidationInfo.hasRules && (
+              <div>
+                {!vehicleValidationInfo.isAllowed ? (
+                  <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-amber-900 dark:text-amber-200">
+                          Veículo não permitido na carga: {vehicleValidationInfo.setType} - {vehicleValidationInfo.bodyType}
+                        </p>
+                        <p className="text-amber-700 dark:text-amber-400 mt-0.5 text-[11px]">
+                          Permitidos atualmente: {activeCargo?.allowedVehicleTypes?.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleSyncCargo}
+                        disabled={isSyncingCargo}
+                        className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 text-gray-700 dark:text-gray-200 rounded-lg font-semibold flex items-center gap-1 shadow-xs transition-all text-xs"
+                        title="Verificar se outra pessoa já atualizou a carga"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isSyncingCargo ? 'animate-spin text-primary' : ''}`} />
+                        <span>{isSyncingCargo ? 'Checando...' : 'Sincronizar'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAllowCurrentVehicleOnCargo}
+                        disabled={isUpdatingCargoPermission}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition-all text-xs"
+                        title="Adiciona este tipo de veículo nas regras da carga agora sem recarregar a tela"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>{isUpdatingCargoPermission ? 'Liberando...' : 'Permitir Este Veículo'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (vehicleValidationInfo.setType && vehicleValidationInfo.bodyType ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Tipo de veículo compatível com as regras desta carga</span>
+                  </div>
+                ) : null)}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div><label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Placa Carreta 1</label><input type="text" value={trailer1Plate} onChange={(e) => setTrailer1Plate(e.target.value.toUpperCase())} placeholder="Obrigatório" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required /></div>

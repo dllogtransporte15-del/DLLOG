@@ -198,13 +198,20 @@ export function useDatabase(currentUser: User | null) {
     }
   }, [currentUser, loadAllData]);
 
-  // Real-time integration
+  // Real-time integration — with auto-reconnect and polling fallback
   useEffect(() => {
     if (!currentUser) return;
 
+    // Track last known shipments/cargos hash to detect changes during polling
+    let lastShipmentsHash = '';
+    let lastCargosHash = '';
+    let realtimeWorking = false;
+    let channelRef: ReturnType<typeof supabase.channel> | null = null;
+
     const handlePostgresChange = async (payload: any) => {
       const { table, eventType } = payload;
-      console.log(`[useDatabase] Change detected in ${table} (${eventType}). Updating...`);
+      realtimeWorking = true;
+      console.log(`[Realtime] Mudança detectada em ${table} (${eventType}). Atualizando...`);
 
       // Permite atualizações em tempo real mesmo com modais abertos para fluxos principais
       const alwaysUpdateTables = ['tickets', 'cargos', 'shipments', 'freight_offers'];
@@ -244,12 +251,14 @@ export function useDatabase(currentUser: User | null) {
           }
           case 'cargos': {
             const dbCargos = await fetchCargos();
+            lastCargosHash = JSON.stringify(dbCargos.map(c => `${c.id}:${(c as any).status}:${(c as any).updatedAt}`));
             setCargos(dbCargos);
             setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
             break;
           }
           case 'shipments': {
             const dbShipments = await fetchShipments();
+            lastShipmentsHash = JSON.stringify(dbShipments.map(s => `${s.id}:${s.status}:${(s as any).updatedAt}`));
             setShipments(dbShipments);
             setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
             break;
@@ -306,18 +315,68 @@ export function useDatabase(currentUser: User | null) {
             loadAllData(true);
         }
       } catch (err) {
-        console.error(`[useDatabase] Error during surgical update for ${table}:`, err);
+        console.error(`[Realtime] Erro ao atualizar ${table}:`, err);
         loadAllData(true); // Fallback to full reload
       }
     };
 
-    const channel = supabase
-      .channel('db_changes')
-      .on('postgres_changes', { event: '*', schema: 'public' }, handlePostgresChange)
-      .subscribe();
+    const subscribeChannel = () => {
+      if (channelRef) {
+        supabase.removeChannel(channelRef);
+      }
+      channelRef = supabase
+        .channel('db_changes_' + Date.now())
+        .on('postgres_changes', { event: '*', schema: 'public' }, handlePostgresChange)
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[Realtime] ✅ Canal conectado — atualizações automáticas ativas');
+            realtimeWorking = true;
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`[Realtime] ⚠️ Canal ${status} — tentando reconectar em 5s...`);
+            realtimeWorking = false;
+            setTimeout(() => {
+              subscribeChannel();
+            }, 5000);
+          }
+        });
+    };
+
+    subscribeChannel();
+
+    // ── Polling fallback (30s): garante atualização mesmo se Realtime não estiver
+    //    com replicação habilitada nas tabelas do Supabase ─────────────────────────
+    const POLL_INTERVAL_MS = 30_000;
+    const pollInterval = setInterval(async () => {
+      try {
+        // Poll shipments
+        const dbShipments = await fetchShipments();
+        const newShipmentsHash = JSON.stringify(dbShipments.map(s => `${s.id}:${s.status}:${(s as any).updatedAt}`));
+        if (newShipmentsHash !== lastShipmentsHash) {
+          console.log('[Polling] 🔄 Embarques alterados — atualizando...');
+          lastShipmentsHash = newShipmentsHash;
+          setShipments(dbShipments);
+          setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
+        }
+
+        // Poll cargos
+        const dbCargos = await fetchCargos();
+        const newCargosHash = JSON.stringify(dbCargos.map(c => `${c.id}:${(c as any).status}:${(c as any).updatedAt}`));
+        if (newCargosHash !== lastCargosHash) {
+          console.log('[Polling] 🔄 Cargas alteradas — atualizando...');
+          lastCargosHash = newCargosHash;
+          setCargos(dbCargos);
+          setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
+        }
+      } catch (err) {
+        console.warn('[Polling] Erro ao verificar atualizações:', err);
+      }
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+      if (channelRef) {
+        supabase.removeChannel(channelRef);
+      }
     };
   }, [currentUser, loadAllData]);
 
