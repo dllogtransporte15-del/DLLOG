@@ -259,12 +259,14 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
   }, [horsePlate, vehicles, shipments, lastAutofilledPlate]);
 
+  const currentCargo = activeCargo || cargo;
+
   // Live Vehicle Compatibility Validator
   const vehicleValidationInfo = useMemo(() => {
     const setType = vehicleSetType || selectedVehicle?.setType || '';
     const bodyType = vehicleBodyType || selectedVehicle?.bodyType || '';
 
-    if (!activeCargo?.allowedVehicleTypes || activeCargo.allowedVehicleTypes.length === 0) {
+    if (!currentCargo?.allowedVehicleTypes || currentCargo.allowedVehicleTypes.length === 0) {
       return { hasRules: false, isAllowed: true, setType, bodyType };
     }
 
@@ -272,22 +274,23 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       return { hasRules: true, isAllowed: true, setType, bodyType };
     }
 
-    const isAllowed = activeCargo.allowedVehicleTypes.some(allowed => 
+    const isAllowed = currentCargo.allowedVehicleTypes.some(allowed => 
       allowed.setType === setType && allowed.bodyTypes.includes(bodyType as VehicleBodyType)
     );
 
     return { hasRules: true, isAllowed, setType, bodyType };
-  }, [activeCargo, vehicleSetType, vehicleBodyType, selectedVehicle]);
+  }, [currentCargo, vehicleSetType, vehicleBodyType, selectedVehicle]);
 
   // Sync Cargo Data on Demand without losing form state
   const handleSyncCargo = async () => {
-    if (!activeCargo?.id) return;
+    const target = currentCargo;
+    if (!target?.id) return;
     setIsSyncingCargo(true);
     try {
       const { data, error } = await supabase
         .from('cargos')
         .select('*')
-        .eq('id', activeCargo.id)
+        .eq('id', target.id)
         .single();
       if (error) throw error;
       if (data) {
@@ -305,7 +308,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
   // 1-Click Allow Vehicle Type on Cargo
   const handleAllowCurrentVehicleOnCargo = async () => {
-    if (!activeCargo) return;
+    const target = currentCargo;
+    if (!target) return;
     const currentSetType = vehicleSetType || selectedVehicle?.setType;
     const currentBodyType = vehicleBodyType || selectedVehicle?.bodyType;
 
@@ -316,7 +320,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
     setIsUpdatingCargoPermission(true);
     try {
-      const existingAllowed = [...(activeCargo.allowedVehicleTypes || [])];
+      const existingAllowed = [...(target.allowedVehicleTypes || [])];
       const existingIndex = existingAllowed.findIndex(item => item.setType === currentSetType);
 
       if (existingIndex >= 0) {
@@ -340,12 +344,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         .update({
           allowed_vehicle_types: existingAllowed
         })
-        .eq('id', activeCargo.id);
+        .eq('id', target.id);
 
       if (error) throw error;
 
       const updatedCargo: Cargo = {
-        ...activeCargo,
+        ...target,
         allowedVehicleTypes: existingAllowed
       };
       setActiveCargo(updatedCargo);
@@ -359,25 +363,25 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   };
 
   // Freight Rate Calculations for PJ and PF
-  const leg1 = activeCargo?.freightLegs?.[0] || {
-    companyFreightValuePerTon: activeCargo?.companyFreightValuePerTon || 0,
-    driverFreightValuePerTon: activeCargo?.driverFreightValuePerTon || 0,
-    driverFreightValuePerTonPf: activeCargo?.driverFreightValuePerTon || 0,
+  const leg1 = currentCargo?.freightLegs?.[0] || {
+    companyFreightValuePerTon: currentCargo?.companyFreightValuePerTon || 0,
+    driverFreightValuePerTon: currentCargo?.driverFreightValuePerTon || 0,
+    driverFreightValuePerTonPf: currentCargo?.driverFreightValuePerTon || 0,
     disablePfFreight: false,
-    hasIcms: activeCargo?.hasIcms || false,
-    icmsPercentage: activeCargo?.icmsPercentage || 0,
+    hasIcms: currentCargo?.hasIcms || false,
+    icmsPercentage: currentCargo?.icmsPercentage || 0,
   };
 
-  const ratePj = leg1.driverFreightValuePerTon || activeCargo?.driverFreightValuePerTon || 0;
+  const ratePj = leg1.driverFreightValuePerTon || currentCargo?.driverFreightValuePerTon || 0;
   const isPfDisabled = leg1.disablePfFreight || false;
-  const ratePf = isPfDisabled ? 0 : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || activeCargo?.driverFreightValuePerTon || 0));
+  const ratePf = isPfDisabled ? 0 : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || currentCargo?.driverFreightValuePerTon || 0));
 
   const currentFreightRate = (driverFreightType === 'PF' && !isPfDisabled) ? ratePf : ratePj;
 
   const calculatedFreight = useMemo(() => {
-    if (!activeCargo || shipmentTonnage <= 0) return 0;
+    if (!currentCargo || shipmentTonnage <= 0) return 0;
     return currentFreightRate * shipmentTonnage;
-  }, [activeCargo, shipmentTonnage, currentFreightRate]);
+  }, [currentCargo, shipmentTonnage, currentFreightRate]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -385,7 +389,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCargo) {
+    if (!currentCargo) {
       showToast('Esta carga não existe mais no sistema ou foi removida. Não é possível criar o embarque.', 'error');
       return;
     }
@@ -429,8 +433,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         vehicleInfo = { setType: vehicleSetType, bodyType: vehicleBodyType };
     }
 
-    if (activeCargo?.allowedVehicleTypes && activeCargo.allowedVehicleTypes.length > 0 && vehicleInfo.setType && vehicleInfo.bodyType) {
-        const isAllowed = activeCargo.allowedVehicleTypes.some(allowed => 
+    if (currentCargo?.allowedVehicleTypes && currentCargo.allowedVehicleTypes.length > 0 && vehicleInfo.setType && vehicleInfo.bodyType) {
+        const isAllowed = currentCargo.allowedVehicleTypes.some(allowed => 
             allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
         );
         if (!isAllowed) {
@@ -439,8 +443,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         }
     }
 
-    if (activeCargo?.dailySchedule) {
-        const scheduleRule = activeCargo.dailySchedule.find(rule => rule.date === scheduledDate);
+    if (currentCargo?.dailySchedule) {
+        const scheduleRule = currentCargo.dailySchedule.find(rule => rule.date === scheduledDate);
         if (!scheduleRule) {
             showToast('Não é permitido criar ordens para datas sem programação lançada na carga. Verifique a Data Programada.', 'error');
             return;
@@ -450,7 +454,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             showToast('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.', 'warning');
         } else if (scheduleRule.type === DailyScheduleType.Fixo && scheduleRule.tonnage) {
             const alreadyScheduledTonnage = shipments
-                .filter(s => s.cargoId === activeCargo.id && s.scheduledDate === scheduledDate)
+                .filter(s => s.cargoId === currentCargo.id && s.scheduledDate === scheduledDate)
                 .reduce((sum, s) => sum + s.shipmentTonnage, 0);
             
             if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage) {
@@ -469,7 +473,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     // Hard Validation: Balance Check
-    const availableBalance = activeCargo.totalVolume - activeCargo.scheduledVolume;
+    const availableBalance = currentCargo.totalVolume - currentCargo.scheduledVolume;
     if (shipmentTonnage > (availableBalance + 0.001)) {
         showToast(`SALDO INSUFICIENTE: Esta carga possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis. Você está tentando solicitar ${shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
         return;
@@ -486,7 +490,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     const shipmentData = {
-      cargoId: activeCargo.id,
+      cargoId: currentCargo.id,
       driverName,
       driverCpf,
       driverContact,
@@ -551,7 +555,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
   if (!isOpen) return null;
 
-  if (!cargo) {
+  if (!currentCargo) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full">
@@ -579,7 +583,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     );
   }
 
-  const clientName = clients.find(c => c.id === activeCargo.clientId)?.nomeFantasia || 'Cliente não encontrado';
+  const clientName = clients.find(c => c.id === currentCargo.clientId)?.nomeFantasia || 'Cliente não encontrado';
   const isExistingDriver = !!drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase() && driverName.trim() !== '');
 
   return (
@@ -601,12 +605,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <p className="text-gray-600 dark:text-gray-400">Cliente: <span className="font-bold text-gray-900 dark:text-gray-100">{clientName}</span></p>
-            <p className="text-gray-600 dark:text-gray-400">Rota: <span className="font-bold text-gray-900 dark:text-gray-100">{activeCargo.origin} → {activeCargo.destination}</span></p>
-            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{(activeCargo.totalVolume - activeCargo.scheduledVolume).toLocaleString('pt-BR')} ton</span></p>
+            <p className="text-gray-600 dark:text-gray-400">Rota: <span className="font-bold text-gray-900 dark:text-gray-100">{currentCargo.origin} → {currentCargo.destination}</span></p>
+            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{(currentCargo.totalVolume - currentCargo.scheduledVolume).toLocaleString('pt-BR')} ton</span></p>
           </div>
-          {activeCargo.allowedVehicleTypes && activeCargo.allowedVehicleTypes.length > 0 ? (
+          {currentCargo.allowedVehicleTypes && currentCargo.allowedVehicleTypes.length > 0 ? (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                Veículos Permitidos: <span className="font-semibold text-gray-700 dark:text-gray-300">{activeCargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>
+                Veículos Permitidos: <span className="font-semibold text-gray-700 dark:text-gray-300">{currentCargo.allowedVehicleTypes.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}</span>
               </p>
           ) : (
               <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-medium">
@@ -702,7 +706,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                           Veículo não permitido na carga: {vehicleValidationInfo.setType} - {vehicleValidationInfo.bodyType}
                         </p>
                         <p className="text-amber-700 dark:text-amber-400 mt-0.5 text-[11px]">
-                          Permitidos atualmente: {activeCargo?.allowedVehicleTypes?.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}
+                          Permitidos atualmente: {currentCargo?.allowedVehicleTypes?.map(vt => `${vt.setType} (${vt.bodyTypes.join('/')})`).join(', ')}
                         </p>
                       </div>
                     </div>
