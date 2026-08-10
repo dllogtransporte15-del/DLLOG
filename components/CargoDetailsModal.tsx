@@ -57,45 +57,53 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
   if (!isOpen || !cargo) return null;
   const isClient = currentUser?.profile === 'Cliente';
 
-  const scheduledButNotLoaded = Math.max(0, cargo.scheduledVolume - cargo.loadedVolume);
+  const loadedVol = Number(cargo.loadedVolume) || 0;
+  const totalVol = Number(cargo.totalVolume) || 0;
+  const scheduledVol = Number(cargo.scheduledVolume) || 0;
+  const scheduledButNotLoaded = Math.max(0, scheduledVol - loadedVol);
   
-  const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleString('pt-BR');
+  const formatCurrency = (value?: number | null) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
+  const formatDate = (dateString?: string | null) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    return isNaN(d.getTime()) ? String(dateString) : d.toLocaleString('pt-BR');
+  };
 
   const freightLegsToDisplay = (cargo.freightLegs && cargo.freightLegs.length > 0)
     ? cargo.freightLegs
     : [{
-        companyFreightValuePerTon: cargo.companyFreightValuePerTon,
-        driverFreightValuePerTon: cargo.driverFreightValuePerTon,
-        hasIcms: cargo.hasIcms,
-        icmsPercentage: cargo.icmsPercentage,
+        companyFreightValuePerTon: Number(cargo.companyFreightValuePerTon) || 0,
+        driverFreightValuePerTon: Number(cargo.driverFreightValuePerTon) || 0,
+        hasIcms: !!cargo.hasIcms,
+        icmsPercentage: Number(cargo.icmsPercentage) || 0,
       }];
       
   const { totalCompanyFreight, totalDriverFreight, netMarginPercentage } = useMemo(() => {
     const activeLegs = freightLegsToDisplay;
 
-    const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + leg.companyFreightValuePerTon, 0);
-    const totalDriverFreight = activeLegs.reduce((sum, leg) => sum + leg.driverFreightValuePerTon, 0);
+    const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + (Number(leg.companyFreightValuePerTon) || 0), 0);
+    const totalDriverFreight = activeLegs.reduce((sum, leg) => sum + (Number(leg.driverFreightValuePerTon) || 0), 0);
     
     const totalNetCompanyValue = activeLegs.reduce((sum, leg) => {
-        const icmsRate = leg.hasIcms ? leg.icmsPercentage / 100 : 0;
-        const netValue = leg.companyFreightValuePerTon * (1 - icmsRate);
+        const icmsRate = leg.hasIcms ? (Number(leg.icmsPercentage) || 0) / 100 : 0;
+        const compVal = Number(leg.companyFreightValuePerTon) || 0;
+        const netValue = compVal * (1 - icmsRate);
         return sum + netValue;
     }, 0);
 
-    const totalCommission = cargo.salespersonCommissionPerTon || 0;
+    const totalCommission = Number(cargo.salespersonCommissionPerTon) || 0;
     
     // Average demurrage
-    const loadShipments = shipments.filter(s => s.cargoId === cargo.id && s.status !== ShipmentStatus.Cancelado);
+    const loadShipments = (shipments || []).filter(s => s.cargoId === cargo.id && s.status !== ShipmentStatus.Cancelado);
     const loadShipmentIds = new Set(loadShipments.map(s => s.id));
-    const totalDemurrageProfit = stays
+    const totalDemurrageProfit = (stays || [])
         .filter(s => s.shipmentId && loadShipmentIds.has(s.shipmentId))
-        .reduce((sum, s) => sum + ((s.approvedValue || 0) - (s.driverPaidValue || 0)), 0);
-    const totalDemurrageRevenue = stays
+        .reduce((sum, s) => sum + ((Number(s.approvedValue) || 0) - (Number(s.driverPaidValue) || 0)), 0);
+    const totalDemurrageRevenue = (stays || [])
         .filter(s => s.shipmentId && loadShipmentIds.has(s.shipmentId))
-        .reduce((sum, s) => sum + (s.approvedValue || 0), 0);
+        .reduce((sum, s) => sum + (Number(s.approvedValue) || 0), 0);
         
-    const loadedTonnage = loadShipments.reduce((sum, s) => sum + (s.shipmentTonnage || 1), 0);
+    const loadedTonnage = loadShipments.reduce((sum, s) => sum + (Number(s.shipmentTonnage) || 1), 0);
     const demurrageProfitPerTon = loadedTonnage > 0 ? (totalDemurrageProfit / loadedTonnage) : 0;
     const demurrageRevenuePerTon = loadedTonnage > 0 ? (totalDemurrageRevenue / loadedTonnage) : 0;
 
@@ -136,14 +144,14 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
             <div className="border-t dark:border-gray-700 pt-4">
                  <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Balanço de Volume (ton)</h3>
                  <VolumeBar
-                    loaded={cargo.loadedVolume}
+                    loaded={loadedVol}
                     scheduled={scheduledButNotLoaded}
-                    total={cargo.totalVolume}
+                    total={totalVol}
                 />
                 <div className="grid grid-cols-3 gap-2 mt-2 text-center">
                     <div className="p-2 bg-green-100/50 dark:bg-green-900/20 rounded">
                         <p className="text-xs text-green-700 dark:text-green-300">Carregado</p>
-                        <p className="font-bold text-green-800 dark:text-green-200">{cargo.loadedVolume.toLocaleString('pt-BR')}</p>
+                        <p className="font-bold text-green-800 dark:text-green-200">{loadedVol.toLocaleString('pt-BR')}</p>
                     </div>
                      <div className="p-2 bg-orange-100/50 dark:bg-orange-900/20 rounded">
                         <p className="text-xs text-orange-700 dark:text-orange-300">Agendado</p>
@@ -151,7 +159,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     </div>
                      <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded">
                         <p className="text-xs text-gray-500">Total</p>
-                        <p className="font-bold text-gray-800 dark:text-gray-200">{cargo.totalVolume.toLocaleString('pt-BR')}</p>
+                        <p className="font-bold text-gray-800 dark:text-gray-200">{totalVol.toLocaleString('pt-BR')}</p>
                     </div>
                 </div>
             </div>

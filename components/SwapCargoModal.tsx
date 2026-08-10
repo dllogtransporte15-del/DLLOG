@@ -87,7 +87,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{shipment.shipmentTonnage.toLocaleString('pt-BR')} ton</p>
+                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton</p>
               </div>
             </div>
           </div>

@@ -83,8 +83,12 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
 
   if (!isOpen || !shipment) return null;
 
-  const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleString('pt-BR');
+  const formatCurrency = (value?: number | null) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
+  const formatDate = (dateString?: string | null) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    return isNaN(d.getTime()) ? String(dateString) : d.toLocaleString('pt-BR');
+  };
 
   const isFinalized = shipment.status === ShipmentStatus.Finalizado;
   const isAdmin = currentUser?.profile === UserProfile.Admin;
@@ -92,19 +96,30 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     (isFinalized ? isAdmin : currentUser?.profile !== UserProfile.Embarcador)
   );
 
+  const tonnage = Number(shipment.shipmentTonnage) || 0;
+  const driverFreight = Number(shipment.driverFreightValue) || 0;
+  const driverRateSnapshot = shipment.driverFreightRateSnapshot || (driverFreight / (tonnage || 1));
+  const companyRateSnapshot = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+  const commissionPerTon = Number(cargo?.salespersonCommissionPerTon) || 0;
+
+  const staysList = Array.isArray(shipmentStays) ? shipmentStays : [];
+  const approvedStaysValue = staysList.reduce((acc, stay) => acc + (Number(stay.approvedValue) || 0), 0);
+  const driverPaidStaysValue = staysList.reduce((acc, stay) => acc + (Number(stay.driverPaidValue) || 0), 0);
+  const netDemurrage = approvedStaysValue - driverPaidStaysValue;
+
   const handleStartEdit = () => {
-    setEditRate(shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1)));
-    setEditCompanyRate(shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0);
+    setEditRate(driverRateSnapshot);
+    setEditCompanyRate(companyRateSnapshot);
     setIsEditing(true);
   };
 
-  const mainVehicle = vehicles.find(v => v.plate === shipment.horsePlate);
-  const embarcador = users.find(u => u.id === shipment.embarcadorId);
-  const product = products.find(p => p.id === cargo?.productId);
+  const mainVehicle = (vehicles || []).find(v => v.plate === shipment.horsePlate);
+  const embarcador = (users || []).find(u => u.id === shipment.embarcadorId);
+  const product = (products || []).find(p => p.id === cargo?.productId);
 
   const handleSave = () => {
     if (onUpdatePrice) {
-      const newTotal = editRate * shipment.shipmentTonnage;
+      const newTotal = editRate * tonnage;
       onUpdatePrice(shipment.id, {
         newTotal,
         newRate: editRate,
@@ -126,7 +141,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       vehicleTag: shipment.vehicleTag,
       vehicleSetType: shipment.vehicleSetType || mainVehicle?.setType,
       vehicleBodyType: shipment.vehicleBodyType || mainVehicle?.bodyType,
-      shipmentTonnage: shipment.shipmentTonnage,
+      shipmentTonnage: tonnage,
       paymentMethod: shipment.paymentMethod || DriverPaymentMethod.PixEFrete,
       pixKey: shipment.pixKey || '',
       bankDetails: shipment.bankDetails || '',
@@ -396,7 +411,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <div className="flex justify-between items-center pt-2 border-t dark:border-gray-600 mt-2">
                                 <div className="text-sm">
                                     <span className="text-gray-500">Novo Total: </span>
-                                    <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(editRate * shipment.shipmentTonnage)}</span>
+                                    <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(editRate * tonnage)}</span>
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded">Cancelar</button>
@@ -411,12 +426,12 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <DetailItem label="Valor Frete Motorista">
                                 <p className="text-lg font-bold text-green-700 dark:text-green-400">
                                     {isEditingData 
-                                        ? formatCurrency((editedData.shipmentTonnage || 0) * (shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1))))
-                                        : formatCurrency(shipment.driverFreightValue)
+                                        ? formatCurrency((editedData.shipmentTonnage || 0) * driverRateSnapshot)
+                                        : formatCurrency(driverFreight)
                                     }
                                 </p>
                                 <span className="text-[10px] text-gray-500 font-normal">
-                                    ({formatCurrency(shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1)))} /ton)
+                                    ({formatCurrency(driverRateSnapshot)} /ton)
                                 </span>
                             </DetailItem>
                         )}
@@ -431,7 +446,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 />
                             ) : (
                                 <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                                    {shipment.shipmentTonnage.toLocaleString('pt-BR')} ton
+                                    {tonnage.toLocaleString('pt-BR')} ton
                                 </p>
                             )}
                         </DetailItem>
@@ -439,45 +454,45 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         {currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && (
                             <DetailItem label="Frete Empresa (Foto)">
                                 <p className="text-sm font-bold text-primary dark:text-blue-400">
-                                    {formatCurrency(shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0)} /ton
+                                    {formatCurrency(companyRateSnapshot)} /ton
                                 </p>
                             </DetailItem>
                         )}
                         
-                        {shipmentStays.length > 0 && currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && (
+                        {staysList.length > 0 && currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && (
                             <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700">
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Resumo de Estadias</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div className="bg-green-50 dark:bg-green-900/20 p-2 rounded border border-green-100 dark:border-green-800/50">
                                         <p className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">Receita (Aprovado)</p>
                                         <p className="text-sm font-bold text-green-700 dark:text-green-300">
-                                            {formatCurrency(shipmentStays.reduce((acc, stay) => acc + (stay.approvedValue || 0), 0))}
+                                            {formatCurrency(approvedStaysValue)}
                                         </p>
                                     </div>
                                     <div className="bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800/50">
                                         <p className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">Custo (Pago Motorista)</p>
                                         <p className="text-sm font-bold text-red-700 dark:text-red-300">
-                                            {formatCurrency(shipmentStays.reduce((acc, stay) => acc + (stay.driverPaidValue || 0), 0))}
+                                            {formatCurrency(driverPaidStaysValue)}
                                         </p>
                                     </div>
                                     <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-100 dark:border-blue-800/50">
                                         <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">Lucro Adicional</p>
                                         <p className={`text-sm font-bold ${
-                                            (shipmentStays.reduce((acc, stay) => acc + (stay.approvedValue || 0), 0) - shipmentStays.reduce((acc, stay) => acc + (stay.driverPaidValue || 0), 0)) >= 0 
+                                            netDemurrage >= 0 
                                             ? 'text-blue-700 dark:text-blue-300' 
                                             : 'text-red-600 dark:text-red-400'
                                         }`}>
-                                            {formatCurrency(shipmentStays.reduce((acc, stay) => acc + (stay.approvedValue || 0), 0) - shipmentStays.reduce((acc, stay) => acc + (stay.driverPaidValue || 0), 0))}
+                                            {formatCurrency(netDemurrage)}
                                         </p>
                                     </div>
                                 </div>
                                 <div className="mt-3 space-y-2">
-                                    {shipmentStays.map((stay, idx) => (
-                                        <div key={stay.id} className="flex flex-col gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded border border-gray-100 dark:border-gray-700">
+                                    {staysList.map((stay, idx) => (
+                                        <div key={stay.id || idx} className="flex flex-col gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded border border-gray-100 dark:border-gray-700">
                                             <div className="flex justify-between items-center text-xs">
                                                 <div>
                                                     <span className="font-bold text-gray-700 dark:text-gray-300">Estadia #{idx + 1}</span>
-                                                    <span className="text-gray-400 ml-2">{new Date(stay.date).toLocaleDateString('pt-BR')}</span>
+                                                    <span className="text-gray-400 ml-2">{stay.date ? new Date(stay.date).toLocaleDateString('pt-BR') : 'N/A'}</span>
                                                 </div>
                                                 <div className="flex gap-4">
                                                     <div className="text-center">
@@ -519,10 +534,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 <DetailItem label="Lucro Operacional do Embarque (Margem + Estadias)">
                                     <p className="text-lg font-bold text-primary dark:text-blue-400">
                                         {formatCurrency(
-                                            ((shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0) * shipment.shipmentTonnage) 
-                                            - shipment.driverFreightValue 
-                                            - ((cargo?.salespersonCommissionPerTon || 0) * shipment.shipmentTonnage)
-                                            + (shipmentStays.reduce((acc, stay) => acc + (stay.approvedValue || 0), 0) - shipmentStays.reduce((acc, stay) => acc + (stay.driverPaidValue || 0), 0))
+                                            (companyRateSnapshot * tonnage) 
+                                            - driverFreight 
+                                            - (commissionPerTon * tonnage)
+                                            + netDemurrage
                                         )}
                                     </p>
                                 </DetailItem>
@@ -640,7 +655,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     <div className="mt-1 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-md border border-blue-100 dark:border-blue-800/30">
                                         {shipment.ownerContact ? (
                                             <a 
-                                                href={`https://wa.me/${shipment.ownerContact.replace(/\D/g, '')}`} 
+                                                href={`https://wa.me/${String(shipment.ownerContact).replace(/\D/g, '')}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
                                                 className="text-sm font-semibold text-primary dark:text-blue-400 hover:text-accent dark:hover:text-accent transition-colors flex items-center gap-2 group"
@@ -679,49 +694,53 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             </DetailItem>
                         </div>
 
-                        {shipment.documents && Object.keys(shipment.documents).length > 0 && (
+                        {shipment.documents && typeof shipment.documents === 'object' && Object.keys(shipment.documents).length > 0 && (
                             <div className="md:col-span-2 mt-4">
                                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Arquivos do Embarque</h3>
                                 <div className="space-y-4">
-                                    {Object.entries(shipment.documents).map(([category, urls]) => (
-                                        <div key={category}>
-                                            <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">{category}</p>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {urls.map((url, idx) => {
-                                                    // Attempt to extract a cleaner filename from the path
-                                                    const urlParts = url.split('/');
-                                                    const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
-                                                    const fileName = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : `Anexo ${idx + 1}`;
-                                                    
-                                                    return (
-                                                        <div key={idx} className="flex items-center gap-1 group">
-                                                            <button 
-                                                                type="button"
-                                                                onClick={() => openDocumentInNewTab(url, fileName)}
-                                                                className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
-                                                            >
-                                                                <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
-                                                                <span className="truncate">{fileName}</span>
-                                                            </button>
-                                                            {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
-                                                                <button
-                                                                    onClick={() => {
-                                                                        if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
-                                                                            onDeleteAttachment(shipment.id, url);
-                                                                        }
-                                                                    }}
-                                                                    className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                                                                    title="Excluir Anexo"
+                                    {Object.entries(shipment.documents).map(([category, urls]) => {
+                                        const urlList = Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []);
+                                        if (urlList.length === 0) return null;
+                                        return (
+                                            <div key={category}>
+                                                <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">{category}</p>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {urlList.map((url, idx) => {
+                                                        if (!url || typeof url !== 'string') return null;
+                                                        const urlParts = url.split('/');
+                                                        const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1] || '');
+                                                        const fileName = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : (rawFileName || `Anexo ${idx + 1}`);
+                                                        
+                                                        return (
+                                                            <div key={idx} className="flex items-center gap-1 group">
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={() => openDocumentInNewTab(url, fileName)}
+                                                                    className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
                                                                 >
-                                                                    <Trash2 size={16} />
+                                                                    <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
+                                                                    <span className="truncate">{fileName}</span>
                                                                 </button>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
+                                                                {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
+                                                                                onDeleteAttachment(shipment.id, url);
+                                                                            }
+                                                                        }}
+                                                                        className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                                                                        title="Excluir Anexo"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}

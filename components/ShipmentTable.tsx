@@ -382,7 +382,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     )}
                     {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
                         <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">
-                          {shipment.shipmentTonnage.toLocaleString('pt-BR')} ton
+                          {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </div>
                     )}
                     <div className="text-[10px] text-gray-400 mt-1">
@@ -770,7 +770,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       )}
                       {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
                         <p className="text-xs text-blue-600 dark:text-blue-400 font-bold mt-1">
-                          Efetivado: {shipment.shipmentTonnage.toLocaleString('pt-BR')} ton
+                          Efetivado: {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </p>
                       )}
                       {shipment.scheduledTime && (

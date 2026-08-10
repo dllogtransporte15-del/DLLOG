@@ -133,7 +133,7 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
                         <Weight className="w-3 h-3" /> Tonelagem
                       </div>
                       <p className="text-sm font-bold text-gray-900 dark:text-white">
-                        {shipment.shipmentTonnage.toLocaleString('pt-BR')} ton
+                        {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                       </p>
                     </div>
                   </div>
