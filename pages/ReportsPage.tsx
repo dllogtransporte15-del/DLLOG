@@ -282,18 +282,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       <Header title="Relatórios" />
       
       {/* GLOBAL FILTERS SECTION */}
-      <div className="glass-panel rounded-2xl mb-8">
+      <div className="bg-white dark:bg-gray-800/90 rounded-2xl mb-8 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
         <div className="flex flex-col md:flex-row items-center justify-between p-5 gap-4">
           <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
-            <div className="flex items-center gap-2 bg-white/50 dark:bg-gray-900/50 backdrop-blur-md p-2 rounded-xl border border-gray-200/50 dark:border-gray-700/50 shadow-inner">
-              <Calendar className="w-5 h-5 text-gray-500 ml-2" />
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-1.5 bg-transparent border-none text-sm focus:ring-0 outline-none font-medium text-gray-700 dark:text-gray-200" title="Data Inicial" />
-              <span className="text-gray-400 font-medium">até</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-1.5 bg-transparent border-none text-sm focus:ring-0 outline-none font-medium text-gray-700 dark:text-gray-200" title="Data Final" />
+            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/80 p-2 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner">
+              <Calendar className="w-5 h-5 text-gray-500 dark:text-gray-400 ml-2" />
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-1.5 bg-transparent border-none text-sm focus:ring-0 outline-none font-medium text-gray-800 dark:text-gray-100" title="Data Inicial" />
+              <span className="text-gray-400 dark:text-gray-500 font-medium">até</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-1.5 bg-transparent border-none text-sm focus:ring-0 outline-none font-medium text-gray-800 dark:text-gray-100" title="Data Final" />
             </div>
             <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all duration-300 shadow-sm font-medium ${showFilters || activeFiltersCount > 0 ? 'bg-primary text-white shadow-md' : 'bg-white/80 dark:bg-gray-800/80 text-gray-700 dark:text-gray-300 border border-gray-200/50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md'}`}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all duration-300 shadow-sm font-medium ${showFilters || activeFiltersCount > 0 ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/70 hover:shadow-md'}`}
             >
                 <Filter className="w-4 h-4" />
                 <span className="text-sm">Filtros Avançados {activeFiltersCount > 0 && <span className="ml-1 bg-white/20 px-2 py-0.5 rounded-full text-xs">{activeFiltersCount}</span>}</span>
@@ -302,7 +302,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         </div>
 
         {showFilters && (
-            <div className="p-5 border-t border-gray-200/30 dark:border-gray-700/30 bg-gray-50/30 dark:bg-gray-900/20 rounded-b-2xl animate-fade-in">
+            <div className="p-5 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/40 rounded-b-2xl animate-fade-in">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                     <MultiSelectDropdown label="Status do Embarque" options={statusOptions} selectedValues={filterStatus} onChange={setFilterStatus} placeholder="Todos..." />
                     <MultiSelectDropdown label="Cliente" options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos..." />
@@ -323,62 +323,62 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
       {/* GLOBAL KPIs SECTION */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-blue-50/80 dark:bg-blue-900/40 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 shadow-inner"><ShipIcon className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate">{kpis.count}</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
              </div>
          </div>
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-gray-50/80 dark:bg-gray-800/40 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-400 shadow-inner"><Package className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Prog.</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate">{Math.round(filteredStats.totalProgramado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{Math.round(filteredStats.totalProgramado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
              </div>
          </div>
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-emerald-50/80 dark:bg-emerald-900/30 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-inner"><CheckCircle className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetiv.</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate">{Math.round(filteredStats.totalEfetivado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{Math.round(filteredStats.totalEfetivado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
              </div>
          </div>
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-green-50/80 dark:bg-green-900/40 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 shadow-inner"><DollarSign className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Faturamento Bruto">Fat. Bruto</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
                    R$ {(kpis.grossBilled / 1000).toFixed(1)}k
                 </p>
              </div>
          </div>
 
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-teal-50/80 dark:bg-teal-900/40 flex flex-shrink-0 items-center justify-center text-teal-600 dark:text-teal-400 shadow-inner"><DollarSign className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-950/60 flex flex-shrink-0 items-center justify-center text-teal-600 dark:text-teal-400 border border-teal-100 dark:border-teal-800/50"><DollarSign className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Estimado">Lucro Est.</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate" title={formatCurrency(kpis.profitMargin)}>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.profitMargin)}>
                    R$ {(kpis.profitMargin / 1000).toFixed(1)}k
                 </p>
              </div>
          </div>
 
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-indigo-50/80 dark:bg-indigo-900/40 flex flex-shrink-0 items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-inner"><DollarSign className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 flex flex-shrink-0 items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50"><DollarSign className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Efetivado">Lucro Efe.</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate" title={formatCurrency(kpis.totalProfitMargin)}>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.totalProfitMargin)}>
                    R$ {(kpis.totalProfitMargin / 1000).toFixed(1)}k
                 </p>
              </div>
          </div>
 
-         <div className="p-3.5 glass-panel rounded-xl flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-             <div className="w-9 h-9 rounded-lg bg-purple-50/80 dark:bg-purple-900/40 flex flex-shrink-0 items-center justify-center text-purple-600 dark:text-purple-400 shadow-inner"><TrendingUp className="w-5 h-5" /></div>
+         <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-950/60 flex flex-shrink-0 items-center justify-center text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-800/50"><TrendingUp className="w-5 h-5" /></div>
              <div className="min-w-0 flex-1">
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Margem de Lucro Total">Margem</p>
-                <p className="text-lg font-black text-gray-800 dark:text-gray-100 tracking-tight truncate" title={`${kpis.percentageMargin.toFixed(2)}% (Efetivado: ${kpis.effectivePercentageMargin.toFixed(2)}%)`}>
+                <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${kpis.percentageMargin.toFixed(2)}% (Efetivado: ${kpis.effectivePercentageMargin.toFixed(2)}%)`}>
                    {kpis.percentageMargin.toFixed(1)}%
                 </p>
              </div>
@@ -387,7 +387,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
       <div className="flex flex-col md:flex-row gap-8">
         <aside className="w-full md:w-64">
-          <nav className="flex flex-row md:flex-col gap-2 p-2 glass-panel rounded-2xl overflow-x-auto">
+          <nav className="flex flex-row md:flex-col gap-2 p-2 bg-white dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-700/80 rounded-2xl overflow-x-auto shadow-sm">
              {navItems.map(item => (
                  <button
                     key={item.id}
@@ -395,7 +395,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                     className={`flex items-center w-full px-4 py-3.5 text-sm font-semibold text-left rounded-xl transition-all duration-300 whitespace-nowrap md:whitespace-normal ${
                         activeReport === item.id
                         ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md transform scale-[1.02]'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100/50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/70 hover:text-gray-900 dark:hover:text-white'
                     }`}
                     >
                     <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
