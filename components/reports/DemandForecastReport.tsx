@@ -278,53 +278,53 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
               Detalhado
             </button>
           </div>
-          <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent border-none outline-none text-sm text-gray-700 dark:text-gray-300" />
-            <span className="text-gray-400 mx-1">ate</span>
-            <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent border-none outline-none text-sm text-gray-700 dark:text-gray-300" />
+          <div className="flex items-center gap-1 bg-white dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-700/80 rounded-xl px-3 py-1.5 text-sm shadow-xs">
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent border-none outline-none text-sm text-gray-800 dark:text-gray-100 font-medium" />
+            <span className="text-gray-400 dark:text-gray-500 mx-1">até</span>
+            <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent border-none outline-none text-sm text-gray-800 dark:text-gray-100 font-medium" />
           </div>
           <button
             onClick={handleExportPDF}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800 text-sm font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800 text-sm font-medium transition-colors shadow-xs"
           >
             <Download className="w-4 h-4" /> PDF
           </button>
           <button
             onClick={handleExportExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 border border-green-200 dark:border-green-800 text-sm font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 border border-green-200 dark:border-green-800 text-sm font-medium transition-colors shadow-xs"
           >
             <FileSpreadsheet className="w-4 h-4" /> Excel
           </button>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800/90 rounded-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80 overflow-hidden">
         {rows.length === 0 ? (
-          <div className="p-12 text-center text-gray-400 dark:text-gray-500">
-            <p className="text-lg font-medium">Nenhuma programacao encontrada no periodo</p>
-            <p className="text-sm mt-1">Adicione programacoes nas cargas para visualizar a previsao de demandas.</p>
+          <div className="p-12 text-center text-gray-500 dark:text-gray-300 font-medium">
+            <p className="text-lg font-bold">Nenhuma programação encontrada no período</p>
+            <p className="text-sm mt-1 text-gray-400 dark:text-gray-400">Adicione programações nas cargas para visualizar a previsão de demandas.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-900/60">
+              <thead className="bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200/60 dark:border-gray-700/60">
                 <tr>
-                  <th className="px-5 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-48">Cliente</th>
+                  <th className="px-5 py-3 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider w-48">Cliente</th>
                   {viewMode === "detalhado" &&
                     weekdayColumns.map((col) => (
-                      <th key={col.label} className="px-4 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      <th key={col.label} className="px-4 py-3 text-center text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">
                         {col.label}
                       </th>
                     ))}
-                  <th className="px-4 py-3 text-center text-xs font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wider">Previsto<br />(Ton)</th>
-                  <th className="px-4 py-3 text-center text-xs font-bold text-teal-500 dark:text-teal-400 uppercase tracking-wider">Atendido<br />(Ton)</th>
-                  <th className="px-4 py-3 text-center text-xs font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider">Saldo<br />Pendente</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Previsto<br />(Ton)</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">Atendido<br />(Ton)</th>
+                  <th className="px-4 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Saldo<br />Pendente</th>
                 </tr>
               </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
+              <tbody className="bg-white dark:bg-gray-800/90 divide-y divide-gray-100 dark:divide-gray-700/60">
                 {rows.map((row) => (
                   <tr key={row.clientId} className="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
-                    <td className="px-5 py-4 text-sm font-bold text-gray-800 dark:text-gray-200">{row.clientName}</td>
+                    <td className="px-5 py-4 text-sm font-bold text-gray-900 dark:text-white">{row.clientName}</td>
                     {viewMode === "detalhado" &&
                       weekdayColumns.map((col) => {
                         const ton = col.dates.reduce((s, d) => s + (row.dailyTonnage[d] ?? 0), 0);

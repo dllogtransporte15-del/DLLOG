@@ -25,13 +25,13 @@ const StatCard: React.FC<{ title: string, value: string | number, icon: React.Re
         : value;
 
     return (
-        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg shadow-sm border border-gray-100 dark:border-gray-600">
-            <div className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-inner">
+        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700/60 rounded-xl shadow-xs border border-gray-100 dark:border-gray-600/50">
+            <div className="p-2 bg-white dark:bg-gray-800 rounded-xl shadow-xs border border-gray-100 dark:border-gray-700/50 flex-shrink-0">
                 {icon}
             </div>
-            <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{displayValue}</p>
+            <div className="ml-3 min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-300 truncate">{title}</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white truncate">{displayValue}</p>
             </div>
         </div>
     );

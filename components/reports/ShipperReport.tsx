@@ -33,11 +33,11 @@ interface OperatorStats {
 
 const StatCard: React.FC<{ title: string, value: string | number, icon: React.ReactElement }> = ({ title, value, icon }) => {
     return (
-        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            {icon}
-            <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
+        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700/60 rounded-xl border border-gray-100 dark:border-gray-600/50 shadow-xs">
+            <div className="flex-shrink-0">{icon}</div>
+            <div className="ml-3 min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-300 truncate">{title}</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white truncate">{value}</p>
             </div>
         </div>
     );
@@ -462,11 +462,11 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                             </div>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-                            <StatCard title="Total Embarques" value={stats.total} icon={<TruckIcon className="w-8 h-8 text-blue-500"/>} />
-                            <StatCard title="Finalizados" value={stats.finalizado} icon={<CheckCircleIcon className="w-8 h-8 text-gray-500"/>} />
-                            <StatCard title="Em Andamento" value={stats.emAndamento} icon={<ClockIcon className="w-8 h-8 text-blue-400"/>} />
-                            <StatCard title="Cancelados" value={stats.cancelado} icon={<XCircleIcon className="w-8 h-8 text-black"/>} />
-                            <StatCard title="Toneladas Efetivadas" value={`${stats.effectiveTonnage.toLocaleString('pt-BR')} t`} icon={<TruckIcon className="w-8 h-8 text-green-500"/>} />
+                            <StatCard title="Total Embarques" value={stats.total} icon={<TruckIcon className="w-8 h-8 text-blue-500 dark:text-blue-400"/>} />
+                            <StatCard title="Finalizados" value={stats.finalizado} icon={<CheckCircleIcon className="w-8 h-8 text-emerald-500 dark:text-emerald-400"/>} />
+                            <StatCard title="Em Andamento" value={stats.emAndamento} icon={<ClockIcon className="w-8 h-8 text-amber-500 dark:text-amber-400"/>} />
+                            <StatCard title="Cancelados" value={stats.cancelado} icon={<XCircleIcon className="w-8 h-8 text-rose-500 dark:text-rose-400"/>} />
+                            <StatCard title="Toneladas Efetivadas" value={`${stats.effectiveTonnage.toLocaleString('pt-BR')} t`} icon={<TruckIcon className="w-8 h-8 text-teal-500 dark:text-teal-400"/>} />
                             {canViewCommission && (
                                 <StatCard 
                                     title="Comissão (R$ 2/t)" 

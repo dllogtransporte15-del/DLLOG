@@ -40,30 +40,30 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays }) => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-          <p className="text-[10px] uppercase font-bold text-gray-400 mb-1 tracking-wider">Custo Total (Pago Motorista)</p>
-          <h3 className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(stats.totalPaid)}</h3>
-          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+        <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm">
+          <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1 tracking-wider">Custo Total (Pago Motorista)</p>
+          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{formatCurrency(stats.totalPaid)}</h3>
+          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <TrendingDown className="w-3 h-3 text-red-500" />
             <span>Baseado em {stats.count} estadias</span>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-          <p className="text-[10px] uppercase font-bold text-gray-400 mb-1 tracking-wider">Lucro das Estadias</p>
-          <h3 className={`text-2xl font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+        <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm">
+          <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1 tracking-wider">Lucro das Estadias</p>
+          <h3 className={`text-2xl font-black ${stats.totalProfit >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
             {formatCurrency(stats.totalProfit)}
           </h3>
-          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <TrendingUp className="w-3 h-3 text-emerald-500" />
             <span>Margem: {stats.marginPercent.toFixed(1)}%</span>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+        <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-[10px] uppercase font-bold text-gray-400 mb-1 tracking-wider">Média por Estadia</p>
-            <h3 className="text-xl font-bold text-indigo-600">
+            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1 tracking-wider">Média por Estadia</p>
+            <h3 className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
               {formatCurrency(stats.count > 0 ? stats.totalProfit / stats.count : 0)}
             </h3>
           </div>
@@ -73,17 +73,17 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays }) => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
-            <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-500" />
+      <div className="bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 dark:border-gray-700/80 flex justify-between items-center">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
                 Detalhamento Financeiro de Estadias
             </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="bg-gray-50/50 dark:bg-gray-900/20 text-gray-500 dark:text-gray-400 uppercase text-[10px] font-bold tracking-wider">
+              <tr className="bg-gray-50 dark:bg-gray-900/50 text-gray-600 dark:text-gray-300 uppercase text-[10px] font-bold tracking-wider border-b border-gray-200/60 dark:border-gray-700/60">
                 <th className="px-6 py-4">Data / Cliente</th>
                 <th className="px-6 py-4 text-center">Motorista / Placa</th>
                 <th className="px-6 py-4 text-right">Solicitado</th>

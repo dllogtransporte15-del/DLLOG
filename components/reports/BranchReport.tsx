@@ -105,37 +105,37 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-          <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">Margem Média Geral</p>
-          <h3 className={`text-2xl font-black ${avgMargin >= 10 ? 'text-emerald-500' : 'text-orange-500'}`}>{avgMargin.toFixed(1)}%</h3>
-          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+        <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm">
+          <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1">Margem Média Geral</p>
+          <h3 className={`text-2xl font-black ${avgMargin >= 10 ? 'text-emerald-500 dark:text-emerald-400' : 'text-orange-500 dark:text-orange-400'}`}>{avgMargin.toFixed(1)}%</h3>
+          <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <TrendingUp className="w-3 h-3" />
             <span>Meta sugerida: 12.0%</span>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+        <div className="bg-white dark:bg-gray-800/90 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">Melhor Filial</p>
-            <h3 className="text-lg font-bold text-primary truncate max-w-[120px]">{branchData[0]?.name || 'N/A'}</h3>
+            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-300 mb-1">Melhor Filial</p>
+            <h3 className="text-lg font-bold text-primary dark:text-blue-400 truncate max-w-[120px]">{branchData[0]?.name || 'N/A'}</h3>
           </div>
-          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary dark:text-blue-400">
             <Building2 className="w-6 h-6" />
           </div>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden transition-all duration-300">
-        <div className="p-6 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
-            <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-primary" />
+      <div className="bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden transition-all duration-300">
+        <div className="p-6 border-b border-gray-100 dark:border-gray-700/80 flex justify-between items-center">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-primary dark:text-blue-400" />
                 Desempenho por Filial
             </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="bg-gray-50/50 dark:bg-gray-900/20 text-gray-500 dark:text-gray-400 uppercase text-[10px] font-bold tracking-wider">
+              <tr className="bg-gray-50 dark:bg-gray-900/50 text-gray-600 dark:text-gray-300 uppercase text-[10px] font-bold tracking-wider border-b border-gray-200/60 dark:border-gray-700/60">
                 <th className="px-6 py-4">Filial</th>
                 <th className="px-6 py-4 text-center">Embarques</th>
                 <th className="px-6 py-4 text-center">Peso Total</th>
@@ -144,30 +144,30 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
                 <th className="px-6 py-4 text-right">% Margem</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
               {branchData.map((branch) => (
-                <tr key={branch.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors group">
+                <tr key={branch.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                        <Building2 className="w-4 h-4 text-gray-500 group-hover:text-primary" />
+                      <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                        <Building2 className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-primary dark:group-hover:text-blue-400" />
                       </div>
                       <div>
-                        <p className="font-bold text-gray-800 dark:text-gray-200">{branch.name}</p>
-                        <p className="text-[10px] text-gray-400">{branch.city} - {branch.state}</p>
+                        <p className="font-bold text-gray-900 dark:text-white">{branch.name}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">{branch.city} - {branch.state}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-center font-medium">{branch.shipmentCount}</td>
-                  <td className="px-6 py-4 text-center font-medium">
+                  <td className="px-6 py-4 text-center font-semibold text-gray-800 dark:text-gray-200">{branch.shipmentCount}</td>
+                  <td className="px-6 py-4 text-center font-semibold text-gray-800 dark:text-gray-200">
                     <div className="flex items-center justify-center gap-1">
-                      <Package className="w-3 h-3 text-gray-400" />
-                      {branch.totalWeight.toLocaleString('pt-BR')} <span className="text-[10px] text-gray-400">ton</span>
+                      <Package className="w-3.5 h-3.5 text-gray-400" />
+                      {branch.totalWeight.toLocaleString('pt-BR')} <span className="text-[10px] font-normal text-gray-400">ton</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right text-gray-600 dark:text-gray-400">{formatCurrency(branch.totalBilled)}</td>
+                  <td className="px-6 py-4 text-right font-medium text-gray-700 dark:text-gray-300">{formatCurrency(branch.totalBilled)}</td>
                   <td className="px-6 py-4 text-right">
-                    <span className="font-bold text-gray-900 dark:text-white">{formatCurrency(branch.totalMargin)}</span>
+                    <span className="font-black text-gray-900 dark:text-white">{formatCurrency(branch.totalMargin)}</span>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">

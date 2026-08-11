@@ -33,11 +33,11 @@ const StatCard: React.FC<{ title: string, value: string | number, icon: React.Re
         : value;
 
     return (
-        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            {icon}
-            <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{displayValue}</p>
+        <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700/60 rounded-xl border border-gray-100 dark:border-gray-600/50 shadow-xs">
+            <div className="flex-shrink-0">{icon}</div>
+            <div className="ml-3 min-w-0 flex-1">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-300 truncate">{title}</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white truncate">{displayValue}</p>
             </div>
         </div>
     );
@@ -463,11 +463,11 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
                   </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <StatCard title="Total de Embarques" value={stats.totalShipments} icon={<PackageIcon className="w-8 h-8 text-blue-500"/>} />
-                <StatCard title="Volume Total" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<PackageIcon className="w-8 h-8 text-gray-500"/>} />
-                <StatCard title="Faturamento Bruto" value={stats.grossBilled} icon={<DollarSignIcon className="w-8 h-8 text-blue-500"/>} formatAsCurrency />
-                <StatCard title="Lucro Operacional Efetivado" value={stats.profitMargin} icon={<DollarSignIcon className="w-8 h-8 text-blue-400"/>} formatAsCurrency />
-                <StatCard title="Margem de Lucro" value={`${stats.profitMarginPercentage.toFixed(2)}%`} icon={<DollarSignIcon className="w-8 h-8 text-green-500"/>} />
+                <StatCard title="Total de Embarques" value={stats.totalShipments} icon={<PackageIcon className="w-8 h-8 text-blue-500 dark:text-blue-400"/>} />
+                <StatCard title="Volume Total" value={`${stats.totalTonnage.toLocaleString('pt-BR')} ton`} icon={<PackageIcon className="w-8 h-8 text-indigo-500 dark:text-indigo-400"/>} />
+                <StatCard title="Faturamento Bruto" value={stats.grossBilled} icon={<DollarSignIcon className="w-8 h-8 text-green-500 dark:text-green-400"/>} formatAsCurrency />
+                <StatCard title="Lucro Operacional Efetivado" value={stats.profitMargin} icon={<DollarSignIcon className="w-8 h-8 text-teal-500 dark:text-teal-400"/>} formatAsCurrency />
+                <StatCard title="Margem de Lucro" value={`${stats.profitMarginPercentage.toFixed(2)}%`} icon={<DollarSignIcon className="w-8 h-8 text-purple-500 dark:text-purple-400"/>} />
               </div>
             </div>
           ))}
