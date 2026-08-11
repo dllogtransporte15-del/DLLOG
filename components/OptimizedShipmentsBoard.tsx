@@ -667,7 +667,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
       </div>
 
       {/* Kanban Columns Grid */}
-      <div className={`grid grid-cols-1 gap-5 ${
+      <div className={`grid grid-cols-1 gap-3.5 ${
         columns.length === 1 ? 'grid-cols-1' :
         columns.length === 2 ? 'md:grid-cols-2' :
         columns.length === 3 ? 'md:grid-cols-2 lg:grid-cols-3' :
@@ -679,17 +679,17 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
           return (
             <div
               key={column.id}
-              className={`flex flex-col bg-gray-50/70 dark:bg-gray-900/40 rounded-2xl border border-gray-200/80 dark:border-gray-800 shadow-sm overflow-hidden ${
+              className={`flex flex-col bg-gray-50/70 dark:bg-gray-900/40 rounded-xl border border-gray-200/80 dark:border-gray-800 shadow-xs overflow-hidden ${
                 isTvMode ? 'h-full' : ''
               }`}
               onMouseEnter={() => setHoveredColumnId(column.id)}
               onMouseLeave={() => setHoveredColumnId(null)}
             >
               {/* Column Header */}
-              <div className="p-4 bg-white dark:bg-gray-800 border-b border-gray-200/70 dark:border-gray-700/70 flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div className="py-2.5 px-3 bg-white dark:bg-gray-800 border-b border-gray-200/70 dark:border-gray-700/70 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
                   <div className="w-2.5 h-2.5 rounded-full bg-primary" style={{ backgroundColor: column.accentColor || undefined }} />
-                  <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate" title={column.title}>
+                  <h3 className="text-xs font-bold text-gray-800 dark:text-gray-100 truncate" title={column.title}>
                     {column.title}
                   </h3>
                 </div>
@@ -697,13 +697,13 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {column.thresholds && (
                     <span 
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-mono"
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-mono"
                       title={`SLA: Atenção > ${column.thresholds.yellow >= 60 ? `${Math.floor(column.thresholds.yellow/60)}h` : `${column.thresholds.yellow}m`}, Crítico > ${column.thresholds.red >= 60 ? `${Math.floor(column.thresholds.red/60)}h` : `${column.thresholds.red}m`}`}
                     >
                       SLA {column.thresholds.yellow >= 60 ? `${Math.floor(column.thresholds.yellow/60)}h` : `${column.thresholds.yellow}m`}
                     </span>
                   )}
-                  <span className="px-2.5 py-0.5 rounded-full bg-primary/10 dark:bg-primary/20 text-primary dark:text-blue-400 text-xs font-bold font-mono">
+                  <span className="px-2 py-0.2 rounded-full bg-primary/10 dark:bg-primary/20 text-primary dark:text-blue-400 text-xs font-bold font-mono">
                     {columnShipments.length}
                   </span>
                 </div>
@@ -712,8 +712,8 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
               {/* Column Cards Container - Expande e faz auto-scroll no modo TV */}
               <div 
                 ref={el => { columnScrollRefs.current[column.id] = el; }}
-                className={`p-3 space-y-3.5 flex-1 ${
-                  isTvMode ? 'overflow-y-auto no-scrollbar scroll-smooth' : 'min-h-[160px]'
+                className={`p-2.5 space-y-2 flex-1 ${
+                  isTvMode ? 'overflow-y-auto no-scrollbar scroll-smooth' : 'min-h-[140px]'
                 }`}
                 style={isTvMode ? { scrollbarWidth: 'none', msOverflowStyle: 'none' } : undefined}
               >
@@ -739,27 +739,27 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                     // Urgency Visual Styles
                     const slaBadgeClass = 
                       urgency === 'critical'
-                        ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-bold animate-pulse'
+                        ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-bold'
                         : urgency === 'warning'
                         ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-semibold'
                         : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-medium';
 
                     const cardBorderHighlight = 
                       urgency === 'critical'
-                        ? 'border-l-4 border-l-rose-500'
+                        ? 'border-l-[3px] border-l-rose-500'
                         : urgency === 'warning'
-                        ? 'border-l-4 border-l-amber-500'
-                        : 'border-l-4 border-l-primary';
+                        ? 'border-l-[3px] border-l-amber-500'
+                        : 'border-l-[3px] border-l-primary';
 
                     if (densityMode === 'compact') {
                       return (
                         <div
                           key={shipment.id}
-                          className={`bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200/90 dark:border-gray-700 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 ${cardBorderHighlight}`}
+                          className={`bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-200/90 dark:border-gray-700 shadow-xs hover:shadow-sm transition-all duration-150 ${cardBorderHighlight}`}
                         >
-                          {/* Compact Row 1: ID, SLA, Time, Primary Action */}
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-1.5 min-w-0">
+                          {/* Compact Row 1: ID, Time, SLA */}
+                          <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                            <div className="flex items-center gap-1 min-w-0">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -780,23 +780,23 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
                                 title="Copiar ID"
                               >
-                                {copiedId === shipment.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                                {copiedId === shipment.id ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5" />}
                               </button>
                             </div>
 
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 ${slaBadgeClass}`}>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded flex items-center gap-1 ${slaBadgeClass}`}>
                                 <Clock className="w-2.5 h-2.5" />
                                 {formattedElapsed}
                               </span>
                             </div>
                           </div>
 
-                          {/* Compact Row 2: Driver & Mercosul Plate */}
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <UserIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                              <span className="text-xs font-semibold text-gray-900 dark:text-white truncate" title={shipment.driverName}>
+                          {/* Compact Row 2: Driver & Plate */}
+                          <div className="flex items-center justify-between gap-1.5 mb-1.5 text-xs">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <UserIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                              <span className="font-semibold text-gray-900 dark:text-white truncate" title={shipment.driverName}>
                                 {shipment.driverName}
                               </span>
                               {driverWhatsAppUrl && (
@@ -805,46 +805,45 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-green-500 hover:text-green-600 transition-colors p-0.5 flex-shrink-0"
-                                  title="Chamar motorista no WhatsApp"
+                                  title="WhatsApp"
                                 >
-                                  <WhatsAppIcon className="w-3.5 h-3.5" />
+                                  <WhatsAppIcon className="w-3 h-3" />
                                 </a>
                               )}
                             </div>
 
-                            {/* Plate Tag */}
                             <button
                               onClick={() => handleCopyText(shipment.horsePlate, 'plate', shipment.id)}
-                              className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded font-mono text-[11px] font-bold tracking-wider flex items-center gap-1 transition-colors flex-shrink-0"
-                              title="Clique para copiar a placa"
+                              className="px-1.5 py-0.2 bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 text-gray-800 dark:text-gray-200 rounded font-mono text-[10px] font-bold flex items-center gap-0.5 flex-shrink-0"
+                              title="Copiar placa"
                             >
                               <span>{shipment.horsePlate}</span>
-                              {copiedPlate === shipment.id ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5 opacity-60" />}
+                              {copiedPlate === shipment.id ? <Check className="w-2 h-2 text-green-500" /> : <Copy className="w-2 h-2 opacity-50" />}
                             </button>
                           </div>
 
-                          {/* Compact Row 3: Route & Client */}
-                          <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 gap-2 mb-2.5">
+                          {/* Compact Row 3: Route & Tonnage */}
+                          <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 gap-1 mb-1.5">
                             <div className="flex items-center gap-1 truncate" title={`${origin} ➔ ${destination}`}>
-                              <MapPin className="w-3 h-3 text-red-500/80 flex-shrink-0" />
+                              <MapPin className="w-2.5 h-2.5 text-red-500/80 flex-shrink-0" />
                               <span className="truncate">{origin}</span>
-                              <ArrowRight className="w-2.5 h-2.5 flex-shrink-0 text-gray-400" />
+                              <ArrowRight className="w-2 h-2 flex-shrink-0 text-gray-400" />
                               <span className="truncate">{destination}</span>
                             </div>
-                            <span className="font-medium text-gray-700 dark:text-gray-300 flex-shrink-0">
+                            <span className="font-bold text-gray-700 dark:text-gray-300 flex-shrink-0">
                               {shipment.shipmentTonnage}t
                             </span>
                           </div>
 
                           {/* Compact Row 4: Action Buttons */}
-                          <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100 dark:border-gray-700/60">
+                          <div className="flex items-center gap-1 pt-1.5 border-t border-gray-100 dark:border-gray-700/60">
                             {onAttach && (
                               <button
                                 onClick={() => onAttach(shipment)}
-                                className="flex-1 py-1 px-2 rounded-lg bg-primary hover:bg-primary-dark text-white text-xs font-medium flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95"
+                                className="flex-1 py-1 px-2 rounded bg-primary hover:bg-primary-dark text-white text-[11px] font-medium flex items-center justify-center gap-1 transition-all shadow-xs"
                                 title={`Avançar embarque: ${docActionName}`}
                               >
-                                <Paperclip className="w-3 h-3" />
+                                <Paperclip className="w-2.5 h-2.5" />
                                 <span className="truncate">{docActionName}</span>
                               </button>
                             )}
@@ -852,10 +851,10 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                             {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && (
                               <button
                                 onClick={() => onOpenCadastroAntt(shipment)}
-                                className="py-1 px-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 text-xs font-medium flex items-center justify-center gap-1 transition-colors border border-indigo-200 dark:border-indigo-800"
+                                className="py-1 px-1.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 text-[11px] font-medium flex items-center gap-0.5 border border-indigo-200 dark:border-indigo-800"
                                 title="Fazer Cadastro ANTT"
                               >
-                                <ExternalLink className="w-3 h-3" />
+                                <ExternalLink className="w-2.5 h-2.5" />
                                 <span>ANTT</span>
                               </button>
                             )}
@@ -866,10 +865,10 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                                 e.stopPropagation();
                                 onShowDetails(shipment);
                               }}
-                              className="p-1 rounded-lg bg-gray-100 dark:bg-gray-700/70 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
+                              className="p-1 rounded bg-gray-100 dark:bg-gray-700/70 hover:bg-gray-200 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
                               title="Ver detalhes completos"
                             >
-                              <Eye className="w-3.5 h-3.5" />
+                              <Eye className="w-3 h-3" />
                             </button>
 
                             <button
@@ -878,191 +877,161 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                                 e.stopPropagation();
                                 handleCopySummary(shipment);
                               }}
-                              className="p-1 rounded-lg bg-gray-100 dark:bg-gray-700/70 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
+                              className="p-1 rounded bg-gray-100 dark:bg-gray-700/70 hover:bg-gray-200 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
                               title="Copiar resumo para WhatsApp"
                             >
-                              <FileText className="w-3.5 h-3.5" />
+                              <FileText className="w-3 h-3" />
                             </button>
                           </div>
                         </div>
                       );
                     }
 
-                    // EXPANDED CARD (RICO)
+                    // EXPANDED CARD (RICO OTIMIZADO)
                     return (
                       <div
                         key={shipment.id}
-                        className={`bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-200/90 dark:border-gray-700/90 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 ${cardBorderHighlight} space-y-3.5`}
+                        className={`bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200/90 dark:border-gray-700/90 shadow-xs hover:shadow-md transition-all duration-150 ${cardBorderHighlight} space-y-2`}
                       >
                         {/* Header: ID, Date, SLA Badge */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onShowDetails(shipment);
-                                }}
-                                className="font-mono text-xs font-bold text-primary dark:text-blue-400 hover:underline cursor-pointer"
-                                title="Ver detalhes do embarque"
-                              >
-                                #{shipment.id}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCopyText(shipment.id, 'id', shipment.id);
-                                }}
-                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded transition-colors cursor-pointer"
-                                title="Copiar ID"
-                              >
-                                {copiedId === shipment.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                              </button>
-                            </div>
-                            <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1 mt-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onShowDetails(shipment);
+                              }}
+                              className="font-mono text-xs font-bold text-primary dark:text-blue-400 hover:underline cursor-pointer"
+                              title="Ver detalhes do embarque"
+                            >
+                              #{shipment.id}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyText(shipment.id, 'id', shipment.id);
+                              }}
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded transition-colors cursor-pointer"
+                              title="Copiar ID"
+                            >
+                              {copiedId === shipment.id ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-0.5 ml-1">
                               <Clock className="w-2.5 h-2.5" />
                               {formatDate(startTime)}
                             </span>
                           </div>
 
                           {/* SLA Pill */}
-                          <div className="text-right flex flex-col items-end">
-                            <span className={`text-[11px] px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${slaBadgeClass}`}>
-                              {urgency === 'critical' && <Flame className="w-3 h-3 text-rose-500 animate-bounce" />}
-                              {urgency === 'warning' && <AlertTriangle className="w-3 h-3 text-amber-500" />}
-                              {urgency === 'normal' && <Clock className="w-3 h-3 text-emerald-500" />}
-                              <span>{formattedElapsed}</span>
-                            </span>
-                            <span className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
-                              no status atual
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs ${slaBadgeClass}`}>
+                              {urgency === 'critical' && <Flame className="w-2.5 h-2.5 text-rose-500 animate-bounce" />}
+                              {urgency === 'warning' && <AlertTriangle className="w-2.5 h-2.5 text-amber-500" />}
+                              {urgency === 'normal' && <Clock className="w-2.5 h-2.5 text-emerald-500" />}
+                              <span className="font-semibold">{formattedElapsed}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Motorista & Contato */}
-                        <div className="bg-gray-50/80 dark:bg-gray-900/40 rounded-xl p-2.5 border border-gray-100 dark:border-gray-800/80 flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <UserIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                              <span className="text-xs font-bold text-gray-900 dark:text-white truncate" title={shipment.driverName}>
-                                {shipment.driverName}
-                              </span>
-                            </div>
-                            {shipment.driverCpf && (
-                              <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono mt-0.5 ml-5">
-                                CPF: {shipment.driverCpf}
-                              </p>
+                        {/* Motorista, WhatsApp & Veículo */}
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <UserIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span className="font-bold text-gray-900 dark:text-white truncate" title={shipment.driverName}>
+                              {shipment.driverName}
+                            </span>
+                            {driverWhatsAppUrl && (
+                              <a
+                                href={driverWhatsAppUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-green-500 hover:text-green-600 transition-colors p-0.5 flex-shrink-0"
+                                title="Conversar no WhatsApp"
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5" />
+                              </a>
                             )}
                           </div>
 
-                          {driverWhatsAppUrl ? (
-                            <a
-                              href={driverWhatsAppUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/60 border border-green-200 dark:border-green-800/60 transition-all font-medium flex-shrink-0 shadow-sm"
-                              title="Iniciar conversa no WhatsApp com motorista"
-                            >
-                              <WhatsAppIcon className="w-3.5 h-3.5" />
-                              <span>WhatsApp</span>
-                            </a>
-                          ) : (
-                            <span className="text-[10px] text-gray-400 italic">Sem WhatsApp</span>
-                          )}
-                        </div>
-
-                        {/* Veículo: Placa Mercosul Estilizada */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            {/* Mercosul Badge */}
-                            <div 
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {/* Mercosul / Plate Badge */}
+                            <button
                               onClick={() => handleCopyText(shipment.horsePlate, 'plate', shipment.id)}
-                              className="group relative cursor-pointer border border-gray-300 dark:border-gray-600 rounded overflow-hidden shadow-sm bg-white dark:bg-gray-900 flex flex-col items-center hover:border-primary transition-colors"
-                              title="Clique para copiar a placa do cavalo"
+                              className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded font-mono text-[11px] font-bold tracking-wider flex items-center gap-1 transition-colors"
+                              title="Placa do cavalo (clique para copiar)"
                             >
-                              <div className="w-full bg-[#003399] px-2 py-0.2 flex items-center justify-between gap-1 text-[8px] text-white font-bold tracking-tighter">
-                                <span>BRASIL</span>
-                                <span className="text-[6px]">BR</span>
-                              </div>
-                              <div className="px-2.5 py-0.5 font-mono text-xs font-black text-gray-900 dark:text-white tracking-widest flex items-center gap-1">
-                                <span>{shipment.horsePlate}</span>
-                                {copiedPlate === shipment.id ? (
-                                  <Check className="w-3 h-3 text-green-500" />
-                                ) : (
-                                  <Copy className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 text-primary transition-opacity" />
-                                )}
-                              </div>
-                            </div>
+                              <span>{shipment.horsePlate}</span>
+                              {copiedPlate === shipment.id ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5 opacity-60" />}
+                            </button>
 
-                            {/* Trailer Plate if exists */}
                             {shipment.trailer1Plate && (
-                              <span className="text-[11px] font-mono px-2 py-1 bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 rounded-md border border-gray-200 dark:border-gray-700 font-semibold" title="Placa da Carreta">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded border border-gray-200 dark:border-gray-700 font-medium" title="Placa da Carreta">
                                 Carreta: {shipment.trailer1Plate}
                               </span>
                             )}
-                          </div>
 
-                          <div className="text-right">
-                            <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                              {shipment.shipmentTonnage.toLocaleString('pt-BR')} t
+                            <span className="text-xs font-bold text-gray-800 dark:text-gray-200 ml-0.5">
+                              {shipment.shipmentTonnage.toLocaleString('pt-BR')}t
                             </span>
                           </div>
                         </div>
 
                         {/* Rota, Cliente & Produto */}
-                        <div className="space-y-1.5 pt-1 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] pt-0.5">
                           {/* Route */}
-                          <div className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 font-medium">
-                            <MapPin className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                          <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300 font-medium truncate max-w-full">
+                            <MapPin className="w-3 h-3 text-rose-500 flex-shrink-0" />
                             <span className="truncate" title={origin}>{origin}</span>
-                            <ArrowRight className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                            <ArrowRight className="w-2.5 h-2.5 text-gray-400 flex-shrink-0" />
                             <span className="truncate" title={destination}>{destination}</span>
                           </div>
 
-                          {/* Client & Product Tags */}
-                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 text-[11px] font-medium truncate max-w-[180px]" title={clientDisplayName}>
-                              <Building2 className="w-3 h-3 flex-shrink-0" />
+                          {/* Client & Product Badges */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 text-[10px] font-medium truncate max-w-[140px]" title={clientDisplayName}>
+                              <Building2 className="w-2.5 h-2.5 flex-shrink-0" />
                               <span className="truncate">{clientDisplayName}</span>
                             </span>
 
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/40 text-[11px] font-medium truncate max-w-[150px]" title={productName}>
-                              <Package className="w-3 h-3 flex-shrink-0" />
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/40 text-[10px] font-medium truncate max-w-[120px]" title={productName}>
+                              <Package className="w-2.5 h-2.5 flex-shrink-0" />
                               <span className="truncate">{productName}</span>
                             </span>
                           </div>
                         </div>
 
                         {/* Solicitante */}
-                        <div className="pt-2 border-t border-gray-100 dark:border-gray-700/60 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
-                          <span className="truncate">
-                            Solicitante: <strong className="text-gray-700 dark:text-gray-300 font-semibold">{embarcadorName}</strong>
-                          </span>
-                          {embarcadorWhatsAppUrl && (
-                            <a
-                              href={embarcadorWhatsAppUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-green-500 hover:text-green-600 dark:text-green-400 transition-colors p-0.5 flex-shrink-0"
-                              title="WhatsApp do solicitante"
-                            >
-                              <WhatsAppIcon className="w-3.5 h-3.5" />
-                            </a>
-                          )}
-                        </div>
+                        {embarcador && (
+                          <div className="pt-1 flex items-center justify-between text-[10px] text-gray-400 dark:text-gray-500">
+                            <span className="truncate">
+                              Solicitante: <strong className="text-gray-600 dark:text-gray-400 font-medium">{embarcadorName}</strong>
+                            </span>
+                            {embarcadorWhatsAppUrl && (
+                              <a
+                                href={embarcadorWhatsAppUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-green-500 hover:text-green-600 dark:text-green-400 transition-colors p-0.5 flex-shrink-0"
+                                title="WhatsApp do solicitante"
+                              >
+                                <WhatsAppIcon className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        )}
 
                         {/* Action Buttons Row */}
-                        <div className="pt-2.5 flex items-center gap-2">
+                        <div className="pt-1.5 flex items-center gap-1.5 border-t border-gray-100 dark:border-gray-700/60">
                           {/* Primary Action Button: Anexar e Avançar */}
                           {onAttach && (
                             <button
                               onClick={() => onAttach(shipment)}
-                              className="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md hover:shadow-lg active:scale-98 transform hover:-translate-y-0.5"
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary hover:bg-primary-dark text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all shadow-xs active:scale-98"
                               title={`Avançar status: ${docActionName}`}
                             >
-                              <Paperclip className="w-3.5 h-3.5" />
+                              <Paperclip className="w-3 h-3" />
                               <span className="truncate">{docActionName}</span>
                             </button>
                           )}
@@ -1071,10 +1040,10 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                           {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && (
                             <button
                               onClick={() => onOpenCadastroAntt(shipment)}
-                              className="py-2 px-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold flex items-center gap-1 transition-colors"
+                              className="py-1.5 px-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-medium flex items-center gap-1 transition-colors"
                               title="Fazer Cadastro de Titular ANTT"
                             >
-                              <ExternalLink className="w-3.5 h-3.5" />
+                              <ExternalLink className="w-3 h-3" />
                               <span>ANTT</span>
                             </button>
                           )}
@@ -1086,10 +1055,10 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                               e.stopPropagation();
                               onShowDetails(shipment);
                             }}
-                            className="p-2 rounded-xl bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors border border-gray-200/60 dark:border-gray-700 cursor-pointer"
+                            className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors border border-gray-200/60 dark:border-gray-700 cursor-pointer"
                             title="Ver detalhes completos do embarque"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Copy Summary Button */}
@@ -1099,23 +1068,23 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                               e.stopPropagation();
                               handleCopySummary(shipment);
                             }}
-                            className="p-2 rounded-xl bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors border border-gray-200/60 dark:border-gray-700 cursor-pointer"
+                            className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors border border-gray-200/60 dark:border-gray-700 cursor-pointer"
                             title="Copiar resumo formatado para WhatsApp"
                           >
-                            <FileText className="w-4 h-4" />
+                            <FileText className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
                     );
                   })
                 ) : (
-                  <div className="h-44 flex flex-col items-center justify-center text-center p-4 bg-white/50 dark:bg-gray-800/30 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700/60">
-                    <CheckCircle2 className="w-8 h-8 text-gray-300 dark:text-gray-600 mb-2" />
+                  <div className="h-36 flex flex-col items-center justify-center text-center p-3 bg-white/50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700/60">
+                    <CheckCircle2 className="w-6 h-6 text-gray-300 dark:text-gray-600 mb-1.5" />
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                       {column.emptyText || 'Nenhum embarque nesta etapa'}
                     </p>
                     {(searchTerm || slaFilter !== 'all' || selectedEmbarcadorId !== 'all') && (
-                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
                         Tente ajustar os filtros acima.
                       </p>
                     )}

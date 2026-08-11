@@ -162,9 +162,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
         onMouseEnter={() => setIsCollapsed(false)}
         onMouseLeave={() => setIsCollapsed(true)}
     >
-      <div className="h-16 flex items-center justify-center">
+      <div className="h-20 flex items-center justify-center">
         {companyLogo ? (
-            <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto ${isCollapsed ? 'h-10' : 'h-12'}`} />
+            <img src={companyLogo} alt="Logo da Empresa" className={`transition-all duration-300 mx-auto object-contain ${isCollapsed ? 'h-12 max-w-[60px]' : 'h-16 max-w-[190px]'}`} />
         ) : (
             <h2 className="text-3xl font-semibold text-center text-primary dark:text-white">
             {isCollapsed ? 'Transcunha' : 'Transcunha Logística'}

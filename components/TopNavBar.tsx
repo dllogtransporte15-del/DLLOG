@@ -180,14 +180,14 @@ const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setC
   return (
     <header className="bg-white dark:bg-gray-800 shadow-md sticky top-0 z-40 border-b dark:border-gray-700">
       <div className="container mx-auto px-6">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-18 sm:h-20">
           {/* Logo e Nome da Empresa */}
           <div className="flex items-center flex-shrink-0 mr-4">
-            <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center">
+            <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-8 md:h-9 w-auto object-contain max-w-[150px] md:max-w-none" />
+                    <img src={companyLogo} alt="Logo" className="h-12 sm:h-14 md:h-15 w-auto object-contain max-w-[220px] transition-all" />
                 ) : (
-                    <h1 className="text-lg md:text-xl font-black text-primary dark:text-white tracking-tighter uppercase">
+                    <h1 className="text-xl md:text-2xl font-black text-primary dark:text-white tracking-tighter uppercase">
                       TRANS<span className="text-accent">CUNHA</span>
                     </h1>
                 )}

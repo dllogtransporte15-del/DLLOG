@@ -343,6 +343,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     }
   ], []);
 
+  const grColumns = useMemo<KanbanColumnConfig[]>(() => [
+    {
+      id: 'aguardando-seguradora',
+      title: 'Aguardando Seguradora',
+      statuses: [ShipmentStatus.AguardandoSeguradora],
+      thresholds: { yellow: 30, red: 50 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
+    },
+    {
+      id: 'aguardando-cadastro',
+      title: 'Aguardando Cadastro',
+      statuses: [ShipmentStatus.PreCadastro],
+      thresholds: { yellow: 60, red: 90 },
+      accentColor: '#f59e0b',
+      emptyText: 'Nenhum embarque aguardando cadastro ANTT'
+    }
+  ], []);
+
   const financeiroColumns = useMemo<KanbanColumnConfig[]>(() => [
     {
       id: 'aguardando-adiantamento',
@@ -570,7 +589,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   }, [currentUser]);
 
   const [viewMode, setViewMode] = useState<DashboardViewMode>(() => {
-    if (currentUser?.profile === UserProfile.Fiscal) return 'fiscal';
+    if (currentUser?.profile === UserProfile.Fiscal || currentUser?.profile === UserProfile.GerenciadoraDeRisco) return 'fiscal';
     if (currentUser?.profile === UserProfile.Financeiro) return 'financeiro';
     if (currentUser?.profile === UserProfile.Supervisor) return 'supervisor';
 
@@ -900,6 +919,75 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             title="Embarques Aguardando Carregamento"
             description="Controle e acompanhamento de veículos agendados para pesagem e carregamento"
             columns={supervisorColumns}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            products={products}
+            users={users}
+            drivers={drivers}
+            vehicles={vehicles}
+            currentUser={currentUser}
+            onShowDetails={setDetailsModalShipment}
+            onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
+            onOpenCadastroAntt={handleOpenCadastroAntt}
+            onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+          />
+        </div>
+        <ShipmentDetailsModal
+          isOpen={!!detailsModalShipment}
+          onClose={() => setDetailsModalShipment(null)}
+          shipment={detailsModalShipment}
+          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          currentUser={currentUser}
+          clients={clients}
+          products={products}
+          companyLogo={companyLogo}
+          vehicles={vehicles}
+          users={users}
+          onDeleteAttachment={onDeleteAttachment}
+          onUpdatePrice={onUpdatePrice}
+          onUpdateShipmentData={onUpdateShipmentData}
+          onAddAttachments={onAddAttachments}
+        />
+        {selectedShipmentForAttachment && currentUser && (
+          <AttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={handleCloseAttachmentModal}
+            onSave={handleSaveAttachment}
+            shipment={selectedShipmentForAttachment}
+            documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
+            currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            requiresRiskManagement={
+              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
+                ?.requiresRiskManagement !== false
+            }
+          />
+        )}
+        {selectedShipmentForAntt && (
+          <CadastroAnttModal
+            isOpen={isAnttModalOpen}
+            onClose={() => {
+              setAnttModalOpen(false);
+              setSelectedShipmentForAntt(null);
+            }}
+            onSave={handleSaveAntt}
+            shipment={selectedShipmentForAntt}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (!canSwitchView && currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+    return (
+      <>
+        <Header title="Dashboard GR" />
+        <div className="mb-8">
+          <OptimizedShipmentsBoard
+            title="Gestão de Risco dos Embarques"
+            description="Controle e acompanhamento de autorizações de seguradora e cadastros"
+            columns={grColumns}
             shipments={shipments}
             cargos={cargos}
             clients={clients}

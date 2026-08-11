@@ -131,6 +131,9 @@ export enum VehicleSetType {
 export enum VehicleBodyType {
   Basculante = "Basculante",
   Graneleiro = "Graneleiro",
+  Sider = "Sider",
+  GradeBaixa = "Grade baixa",
+  Tanque = "Tanque",
 }
 
 export interface Vehicle {

@@ -181,7 +181,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       {/* Modal Container */}
       <div className="fixed inset-0 z-[9999] flex justify-center items-start pointer-events-none overflow-y-auto p-4">
         <div 
-          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-2xl w-full flex flex-col border border-gray-200 dark:border-gray-700 my-auto pointer-events-auto"
+          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-4xl w-full flex flex-col border border-gray-200 dark:border-gray-700 my-auto pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
         <div className="flex justify-between items-start mb-4 border-b pb-4 dark:border-gray-700">
