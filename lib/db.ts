@@ -388,8 +388,6 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     salesperson_name: c.salespersonName,
     salesperson_commission_per_ton: c.salespersonCommissionPerTon,
     branch_id: c.branchId || null,
-    allowed_profiles: c.allowedProfiles || null,
-    allowed_user_ids: c.allowedUserIds || null,
   };
 };
 
@@ -842,23 +840,9 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
     // Existing record: use update to guarantee the row is written
     const result = await supabase.from('cargos').update(payload).eq('id', cargo.id);
     error = result.error;
-    if (error && (error.message?.includes('allowed_profiles') || error.message?.includes('allowed_user_ids'))) {
-      const fallbackPayload = { ...payload };
-      delete (fallbackPayload as any).allowed_profiles;
-      delete (fallbackPayload as any).allowed_user_ids;
-      const retryResult = await supabase.from('cargos').update(fallbackPayload).eq('id', cargo.id);
-      error = retryResult.error;
-    }
   } else {
-    let result = await supabase.from('cargos').insert(payload).select().single();
+    const result = await supabase.from('cargos').insert(payload).select().single();
     error = result.error;
-    if (error && (error.message?.includes('allowed_profiles') || error.message?.includes('allowed_user_ids'))) {
-      const fallbackPayload = { ...payload };
-      delete (fallbackPayload as any).allowed_profiles;
-      delete (fallbackPayload as any).allowed_user_ids;
-      result = await supabase.from('cargos').insert(fallbackPayload).select().single();
-      error = result.error;
-    }
     if (!error && result.data) {
       (cargo as any).id = result.data.id;
     }
