@@ -122,6 +122,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
   const canTransferShipment = (canUpdate || currentUser.profile === UserProfile.Supervisor) && canPerformSpecialActions;
   const isClient = currentUser.profile === UserProfile.Cliente;
+  const isFinanceiro = currentUser.profile === UserProfile.Financeiro;
 
   const [filterCte, setFilterCte] = useState('');
   const [filterNfe, setFilterNfe] = useState('');
@@ -333,7 +334,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         drivers={drivers}
         users={users}
         vehicles={vehicles}
-        onAttach={(canUpdate || isClient) ? handleOpenAttachmentModal : undefined}
+        onAttach={(canUpdate || isClient || isFinanceiro) ? handleOpenAttachmentModal : undefined}
         onAddAttachments={onAddAttachments}
         onEditPrice={canEditPrice ? handleEditPrice : undefined}
         onCancel={canCancelShipment ? handleCancelShipment : undefined}
