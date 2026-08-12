@@ -933,7 +933,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       {isActionable && onAttach && (
                                                                         <ActionMenuItem 
                                                                             icon={PaperclipIcon} 
-                                                                            text="Anexa e Avançar" 
+                                                                            text="Anexar e Avançar" 
                                                                             onClick={() => onAttach(shipment)} 
                                                                             disabled={!canAdvance && shipment.status !== ShipmentStatus.AguardandoAdiantamento} 
                                                                             title={(!canAdvance && shipment.status !== ShipmentStatus.AguardandoAdiantamento) ? disabledReason : undefined} 

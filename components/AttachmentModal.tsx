@@ -304,8 +304,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
       }
       filesToAttach = multiFiles;
     } else {
-      if (singleFiles.length === 0) {
-        setError('Selecione ao menos um arquivo.');
+      const existingDocs = shipment.documents?.[documentName];
+      const hasExistingDoc = Array.isArray(existingDocs) && existingDocs.length > 0;
+      
+      if (singleFiles.length === 0 && !hasExistingDoc) {
+        setError('Selecione ao menos um arquivo para anexar.');
         return;
       }
       if (shipment.status === ShipmentStatus.AguardandoCarregamento) {
@@ -321,7 +324,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           return;
         }
       }
-      if (shipment.status === ShipmentStatus.AguardandoSeguradora) {
+      if (shipment.status === ShipmentStatus.AguardandoSeguradora && requiresRiskManagement) {
         if (!riskReleaseCode.trim()) {
           setError('O Código de Liberação da Seguradora / Gerenciadora é obrigatório para avançar.');
           return;
