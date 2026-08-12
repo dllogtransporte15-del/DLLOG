@@ -293,35 +293,14 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         currentUser={currentUser}
       />
 
-      {/* Filtro compacto por CT-e */}
-      <div className="mx-4 mb-3 flex items-center justify-start">
-        <div className="relative flex items-center">
-          <FileText className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Filtrar por CT-e..."
-            value={filterCte}
-            onChange={e => setFilterCte(e.target.value)}
-            className="pl-8 pr-7 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-36 transition-all shadow-sm"
-          />
-          {filterCte && (
-            <button
-              onClick={() => setFilterCte('')}
-              className="absolute right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-              title="Limpar filtro"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-      </div>
-
       <ShipmentTable 
         shipments={filteredShipments} 
         cargos={cargos}
         drivers={drivers}
         users={users}
         vehicles={vehicles}
+        filterCte={filterCte}
+        onFilterCteChange={setFilterCte}
         onAttach={(canUpdate || isClient || isFinanceiro) ? handleOpenAttachmentModal : undefined}
         onAddAttachments={onAddAttachments}
         onEditPrice={canEditPrice ? handleEditPrice : undefined}

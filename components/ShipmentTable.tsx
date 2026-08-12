@@ -53,9 +53,11 @@ interface ShipmentTableProps {
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo?: (shipment: Shipment) => void;
   tickets?: Ticket[];
+  filterCte?: string;
+  onFilterCteChange?: (val: string) => void;
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, tickets = [] }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
 
 
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
@@ -264,7 +266,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       {currentUser.profile !== UserProfile.Motorista && (
       <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col md:flex-row items-center justify-between p-3 gap-3">
-          <div className="w-full md:w-auto flex items-center gap-2">
+          <div className="w-full md:w-auto flex items-center gap-2.5 flex-wrap">
             <button 
                 onClick={() => setShowFilters(!showFilters)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all shadow-sm ${showFilters || activeFiltersCount > 0 ? 'bg-blue-100/80 text-blue-900 border-blue-300 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700' : 'bg-blue-50/40 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 border-blue-200 dark:border-blue-800/60 hover:bg-blue-50/70'}`}
@@ -272,6 +274,28 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 <Filter className="w-3.5 h-3.5" />
                 <span>Filtros Avançados {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
             </button>
+
+            {onFilterCteChange && (
+              <div className="relative flex items-center">
+                <FileText className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Filtrar por CT-e..."
+                  value={filterCte || ''}
+                  onChange={e => onFilterCteChange(e.target.value)}
+                  className="pl-8 pr-7 py-1.5 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-36 sm:w-40 transition-all shadow-sm"
+                />
+                {filterCte && (
+                  <button
+                    onClick={() => onFilterCteChange('')}
+                    className="absolute right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                    title="Limpar filtro"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">
             {filteredShipments.length !== shipments.length ? `${filteredShipments.length} de ` : ''}{shipments.length} embarques listados
