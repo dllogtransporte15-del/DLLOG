@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef } from 'react';
 import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client } from '../types';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
@@ -638,7 +639,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
                             {fiscalDocTypes.map(docType => (
-                                <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles(prev => ({...prev, [docType]: f ? Array.from(f) : []}))} />
+                                <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} />
                             ))}
                         </div>
                     </div>
@@ -884,7 +885,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                                 <span className="ml-2 text-xs font-semibold animate-pulse">Buscando...</span>
                                             </div>
                                         ) : suggestions.length > 0 ? (
-                                            suggestions.map((s, idx) => (
+                                            suggestions.map((s: RouteSuggestion, idx: number) => (
                                                 <button
                                                     key={idx}
                                                     type="button"

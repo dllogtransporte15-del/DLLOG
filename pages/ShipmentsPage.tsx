@@ -20,6 +20,7 @@ import { tryAcquireShipmentLock, releaseShipmentLock } from '../lib/db';
 import { useEffect, useRef } from 'react';
 import { FileText, X } from 'lucide-react';
 import { getShipmentCte } from '../utils';
+import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 
 interface ShipmentsPageProps {
