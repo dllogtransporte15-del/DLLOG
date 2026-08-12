@@ -12,7 +12,8 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText } from 'lucide-react';
+import { getShipmentCte } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
 import { TicketStatus } from '../types';
@@ -515,6 +516,15 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                   ) : (
                     <span className="text-red-500 font-bold text-[10px]">CARGA REMOVIDA</span>
                   )}
+                  {getShipmentCte(shipment) !== '-' && (
+                    <div className="mt-2 flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit">
+                      <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                      <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
+                      <span className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                        {getShipmentCte(shipment)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-gray-50 dark:border-gray-700">
@@ -557,6 +567,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Embarque / Carga</th>
                 <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Motorista / Solicitante</th>
                 <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Origem / Destino</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">CTE</th>
                 {currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
                   <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Margem</th>
                 )}
@@ -717,6 +728,20 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                               <InfoIcon className="w-4 h-4" />
                           </button>
                       )}
+                    </td>
+                    <td className="px-6 py-[11px] whitespace-nowrap text-sm">
+                      {(() => {
+                        const cteVal = getShipmentCte(shipment);
+                        if (cteVal && cteVal !== '-') {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm" title={`CT-e nº ${cteVal}`}>
+                              <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                              {cteVal}
+                            </span>
+                          );
+                        }
+                        return <span className="text-gray-400 text-xs italic">-</span>;
+                      })()}
                     </td>
                     {currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
                       <td className="px-6 py-[11px] whitespace-nowrap text-sm">

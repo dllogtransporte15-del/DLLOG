@@ -139,3 +139,28 @@ export const getMatchedCargo = (offer: FreightOffer, cargosList?: Cargo[]): Carg
   }) || null;
 };
 
+export function getShipmentCte(shipment?: { cteNumber?: string; documents?: any } | null): string {
+  if (!shipment) return '-';
+  if (shipment.cteNumber) return shipment.cteNumber;
+  if (shipment.documents?.cte_number) return String(shipment.documents.cte_number);
+
+  const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
+  if (Array.isArray(cteDocs) && cteDocs.length > 0) {
+    const extractedList: string[] = [];
+    for (const item of cteDocs) {
+      if (typeof item === 'string') {
+        const match = item.match(/DACTE_(\d+)/i) || 
+                      item.match(/CT[-_]?e[^\d]*(\d{3,8})/i) || 
+                      item.match(/_(\d{3,8})\.(?:pdf|xml)/i);
+        if (match && match[1]) {
+          if (!extractedList.includes(match[1])) extractedList.push(match[1]);
+        }
+      }
+    }
+    if (extractedList.length > 0) return extractedList.join(', ');
+  }
+
+  return '-';
+}
+
+
