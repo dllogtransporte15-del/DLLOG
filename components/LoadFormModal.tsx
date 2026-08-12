@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer } from '../types';
-import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType } from '../types';
+import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType, INTERNAL_PROFILES } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
+import { Users, Search } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
@@ -84,7 +85,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         branchId: currentUser.branchId,
         schedulingSystemUrl: '',
         schedulingUser: '',
-        schedulingPassword: ''
+        schedulingPassword: '',
+        allowedProfiles: [...INTERNAL_PROFILES]
       };
     }
 
@@ -121,7 +123,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       branchId: currentUser.branchId,
       schedulingSystemUrl: '',
       schedulingUser: '',
-      schedulingPassword: ''
+      schedulingPassword: '',
+      allowedProfiles: [...INTERNAL_PROFILES]
     };
   };
   
@@ -139,12 +142,52 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   // State for allowed vehicle types rules UI
   const [currentSetType, setCurrentSetType] = useState<VehicleSetType>(VehicleSetType.LSSimples);
   const [currentBodyTypes, setCurrentBodyTypes] = useState<VehicleBodyType[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { showToast } = useToast();
 
   const commercialUsers = useMemo(() => {
     return users.filter(u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin);
   }, [users]);
+
+  const internalUsers = useMemo(() => {
+    return users.filter(u => u.active !== false && u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista);
+  }, [users]);
+
+  const filteredInternalUsers = useMemo(() => {
+    if (!userSearchTerm.trim()) return internalUsers;
+    const term = userSearchTerm.toLowerCase();
+    return internalUsers.filter(u =>
+      u.name.toLowerCase().includes(term) ||
+      u.profile.toLowerCase().includes(term) ||
+      (u.email && u.email.toLowerCase().includes(term))
+    );
+  }, [internalUsers, userSearchTerm]);
+
+  const toggleUserAccess = (userId: string) => {
+    setLoad(prev => {
+      const current = prev.allowedUserIds || [];
+      if (current.includes(userId)) {
+        return { ...prev, allowedUserIds: current.filter(id => id !== userId) };
+      } else {
+        return { ...prev, allowedUserIds: [...current, userId] };
+      }
+    });
+  };
+
+  const handleSelectAllUsers = () => {
+    setLoad(prev => ({
+      ...prev,
+      allowedUserIds: internalUsers.map(u => u.id)
+    }));
+  };
+
+  const handleDeselectAllUsers = () => {
+    setLoad(prev => ({
+      ...prev,
+      allowedUserIds: []
+    }));
+  };
 
   const prevIsOpen = useRef(isOpen);
 
@@ -182,19 +225,21 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 branchId: editableLoad.branchId,
                 schedulingSystemUrl: editableLoad.schedulingSystemUrl || '',
                 schedulingUser: editableLoad.schedulingUser || '',
-                schedulingPassword: editableLoad.schedulingPassword || ''
+                schedulingPassword: editableLoad.schedulingPassword || '',
+                allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
+                allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id)
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
         } else {
             const { scheduledVolume, loadedVolume, ...initialState } = getInitialState();
-            setLoad({ ...initialState, createdById: currentUser.id });
+            setLoad({ ...initialState, createdById: currentUser.id, allowedUserIds: internalUsers.map(u => u.id) });
             setHasMultiLeg(false);
             setShowSalesperson(false);
         }
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, initialStep, currentUser]);
+  }, [isOpen, initialStep, currentUser, internalUsers]);
   
   // Financial & Margin Calculations
   const { totalCompanyFreight, totalDriverFreightPj, totalDriverFreightPf, marginPjPercentage, marginPfPercentage } = useMemo(() => {
@@ -799,6 +844,101 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             ))
                         ) : (
                             <p className="text-center text-xs text-gray-400 dark:text-gray-500 py-4">Nenhuma programação diária definida.</p>
+                        )}
+                    </div>
+                 </div>
+
+                 {/* Visibilidade da Carga por Usuário - LIST VIEW */}
+                 <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 dark:border-gray-800 pb-2.5">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+                                <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                                    Visibilidade da Carga (Usuários Permitidos)
+                                </h3>
+                            </div>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                Marque os usuários internos que têm permissão para visualizar e gerenciar esta carga.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                            <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700 shadow-2xs">
+                                {(load.allowedUserIds || []).length} / {internalUsers.length} com acesso
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Barra de Busca e Ações em Massa */}
+                    <div className="flex flex-col sm:flex-row items-center gap-2">
+                        <div className="relative flex-1 w-full">
+                            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                value={userSearchTerm}
+                                onChange={(e) => setUserSearchTerm(e.target.value)}
+                                placeholder="Buscar por nome ou perfil..."
+                                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 outline-none"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                            <button
+                                type="button"
+                                onClick={handleSelectAllUsers}
+                                className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800"
+                            >
+                                Marcar Todos
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleDeselectAllUsers}
+                                className="px-2.5 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors border border-gray-200 dark:border-gray-700"
+                            >
+                                Limpar
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Tabela / Lista em Linhas */}
+                    <div className="max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                        {filteredInternalUsers.length > 0 ? (
+                            filteredInternalUsers.map((u) => {
+                                const isAllowed = (load.allowedUserIds || []).includes(u.id);
+                                return (
+                                    <div
+                                        key={u.id}
+                                        onClick={() => toggleUserAccess(u.id)}
+                                        className={`flex items-center justify-between p-2.5 cursor-pointer select-none transition-colors ${
+                                            isAllowed 
+                                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-950/40' 
+                                                : 'hover:bg-gray-100 dark:hover:bg-gray-800/60'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0 pr-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={isAllowed}
+                                                onChange={() => {}} 
+                                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 accent-emerald-600 cursor-pointer flex-shrink-0"
+                                            />
+                                            <span className={`text-xs font-bold truncate ${isAllowed ? 'text-emerald-950 dark:text-emerald-100' : 'text-gray-600 dark:text-gray-400'}`}>
+                                                {u.name}
+                                            </span>
+                                        </div>
+                                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full flex-shrink-0 border ${
+                                            isAllowed 
+                                                ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700' 
+                                                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                                        }`}>
+                                            {u.profile}
+                                        </span>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <p className="text-center text-xs text-gray-400 dark:text-gray-500 py-4">
+                                Nenhum usuário encontrado para a busca "{userSearchTerm}".
+                            </p>
                         )}
                     </div>
                  </div>

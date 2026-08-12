@@ -37,6 +37,9 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
   const [endDate, setEndDate] = useState<string>('');
   const [marginOperator, setMarginOperator] = useState<'>' | '<' | ''>('');
   const [marginValue, setMarginValue] = useState<string>('');
+  const [filterCte, setFilterCte] = useState('');
+  const [filterNfe, setFilterNfe] = useState('');
+  const [filterMdfe, setFilterMdfe] = useState('');
 
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
 
@@ -83,10 +86,17 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             if (marginOperator === '>') matchesMargin = margin > val;
             else if (marginOperator === '<') matchesMargin = margin < val;
         }
+
+        let matchesCte = true;
+        if (filterCte.trim()) matchesCte = !!(shipment.cteNumber?.toLowerCase().includes(filterCte.trim().toLowerCase()));
+        let matchesNfe = true;
+        if (filterNfe.trim()) matchesNfe = !!(shipment.nfeNumber?.toLowerCase().includes(filterNfe.trim().toLowerCase()));
+        let matchesMdfe = true;
+        if (filterMdfe.trim()) matchesMdfe = !!(shipment.mdfeNumber?.toLowerCase().includes(filterMdfe.trim().toLowerCase()));
         
-        return matchesStatus && matchesDate && matchesMargin;
+        return matchesStatus && matchesDate && matchesMargin && matchesCte && matchesNfe && matchesMdfe;
     });
-  }, [shipments, activeStatus, startDate, endDate, marginOperator, marginValue, cargoMap]);
+  }, [shipments, activeStatus, startDate, endDate, marginOperator, marginValue, cargoMap, filterCte, filterNfe, filterMdfe]);
 
   const cancellationReasonData = useMemo(() => {
     const cancelledShipments = shipments.filter(s => s.status === ShipmentStatus.Cancelado);
@@ -173,6 +183,12 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         marginValue={marginValue}
         onMarginValueChange={setMarginValue}
         stays={stays}
+        filterCte={filterCte}
+        onFilterCteChange={setFilterCte}
+        filterNfe={filterNfe}
+        onFilterNfeChange={setFilterNfe}
+        filterMdfe={filterMdfe}
+        onFilterMdfeChange={setFilterMdfe}
       />
       <ShipmentTable 
         shipments={filteredShipments} 

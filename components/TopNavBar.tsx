@@ -23,7 +23,7 @@ import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
-import { Menu as MenuIcon, X as XIcon, Activity } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 interface TopNavBarProps {
@@ -56,6 +56,7 @@ const navItems: NavItem[] = [
       { id: 'load-history', label: 'Histórico Cargas', icon: ArchiveIcon },
       { id: 'operational-loads', label: 'Cargas em Andamento', icon: ChartIcon },
       { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
+      { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
     ],
   },
   {

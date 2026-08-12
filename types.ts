@@ -1,6 +1,6 @@
 // FIX: Moved Page type definition from App.tsx to here so it can be shared across modules.
 // FIX: Added 'embarcadores' and 'operational-map' to the page list to resolve type errors.
-export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history';
+export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management';
 
 export enum UserProfile {
   Embarcador = "Embarcador",
@@ -15,6 +15,17 @@ export enum UserProfile {
   Demonstracao = "Demonstração",
   GerenciadoraDeRisco = "Gerenciadora de Risco",
 }
+
+export const INTERNAL_PROFILES: UserProfile[] = [
+  UserProfile.Admin,
+  UserProfile.Diretor,
+  UserProfile.Supervisor,
+  UserProfile.Comercial,
+  UserProfile.Financeiro,
+  UserProfile.Fiscal,
+  UserProfile.GerenciadoraDeRisco,
+  UserProfile.Embarcador,
+];
 
 
 export interface Branch {
@@ -240,6 +251,8 @@ export interface Cargo {
   schedulingSystemUrl?: string;
   schedulingUser?: string;
   schedulingPassword?: string;
+  allowedProfiles?: UserProfile[];
+  allowedUserIds?: string[];
 }
 
 
@@ -277,6 +290,7 @@ export enum RiskQueryType {
   ConsultaBiometria = 'Consulta + Biometria',
   CadastroConsultaGeral = 'Cadastro + Consulta Geral',
   Vitimologia = 'Vitimologia',
+  LiberacaoSimplificada = 'Liberação Simplificada',
 }
 
 export const RISK_QUERY_COST_MAP: Record<RiskQueryType, number> = {
@@ -284,6 +298,7 @@ export const RISK_QUERY_COST_MAP: Record<RiskQueryType, number> = {
   [RiskQueryType.ConsultaBiometria]: 15.00,
   [RiskQueryType.CadastroConsultaGeral]: 33.00,
   [RiskQueryType.Vitimologia]: 70.00,
+  [RiskQueryType.LiberacaoSimplificada]: 0.00,
 };
 
 export const REQUIRED_DOCUMENT_MAP: Partial<Record<ShipmentStatus, string>> = {
@@ -349,6 +364,9 @@ export interface Shipment {
   vehicleSetType?: VehicleSetType;
   vehicleBodyType?: VehicleBodyType;
   branchId?: string;
+  cteNumber?: string;   // Número do CT-e extraído automaticamente do XML/PDF
+  nfeNumber?: string;   // Número da Nota Fiscal (NF-e) extraído automaticamente
+  mdfeNumber?: string;  // Número do MDF-e extraído automaticamente
 }
 
 

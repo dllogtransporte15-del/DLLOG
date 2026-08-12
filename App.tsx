@@ -6,6 +6,7 @@ import { useDatabase } from './hooks/useDatabase';
 import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Page, ProfilePermissions, HistoryLog, Ticket, TicketHistory, ShipmentLock, Branch, FreightOffer } from './types';
 import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus } from './types';
 import { formatId } from './utils';
+import { extractFiscalDocNumbers } from './utils/fiscalDocParser';
 import { INITIAL_PERMISSIONS, can } from './auth';
 import { useToast } from './hooks/useToast';
 
@@ -34,6 +35,7 @@ import FreightOffersHistoryPage from './pages/FreightOffersHistoryPage';
 import BranchesPage from './pages/BranchesPage';
 import SystemMonitorPage from './pages/SystemMonitorPage';
 import DownloadAppPage from './pages/DownloadAppPage';
+import RiskManagementPage from './pages/RiskManagementPage';
 
 // Component Imports
 import TopNavBar from './components/TopNavBar';
@@ -91,6 +93,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   trailer3Plate: 'Placa Carreta 3',
   shipmentTonnage: 'Toneladas do Embarque',
   driverFreightValue: 'Valor Frete Motorista',
+  driverFreightRateSnapshot: 'Frete Motorista (p/ Ton)',
   vehicleSetType: 'Tipo de Veículo',
   vehicleBodyType: 'Tipo de Carroceria',
 };
@@ -672,56 +675,84 @@ const App: React.FC = () => {
   // --- DATA FILTERING BASED ON USER ---
   const visibleLoads = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Motorista) {
-      return cargos;
-    }
-    if (currentUser.profile === UserProfile.Cliente && currentUser.clientId) {
-      return cargos.filter(c => c.clientId === currentUser.clientId);
-    }
-    // Profiles that see everything
-    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
-      return cargos;
-    }
-    
-    // Branch filtering for other profiles
-    if (currentUser.branchId) {
-      // Show data from their branch OR legacy data (no branch assigned)
-      return cargos.filter(c => c.branchId === currentUser.branchId || !c.branchId);
-    }
 
-    return cargos;
-  }, [currentUser, cargos, shipments]);
+    return cargos.filter(c => {
+      // 1. Admin always sees all loads
+      if (currentUser.profile === UserProfile.Admin) return true;
+
+      // 2. Filter by allowed user IDs if defined on cargo
+      if (c.allowedUserIds && c.allowedUserIds.length > 0) {
+        if (!c.allowedUserIds.includes(currentUser.id)) {
+          return false;
+        }
+      } else if (c.allowedProfiles && c.allowedProfiles.length > 0) {
+        if (!c.allowedProfiles.includes(currentUser.profile)) {
+          return false;
+        }
+      }
+
+      // 3. Client profile specific filtering (must match clientId and be permitted)
+      if (currentUser.profile === UserProfile.Cliente) {
+        return !!currentUser.clientId && c.clientId === currentUser.clientId;
+      }
+
+      // 4. Embarcador & Motorista profiles
+      if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Motorista) {
+        return true;
+      }
+
+      // 5. Profiles that see all branches
+      if ([UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
+        return true;
+      }
+
+      // 6. Branch filtering for other profiles (e.g. Comercial, Supervisor)
+      if (currentUser.branchId) {
+        return c.branchId === currentUser.branchId || !c.branchId;
+      }
+
+      return true;
+    });
+  }, [currentUser, cargos]);
 
   const visibleShipments = useMemo(() => {
     if (!currentUser) return [];
+
+    // Motorista sees their assigned shipments
     if (currentUser.profile === UserProfile.Motorista) {
-      // Para motorista, o email guarda o CPF dele no objeto User criado dinamicamente no login
-      // Normalizamos o CPF removendo pontuação para evitar mismatch de formato
       const driverCpfClean = (currentUser.email || '').replace(/\D/g, '');
       return shipments.filter(s => (s.driverCpf || '').replace(/\D/g, '') === driverCpfClean);
     }
+
+    // Embarcador sees their shipments
     if (currentUser.profile === UserProfile.Embarcador) {
       return shipments.filter(s => s.embarcadorId === currentUser.id);
     }
+
+    const visibleCargoIds = new Set(visibleLoads.map(c => c.id));
+
+    // Cliente sees shipments of permitted visible loads matching their client
     if (currentUser.profile === UserProfile.Cliente && currentUser.clientId) {
-        const clientCargoIds = new Set(
-            cargos.filter(c => c.clientId === currentUser.clientId).map(c => c.id)
-        );
-        return shipments.filter(s => clientCargoIds.has(s.cargoId));
+      return shipments.filter(s => visibleCargoIds.has(s.cargoId));
     }
-    // Profiles that see everything
-    if ([UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
+
+    // Admin sees all shipments
+    if (currentUser.profile === UserProfile.Admin) {
       return shipments;
+    }
+
+    // Profiles with all-branch visibility must still respect cargo profile permissions
+    if ([UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
+      return shipments.filter(s => visibleCargoIds.has(s.cargoId));
     }
 
     // Branch filtering for other profiles
     if (currentUser.branchId) {
-      // Show data from their branch OR legacy data (no branch assigned)
-      return shipments.filter(s => s.branchId === currentUser.branchId || !s.branchId);
+      return shipments.filter(s => visibleCargoIds.has(s.cargoId) && (s.branchId === currentUser.branchId || !s.branchId));
     }
 
-    return shipments;
-  }, [currentUser, shipments, cargos]);
+    return shipments.filter(s => visibleCargoIds.has(s.cargoId));
+  }, [currentUser, shipments, visibleLoads]);
   
   const visibleEmbarcadores = useMemo(() => {
     if (!currentUser) return [];
@@ -1310,8 +1341,8 @@ const App: React.FC = () => {
 
     // Check permissions based on the current status
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Fiscal, Diretor, Supervisor, Embarcador ou Administrador podem realizar esta ação.';
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Comercial, Fiscal, Diretor, Supervisor, Embarcador ou Administrador podem realizar esta ação.';
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
         isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin].includes(currentUser.profile);
         alertMessage = 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.';
@@ -1350,11 +1381,36 @@ const App: React.FC = () => {
       showToast('Ocorreu um erro ao enviar os arquivos. Verifique sua conexão e tente novamente.', 'error');
       throw error;
     }
-    
+
+    // 1b. Extract fiscal document numbers (CT-e, NF-e, MDF-e) when advancing from Ag. Nota
+    let extractedCteNumber: string | undefined = originalShipment.cteNumber;
+    let extractedNfeNumber: string | undefined = originalShipment.nfeNumber;
+    let extractedMdfeNumber: string | undefined = originalShipment.mdfeNumber;
+    let fiscalDocLog = '';
+    if (originalShipment.status === ShipmentStatus.AguardandoNota) {
+      try {
+        const fiscalNums = await extractFiscalDocNumbers(filesToAttach);
+        if (fiscalNums.cteNumber) extractedCteNumber = fiscalNums.cteNumber;
+        if (fiscalNums.nfeNumber) extractedNfeNumber = fiscalNums.nfeNumber;
+        if (fiscalNums.mdfeNumber) extractedMdfeNumber = fiscalNums.mdfeNumber;
+        if (fiscalNums.cteNumber || fiscalNums.nfeNumber || fiscalNums.mdfeNumber) {
+          fiscalDocLog = [
+            fiscalNums.cteNumber ? `CT-e nº ${fiscalNums.cteNumber}` : null,
+            fiscalNums.nfeNumber ? `NF-e nº ${fiscalNums.nfeNumber}` : null,
+            fiscalNums.mdfeNumber ? `MDF-e nº ${fiscalNums.mdfeNumber}` : null,
+          ].filter(Boolean).join(', ');
+        }
+      } catch (e) {
+        console.warn('[handleUpdateShipmentAttachment] Could not extract fiscal doc numbers:', e);
+      }
+    }
+
     // 2. Prepare Updates
     const historyLogs = [];
     if(attachedFileNames.length > 0) historyLogs.push(`anexo(s): ${attachedFileNames.join(', ')}`);
     if(bankDetails) historyLogs.push(`Dados bancários preenchidos.`);
+    if(fiscalDocLog) historyLogs.push(`Documentos fiscais extraídos: ${fiscalDocLog}.`);
+
 
     let updatedTonnage = originalShipment.shipmentTonnage;
     let updatedDriverFreight = originalShipment.driverFreightValue;
@@ -1421,6 +1477,9 @@ const App: React.FC = () => {
         riskReleaseCode: riskReleaseCode || originalShipment.riskReleaseCode,
         riskQueryType: riskQueryType || originalShipment.riskQueryType,
         riskQueryCost: riskQueryCost !== undefined ? riskQueryCost : originalShipment.riskQueryCost,
+        cteNumber: extractedCteNumber,
+        nfeNumber: extractedNfeNumber,
+        mdfeNumber: extractedMdfeNumber,
         history: [...originalShipment.history, statusChangeLog],
         statusHistory: isStatusSame
             ? (originalShipment.statusHistory || [])
@@ -1563,13 +1622,18 @@ const App: React.FC = () => {
 
     if (changes.length === 0) return;
 
-    let updatedDriverFreight = shipmentToUpdate.driverFreightValue;
+    let updatedDriverFreight = data.driverFreightValue !== undefined ? data.driverFreightValue : shipmentToUpdate.driverFreightValue;
     let updatedCargo: Cargo | undefined;
+
+    const rateToUse = data.driverFreightRateSnapshot !== undefined 
+      ? data.driverFreightRateSnapshot 
+      : (shipmentToUpdate.driverFreightRateSnapshot || cargos.find(c => c.id === shipmentToUpdate.cargoId)?.driverFreightValuePerTon || 0);
+
+    const targetTonnage = data.shipmentTonnage !== undefined ? data.shipmentTonnage : shipmentToUpdate.shipmentTonnage;
 
     if (data.shipmentTonnage !== undefined && data.shipmentTonnage !== shipmentToUpdate.shipmentTonnage) {
         const diff = data.shipmentTonnage - shipmentToUpdate.shipmentTonnage;
-        const rateToUse = shipmentToUpdate.driverFreightRateSnapshot || cargos.find(c => c.id === shipmentToUpdate.cargoId)?.driverFreightValuePerTon || 0;
-        updatedDriverFreight = rateToUse * data.shipmentTonnage;
+        updatedDriverFreight = rateToUse * targetTonnage;
         
         const cargo = cargos.find(c => c.id === shipmentToUpdate.cargoId);
         if (cargo) {
@@ -1581,11 +1645,14 @@ const App: React.FC = () => {
                 history: [...cargo.history, createHistoryLog(`Volume ajustado devido à correção de tonelagem no embarque ${shipmentId} (${shipmentToUpdate.shipmentTonnage} -> ${data.shipmentTonnage}).`)]
             };
         }
+    } else if (data.driverFreightRateSnapshot !== undefined && data.driverFreightRateSnapshot !== shipmentToUpdate.driverFreightRateSnapshot) {
+        updatedDriverFreight = rateToUse * targetTonnage;
     }
 
     const updatedShipment: Shipment = { 
       ...shipmentToUpdate, 
       ...data, 
+      driverFreightRateSnapshot: rateToUse,
       driverFreightValue: updatedDriverFreight,
       history: [...shipmentToUpdate.history, createHistoryLog(`Dados do embarque corrigidos: ${changes.join(' ')}`)] 
     };
@@ -2344,6 +2411,7 @@ const App: React.FC = () => {
         <Route path="/freight-quote" element={<FreightQuotePage currentUser={currentUser} />} />
         <Route path="/tools-history" element={<ToolsHistoryPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />} />
         <Route path="/branches" element={<BranchesPage branches={branches} onSaveBranch={handleSaveBranch} onDeleteBranch={handleDeleteBranch} currentUser={currentUser} profilePermissions={profilePermissions} />} />
+        <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} />} />
         <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
         <Route path="*" element={<DashboardPage cargos={activeLoads} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} />} />
       </Routes>
@@ -2369,7 +2437,7 @@ const App: React.FC = () => {
     return <LoginPage onLogin={handleLogin} users={users} companyLogo={companyLogo} profilePermissions={profilePermissions} />;
   }
 
-  const operationalPages: Page[] = ['loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map'];
+  const operationalPages: Page[] = ['loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'risk-management'];
   const isOperationalPage = operationalPages.includes(currentPage);
 
   return (

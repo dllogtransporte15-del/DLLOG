@@ -303,44 +303,94 @@ export const toCargo = (row: any): Cargo => ({
   salespersonName: row.salesperson_name,
   salespersonCommissionPerTon: Number(row.salesperson_commission_per_ton),
   branchId: row.branch_id,
+  allowedProfiles: (() => {
+    if (row.allowed_profiles) return safeParseJson(row.allowed_profiles, undefined);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_allowed_profiles') : null;
+    if (metaLog) {
+      try {
+        return JSON.parse(metaLog.description);
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  })(),
+  allowedUserIds: (() => {
+    if (row.allowed_user_ids) return safeParseJson(row.allowed_user_ids, undefined);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_allowed_user_ids') : null;
+    if (metaLog) {
+      try {
+        return JSON.parse(metaLog.description);
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  })(),
 });
 
-const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => ({
-  id: (c as Cargo).id,
-  sequence_id: c.sequenceId,
-  client_id: c.clientId,
-  product_id: c.productId,
-  origin: c.origin,
-  origin_location: c.originLocation,
-  origin_map_link: c.originMapLink,
-  destination: c.destination,
-  destination_location: c.destinationLocation,
-  destination_map_link: c.destinationMapLink,
-  total_volume: c.totalVolume,
-  scheduled_volume: c.scheduledVolume,
-  loaded_volume: c.loadedVolume,
-  company_freight_value_per_ton: c.companyFreightValuePerTon,
-  driver_freight_value_per_ton: c.driverFreightValuePerTon,
-  has_icms: c.hasIcms,
-  icms_percentage: c.icmsPercentage,
-  requires_scheduling: c.requiresScheduling,
-  type: c.type,
-  status: c.status,
-  created_at: c.createdAt,
-  created_by_id: c.createdById,
-  history: c.history || [],
-  loading_deadline: c.loadingDeadline,
-  allowed_vehicle_types: c.allowedVehicleTypes,
-  freight_legs: c.freightLegs,
-  daily_schedule: c.dailySchedule,
-  observations: c.observations,
-  attachments: c.attachments || [],
-  origin_coords: c.originCoords ? (typeof c.originCoords === 'string' ? c.originCoords : JSON.stringify(c.originCoords)) : null,
-  destination_coords: c.destinationCoords ? (typeof c.destinationCoords === 'string' ? c.destinationCoords : JSON.stringify(c.destinationCoords)) : null,
-  salesperson_name: c.salespersonName,
-  salesperson_commission_per_ton: c.salespersonCommissionPerTon,
-  branch_id: c.branchId || null,
-});
+const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
+  let history = c.history ? [...c.history] : [];
+  if (c.allowedProfiles) {
+    history = history.filter(h => h.id !== 'meta_allowed_profiles');
+    history.push({
+      id: 'meta_allowed_profiles',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: JSON.stringify(c.allowedProfiles)
+    });
+  }
+  if (c.allowedUserIds) {
+    history = history.filter(h => h.id !== 'meta_allowed_user_ids');
+    history.push({
+      id: 'meta_allowed_user_ids',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: JSON.stringify(c.allowedUserIds)
+    });
+  }
+
+  return {
+    id: (c as Cargo).id,
+    sequence_id: c.sequenceId,
+    client_id: c.clientId,
+    product_id: c.productId,
+    origin: c.origin,
+    origin_location: c.originLocation,
+    origin_map_link: c.originMapLink,
+    destination: c.destination,
+    destination_location: c.destinationLocation,
+    destination_map_link: c.destinationMapLink,
+    total_volume: c.totalVolume,
+    scheduled_volume: c.scheduledVolume,
+    loaded_volume: c.loadedVolume,
+    company_freight_value_per_ton: c.companyFreightValuePerTon,
+    driver_freight_value_per_ton: c.driverFreightValuePerTon,
+    has_icms: c.hasIcms,
+    icms_percentage: c.icmsPercentage,
+    requires_scheduling: c.requiresScheduling,
+    type: c.type,
+    status: c.status,
+    created_at: c.createdAt,
+    created_by_id: c.createdById,
+    history: history,
+    loading_deadline: c.loadingDeadline,
+    allowed_vehicle_types: c.allowedVehicleTypes,
+    freight_legs: c.freightLegs,
+    daily_schedule: c.dailySchedule,
+    observations: c.observations,
+    attachments: c.attachments || [],
+    origin_coords: c.originCoords ? (typeof c.originCoords === 'string' ? c.originCoords : JSON.stringify(c.originCoords)) : null,
+    destination_coords: c.destinationCoords ? (typeof c.destinationCoords === 'string' ? c.destinationCoords : JSON.stringify(c.destinationCoords)) : null,
+    salesperson_name: c.salespersonName,
+    salesperson_commission_per_ton: c.salespersonCommissionPerTon,
+    branch_id: c.branchId || null,
+    allowed_profiles: c.allowedProfiles || null,
+    allowed_user_ids: c.allowedUserIds || null,
+  };
+};
 
 const toShipment = (row: any): Shipment => ({
   id: row.id,
@@ -389,6 +439,9 @@ const toShipment = (row: any): Shipment => ({
   riskReleaseCode: row.risk_release_code || row.documents?.risk_release_code,
   riskQueryType: row.risk_query_type || row.documents?.risk_query_type,
   riskQueryCost: row.risk_query_cost !== null && row.risk_query_cost !== undefined ? Number(row.risk_query_cost) : (row.documents?.risk_query_cost !== undefined ? Number(row.documents.risk_query_cost) : undefined),
+  cteNumber: row.cte_number || row.documents?.cte_number,
+  nfeNumber: row.nfe_number || row.documents?.nfe_number,
+  mdfeNumber: row.mdfe_number || row.documents?.mdfe_number,
 });
 
 const fromShipment = (s: Shipment) => ({
@@ -447,6 +500,9 @@ const fromShipment = (s: Shipment) => ({
   risk_release_code: s.riskReleaseCode,
   risk_query_type: s.riskQueryType,
   risk_query_cost: s.riskQueryCost,
+  cte_number: s.cteNumber || null,
+  nfe_number: s.nfeNumber || null,
+  mdfe_number: s.mdfeNumber || null,
 });
 
 export const toUser = (row: any): User => ({
@@ -785,12 +841,24 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
     // Existing record: use update to guarantee the row is written
     const result = await supabase.from('cargos').update(payload).eq('id', cargo.id);
     error = result.error;
+    if (error && (error.message?.includes('allowed_profiles') || error.message?.includes('allowed_user_ids'))) {
+      const fallbackPayload = { ...payload };
+      delete (fallbackPayload as any).allowed_profiles;
+      delete (fallbackPayload as any).allowed_user_ids;
+      const retryResult = await supabase.from('cargos').update(fallbackPayload).eq('id', cargo.id);
+      error = retryResult.error;
+    }
   } else {
-    const result = await supabase.from('cargos').insert(payload).select().single();
+    let result = await supabase.from('cargos').insert(payload).select().single();
     error = result.error;
+    if (error && (error.message?.includes('allowed_profiles') || error.message?.includes('allowed_user_ids'))) {
+      const fallbackPayload = { ...payload };
+      delete (fallbackPayload as any).allowed_profiles;
+      delete (fallbackPayload as any).allowed_user_ids;
+      result = await supabase.from('cargos').insert(fallbackPayload).select().single();
+      error = result.error;
+    }
     if (!error && result.data) {
-      // Update the input object with the generated ID if possible
-      // (though this function returns void, so the caller might not see it)
       (cargo as any).id = result.data.id;
     }
   }

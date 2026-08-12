@@ -319,13 +319,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           return;
         }
       }
-      if (shipment.status === ShipmentStatus.AguardandoSeguradora && requiresRiskManagement) {
+      if (shipment.status === ShipmentStatus.AguardandoSeguradora) {
         if (!riskReleaseCode.trim()) {
-          setError('O Código de Liberação da Gerenciadora é obrigatório para avançar.');
+          setError('O Código de Liberação da Seguradora / Gerenciadora é obrigatório para avançar.');
           return;
         }
         if (!riskQueryType) {
-          setError('O Tipo de Consulta Realizada é obrigatório para avançar.');
+          setError('A Modalidade / Tipo de Consulta Realizada é obrigatória para avançar.');
           return;
         }
       }
@@ -463,6 +463,33 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           </div>
         )}
 
+        {/* Números de Documentos Fiscais Extraídos */ }
+        {(shipment.cteNumber || shipment.nfeNumber || shipment.mdfeNumber) && (
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+            <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">📄 Números de Documentos Fiscais</p>
+            <div className="flex flex-wrap gap-2">
+              {shipment.cteNumber && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 rounded-full text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                  CT-e nº {shipment.cteNumber}
+                </span>
+              )}
+              {shipment.nfeNumber && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 rounded-full text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                  NF-e nº {shipment.nfeNumber}
+                </span>
+              )}
+              {shipment.mdfeNumber && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700 text-violet-800 dark:text-violet-200 rounded-full text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-violet-500 inline-block"></span>
+                  MDF-e nº {shipment.mdfeNumber}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {!isClientUser ? (
             <div className="border-t dark:border-gray-700 pt-4">
                 <h3 className="text-lg font-semibold mb-4 text-primary">Próximo Passo: {documentName}</h3>
@@ -488,65 +515,48 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                     <div className="space-y-4">
                         <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
 
-                        {requiresRiskManagement ? (
-                          <>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                                        Código de Liberação da Gerenciadora <span className="text-red-500">*</span>
-                                    </label>
-                                    <input 
-                                        type="text" 
-                                        value={riskReleaseCode} 
-                                        onChange={(e) => setRiskReleaseCode(e.target.value)} 
-                                        placeholder="Ex: LIB-984721" 
-                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                                        required
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                                        Tipo de Consulta Realizada <span className="text-red-500">*</span>
-                                    </label>
-                                    <select 
-                                        value={riskQueryType} 
-                                        onChange={(e) => setRiskQueryType(e.target.value as RiskQueryType)} 
-                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                                        required
-                                    >
-                                        <option value="" disabled>Selecione o tipo de consulta...</option>
-                                        <option value={RiskQueryType.Siga}>1 - SIGA (Valor: R$ 7,00)</option>
-                                        <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (Valor: R$ 15,00)</option>
-                                        <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (Valor: R$ 33,00)</option>
-                                        <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (Valor: R$ 70,00)</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {riskQueryType && (
-                                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
-                                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
-                                    <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
-                                        R$ {(RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0).toFixed(2).replace('.', ',')}
-                                    </span>
-                                </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl flex items-start gap-3">
-                            <div className="flex-shrink-0 mt-0.5">
-                              <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
                             <div>
-                              <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Liberação Simplificada</p>
-                              <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                Este produto não exige Gerenciamento de Risco. Apenas o documento de liberação acima é obrigatório para avançar.
-                              </p>
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Código de Liberação da Seguradora <span className="text-red-500">*</span>
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={riskReleaseCode} 
+                                    onChange={(e) => setRiskReleaseCode(e.target.value)} 
+                                    placeholder="Ex: LIB-984721" 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                                    required
+                                />
                             </div>
-                          </div>
+                            
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Modalidade de Consulta Realizada <span className="text-red-500">*</span>
+                                </label>
+                                <select 
+                                    value={riskQueryType} 
+                                    onChange={(e) => setRiskQueryType(e.target.value as RiskQueryType)} 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                                    required
+                                >
+                                    <option value="" disabled>Selecione a modalidade de consulta...</option>
+                                    <option value={RiskQueryType.Siga}>1 - SIGA (Valor: R$ 7,00)</option>
+                                    <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (Valor: R$ 15,00)</option>
+                                    <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (Valor: R$ 33,00)</option>
+                                    <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (Valor: R$ 70,00)</option>
+                                    <option value={RiskQueryType.LiberacaoSimplificada}>5 - Liberação Simplificada (Valor: R$ 0,00)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {riskQueryType && (
+                            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
+                                <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
+                                <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
+                                    R$ {(RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0).toFixed(2).replace('.', ',')}
+                                </span>
+                            </div>
                         )}
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (

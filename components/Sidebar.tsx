@@ -17,6 +17,7 @@ import { LogOutIcon } from './icons/LogOutIcon';
 import { MapIcon } from './icons/MapIcon';
 import { ImageIcon } from './icons/ImageIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
+import { ShieldCheck } from 'lucide-react';
 
 
 interface SidebarProps {
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
       { id: 'shipment-history', label: 'Histórico', icon: HistoryIcon },
       { id: 'operational-loads', label: 'Cargas', icon: ChartIcon },
       { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
+      { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
     ],
   },
   {

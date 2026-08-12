@@ -142,6 +142,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       vehicleSetType: shipment.vehicleSetType || mainVehicle?.setType,
       vehicleBodyType: shipment.vehicleBodyType || mainVehicle?.bodyType,
       shipmentTonnage: tonnage,
+      driverFreightRateSnapshot: driverRateSnapshot,
+      driverFreightValue: driverFreight,
       paymentMethod: shipment.paymentMethod || DriverPaymentMethod.PixEFrete,
       pixKey: shipment.pixKey || '',
       bankDetails: shipment.bankDetails || '',
@@ -155,7 +157,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
 
   const handleSaveData = () => {
     if (onUpdateShipmentData) {
-      onUpdateShipmentData(shipment.id, editedData);
+      const finalRate = editedData.driverFreightRateSnapshot !== undefined ? editedData.driverFreightRateSnapshot : driverRateSnapshot;
+      const finalTon = editedData.shipmentTonnage !== undefined ? editedData.shipmentTonnage : tonnage;
+      const finalTotal = finalRate * finalTon;
+      onUpdateShipmentData(shipment.id, {
+        ...editedData,
+        driverFreightRateSnapshot: finalRate,
+        driverFreightValue: finalTotal
+      });
       setIsEditingData(false);
     }
   };
@@ -175,16 +184,16 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     <>
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/60 z-[9998]"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
         onClick={onClose}
       />
       {/* Modal Container */}
-      <div className="fixed inset-0 z-[9999] flex justify-center items-start pointer-events-none overflow-y-auto p-4">
+      <div className="fixed inset-0 z-[9999] flex justify-center items-center pointer-events-none p-4">
         <div 
-          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-4xl w-full flex flex-col border border-gray-200 dark:border-gray-700 my-auto pointer-events-auto"
+          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700 pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
-        <div className="flex justify-between items-start mb-4 border-b pb-4 dark:border-gray-700">
+        <div className="flex justify-between items-start mb-4 border-b pb-4 dark:border-gray-700 shrink-0">
             <div>
                 <div className="flex items-center gap-3">
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Detalhes do Embarque</h2>
@@ -424,15 +433,39 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                     <>
                         {currentUser?.profile !== UserProfile.Cliente && (
                             <DetailItem label="Valor Frete Motorista">
-                                <p className="text-lg font-bold text-green-700 dark:text-green-400">
-                                    {isEditingData 
-                                        ? formatCurrency((editedData.shipmentTonnage || 0) * driverRateSnapshot)
-                                        : formatCurrency(driverFreight)
-                                    }
-                                </p>
-                                <span className="text-[10px] text-gray-500 font-normal">
-                                    ({formatCurrency(driverRateSnapshot)} /ton)
-                                </span>
+                                {isEditingData ? (
+                                    <div className="mt-1">
+                                        <label className="block text-[10px] text-gray-500 dark:text-gray-400 font-medium mb-0.5">Valor por Tonelada (R$/ton)</label>
+                                        <input 
+                                            type="number"
+                                            step="0.01"
+                                            className="w-full p-1.5 text-sm font-semibold border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            value={editedData.driverFreightRateSnapshot !== undefined ? editedData.driverFreightRateSnapshot : driverRateSnapshot}
+                                            onChange={e => {
+                                                const newRate = Number(e.target.value);
+                                                const curTon = editedData.shipmentTonnage !== undefined ? editedData.shipmentTonnage : tonnage;
+                                                setEditedData({
+                                                    ...editedData,
+                                                    driverFreightRateSnapshot: newRate,
+                                                    driverFreightValue: newRate * curTon
+                                                });
+                                            }}
+                                            placeholder="Ex: 95.00"
+                                        />
+                                        <p className="text-xs font-bold text-green-700 dark:text-green-400 mt-1">
+                                            Total: {formatCurrency(((editedData.shipmentTonnage !== undefined ? editedData.shipmentTonnage : tonnage) || 0) * (editedData.driverFreightRateSnapshot !== undefined ? editedData.driverFreightRateSnapshot : driverRateSnapshot))}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <p className="text-lg font-bold text-green-700 dark:text-green-400 leading-tight">
+                                            {formatCurrency(driverFreight)}
+                                        </p>
+                                        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block mt-0.5">
+                                            ({formatCurrency(driverRateSnapshot)} /ton)
+                                        </span>
+                                    </div>
+                                )}
                             </DetailItem>
                         )}
                         <DetailItem label="Tonelagem">
@@ -810,7 +843,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
             
         </div>
         
-        <div className="mt-6 flex justify-end border-t dark:border-gray-700 pt-4">
+        <div className="mt-4 flex justify-end border-t dark:border-gray-700 pt-4 shrink-0">
           <button type="button" onClick={onClose} className="py-2 px-6 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 transition-colors">
             Fechar
           </button>
