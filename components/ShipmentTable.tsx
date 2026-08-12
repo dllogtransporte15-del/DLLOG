@@ -12,7 +12,7 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building } from 'lucide-react';
 import { getShipmentCte } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
@@ -263,14 +263,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     <div className="space-y-4">
       {currentUser.profile !== UserProfile.Motorista && (
       <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
-        <div className="flex flex-col md:flex-row items-center justify-between p-4 gap-4">
-          <div className="w-full md:w-auto">
+        <div className="flex flex-col md:flex-row items-center justify-between p-3 gap-3">
+          <div className="w-full md:w-auto flex items-center gap-2">
             <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${showFilters || activeFiltersCount > 0 ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800' : 'bg-gray-50 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all shadow-sm ${showFilters || activeFiltersCount > 0 ? 'bg-blue-100/80 text-blue-900 border-blue-300 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-700' : 'bg-blue-50/40 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 border-blue-200 dark:border-blue-800/60 hover:bg-blue-50/70'}`}
             >
-                <Filter className="w-4 h-4" />
-                <span className="text-sm font-medium">Filtros Avançados {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
+                <Filter className="w-3.5 h-3.5" />
+                <span>Filtros Avançados {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
             </button>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">
@@ -279,25 +279,25 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
         </div>
 
         {showFilters && (
-            <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                    <MultiSelectDropdown label="Placa" options={plateOptions} selectedValues={filterPlate} onChange={setFilterPlate} placeholder="Todas as Placas..." />
-                    <MultiSelectDropdown label="Motorista" options={nameOptions} selectedValues={filterName} onChange={setFilterName} placeholder="Todos os Motoristas..." />
-                    <MultiSelectDropdown label="Cidade de Origem" options={originOptions} selectedValues={filterOrigin} onChange={setFilterOrigin} placeholder="Todas as Origens..." />
-                    <MultiSelectDropdown label="Cidade de Destino" options={destOptions} selectedValues={filterDest} onChange={setFilterDest} placeholder="Todos os Destinos..." />
-                    <MultiSelectDropdown label="Cliente" options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos os Clientes..." />
+            <div className="p-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-800/40">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <MultiSelectDropdown label="Placa" icon={Truck} options={plateOptions} selectedValues={filterPlate} onChange={setFilterPlate} placeholder="Todas as Placas..." />
+                    <MultiSelectDropdown label="Motorista" icon={UserIcon} options={nameOptions} selectedValues={filterName} onChange={setFilterName} placeholder="Todos os Motoristas..." />
+                    <MultiSelectDropdown label="Cidade de Origem" icon={MapPin} options={originOptions} selectedValues={filterOrigin} onChange={setFilterOrigin} placeholder="Todas as Origens..." />
+                    <MultiSelectDropdown label="Cidade de Destino" icon={MapPin} options={destOptions} selectedValues={filterDest} onChange={setFilterDest} placeholder="Todos os Destinos..." />
+                    <MultiSelectDropdown label="Cliente" icon={Building} options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos os Clientes..." />
                 </div>
                 {/* Ordenação */}
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 flex flex-wrap items-end gap-4">
-                    <div className="flex items-center gap-2">
-                        <ArrowUpDown className="w-4 h-4 text-gray-500" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Ordenar por:</span>
+                <div className="mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700 flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                        <ArrowUpDown className="w-3.5 h-3.5 text-blue-500" />
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Ordenar por:</span>
                     </div>
-                    <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-wrap gap-2">
                         <select
                             value={sortKey}
                             onChange={e => setSortKey(e.target.value)}
-                            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary outline-none"
+                            className="px-3 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
                         >
                             <option value="default">Padrão (sem ordenação)</option>
                             <option value="driver">Motorista</option>
@@ -312,7 +312,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             <select
                                 value={sortDir}
                                 onChange={e => setSortDir(e.target.value as 'asc' | 'desc')}
-                                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary outline-none"
+                                className="px-3 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
                             >
                                 <option value="asc">Crescente (A → Z)</option>
                                 <option value="desc">Decrescente (Z → A)</option>
@@ -320,8 +320,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                         )}
                     </div>
                     {(activeFiltersCount > 0 || sortKey !== 'default') && (
-                        <button onClick={clearFilters} className="ml-auto text-sm flex items-center gap-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
-                            <X className="w-4 h-4" /> Limpar Tudo
+                        <button onClick={clearFilters} className="ml-auto text-xs font-semibold flex items-center gap-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors">
+                            <X className="w-3.5 h-3.5" /> Limpar Tudo
                         </button>
                     )}
                 </div>
