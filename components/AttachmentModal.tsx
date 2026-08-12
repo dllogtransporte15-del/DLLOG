@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client } from '../types';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr } from '../utils';
 import { useToast } from '../hooks/useToast';
-import { X } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard } from 'lucide-react';
 
 interface AttachmentModalProps {
   isOpen: boolean;
@@ -32,6 +31,9 @@ interface AttachmentModalProps {
   canSave?: boolean;
   /** Quando false, libera fluxo simplificado (apenas documento obrigatório no AG. Seguradora). Default: true */
   requiresRiskManagement?: boolean;
+  products?: Product[];
+  clients?: Client[];
+  users?: User[];
 }
 
 declare const L: any;
@@ -69,7 +71,7 @@ const FileInput: React.FC<{ label: string; onFileChange: (files: FileList | null
 };
 
 
-const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSave, shipment, documentName, currentUser, cargo, canSave = true, requiresRiskManagement = true }) => {
+const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSave, shipment, documentName, currentUser, cargo, canSave = true, requiresRiskManagement = true, products = [], clients = [], users = [] }) => {
   const [singleFiles, setSingleFiles] = useState<File[]>([]);
   const [multiFiles, setMultiFiles] = useState<{ [key: string]: File[] }>({});
   const [bankDetails, setBankDetails] = useState('');
@@ -411,19 +413,155 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
     </ul>
   );
 
+  const formatCurrency = (val: number) => 
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
+  const productName = products?.find(p => p.id === cargo?.productId)?.name || cargo?.productId || 'Não especificado';
+  const clientName = clients?.find(c => c.id === cargo?.clientId)?.razaoSocial || clients?.find(c => c.id === cargo?.clientId)?.nomeFantasia || cargo?.clientId || 'Não especificado';
+  const embarcadorUser = users?.find(u => u.id === shipment.embarcadorId);
+  const embarcadorName = embarcadorUser?.name || shipment.embarcadorId || 'Não especificado';
+
+  const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (shipment.shipmentTonnage ? shipment.driverFreightValue / shipment.shipmentTonnage : 0);
+  const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+  const totalDriverFreight = shipment.driverFreightValue || (driverRate * (shipment.shipmentTonnage || 0));
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-200 relative">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 sm:p-8 max-w-5xl w-full max-h-[92vh] overflow-y-auto text-gray-800 dark:text-gray-200 relative border border-gray-100 dark:border-gray-700">
         <button 
             onClick={onClose}
-            className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors z-10"
             title="Fechar"
         >
             <X className="w-6 h-6" />
         </button>
-        <h2 className="text-2xl font-bold mb-2">Gerenciar Anexos</h2>
-        <p className="mb-4 text-sm text-gray-500">Embarque: {shipment.id}</p>
 
+        {/* Dashboard de Informações Otimizadas do Embarque */}
+        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-5 shadow-xl mb-6 border border-slate-700/80 relative overflow-hidden">
+          {/* Cabecalho Principal */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-700/80">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="p-2 bg-blue-500/20 rounded-xl border border-blue-400/30 text-blue-400">
+                <Package className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                  Gerenciar Anexos
+                </h2>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-mono text-xs font-bold text-blue-400 bg-blue-950/60 px-2 py-0.5 rounded border border-blue-800/50">
+                    {shipment.id}
+                  </span>
+                  {cargo?.sequenceId && (
+                    <span className="text-xs font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                      Carga #{cargo.sequenceId}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pr-8">
+              <span className="text-xs text-slate-400 font-medium">Status:</span>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm">
+                {shipment.status}
+              </span>
+            </div>
+          </div>
+
+          {/* Grid de Informacoes Chave */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
+            {/* Produto */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <Box className="w-3.5 h-3.5 text-amber-400" /> Produto
+              </div>
+              <div className="font-bold text-white text-xs truncate" title={productName}>
+                {productName}
+              </div>
+            </div>
+
+            {/* Frete Motorista / ton */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Frete Mtr / ton
+              </div>
+              <div className="font-black text-emerald-400 text-xs">
+                {formatCurrency(driverRate)}
+              </div>
+            </div>
+
+            {/* Total Frete Motorista */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Total Frete Mtr
+              </div>
+              <div className="font-black text-white text-xs">
+                {formatCurrency(totalDriverFreight)}
+              </div>
+            </div>
+
+            {/* Frete Empresa / ton */}
+            {!isClientUser && currentUser.profile !== UserProfile.Motorista && (
+              <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+                <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                  <DollarSign className="w-3.5 h-3.5 text-blue-400" /> Frete Emp / ton
+                </div>
+                <div className="font-bold text-blue-300 text-xs">
+                  {formatCurrency(companyRate)}
+                </div>
+              </div>
+            )}
+
+            {/* Tonelagem */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <Scale className="w-3.5 h-3.5 text-cyan-400" /> Peso (Ton)
+              </div>
+              <div className="font-bold text-white text-xs">
+                {shipment.shipmentTonnage ? `${shipment.shipmentTonnage} t` : 'Aguardando'}
+                {shipment.unloadedTonnage ? ` (${shipment.unloadedTonnage} t desc.)` : ''}
+              </div>
+            </div>
+
+            {/* Motorista & Placa */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-1">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <UserIcon className="w-3.5 h-3.5 text-purple-400" /> Motorista / Placa
+              </div>
+              <div className="font-bold text-white text-xs truncate" title={shipment.driverName}>
+                {shipment.driverName}
+              </div>
+              <div className="text-[11px] font-mono text-slate-400">
+                {shipment.horsePlate}
+              </div>
+            </div>
+
+            {/* Rota (Origem → Destino) */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 lg:col-span-2">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <MapPin className="w-3.5 h-3.5 text-rose-400" /> Rota (Origem → Destino)
+              </div>
+              <div className="font-medium text-white text-xs truncate" title={`${cargo?.origin || 'N/I'} → ${cargo?.destination || 'N/I'}`}>
+                <span className="font-bold text-slate-200">{cargo?.origin || 'N/I'}</span>
+                <span className="mx-1.5 text-slate-500">→</span>
+                <span className="font-bold text-slate-200">{cargo?.destination || 'N/I'}</span>
+              </div>
+            </div>
+
+            {/* Solicitante / Cliente */}
+            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 lg:col-span-2">
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                <Building className="w-3.5 h-3.5 text-indigo-400" /> Solicitante / Cliente
+              </div>
+              <div className="font-bold text-white text-xs truncate" title={`Sol.: ${embarcadorName} | Cliente: ${clientName}`}>
+                <span className="text-slate-300">Sol.:</span> {embarcadorName} | <span className="text-slate-300">Cli.:</span> {clientName}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card de Informações Financeiras & Pagamento */}
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div>
                 <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Forma de Pagamento:</span>

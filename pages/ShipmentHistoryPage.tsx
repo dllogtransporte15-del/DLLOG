@@ -231,6 +231,9 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
               products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
                 ?.requiresRiskManagement !== false
             }
+            products={products}
+            clients={clients}
+            users={users}
         />
       )}
 

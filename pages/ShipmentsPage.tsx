@@ -359,6 +359,9 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
             products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
               ?.requiresRiskManagement !== false
           }
+          products={products}
+          clients={clients}
+          users={users}
         />
       )}
 

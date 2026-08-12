@@ -455,6 +455,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
             products.find(p => p.id === loads.find(c => c.id === selectedShipment.cargoId)?.productId)
               ?.requiresRiskManagement !== false
           }
+          products={products}
+          clients={clients}
+          users={users}
         />
       )}
 
