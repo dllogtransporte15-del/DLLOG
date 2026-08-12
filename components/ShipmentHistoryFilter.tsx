@@ -143,39 +143,7 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
         </button>
       </div>
 
-      {/* Filtros de Números de Documentos Fiscais */}
-      {(onFilterCteChange || onFilterNfeChange || onFilterMdfeChange) && (
-        <div className="flex flex-wrap items-center gap-2 px-1">
-          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">🔍 Buscar por documento fiscal:</span>
-          {onFilterCteChange && (
-            <input
-              type="text"
-              placeholder="CT-e nº..."
-              value={filterCte}
-              onChange={e => onFilterCteChange(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 w-36"
-            />
-          )}
-          {onFilterNfeChange && (
-            <input
-              type="text"
-              placeholder="NF-e nº..."
-              value={filterNfe}
-              onChange={e => onFilterNfeChange(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 w-36"
-            />
-          )}
-          {onFilterMdfeChange && (
-            <input
-              type="text"
-              placeholder="MDF-e nº..."
-              value={filterMdfe}
-              onChange={e => onFilterMdfeChange(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 w-36"
-            />
-          )}
-        </div>
-      )}
+
 
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">

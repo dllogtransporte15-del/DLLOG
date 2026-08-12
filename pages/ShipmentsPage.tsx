@@ -292,41 +292,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         currentUser={currentUser}
       />
 
-      {/* Filtros de Documentos Fiscais */}
-      {[ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado as any, 'all' as any].includes(activeStatus as any) || true ? (
-        <div className="mx-4 mb-3 flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium mr-1">🔍 Buscar por doc.:</span>
-          <input
-            type="text"
-            placeholder="CT-e nº..."
-            value={filterCte}
-            onChange={e => setFilterCte(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 w-36"
-          />
-          <input
-            type="text"
-            placeholder="NF-e nº..."
-            value={filterNfe}
-            onChange={e => setFilterNfe(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 w-36"
-          />
-          <input
-            type="text"
-            placeholder="MDF-e nº..."
-            value={filterMdfe}
-            onChange={e => setFilterMdfe(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 w-36"
-          />
-          {(filterCte || filterNfe || filterMdfe) && (
-            <button
-              onClick={() => { setFilterCte(''); setFilterNfe(''); setFilterMdfe(''); }}
-              className="px-3 py-1.5 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-            >
-              Limpar filtros
-            </button>
-          )}
-        </div>
-      ) : null}
+
 
       <ShipmentTable 
         shipments={filteredShipments} 
