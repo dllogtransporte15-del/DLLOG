@@ -470,6 +470,9 @@ const fromShipment = (s: Shipment) => ({
     ...(s.paymentMethod ? { payment_method: s.paymentMethod } : {}),
     ...(s.pixKey ? { pix_key: s.pixKey } : {}),
     ...(s.advancePercentage !== undefined ? { advance_percentage: s.advancePercentage } : {}),
+    ...(s.cteNumber ? { cte_number: s.cteNumber } : {}),
+    ...(s.nfeNumber ? { nfe_number: s.nfeNumber } : {}),
+    ...(s.mdfeNumber ? { mdfe_number: s.mdfeNumber } : {}),
   },
   history: s.history,
   created_at: s.createdAt,
@@ -500,9 +503,6 @@ const fromShipment = (s: Shipment) => ({
   risk_release_code: s.riskReleaseCode,
   risk_query_type: s.riskQueryType,
   risk_query_cost: s.riskQueryCost,
-  cte_number: s.cteNumber || null,
-  nfe_number: s.nfeNumber || null,
-  mdfe_number: s.mdfeNumber || null,
 });
 
 export const toUser = (row: any): User => ({
