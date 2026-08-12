@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import type {
   Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer
 } from '../types';
@@ -884,6 +885,90 @@ export async function upsertShipment(shipment: Shipment): Promise<void> {
     throw error;
   }
 }
+
+/**
+ * Backfill: lê os arquivos CT-e, NF-e e MDF-e já armazenados no Storage
+ * para embarques antigos que não têm esses números registrados em `documents`.
+ * Executa silenciosamente em background — erros individuais são ignorados.
+ */
+export async function backfillShipmentFiscalNumbers(
+  onProgress?: (done: number, total: number) => void
+): Promise<{ updated: number; skipped: number }> {
+  // Busca apenas embarques que não têm cte_number, nfe_number nem mdfe_number em documents
+  const { data: rows, error } = await supabase
+    .from('shipments')
+    .select('id, documents')
+    .not('documents', 'is', null);
+
+  if (error || !rows) {
+    console.warn('[backfill] Falha ao buscar embarques:', error);
+    return { updated: 0, skipped: 0 };
+  }
+
+  // Filtra apenas os que têm arquivos de documentos fiscais mas não têm os números extraídos
+  const fiscalDocKeys = ['CT-e', 'Nota Fiscal', 'MDF-e'];
+  const candidates = rows.filter((row) => {
+    const docs = row.documents || {};
+    const alreadyHas = docs.cte_number || docs.nfe_number || docs.mdfe_number;
+    if (alreadyHas) return false;
+    return fiscalDocKeys.some((key) => Array.isArray(docs[key]) && docs[key].length > 0);
+  });
+
+  let updated = 0;
+  let skipped = 0;
+  const total = candidates.length;
+
+  console.log(`[backfill] ${total} embarques candidatos para backfill de documentos fiscais.`);
+
+  for (let i = 0; i < candidates.length; i++) {
+    const row = candidates[i];
+    const docs = row.documents || {};
+
+    // Monta mapa só com arrays de strings (URLs)
+    const urlMap: { [key: string]: string[] } = {};
+    for (const key of fiscalDocKeys) {
+      if (Array.isArray(docs[key])) urlMap[key] = docs[key];
+    }
+
+    try {
+      const extracted = await extractFiscalDocNumbersFromUrls(urlMap);
+      const hasAny = extracted.cteNumber || extracted.nfeNumber || extracted.mdfeNumber;
+
+      if (hasAny) {
+        const updatedDocs = {
+          ...docs,
+          ...(extracted.cteNumber ? { cte_number: extracted.cteNumber } : {}),
+          ...(extracted.nfeNumber ? { nfe_number: extracted.nfeNumber } : {}),
+          ...(extracted.mdfeNumber ? { mdfe_number: extracted.mdfeNumber } : {}),
+        };
+
+        const { error: updateError } = await supabase
+          .from('shipments')
+          .update({ documents: updatedDocs })
+          .eq('id', row.id);
+
+        if (!updateError) {
+          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, NF-e=${extracted.nfeNumber || '-'}, MDF-e=${extracted.mdfeNumber || '-'}`);
+          updated++;
+        } else {
+          console.warn(`[backfill] ⚠️ Falha ao atualizar ${row.id}:`, updateError.message);
+          skipped++;
+        }
+      } else {
+        skipped++;
+      }
+    } catch (e) {
+      console.warn(`[backfill] ⚠️ Erro ao processar ${row.id}:`, e);
+      skipped++;
+    }
+
+    onProgress?.(i + 1, total);
+  }
+
+  console.log(`[backfill] Concluído: ${updated} atualizados, ${skipped} ignorados.`);
+  return { updated, skipped };
+}
+
 
 export async function upsertUser(user: User): Promise<void> {
   const { error } = await supabase.from('app_users').upsert(fromUser(user));

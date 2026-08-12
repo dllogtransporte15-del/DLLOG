@@ -9,7 +9,8 @@ import { INITIAL_PERMISSIONS } from '../auth';
 import { 
   fetchClients, fetchOwners, fetchDrivers, fetchVehicles, fetchProducts,
   fetchCargos, fetchShipments, fetchUsers, fetchTickets, fetchProfilePermissions,
-  fetchAppSettings, fetchShipmentLocks, fetchBranches, fetchFreightOffers
+  fetchAppSettings, fetchShipmentLocks, fetchBranches, fetchFreightOffers,
+  backfillShipmentFiscalNumbers
 } from '../lib/db';
 import { getAllToolStays, StayRecord } from '../utils/toolStorage';
 
@@ -88,6 +89,7 @@ export function useDatabase(currentUser: User | null) {
   });
 
   const isAnyModalActiveRef = useRef(false);
+  const backfillRanRef = useRef(false);
 
   const loadAllData = useCallback(async (isBackground = false) => {
     if (!isBackground) setIsLoading(true);
@@ -172,7 +174,18 @@ export function useDatabase(currentUser: User | null) {
           dbClients, dbOwners, dbDrivers, dbVehicles,
           dbProducts, dbShipments, dbCargos, dbUsers, dbTickets, dbBranches, dbFreightOffers
         ));
-      }
+
+        // Backfill silencioso: extrai CT-e/NF-e/MDF-e de embarques antigos (roda 1x por sessão)
+        if (!backfillRanRef.current) {
+          backfillRanRef.current = true;
+          backfillShipmentFiscalNumbers().then(({ updated }) => {
+            if (updated > 0) {
+              console.log(`[backfill] ${updated} embarque(s) atualizados — recarregando embarques.`);
+              fetchShipments().then(setShipments).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+      } // fim do else (não-Motorista)
 
     } catch (err) {
       console.error('Erro ao carregar dados:', err);

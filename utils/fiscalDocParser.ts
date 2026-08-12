@@ -138,3 +138,54 @@ export async function extractFiscalDocNumbers(
   console.log('[fiscalDocParser] Extracted fiscal numbers:', result);
   return result;
 }
+
+/**
+ * Extrai números fiscais a partir de URLs de documentos já armazenados.
+ * Usado para backfill de embarques antigos que não têm cteNumber/nfeNumber/mdfeNumber.
+ * 
+ * @param docsByType Mapa de { tipo: [url1, url2, ...] } vindo do campo `documents` do embarque
+ */
+export async function extractFiscalDocNumbersFromUrls(
+  docsByType: { [docType: string]: string[] }
+): Promise<FiscalDocNumbers> {
+  const result: FiscalDocNumbers = {};
+
+  for (const [docType, urls] of Object.entries(docsByType)) {
+    if (!Array.isArray(urls) || urls.length === 0) continue;
+    const inferredField = inferFieldFromDocType(docType);
+    if (!inferredField) continue; // só processa tipos fiscais conhecidos
+
+    for (const url of urls) {
+      if (result.cteNumber && result.nfeNumber && result.mdfeNumber) break;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) continue;
+
+        const text = await response.text();
+        const fileName = url.split('/').pop() || '';
+        const isXml = fileName.toLowerCase().endsWith('.xml') || text.trimStart().startsWith('<');
+
+        if (isXml) {
+          const parsed = extractNumberFromXml(text);
+          if (parsed) result[parsed.field] = parsed.value;
+        } else {
+          if (inferredField === 'cteNumber' && !result.cteNumber) {
+            const v = matchPatterns(text, CTE_PATTERNS); if (v) result.cteNumber = v;
+          } else if (inferredField === 'nfeNumber' && !result.nfeNumber) {
+            const v = matchPatterns(text, NFE_PATTERNS); if (v) result.nfeNumber = v;
+          } else if (inferredField === 'mdfeNumber' && !result.mdfeNumber) {
+            const v = matchPatterns(text, MDFE_PATTERNS); if (v) result.mdfeNumber = v;
+          } else {
+            if (!result.cteNumber) { const v = matchPatterns(text, CTE_PATTERNS); if (v) result.cteNumber = v; }
+            if (!result.nfeNumber) { const v = matchPatterns(text, NFE_PATTERNS); if (v) result.nfeNumber = v; }
+            if (!result.mdfeNumber) { const v = matchPatterns(text, MDFE_PATTERNS); if (v) result.mdfeNumber = v; }
+          }
+        }
+      } catch (e) {
+        console.warn(`[fiscalDocParser] Could not fetch URL "${url}":`, e);
+      }
+    }
+  }
+
+  return result;
+}
