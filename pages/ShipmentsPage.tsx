@@ -181,9 +181,13 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   }) => {
     if (!selectedShipment) return;
     
-    // We await here so that if it throws, the modal doesn't close
-    await onUpdateAttachment(selectedShipment.id, data);
-    handleCloseAttachmentModal();
+    try {
+      await onUpdateAttachment(selectedShipment.id, data);
+      handleCloseAttachmentModal();
+    } catch (err) {
+      console.error('Error in handleSaveAttachment:', err);
+      throw err;
+    }
   };
   
   const handleSaveAnttData = (data: { anttOwnerIdentifier: string; bankDetails?: string }) => {

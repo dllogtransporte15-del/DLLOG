@@ -152,8 +152,13 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
 
   const handleSaveAttachment = async (data: any) => {
     if (!selectedShipment || !onUpdateAttachment) return;
-    await onUpdateAttachment(selectedShipment.id, data);
-    handleCloseAttachmentModal();
+    try {
+      await onUpdateAttachment(selectedShipment.id, data);
+      handleCloseAttachmentModal();
+    } catch (err) {
+      console.error('Error in handleSaveAttachment:', err);
+      throw err;
+    }
   };
 
   React.useEffect(() => {

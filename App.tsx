@@ -1288,11 +1288,11 @@ const App: React.FC = () => {
             // Fluxo completo: exige código de liberação + tipo de consulta
             if (!riskReleaseCode?.trim()) {
                 showToast('O Código de Liberação da Gerenciadora é obrigatório.', 'warning');
-                return;
+                throw new Error('O Código de Liberação da Gerenciadora é obrigatório.');
             }
             if (!riskQueryType) {
                 showToast('O Tipo de Consulta Realizada é obrigatório.', 'warning');
-                return;
+                throw new Error('O Tipo de Consulta Realizada é obrigatório.');
             }
         }
         // Liberação Simplificada: apenas o documento é obrigatório (validado pelo AttachmentModal)
@@ -1302,17 +1302,17 @@ const App: React.FC = () => {
     // Validation for "Aguardando Nota" transition
     if (originalShipment.status === ShipmentStatus.AguardandoNota && !originalShipment.bankDetails && !bankDetails) {
         showToast('Dados bancários são obrigatórios para avançar para a etapa de adiantamento.', 'warning');
-        return;
+        throw new Error('Dados bancários são obrigatórios para avançar para a etapa de adiantamento.');
     }
 
     if (originalShipment.status === ShipmentStatus.AguardandoCarregamento && !route?.trim()) {
         showToast('A rota do motorista é obrigatória para avançar para a próxima etapa.', 'warning');
-        return;
+        throw new Error('A rota do motorista é obrigatória para avançar para a próxima etapa.');
     }
 
     if (originalShipment.status === ShipmentStatus.AguardandoCarregamento && (!loadedTonnage || loadedTonnage <= 0)) {
         showToast('O peso carregado é obrigatório para avançar para a próxima etapa.', 'warning');
-        return;
+        throw new Error('O peso carregado é obrigatório para avançar para a próxima etapa.');
     }
 
     let nextStatus: ShipmentStatus | undefined;
@@ -1332,7 +1332,7 @@ const App: React.FC = () => {
     
     if (!nextStatus) {
       console.warn(`[handleUpdateShipmentAttachment] No next status found for ${originalShipment.status}`);
-      return;
+      throw new Error(`Não há próximo status configurado para ${originalShipment.status}`);
     }
 
     const currentStatus = originalShipment.status;
@@ -1344,8 +1344,8 @@ const App: React.FC = () => {
         isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Comercial, Fiscal, Diretor, Supervisor, Embarcador ou Administrador podem realizar esta ação.';
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
-        isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.';
+        isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.Financeiro].includes(currentUser.profile);
+        alertMessage = 'Apenas o perfil Gerenciadora de Risco, Embarcador ou Administrador do Sistema pode avançar embarques neste status.';
     } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
         isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor ou Administrador do Sistema podem realizar esta ação.';
@@ -1354,7 +1354,7 @@ const App: React.FC = () => {
 
     if (!isUserAllowed) {
         showToast(`Você não tem permissão para alterar o status deste embarque. ${alertMessage}`, 'error');
-        return;
+        throw new Error(`Você não tem permissão para alterar o status deste embarque. ${alertMessage}`);
     }
 
     // 1. Upload Files

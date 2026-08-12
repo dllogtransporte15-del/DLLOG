@@ -295,8 +295,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const handleSaveAttachment = useCallback(async (data: any) => {
     if (!selectedShipmentForAttachment || !onUpdateAttachment) return;
-    await onUpdateAttachment(selectedShipmentForAttachment.id, data);
-    handleCloseAttachmentModal();
+    try {
+      await onUpdateAttachment(selectedShipmentForAttachment.id, data);
+      handleCloseAttachmentModal();
+    } catch (err) {
+      console.error('Error in handleSaveAttachment:', err);
+      throw err;
+    }
   }, [selectedShipmentForAttachment, onUpdateAttachment, handleCloseAttachmentModal]);
 
   const handleOpenCadastroAntt = useCallback((shipment: Shipment) => {
