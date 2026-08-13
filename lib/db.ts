@@ -501,11 +501,6 @@ const fromShipment = (s: Shipment) => ({
   branch_id: s.branchId || null,
   vehicle_set_type: s.vehicleSetType,
   vehicle_body_type: s.vehicleBodyType,
-  risk_release_code: s.riskReleaseCode,
-  risk_query_type: s.riskQueryType,
-  risk_query_cost: s.riskQueryCost,
-  cte_number: s.cteNumber,
-  cte_emission_date: s.cteEmissionDate,
 });
 
 export const toUser = (row: any): User => ({

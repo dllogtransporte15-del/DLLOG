@@ -1229,7 +1229,7 @@ const App: React.FC = () => {
           const urlParts = url.split('/');
           fileName = decodeURIComponent(urlParts[urlParts.length - 1].split('_').slice(2).join('_'));
           
-          updatedDocuments[category] = updatedDocuments[category].filter(u => u !== url);
+          updatedDocuments[category] = updatedDocuments[category].filter((u: string) => u !== url);
           if (updatedDocuments[category].length === 0) {
             delete updatedDocuments[category];
           }
@@ -1658,9 +1658,18 @@ const App: React.FC = () => {
         updatedDriverFreight = rateToUse * targetTonnage;
     }
 
+    const updatedDocs = {
+      ...(shipmentToUpdate.documents || {}),
+      ...(data.cteNumber !== undefined ? { cte_number: data.cteNumber } : {}),
+      ...(data.cteEmissionDate !== undefined ? { cte_emission_date: data.cteEmissionDate } : {}),
+      ...(data.nfeNumber !== undefined ? { nfe_number: data.nfeNumber } : {}),
+      ...(data.mdfeNumber !== undefined ? { mdfe_number: data.mdfeNumber } : {}),
+    };
+
     const updatedShipment: Shipment = { 
       ...shipmentToUpdate, 
       ...data, 
+      documents: updatedDocs,
       driverFreightRateSnapshot: rateToUse,
       driverFreightValue: updatedDriverFreight,
       history: [...shipmentToUpdate.history, createHistoryLog(`Dados do embarque corrigidos: ${changes.join(' ')}`)] 

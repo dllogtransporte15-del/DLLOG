@@ -333,7 +333,7 @@ export interface Shipment {
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime?: string; // HH:MM
   arrivalTime?: string; // ISO String
-  documents?: { [key: string]: string[] };
+  documents?: { [key: string]: any };
   history: HistoryLog[];
   createdAt: string;
   createdById: string;
