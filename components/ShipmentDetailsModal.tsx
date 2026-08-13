@@ -8,7 +8,7 @@ import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { getShipmentCte } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate } from '../utils';
 
 
 interface ShipmentDetailsModalProps {
@@ -153,6 +153,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       ownerContact: shipment.ownerContact,
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
       cteNumber: shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : ''),
+      cteEmissionDate: shipment.cteEmissionDate || (getShipmentCteEmissionDate(shipment) || ''),
     });
     setIsEditingData(true);
   };
@@ -366,7 +367,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     value={editedData.cteNumber || ''}
                                     onChange={e => setEditedData({...editedData, cteNumber: e.target.value})}
-                                    placeholder="Ex: 17864723, 1741"
+                                    placeholder="Ex: 1753"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Data/Hora Emissão CT-e</label>
+                                <input 
+                                    type="text"
+                                    className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    value={editedData.cteEmissionDate || ''}
+                                    onChange={e => setEditedData({...editedData, cteEmissionDate: e.target.value})}
+                                    placeholder="Ex: 13/08/2026 11:40"
                                 />
                             </div>
                         </>
@@ -385,7 +396,19 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <DetailItem label="Tag do Veículo" value={shipment.vehicleTag || 'N/A'} />
                             <DetailItem label="Tipo de Veículo" value={shipment.vehicleSetType || mainVehicle?.setType || 'N/A'} />
                             <DetailItem label="Carroceria" value={shipment.vehicleBodyType || mainVehicle?.bodyType || 'N/A'} />
-                            <DetailItem label="Número do CT-e" value={getShipmentCte(shipment)} />
+                            <DetailItem label="Número do CT-e">
+                                {(() => {
+                                    const cte = getShipmentCte(shipment);
+                                    const cteDate = getShipmentCteEmissionDate(shipment);
+                                    if (cte === '-') return <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>;
+                                    return (
+                                        <div>
+                                            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{cte}</p>
+                                            {cteDate && <p className="text-xs text-gray-500 dark:text-gray-400">Emissão: {cteDate}</p>}
+                                        </div>
+                                    );
+                                })()}
+                            </DetailItem>
                         </>
                     )}
                 </div>

@@ -13,7 +13,8 @@ import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building, Pencil, Check } from 'lucide-react';
-import { getShipmentCte } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate } from '../utils';
+import { backfillShipmentFiscalNumbers } from '../lib/db';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
 import { TicketStatus } from '../types';
@@ -85,10 +86,37 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   
   const [editingCteId, setEditingCteId] = useState<string | null>(null);
   const [editingCteValue, setEditingCteValue] = useState<string>('');
+  const [editingCteDateValue, setEditingCteDateValue] = useState<string>('');
+
+  const [isSyncingCtes, setIsSyncingCtes] = useState(false);
+  const [syncProgress, setSyncProgress] = useState('');
+
+  const handleSyncCtes = async () => {
+    setIsSyncingCtes(true);
+    setSyncProgress('Iniciando...');
+    try {
+      const { updated, skipped } = await backfillShipmentFiscalNumbers((done, total) => {
+        setSyncProgress(`${done}/${total}`);
+      }, true);
+      if (updated > 0) {
+        window.location.reload();
+      } else {
+        alert(`Sincronização concluída: Todos os CT-es já estão atualizados (${skipped} analisados).`);
+      }
+    } catch (err) {
+      console.warn('[SyncCtes] Erro ao sincronizar CT-es:', err);
+    } finally {
+      setIsSyncingCtes(false);
+      setSyncProgress('');
+    }
+  };
 
   const handleSaveCte = (shipmentId: string) => {
     if (onUpdateShipmentData) {
-      onUpdateShipmentData(shipmentId, { cteNumber: editingCteValue.trim() });
+      onUpdateShipmentData(shipmentId, { 
+        cteNumber: editingCteValue.trim(),
+        cteEmissionDate: editingCteDateValue.trim()
+      });
     }
     setEditingCteId(null);
   };
@@ -306,6 +334,17 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 )}
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={handleSyncCtes}
+              disabled={isSyncingCtes}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border bg-blue-50/40 text-blue-700 hover:bg-blue-100/80 dark:bg-blue-900/20 dark:text-blue-300 border-blue-200 dark:border-blue-800/60 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+              title="Lê todos os PDFs e XMLs de CT-es anexados a embarques e extrai automaticamente a data/hora de emissão para exibição"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isSyncingCtes ? 'animate-spin' : ''}`} />
+              <span>{isSyncingCtes ? `Lendo CT-es... (${syncProgress})` : 'Sincronizar CT-es Anexados'}</span>
+            </button>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">
             {filteredShipments.length !== shipments.length ? `${filteredShipments.length} de ` : ''}{shipments.length} embarques listados
@@ -552,20 +591,28 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                   )}
                   {(() => {
                     const cteVal = getShipmentCte(shipment);
+                    const cteDate = getShipmentCteEmissionDate(shipment);
                     const isEditingThisCte = editingCteId === shipment.id;
                     const canEditCte = !isClient && !!onUpdateShipmentData;
 
                     if (isEditingThisCte) {
                       return (
-                        <div className="mt-2 flex items-center gap-1.5">
-                          <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
+                        <div className="mt-2 p-2 bg-blue-50/70 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800 flex flex-col gap-1.5 w-full sm:w-auto">
+                          <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">Editar CT-e:</span>
                           <input
                             type="text"
                             value={editingCteValue}
                             onChange={(e) => setEditingCteValue(e.target.value)}
-                            placeholder="Nº do CT-e"
-                            className="w-36 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Nº do CT-e (ex: 1753)"
+                            className="w-full sm:w-44 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             autoFocus
+                          />
+                          <input
+                            type="text"
+                            value={editingCteDateValue}
+                            onChange={(e) => setEditingCteDateValue(e.target.value)}
+                            placeholder="Emissão (ex: 13/08/2026 11:40)"
+                            className="w-full sm:w-44 px-2 py-1 text-[11px] font-medium border border-blue-300 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
@@ -575,52 +622,63 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                               }
                             }}
                           />
-                          <button
-                            onClick={() => handleSaveCte(shipment.id)}
-                            className="p-1 text-green-600 hover:bg-green-100 rounded dark:hover:bg-green-900/40"
-                            title="Salvar"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setEditingCteId(null)}
-                            className="p-1 text-red-600 hover:bg-red-100 rounded dark:hover:bg-red-900/40"
-                            title="Cancelar"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <button
+                              onClick={() => handleSaveCte(shipment.id)}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-green-600 hover:bg-green-700 rounded shadow-xs"
+                              title="Salvar"
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              onClick={() => setEditingCteId(null)}
+                              className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-700 rounded"
+                              title="Cancelar"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
                         </div>
                       );
                     }
 
                     if (cteVal !== '-' || canEditCte) {
                       return (
-                        <div className="mt-2 flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit group/cte">
-                          <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                          <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
-                          <span 
-                            onClick={() => {
-                              if (canEditCte) {
-                                setEditingCteId(shipment.id);
-                                setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                              }
-                            }}
-                            className={`text-xs font-bold text-blue-900 dark:text-blue-200 ${canEditCte ? 'cursor-pointer hover:underline' : ''}`}
-                            title={canEditCte ? "Clique para editar o CT-e" : undefined}
-                          >
-                            {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
-                          </span>
-                          {canEditCte && (
-                            <button
+                        <div className="mt-2 flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit group/cte">
+                            <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                            <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
+                            <span 
                               onClick={() => {
-                                setEditingCteId(shipment.id);
-                                setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                if (canEditCte) {
+                                  setEditingCteId(shipment.id);
+                                  setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                  setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                }
                               }}
-                              className="p-0.5 rounded text-blue-600 hover:bg-blue-200 dark:hover:bg-blue-800 transition-all ml-1"
-                              title="Editar CT-e"
+                              className={`text-xs font-bold text-blue-900 dark:text-blue-200 ${canEditCte ? 'cursor-pointer hover:underline' : ''}`}
+                              title={canEditCte ? "Clique para editar o CT-e" : undefined}
                             >
-                              <Pencil className="w-3 h-3" />
-                            </button>
+                              {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
+                            </span>
+                            {canEditCte && (
+                              <button
+                                onClick={() => {
+                                  setEditingCteId(shipment.id);
+                                  setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                  setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                }}
+                                className="p-0.5 rounded text-blue-600 hover:bg-blue-200 dark:hover:bg-blue-800 transition-all ml-1"
+                                title="Editar CT-e"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                          {cteDate && (
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium pl-1">
+                              Emissão: {cteDate}
+                            </span>
                           )}
                         </div>
                       );
@@ -835,19 +893,28 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm">
                       {(() => {
                         const cteVal = getShipmentCte(shipment);
+                        const cteDate = getShipmentCteEmissionDate(shipment);
                         const isEditingThisCte = editingCteId === shipment.id;
                         const canEditCte = !isClient && !!onUpdateShipmentData;
 
                         if (isEditingThisCte) {
                           return (
-                            <div className="flex items-center gap-1">
+                            <div className="flex flex-col gap-1.5 p-2 bg-blue-50/70 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800">
+                              <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">Editar CT-e:</span>
                               <input
                                 type="text"
                                 value={editingCteValue}
                                 onChange={(e) => setEditingCteValue(e.target.value)}
-                                placeholder="Nº do CT-e"
+                                placeholder="Nº do CT-e (ex: 1753)"
                                 className="w-36 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 autoFocus
+                              />
+                              <input
+                                type="text"
+                                value={editingCteDateValue}
+                                onChange={(e) => setEditingCteDateValue(e.target.value)}
+                                placeholder="Emissão (ex: 13/08/2026 11:40)"
+                                className="w-36 px-2 py-1 text-[11px] font-medium border border-blue-300 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     e.preventDefault();
@@ -857,66 +924,78 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                   }
                                 }}
                               />
-                              <button
-                                onClick={() => handleSaveCte(shipment.id)}
-                                className="p-1 text-green-600 hover:bg-green-100 rounded dark:hover:bg-green-900/40"
-                                title="Salvar CT-e"
-                              >
-                                <Check className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setEditingCteId(null)}
-                                className="p-1 text-red-600 hover:bg-red-100 rounded dark:hover:bg-red-900/40"
-                                title="Cancelar"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <button
+                                  onClick={() => handleSaveCte(shipment.id)}
+                                  className="px-2 py-0.5 text-xs font-bold text-white bg-green-600 hover:bg-green-700 rounded shadow-xs"
+                                  title="Salvar"
+                                >
+                                  Salvar
+                                </button>
+                                <button
+                                  onClick={() => setEditingCteId(null)}
+                                  className="px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-700 rounded"
+                                  title="Cancelar"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
                             </div>
                           );
                         }
 
                         return (
-                          <div className="flex items-center gap-1.5 group/cte">
-                            {cteVal && cteVal !== '-' ? (
-                              <span 
-                                onClick={() => {
-                                  if (canEditCte) {
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5 group/cte">
+                              {cteVal && cteVal !== '-' ? (
+                                <span 
+                                  onClick={() => {
+                                    if (canEditCte) {
+                                      setEditingCteId(shipment.id);
+                                      setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                      setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm ${canEditCte ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/70 transition-colors' : ''}`}
+                                  title={canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                                  {cteVal}
+                                </span>
+                              ) : (
+                                <span 
+                                  onClick={() => {
+                                    if (canEditCte) {
+                                      setEditingCteId(shipment.id);
+                                      setEditingCteValue(shipment.cteNumber || '');
+                                      setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                    }
+                                  }}
+                                  className={`text-gray-400 text-xs italic ${canEditCte ? 'cursor-pointer hover:text-blue-500 hover:underline' : ''}`}
+                                  title={canEditCte ? "Clique para adicionar o CT-e" : undefined}
+                                >
+                                  -
+                                </span>
+                              )}
+
+                              {canEditCte && (
+                                <button
+                                  onClick={() => {
                                     setEditingCteId(shipment.id);
                                     setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                                  }
-                                }}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm ${canEditCte ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/70 transition-colors' : ''}`}
-                                title={canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
-                              >
-                                <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                                {cteVal}
+                                    setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                  }}
+                                  className="p-1 rounded text-gray-400 opacity-0 group-hover/cte:opacity-100 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                                  title="Editar CT-e"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                            {cteDate && (
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium pl-0.5">
+                                {cteDate}
                               </span>
-                            ) : (
-                              <span 
-                                onClick={() => {
-                                  if (canEditCte) {
-                                    setEditingCteId(shipment.id);
-                                    setEditingCteValue(shipment.cteNumber || '');
-                                  }
-                                }}
-                                className={`text-gray-400 text-xs italic ${canEditCte ? 'cursor-pointer hover:text-blue-500 hover:underline' : ''}`}
-                                title={canEditCte ? "Clique para adicionar o CT-e" : undefined}
-                              >
-                                -
-                              </span>
-                            )}
-
-                            {canEditCte && (
-                              <button
-                                onClick={() => {
-                                  setEditingCteId(shipment.id);
-                                  setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                                }}
-                                className="p-1 rounded text-gray-400 opacity-0 group-hover/cte:opacity-100 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
-                                title="Editar CT-e"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
                             )}
                           </div>
                         );

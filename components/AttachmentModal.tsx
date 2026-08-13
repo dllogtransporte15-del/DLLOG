@@ -613,7 +613,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
               {shipment.cteNumber && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 rounded-full text-xs font-semibold">
                   <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-                  CT-e nº {shipment.cteNumber}
+                  CT-e nº {shipment.cteNumber} {shipment.cteEmissionDate ? `(${shipment.cteEmissionDate})` : ''}
                 </span>
               )}
               {shipment.nfeNumber && (

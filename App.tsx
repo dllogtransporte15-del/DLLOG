@@ -1385,20 +1385,23 @@ const App: React.FC = () => {
       throw error;
     }
 
-    // 1b. Extract fiscal document numbers (CT-e, NF-e, MDF-e) when advancing from Ag. Nota
+    // 1b. Extract fiscal document numbers (CT-e, NF-e, MDF-e, Data de Emissão) from attached files
     let extractedCteNumber: string | undefined = originalShipment.cteNumber;
+    let extractedCteEmissionDate: string | undefined = originalShipment.cteEmissionDate;
     let extractedNfeNumber: string | undefined = originalShipment.nfeNumber;
     let extractedMdfeNumber: string | undefined = originalShipment.mdfeNumber;
     let fiscalDocLog = '';
-    if (originalShipment.status === ShipmentStatus.AguardandoNota) {
+    if (Object.keys(filesToAttach).length > 0) {
       try {
         const fiscalNums = await extractFiscalDocNumbers(filesToAttach);
         if (fiscalNums.cteNumber) extractedCteNumber = fiscalNums.cteNumber;
+        if (fiscalNums.cteEmissionDate) extractedCteEmissionDate = fiscalNums.cteEmissionDate;
         if (fiscalNums.nfeNumber) extractedNfeNumber = fiscalNums.nfeNumber;
         if (fiscalNums.mdfeNumber) extractedMdfeNumber = fiscalNums.mdfeNumber;
-        if (fiscalNums.cteNumber || fiscalNums.nfeNumber || fiscalNums.mdfeNumber) {
+        if (fiscalNums.cteNumber || fiscalNums.cteEmissionDate || fiscalNums.nfeNumber || fiscalNums.mdfeNumber) {
           fiscalDocLog = [
             fiscalNums.cteNumber ? `CT-e nº ${fiscalNums.cteNumber}` : null,
+            fiscalNums.cteEmissionDate ? `Emissão: ${fiscalNums.cteEmissionDate}` : null,
             fiscalNums.nfeNumber ? `NF-e nº ${fiscalNums.nfeNumber}` : null,
             fiscalNums.mdfeNumber ? `MDF-e nº ${fiscalNums.mdfeNumber}` : null,
           ].filter(Boolean).join(', ');
@@ -1481,6 +1484,7 @@ const App: React.FC = () => {
         riskQueryType: riskQueryType || originalShipment.riskQueryType,
         riskQueryCost: riskQueryCost !== undefined ? riskQueryCost : originalShipment.riskQueryCost,
         cteNumber: extractedCteNumber,
+        cteEmissionDate: extractedCteEmissionDate,
         nfeNumber: extractedNfeNumber,
         mdfeNumber: extractedMdfeNumber,
         history: [...originalShipment.history, statusChangeLog],

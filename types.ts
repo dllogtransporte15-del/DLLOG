@@ -365,6 +365,7 @@ export interface Shipment {
   vehicleBodyType?: VehicleBodyType;
   branchId?: string;
   cteNumber?: string;   // Número do CT-e extraído automaticamente do XML/PDF
+  cteEmissionDate?: string; // Data e Hora da Emissão do CT-e (ex: 13/08/2026 11:40)
   nfeNumber?: string;   // Número da Nota Fiscal (NF-e) extraído automaticamente
   mdfeNumber?: string;  // Número do MDF-e extraído automaticamente
 }

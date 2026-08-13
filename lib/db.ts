@@ -439,6 +439,7 @@ const toShipment = (row: any): Shipment => ({
   riskQueryType: row.risk_query_type || row.documents?.risk_query_type,
   riskQueryCost: row.risk_query_cost !== null && row.risk_query_cost !== undefined ? Number(row.risk_query_cost) : (row.documents?.risk_query_cost !== undefined ? Number(row.documents.risk_query_cost) : undefined),
   cteNumber: row.cte_number || row.documents?.cte_number,
+  cteEmissionDate: row.cte_emission_date || row.documents?.cte_emission_date,
   nfeNumber: row.nfe_number || row.documents?.nfe_number,
   mdfeNumber: row.mdfe_number || row.documents?.mdfe_number,
 });
@@ -470,6 +471,7 @@ const fromShipment = (s: Shipment) => ({
     ...(s.pixKey ? { pix_key: s.pixKey } : {}),
     ...(s.advancePercentage !== undefined ? { advance_percentage: s.advancePercentage } : {}),
     ...(s.cteNumber !== undefined ? { cte_number: s.cteNumber } : {}),
+    ...(s.cteEmissionDate !== undefined ? { cte_emission_date: s.cteEmissionDate } : {}),
     ...(s.nfeNumber !== undefined ? { nfe_number: s.nfeNumber } : {}),
     ...(s.mdfeNumber !== undefined ? { mdfe_number: s.mdfeNumber } : {}),
   },
@@ -502,6 +504,8 @@ const fromShipment = (s: Shipment) => ({
   risk_release_code: s.riskReleaseCode,
   risk_query_type: s.riskQueryType,
   risk_query_cost: s.riskQueryCost,
+  cte_number: s.cteNumber,
+  cte_emission_date: s.cteEmissionDate,
 });
 
 export const toUser = (row: any): User => ({
@@ -876,9 +880,10 @@ export async function upsertShipment(shipment: Shipment): Promise<void> {
  * Executa silenciosamente em background — erros individuais são ignorados.
  */
 export async function backfillShipmentFiscalNumbers(
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  forceAll: boolean = false
 ): Promise<{ updated: number; skipped: number }> {
-  // Busca apenas embarques que não têm cte_number, nfe_number nem mdfe_number em documents
+  // Busca apenas 'id' e 'documents' para evitar erro caso colunas customizadas não existam no SQL
   const { data: rows, error } = await supabase
     .from('shipments')
     .select('id, documents')
@@ -889,13 +894,16 @@ export async function backfillShipmentFiscalNumbers(
     return { updated: 0, skipped: 0 };
   }
 
-  // Filtra apenas os que têm arquivos de documentos fiscais mas não têm os números extraídos
-  const fiscalDocKeys = ['CT-e', 'Nota Fiscal', 'MDF-e'];
-  const candidates = rows.filter((row) => {
+  // Filtra embarques que possuem anexos de documentos
+  const candidates = rows.filter((row: any) => {
     const docs = row.documents || {};
-    const alreadyHas = docs.cte_number || docs.nfe_number || docs.mdfe_number;
-    if (alreadyHas) return false;
-    return fiscalDocKeys.some((key) => Array.isArray(docs[key]) && docs[key].length > 0);
+    const keys = Object.keys(docs);
+    const hasFiles = keys.some((key) => Array.isArray(docs[key]) && docs[key].length > 0);
+    if (!hasFiles) return false;
+    if (forceAll) return true;
+    const hasNum = docs.cte_number || row.cte_number;
+    const hasDate = docs.cte_emission_date || row.cte_emission_date;
+    return !hasNum || !hasDate;
   });
 
   let updated = 0;
@@ -908,31 +916,46 @@ export async function backfillShipmentFiscalNumbers(
     const row = candidates[i];
     const docs = row.documents || {};
 
-    // Monta mapa só com arrays de strings (URLs)
     const urlMap: { [key: string]: string[] } = {};
-    for (const key of fiscalDocKeys) {
+    for (const key of Object.keys(docs)) {
       if (Array.isArray(docs[key])) urlMap[key] = docs[key];
     }
 
     try {
       const extracted = await extractFiscalDocNumbersFromUrls(urlMap);
-      const hasAny = extracted.cteNumber || extracted.nfeNumber || extracted.mdfeNumber;
+      const hasAny = extracted.cteNumber || extracted.cteEmissionDate || extracted.nfeNumber || extracted.mdfeNumber;
 
       if (hasAny) {
         const updatedDocs = {
           ...docs,
           ...(extracted.cteNumber ? { cte_number: extracted.cteNumber } : {}),
+          ...(extracted.cteEmissionDate ? { cte_emission_date: extracted.cteEmissionDate } : {}),
           ...(extracted.nfeNumber ? { nfe_number: extracted.nfeNumber } : {}),
           ...(extracted.mdfeNumber ? { mdfe_number: extracted.mdfeNumber } : {}),
         };
 
-        const { error: updateError } = await supabase
+        const updatePayload: any = { documents: updatedDocs };
+        if (extracted.cteNumber) updatePayload.cte_number = extracted.cteNumber;
+        if (extracted.cteEmissionDate) updatePayload.cte_emission_date = extracted.cteEmissionDate;
+        if (extracted.nfeNumber) updatePayload.nfe_number = extracted.nfeNumber;
+        if (extracted.mdfeNumber) updatePayload.mdfe_number = extracted.mdfeNumber;
+
+        let { error: updateError } = await supabase
           .from('shipments')
-          .update({ documents: updatedDocs })
+          .update(updatePayload)
           .eq('id', row.id);
 
+        if (updateError) {
+          // Fallback caso colunas diretas em shipments não existam na tabela SQL
+          const fallbackRes = await supabase
+            .from('shipments')
+            .update({ documents: updatedDocs })
+            .eq('id', row.id);
+          updateError = fallbackRes.error;
+        }
+
         if (!updateError) {
-          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, NF-e=${extracted.nfeNumber || '-'}, MDF-e=${extracted.mdfeNumber || '-'}`);
+          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, Emissão=${extracted.cteEmissionDate || '-'}`);
           updated++;
         } else {
           console.warn(`[backfill] ⚠️ Falha ao atualizar ${row.id}:`, updateError.message);

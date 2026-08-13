@@ -163,4 +163,28 @@ export function getShipmentCte(shipment?: { cteNumber?: string; documents?: any 
   return '-';
 }
 
+export function getShipmentCteEmissionDate(shipment?: { cteEmissionDate?: string; documents?: any } | null): string | null {
+  if (!shipment) return null;
+  if (shipment.cteEmissionDate) return shipment.cteEmissionDate;
+  if (shipment.documents?.cte_emission_date) return String(shipment.documents.cte_emission_date);
+
+  const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'] || shipment.documents?.['Documentação Fiscal'];
+  if (Array.isArray(cteDocs) && cteDocs.length > 0) {
+    for (const item of cteDocs) {
+      if (typeof item === 'string') {
+        const matchPt = item.match(/(\d{2})[-_.](\d{2})[-_.](\d{4})(?:[-_.\s]*(\d{2})[:_.](\d{2}))?/);
+        if (matchPt) {
+          return matchPt[4] ? `${matchPt[1]}/${matchPt[2]}/${matchPt[3]} ${matchPt[4]}:${matchPt[5]}` : `${matchPt[1]}/${matchPt[2]}/${matchPt[3]}`;
+        }
+        const matchIso = item.match(/(\d{4})[-_.](\d{2})[-_.](\d{2})(?:[T\s_-]*(\d{2})[:_.](\d{2}))?/);
+        if (matchIso) {
+          return matchIso[4] ? `${matchIso[3]}/${matchIso[2]}/${matchIso[1]} ${matchIso[4]}:${matchIso[5]}` : `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 
