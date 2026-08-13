@@ -8,6 +8,7 @@ import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
+import { getShipmentCte } from '../utils';
 
 
 interface ShipmentDetailsModalProps {
@@ -151,6 +152,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       driverReferences: shipment.driverReferences,
       ownerContact: shipment.ownerContact,
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
+      cteNumber: shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : ''),
     });
     setIsEditingData(true);
   };
@@ -357,6 +359,16 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     {Object.values(VehicleBodyType).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Número do CT-e</label>
+                                <input 
+                                    type="text"
+                                    className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    value={editedData.cteNumber || ''}
+                                    onChange={e => setEditedData({...editedData, cteNumber: e.target.value})}
+                                    placeholder="Ex: 17864723, 1741"
+                                />
+                            </div>
                         </>
                     ) : (
                         <>
@@ -373,6 +385,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <DetailItem label="Tag do Veículo" value={shipment.vehicleTag || 'N/A'} />
                             <DetailItem label="Tipo de Veículo" value={shipment.vehicleSetType || mainVehicle?.setType || 'N/A'} />
                             <DetailItem label="Carroceria" value={shipment.vehicleBodyType || mainVehicle?.bodyType || 'N/A'} />
+                            <DetailItem label="Número do CT-e" value={getShipmentCte(shipment)} />
                         </>
                     )}
                 </div>

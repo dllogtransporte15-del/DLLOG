@@ -56,6 +56,7 @@ interface OperationalLoadsPageProps {
     route?: string 
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
 }
 
 const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
@@ -89,6 +90,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   onReactivateLoad,
   onSuspendLoad,
   onUpdatePrice,
+  onUpdateShipmentData,
   onModalStateChange,
   onDeleteAttachment,
   branches,
@@ -344,6 +346,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
             currentUser={currentUser}
             onShowCargoDetails={handleShowCargoDetails}
             onAttach={handleOpenAttachmentModal}
+            onUpdateShipmentData={onUpdateShipmentData}
             stays={stays}
             activeStatus="all"
           />

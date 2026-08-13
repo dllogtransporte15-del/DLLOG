@@ -12,7 +12,7 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building, Pencil, Check } from 'lucide-react';
 import { getShipmentCte } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
@@ -82,6 +82,16 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   const [filterOrigin, setFilterOrigin] = useState<string[]>([]);
   const [filterDest, setFilterDest] = useState<string[]>([]);
   const [filterClient, setFilterClient] = useState<string[]>([]);
+  
+  const [editingCteId, setEditingCteId] = useState<string | null>(null);
+  const [editingCteValue, setEditingCteValue] = useState<string>('');
+
+  const handleSaveCte = (shipmentId: string) => {
+    if (onUpdateShipmentData) {
+      onUpdateShipmentData(shipmentId, { cteNumber: editingCteValue.trim() });
+    }
+    setEditingCteId(null);
+  };
   
   // Sync modal shipment with latest data from props
   useEffect(() => {
@@ -540,15 +550,84 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                   ) : (
                     <span className="text-red-500 font-bold text-[10px]">CARGA REMOVIDA</span>
                   )}
-                  {getShipmentCte(shipment) !== '-' && (
-                    <div className="mt-2 flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit">
-                      <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                      <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
-                      <span className="text-xs font-bold text-blue-900 dark:text-blue-200">
-                        {getShipmentCte(shipment)}
-                      </span>
-                    </div>
-                  )}
+                  {(() => {
+                    const cteVal = getShipmentCte(shipment);
+                    const isEditingThisCte = editingCteId === shipment.id;
+                    const canEditCte = !isClient && !!onUpdateShipmentData;
+
+                    if (isEditingThisCte) {
+                      return (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
+                          <input
+                            type="text"
+                            value={editingCteValue}
+                            onChange={(e) => setEditingCteValue(e.target.value)}
+                            placeholder="Nº do CT-e"
+                            className="w-36 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleSaveCte(shipment.id);
+                              } else if (e.key === 'Escape') {
+                                setEditingCteId(null);
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => handleSaveCte(shipment.id)}
+                            className="p-1 text-green-600 hover:bg-green-100 rounded dark:hover:bg-green-900/40"
+                            title="Salvar"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingCteId(null)}
+                            className="p-1 text-red-600 hover:bg-red-100 rounded dark:hover:bg-red-900/40"
+                            title="Cancelar"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if (cteVal !== '-' || canEditCte) {
+                      return (
+                        <div className="mt-2 flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit group/cte">
+                          <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
+                          <span 
+                            onClick={() => {
+                              if (canEditCte) {
+                                setEditingCteId(shipment.id);
+                                setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                              }
+                            }}
+                            className={`text-xs font-bold text-blue-900 dark:text-blue-200 ${canEditCte ? 'cursor-pointer hover:underline' : ''}`}
+                            title={canEditCte ? "Clique para editar o CT-e" : undefined}
+                          >
+                            {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
+                          </span>
+                          {canEditCte && (
+                            <button
+                              onClick={() => {
+                                setEditingCteId(shipment.id);
+                                setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                              }}
+                              className="p-0.5 rounded text-blue-600 hover:bg-blue-200 dark:hover:bg-blue-800 transition-all ml-1"
+                              title="Editar CT-e"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-gray-50 dark:border-gray-700">
@@ -756,15 +835,91 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm">
                       {(() => {
                         const cteVal = getShipmentCte(shipment);
-                        if (cteVal && cteVal !== '-') {
+                        const isEditingThisCte = editingCteId === shipment.id;
+                        const canEditCte = !isClient && !!onUpdateShipmentData;
+
+                        if (isEditingThisCte) {
                           return (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm" title={`CT-e nº ${cteVal}`}>
-                              <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                              {cteVal}
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={editingCteValue}
+                                onChange={(e) => setEditingCteValue(e.target.value)}
+                                placeholder="Nº do CT-e"
+                                className="w-36 px-2 py-1 text-xs font-semibold border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveCte(shipment.id);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingCteId(null);
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => handleSaveCte(shipment.id)}
+                                className="p-1 text-green-600 hover:bg-green-100 rounded dark:hover:bg-green-900/40"
+                                title="Salvar CT-e"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setEditingCteId(null)}
+                                className="p-1 text-red-600 hover:bg-red-100 rounded dark:hover:bg-red-900/40"
+                                title="Cancelar"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
                           );
                         }
-                        return <span className="text-gray-400 text-xs italic">-</span>;
+
+                        return (
+                          <div className="flex items-center gap-1.5 group/cte">
+                            {cteVal && cteVal !== '-' ? (
+                              <span 
+                                onClick={() => {
+                                  if (canEditCte) {
+                                    setEditingCteId(shipment.id);
+                                    setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                  }
+                                }}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm ${canEditCte ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/70 transition-colors' : ''}`}
+                                title={canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
+                              >
+                                <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                                {cteVal}
+                              </span>
+                            ) : (
+                              <span 
+                                onClick={() => {
+                                  if (canEditCte) {
+                                    setEditingCteId(shipment.id);
+                                    setEditingCteValue(shipment.cteNumber || '');
+                                  }
+                                }}
+                                className={`text-gray-400 text-xs italic ${canEditCte ? 'cursor-pointer hover:text-blue-500 hover:underline' : ''}`}
+                                title={canEditCte ? "Clique para adicionar o CT-e" : undefined}
+                              >
+                                -
+                              </span>
+                            )}
+
+                            {canEditCte && (
+                              <button
+                                onClick={() => {
+                                  setEditingCteId(shipment.id);
+                                  setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                }}
+                                className="p-1 rounded text-gray-400 opacity-0 group-hover/cte:opacity-100 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                                title="Editar CT-e"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        );
                       })()}
                     </td>
                     {currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (

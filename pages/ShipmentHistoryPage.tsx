@@ -24,10 +24,11 @@ interface ShipmentHistoryPageProps {
   onRevertStatus?: (shipmentId: string) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
   stays?: StayRecord[];
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, stays = [] }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, stays = [] }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -208,6 +209,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         companyLogo={null} // History doesn't typically need PDF generation but the prop is required
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
+        onUpdateShipmentData={onUpdateShipmentData}
       />
       {selectedShipment && (
         <HistoryModal
