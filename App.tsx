@@ -1263,11 +1263,12 @@ const App: React.FC = () => {
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string,
+    grStatus?: 'aprovado' | 'reprovado' | 'reprovado_restrito',
     riskReleaseCode?: string,
     riskQueryType?: string,
     riskQueryCost?: number,
   }) => {
-    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, netBalanceValue, unloadedTonnage, route, riskReleaseCode, riskQueryType, riskQueryCost } = data;
+    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost } = data;
     const originalShipment = shipments.find(s => s.id === shipmentId);
     
     if (!originalShipment) {
@@ -1282,24 +1283,25 @@ const App: React.FC = () => {
 
     // Validation for "Aguardando Seguradora" transition
     if (originalShipment.status === ShipmentStatus.AguardandoSeguradora) {
-        // Resolve the product linked to this shipment's cargo
-        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-        const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
-        // requiresRiskManagement defaults to true when undefined (retrocompatibilidade)
-        const needsFullRiskFlow = relatedProduct?.requiresRiskManagement !== false;
+        if (!grStatus || grStatus === 'aprovado') {
+            // Resolve the product linked to this shipment's cargo
+            const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
+            const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
+            // requiresRiskManagement defaults to true when undefined (retrocompatibilidade)
+            const needsFullRiskFlow = relatedProduct?.requiresRiskManagement !== false;
 
-        if (needsFullRiskFlow) {
-            // Fluxo completo: exige código de liberação + tipo de consulta
-            if (!riskReleaseCode?.trim()) {
-                showToast('O Código de Liberação da Gerenciadora é obrigatório.', 'warning');
-                throw new Error('O Código de Liberação da Gerenciadora é obrigatório.');
-            }
-            if (!riskQueryType) {
-                showToast('O Tipo de Consulta Realizada é obrigatório.', 'warning');
-                throw new Error('O Tipo de Consulta Realizada é obrigatório.');
+            if (needsFullRiskFlow) {
+                // Fluxo completo: exige código de liberação + tipo de consulta
+                if (!riskReleaseCode?.trim()) {
+                    showToast('O Código de Liberação da Gerenciadora é obrigatório.', 'warning');
+                    throw new Error('O Código de Liberação da Gerenciadora é obrigatório.');
+                }
+                if (!riskQueryType) {
+                    showToast('O Tipo de Consulta Realizada é obrigatório.', 'warning');
+                    throw new Error('O Tipo de Consulta Realizada é obrigatório.');
+                }
             }
         }
-        // Liberação Simplificada: apenas o documento é obrigatório (validado pelo AttachmentModal)
     }
 
 
@@ -1321,7 +1323,9 @@ const App: React.FC = () => {
 
     let nextStatus: ShipmentStatus | undefined;
 
-    if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
+    if (originalShipment.status === ShipmentStatus.AguardandoSeguradora && (grStatus === 'reprovado' || grStatus === 'reprovado_restrito')) {
+        nextStatus = ShipmentStatus.Cancelado;
+    } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
         nextStatus = ShipmentStatus.AguardandoDescarga;
     } else if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
         const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
@@ -1460,6 +1464,17 @@ const App: React.FC = () => {
     if (route) historyLogs.push(`Rota informada: ${route}`);
     if (riskReleaseCode) historyLogs.push(`Liberação de Seguradora: Cód ${riskReleaseCode} (${riskQueryType} - R$ ${riskQueryCost})`);
 
+    let cancellationReason = originalShipment.cancellationReason;
+    if (originalShipment.status === ShipmentStatus.AguardandoSeguradora && (grStatus === 'reprovado' || grStatus === 'reprovado_restrito')) {
+        if (grStatus === 'reprovado') {
+            cancellationReason = 'Reprovado no GR';
+            historyLogs.push('Embarque cancelado devido a Reprovado no GR.');
+        } else {
+            cancellationReason = 'Reprovado no GR e Restrito';
+            historyLogs.push('Embarque cancelado devido a Reprovado no GR e Restrito. Motorista negativado/restrito no sistema.');
+        }
+    }
+
     const isStatusSame = nextStatus === originalShipment.status;
     const logMessage = isStatusSame
         ? `Comprovante de descarga anexado pelo motorista. ${historyLogs.join(' ')}`
@@ -1469,6 +1484,7 @@ const App: React.FC = () => {
     const updatedShipment: Shipment = {
         ...originalShipment,
         status: nextStatus,
+        cancellationReason: cancellationReason,
         documents: updatedDocuments,
         bankDetails: bankDetails || originalShipment.bankDetails,
         shipmentTonnage: updatedTonnage,
@@ -1514,7 +1530,17 @@ const App: React.FC = () => {
                                statusOrder.indexOf(originalShipment.status) < statusOrder.indexOf(ShipmentStatus.AguardandoDescarga);
 
     let updatedCargo: Cargo | undefined;
-    if (isAdvancingToLoaded) {
+    if (nextStatus === ShipmentStatus.Cancelado && originalShipment.status !== ShipmentStatus.Cancelado) {
+        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
+        if (relatedCargo) {
+            const newScheduledVolume = Math.max(0, relatedCargo.scheduledVolume - originalShipment.shipmentTonnage);
+            updatedCargo = { 
+                ...relatedCargo, 
+                scheduledVolume: newScheduledVolume, 
+                history: [...relatedCargo.history, createHistoryLog(`Volume agendado ajustado devido ao cancelamento do embarque ${shipmentId} (Reprovação no GR).`)] 
+            };
+        }
+    } else if (isAdvancingToLoaded) {
         const cargo = cargos.find(c => c.id === originalShipment.cargoId);
         if (cargo) {
             const newLoadedVolume = (cargo.loadedVolume || 0) + updatedShipment.shipmentTonnage;
@@ -1522,6 +1548,18 @@ const App: React.FC = () => {
                 ...cargo, 
                 loadedVolume: newLoadedVolume, 
                 history: [...cargo.history, createHistoryLog(`Volume carregado atualizado para ${newLoadedVolume.toFixed(2)} ton via embarque ${shipmentId}.`)] 
+            };
+        }
+    }
+
+    let updatedDriverToRestrict: Driver | undefined;
+    if (grStatus === 'reprovado_restrito' && (originalShipment.driverCpf || originalShipment.driverName)) {
+        const driverObj = drivers.find(d => (d.cpf && d.cpf === originalShipment.driverCpf) || d.name === originalShipment.driverName);
+        if (driverObj) {
+            updatedDriverToRestrict = {
+                ...driverObj,
+                active: false,
+                restrictionReason: 'Reprovado no GR',
             };
         }
     }
@@ -1560,6 +1598,9 @@ const App: React.FC = () => {
       if (createdTicket) {
         await upsertTicket(createdTicket);
       }
+      if (updatedDriverToRestrict) {
+        await upsertDriver(updatedDriverToRestrict);
+      }
       
       // 5. Update local state on SUCCESS
       setShipments((prev: Shipment[]) => prev.map(s => s.id === shipmentId ? updatedShipment : s));
@@ -1572,10 +1613,19 @@ const App: React.FC = () => {
         setTickets((prev: Ticket[]) => [ticketToUpdate, ...prev]);
         setNextIds((prev: any) => ({ ...prev, ticket: prev.ticket + 1 }));
       }
+      if (updatedDriverToRestrict) {
+        const driverToUpdate = updatedDriverToRestrict;
+        setDrivers((prev: Driver[]) => prev.map(d => d.id === driverToUpdate.id ? driverToUpdate : d));
+      }
       
-      const successMsg = (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga)
-        ? 'Comprovante enviado! Aguardando confirmação do peso pelo embarcador.'
-        : 'Embarque atualizado com sucesso!';
+      let successMsg = 'Embarque atualizado com sucesso!';
+      if (grStatus === 'reprovado') {
+        successMsg = 'Embarque cancelado devido a reprovação na Gerenciadora de Risco (GR).';
+      } else if (grStatus === 'reprovado_restrito') {
+        successMsg = 'Embarque cancelado e motorista marcado como RESTRITO por reprovação no GR.';
+      } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
+        successMsg = 'Comprovante enviado! Aguardando confirmação do peso pelo embarcador.';
+      }
       showToast(successMsg, 'success');
     } catch(err: any) { 
       console.error('Erro ao salvar no Supabase:', err);

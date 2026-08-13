@@ -53,7 +53,11 @@ interface OperationalLoadsPageProps {
     discountValue?: number,
     netBalanceValue?: number,
     unloadedTonnage?: number,
-    route?: string 
+    route?: string,
+    grStatus?: 'aprovado' | 'reprovado' | 'reprovado_restrito',
+    riskReleaseCode?: string,
+    riskQueryType?: string,
+    riskQueryCost?: number,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;

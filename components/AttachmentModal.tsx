@@ -21,6 +21,7 @@ interface AttachmentModalProps {
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string,
+    grStatus?: 'aprovado' | 'reprovado' | 'reprovado_restrito',
     riskReleaseCode?: string,
     riskQueryType?: string,
     riskQueryCost?: number,
@@ -87,6 +88,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   const [route, setRoute] = useState('');
   const [riskReleaseCode, setRiskReleaseCode] = useState('');
   const [riskQueryType, setRiskQueryType] = useState<RiskQueryType | ''>('');
+  const [grStatus, setGrStatus] = useState<'aprovado' | 'reprovado' | 'reprovado_restrito'>('aprovado');
   const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -118,6 +120,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
       setRoute(shipment.route || '');
       setRiskReleaseCode(shipment.riskReleaseCode || '');
       setRiskQueryType((shipment.riskQueryType as RiskQueryType) || '');
+      setGrStatus('aprovado');
     }
   }, [isOpen, shipment]);
 
@@ -307,8 +310,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
     } else {
       const existingDocs = shipment.documents?.[documentName];
       const hasExistingDoc = Array.isArray(existingDocs) && existingDocs.length > 0;
+      const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
+      const isReprovedGr = isRiskModal && grStatus !== 'aprovado';
       
-      if (singleFiles.length === 0 && !hasExistingDoc) {
+      if (!isReprovedGr && singleFiles.length === 0 && !hasExistingDoc) {
         setError('Selecione ao menos um arquivo para anexar.');
         return;
       }
@@ -325,7 +330,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           return;
         }
       }
-      if (shipment.status === ShipmentStatus.AguardandoSeguradora && requiresRiskManagement) {
+      if (isRiskModal && requiresRiskManagement && grStatus === 'aprovado') {
         if (!riskReleaseCode.trim()) {
           setError('O Código de Liberação da Seguradora / Gerenciadora é obrigatório para avançar.');
           return;
@@ -335,7 +340,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           return;
         }
       }
-      filesToAttach = { [documentName]: singleFiles };
+      filesToAttach = isReprovedGr ? {} : { [documentName]: singleFiles };
     }
     
     if (shipment.status === ShipmentStatus.AguardandoDescarga && (!unloadedTonnage || Number(unloadedTonnage) <= 0)) {
@@ -352,6 +357,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
     }
 
     const calculatedRiskCost = riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0) : undefined;
+    const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
 
     setError('');
     setIsSaving(true);
@@ -367,10 +373,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
         discountValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(discountValue) : undefined,
         netBalanceValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(netBalanceValue) : undefined,
         unloadedTonnage: shipment.status === ShipmentStatus.AguardandoDescarga ? Number(unloadedTonnage) : undefined,
-        route: (showRouteField || isReadOnlyRoute) ? route : undefined,
-        riskReleaseCode: shipment.status === ShipmentStatus.AguardandoSeguradora ? riskReleaseCode : undefined,
-        riskQueryType: shipment.status === ShipmentStatus.AguardandoSeguradora ? riskQueryType : undefined,
-        riskQueryCost: shipment.status === ShipmentStatus.AguardandoSeguradora ? calculatedRiskCost : undefined,
+        route: route ? route : undefined,
+        grStatus: isRiskModal ? grStatus : undefined,
+        riskReleaseCode: (isRiskModal && grStatus === 'aprovado') ? riskReleaseCode : undefined,
+        riskQueryType: (isRiskModal && grStatus === 'aprovado') ? riskQueryType : undefined,
+        riskQueryCost: (isRiskModal && grStatus === 'aprovado') ? calculatedRiskCost : undefined,
       });
     } catch (err: any) {
       console.error('Error in handleSave:', err);
@@ -655,49 +662,87 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoSeguradora ? (
                     <div className="space-y-4">
-                        <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                                    Código de Liberação da Seguradora <span className="text-red-500">*</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={riskReleaseCode} 
-                                    onChange={(e) => setRiskReleaseCode(e.target.value)} 
-                                    placeholder="Ex: LIB-984721" 
-                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                                    required
-                                />
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                                    Modalidade de Consulta Realizada <span className="text-red-500">*</span>
-                                </label>
-                                <select 
-                                    value={riskQueryType} 
-                                    onChange={(e) => setRiskQueryType(e.target.value as RiskQueryType)} 
-                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                                    required
-                                >
-                                    <option value="" disabled>Selecione a modalidade de consulta...</option>
-                                    <option value={RiskQueryType.Siga}>1 - SIGA (Valor: R$ 7,00)</option>
-                                    <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (Valor: R$ 15,00)</option>
-                                    <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (Valor: R$ 33,00)</option>
-                                    <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (Valor: R$ 70,00)</option>
-                                    <option value={RiskQueryType.LiberacaoSimplificada}>5 - Liberação Simplificada (Valor: R$ 0,00)</option>
-                                </select>
-                            </div>
+                        {/* Campo de Status/Resultado da Gerenciadora de Risco */}
+                        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                Resultado da Gerenciadora de Risco (GR) <span className="text-red-500">*</span>
+                            </label>
+                            <select 
+                                value={grStatus} 
+                                onChange={(e) => setGrStatus(e.target.value as 'aprovado' | 'reprovado' | 'reprovado_restrito')} 
+                                className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 font-medium"
+                            >
+                                <option value="aprovado">🟢 Liberado / Aprovado no GR</option>
+                                <option value="reprovado">🔴 Reprovado no GR (Cancelar Embarque)</option>
+                                <option value="reprovado_restrito">⛔ Reprovado no GR e Restrito (Cancelar Embarque e Restringir Motorista)</option>
+                            </select>
                         </div>
 
-                        {riskQueryType && (
-                            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
-                                <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
-                                <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
-                                    R$ {(RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0).toFixed(2).replace('.', ',')}
-                                </span>
+                        {grStatus === 'aprovado' ? (
+                            <>
+                                <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                            Código de Liberação da Seguradora <span className="text-red-500">*</span>
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            value={riskReleaseCode} 
+                                            onChange={(e) => setRiskReleaseCode(e.target.value)} 
+                                            placeholder="Ex: LIB-984721" 
+                                            className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                                            required
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                            Modalidade de Consulta Realizada <span className="text-red-500">*</span>
+                                        </label>
+                                        <select 
+                                            value={riskQueryType} 
+                                            onChange={(e) => setRiskQueryType(e.target.value as RiskQueryType)} 
+                                            className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                                            required
+                                        >
+                                            <option value="" disabled>Selecione a modalidade de consulta...</option>
+                                            <option value={RiskQueryType.Siga}>1 - SIGA (Valor: R$ 7,00)</option>
+                                            <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (Valor: R$ 15,00)</option>
+                                            <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (Valor: R$ 33,00)</option>
+                                            <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (Valor: R$ 70,00)</option>
+                                            <option value={RiskQueryType.LiberacaoSimplificada}>5 - Liberação Simplificada (Valor: R$ 0,00)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {riskQueryType && (
+                                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
+                                        <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
+                                        <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
+                                            R$ {(RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0).toFixed(2).replace('.', ',')}
+                                        </span>
+                                    </div>
+                                )}
+                            </>
+                        ) : grStatus === 'reprovado' ? (
+                            <div className="p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 space-y-1">
+                                <div className="font-bold flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+                                    ⚠️ Ação ao clicar em "Salvar e Avançar":
+                                </div>
+                                <p className="text-xs">
+                                    Ao salvar com a opção <strong>Reprovado no GR</strong>, este embarque será automaticamente <strong>cancelado</strong> no sistema com o motivo <em>"Reprovado no GR"</em>.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-900 dark:text-red-200 space-y-1">
+                                <div className="font-bold flex items-center gap-2 text-sm text-red-800 dark:text-red-300">
+                                    ⛔ Ação ao clicar em "Salvar e Avançar":
+                                </div>
+                                <p className="text-xs">
+                                    Ao salvar com a opção <strong>Reprovado no GR e Restrito</strong>, este embarque será <strong>cancelado</strong> e o motorista <strong>{shipment.driverName}</strong> terá seu cadastro alterado para o status <strong>RESTRITO</strong> (impedindo novos agendamentos).
+                                </p>
                             </div>
                         )}
                     </div>
