@@ -97,6 +97,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   vehicleSetType: 'Tipo de Veículo',
   vehicleBodyType: 'Tipo de Carroceria',
   cteNumber: 'Número do CT-e',
+  cteEmissionDate: 'Data/Hora de Emissão do CT-e',
   nfeNumber: 'Número da NF-e',
   mdfeNumber: 'Número do MDF-e',
 };
@@ -1617,7 +1618,7 @@ const App: React.FC = () => {
       'horsePlate', 'trailer1Plate', 'trailer2Plate', 'trailer3Plate', 
       'vehicleTag', 'vehicleSetType', 'vehicleBodyType',
       'shipmentTonnage', 'bankDetails', 'driverReferences', 'ownerContact', 'anttOwnerIdentifier',
-      'cteNumber', 'nfeNumber', 'mdfeNumber'
+      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber'
     ];
 
     fieldsToTrack.forEach(field => {
