@@ -17,6 +17,10 @@ export interface FiscalDocNumbers {
   cteEmissionDate?: string;
   nfeNumber?: string;
   mdfeNumber?: string;
+  advancePercentage?: number;
+  advanceValue?: number;
+  tollValue?: number;
+  totalFreightValue?: number;
 }
 
 function readFileAsText(file: File): Promise<string> {
@@ -218,6 +222,137 @@ function parseTextContent(text: string, isCteType: boolean): FiscalDocNumbers {
     if (vMdfe) res.mdfeNumber = vMdfe;
   }
 
+  // Extrai valores do contrato de frete (Pedágio, Adiantamento, % Adiantamento, Total)
+  const contractVals = extractFreightContractValues(text);
+  if (contractVals.tollValue !== undefined) res.tollValue = contractVals.tollValue;
+  if (contractVals.advanceValue !== undefined) res.advanceValue = contractVals.advanceValue;
+  if (contractVals.totalFreightValue !== undefined) res.totalFreightValue = contractVals.totalFreightValue;
+  if (contractVals.advancePercentage !== undefined) res.advancePercentage = contractVals.advancePercentage;
+
+  return res;
+}
+
+export function parseCurrencyPtBr(str: string): number | undefined {
+  if (!str) return undefined;
+  const clean = str.replace(/[^\d.,]/g, '').trim();
+  if (!clean) return undefined;
+
+  if (clean.includes(',') && clean.includes('.')) {
+    const normalized = clean.replace(/\./g, '').replace(',', '.');
+    const num = parseFloat(normalized);
+    return isNaN(num) ? undefined : num;
+  } else if (clean.includes(',')) {
+    const normalized = clean.replace(',', '.');
+    const num = parseFloat(normalized);
+    return isNaN(num) ? undefined : num;
+  } else if (clean.includes('.')) {
+    const parts = clean.split('.');
+    if (parts.length === 2 && parts[1].length === 2) {
+      const num = parseFloat(clean);
+      return isNaN(num) ? undefined : num;
+    } else {
+      const normalized = clean.replace(/\./g, '');
+      const num = parseFloat(normalized);
+      return isNaN(num) ? undefined : num;
+    }
+  } else {
+    const num = parseFloat(clean);
+    return isNaN(num) ? undefined : num;
+  }
+}
+
+export function extractFreightContractValues(text: string): {
+  tollValue?: number;
+  advanceValue?: number;
+  totalFreightValue?: number;
+  advancePercentage?: number;
+} {
+  const res: {
+    tollValue?: number;
+    advanceValue?: number;
+    totalFreightValue?: number;
+    advancePercentage?: number;
+  } = {};
+
+  if (!text) return res;
+
+  // 1. Vale-Pedágio / Pedágio
+  const tollPatterns = [
+    /VALE[- ]?PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
+  ];
+  for (const re of tollPatterns) {
+    const m = text.match(re);
+    if (m && m[1]) {
+      const val = parseCurrencyPtBr(m[1]);
+      if (val !== undefined && val >= 0) {
+        res.tollValue = val;
+        break;
+      }
+    }
+  }
+
+  // 2. Adiantamento (efete: Adiantamento, Adiantamento, 1ª Parcela, etc.)
+  const advancePatterns = [
+    /(?:efete:|efrete:|e-frete:)?\s*Adiantamento[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /Valor\s+(?:do\s+)?Adiantamento[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /1[ªa]\s*Parcela[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /ADIANTAMENTO[^\d\n]*R?\$\s*([\d.,]+)/i,
+  ];
+  for (const re of advancePatterns) {
+    const m = text.match(re);
+    if (m && m[1]) {
+      const val = parseCurrencyPtBr(m[1]);
+      if (val !== undefined && val > 0) {
+        res.advanceValue = val;
+        break;
+      }
+    }
+  }
+
+  // 3. Valor Total do Frete (Valor Total, Valor Líquido, Frete Total)
+  const totalFreightPatterns = [
+    /VALOR\s+TOTAL[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /VALOR\s+L[ÍI]QUIDO[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /FRETE\s+TOTAL[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /TOTAL\s+DO\s+FRETE[^\d\n]*R?\$\s*([\d.,]+)/i,
+  ];
+  for (const re of totalFreightPatterns) {
+    const m = text.match(re);
+    if (m && m[1]) {
+      const val = parseCurrencyPtBr(m[1]);
+      if (val !== undefined && val > 0) {
+        res.totalFreightValue = val;
+        break;
+      }
+    }
+  }
+
+  // 4. Porcentagem do Adiantamento (% Adiantamento)
+  const pctPatterns = [
+    /Adiantamento[^\n%]*?(\d{1,2}(?:[.,]\d+)?)\s*%/i,
+    /(\d{1,2}(?:[.,]\d+)?)\s*%\s*(?:de\s*)?Adiantamento/i,
+    /%\s*(?:de\s*)?Adiantamento[^\d\n]*(\d{1,2}(?:[.,]\d+)?)/i,
+  ];
+  for (const re of pctPatterns) {
+    const m = text.match(re);
+    if (m && m[1]) {
+      const pct = parseFloat(m[1].replace(',', '.'));
+      if (!isNaN(pct) && pct > 0 && pct <= 100) {
+        res.advancePercentage = Math.round(pct);
+        break;
+      }
+    }
+  }
+
+  if (!res.advancePercentage && res.advanceValue && res.totalFreightValue && res.totalFreightValue > 0) {
+    const pct = Math.round((res.advanceValue / res.totalFreightValue) * 100);
+    if (pct > 0 && pct <= 100) {
+      res.advancePercentage = pct;
+    }
+  }
+
   return res;
 }
 
@@ -225,15 +360,14 @@ export async function extractFiscalDocNumbers(
   filesToAttach: { [docType: string]: File[] }
 ): Promise<FiscalDocNumbers> {
   const result: FiscalDocNumbers = {};
-  const FISCAL_DOC_TYPES = ['CT-e', 'Nota Fiscal', 'MDF-e', 'Documentação Fiscal', 'Arquivos Iniciais'];
 
-  for (const docType of FISCAL_DOC_TYPES) {
+  const docTypes = Object.keys(filesToAttach);
+  for (const docType of docTypes) {
     const files = filesToAttach[docType];
     if (!Array.isArray(files) || files.length === 0) continue;
     const isCteType = docType.toLowerCase().includes('cte') || docType.toLowerCase().includes('ct-e') || docType.toLowerCase().includes('fiscal');
 
     for (const file of files) {
-      if (result.cteNumber && result.cteEmissionDate && result.nfeNumber && result.mdfeNumber) break;
       try {
         const fileNameLower = file.name.toLowerCase();
         const isPdf = fileNameLower.endsWith('.pdf') || file.type.includes('pdf');
@@ -262,6 +396,10 @@ export async function extractFiscalDocNumbers(
           if (parsed.cteEmissionDate && !result.cteEmissionDate) result.cteEmissionDate = parsed.cteEmissionDate;
           if (parsed.nfeNumber && !result.nfeNumber) result.nfeNumber = parsed.nfeNumber;
           if (parsed.mdfeNumber && !result.mdfeNumber) result.mdfeNumber = parsed.mdfeNumber;
+          if (parsed.tollValue !== undefined && result.tollValue === undefined) result.tollValue = parsed.tollValue;
+          if (parsed.advanceValue !== undefined && result.advanceValue === undefined) result.advanceValue = parsed.advanceValue;
+          if (parsed.totalFreightValue !== undefined && result.totalFreightValue === undefined) result.totalFreightValue = parsed.totalFreightValue;
+          if (parsed.advancePercentage !== undefined && result.advancePercentage === undefined) result.advancePercentage = parsed.advancePercentage;
         }
       } catch (e) {
         console.warn(`[fiscalDocParser] Could not read file "${file.name}":`, e);
@@ -269,7 +407,7 @@ export async function extractFiscalDocNumbers(
     }
   }
 
-  console.log('[fiscalDocParser] Extracted fiscal numbers:', result);
+  console.log('[fiscalDocParser] Extracted fiscal and contract numbers:', result);
   return result;
 }
 

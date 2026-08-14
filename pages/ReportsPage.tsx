@@ -148,6 +148,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         ShipmentStatus.PreCadastro,
         ShipmentStatus.AguardandoCarregamento,
         ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoFiscal,
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
@@ -157,6 +158,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
     const totalProfitMarginStatuses = [
         ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoFiscal,
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,

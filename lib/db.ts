@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
+import { isCteApplicableForStatus } from '../utils';
 import type {
   Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer
 } from '../types';
@@ -483,9 +484,9 @@ const fromShipment = (s: Shipment) => ({
   payment_method: s.paymentMethod,
   pix_key: s.pixKey,
   bank_details: s.bankDetails,
-  advance_percentage: s.advancePercentage,
-  advance_value: s.advanceValue,
-  toll_value: s.tollValue,
+  advance_percentage: s.advancePercentage ?? null,
+  advance_value: s.advanceValue ?? null,
+  toll_value: s.tollValue ?? null,
   vehicle_tag: s.vehicleTag,
   company_freight_rate_snapshot: s.companyFreightRateSnapshot,
   driver_freight_rate_snapshot: s.driverFreightRateSnapshot,
@@ -494,13 +495,18 @@ const fromShipment = (s: Shipment) => ({
   cancellation_reason: s.cancellationReason,
   driver_references: s.driverReferences ? s.driverReferences.split('\n').filter(Boolean) : [],
   owner_contact: s.ownerContact,
-  balance_to_receive_value: s.balanceToReceiveValue,
-  discount_value: s.discountValue,
-  net_balance_value: s.netBalanceValue,
-  unloaded_tonnage: s.unloadedTonnage,
+  balance_to_receive_value: s.balanceToReceiveValue ?? null,
+  discount_value: s.discountValue ?? null,
+  net_balance_value: s.netBalanceValue ?? null,
+  unloaded_tonnage: s.unloadedTonnage ?? null,
   branch_id: s.branchId || null,
   vehicle_set_type: s.vehicleSetType,
   vehicle_body_type: s.vehicleBodyType,
+  // Fiscal document numbers — explicitly null when undefined so DB columns are cleared on revert
+  cte_number: s.cteNumber ?? null,
+  cte_emission_date: s.cteEmissionDate ?? null,
+  nfe_number: s.nfeNumber ?? null,
+  mdfe_number: s.mdfeNumber ?? null,
 });
 
 export const toUser = (row: any): User => ({
@@ -881,7 +887,7 @@ export async function backfillShipmentFiscalNumbers(
   // Busca apenas 'id' e 'documents' para evitar erro caso colunas customizadas não existam no SQL
   const { data: rows, error } = await supabase
     .from('shipments')
-    .select('id, documents')
+    .select('id, status, documents')
     .not('documents', 'is', null);
 
   if (error || !rows) {
@@ -918,6 +924,11 @@ export async function backfillShipmentFiscalNumbers(
 
     try {
       const extracted = await extractFiscalDocNumbersFromUrls(urlMap);
+      const canExtractCte = isCteApplicableForStatus(row.status);
+      if (!canExtractCte) {
+        delete extracted.cteNumber;
+        delete extracted.cteEmissionDate;
+      }
       const hasAny = extracted.cteNumber || extracted.cteEmissionDate || extracted.nfeNumber || extracted.mdfeNumber;
 
       if (hasAny) {

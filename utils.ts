@@ -139,8 +139,25 @@ export const getMatchedCargo = (offer: FreightOffer, cargosList?: Cargo[]): Carg
   }) || null;
 };
 
-export function getShipmentCte(shipment?: { cteNumber?: string; documents?: any } | null): string {
+export function isCteApplicableForStatus(status?: string | null): boolean {
+  if (!status) return true;
+  const nonCteStatuses = [
+    'Ag. Cadastro',
+    'Ag. Seguradora',
+    'Ag. Carregamento',
+    'Ag. Nota',
+    'PreCadastro',
+    'AguardandoSeguradora',
+    'AguardandoCarregamento',
+    'AguardandoNota'
+  ];
+  return !nonCteStatuses.includes(status);
+}
+
+export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; documents?: any } | null): string {
   if (!shipment) return '-';
+  if (shipment.status && !isCteApplicableForStatus(shipment.status)) return '-';
+
   if (shipment.cteNumber) return shipment.cteNumber;
   if (shipment.documents?.cte_number) return String(shipment.documents.cte_number);
 
@@ -163,12 +180,14 @@ export function getShipmentCte(shipment?: { cteNumber?: string; documents?: any 
   return '-';
 }
 
-export function getShipmentCteEmissionDate(shipment?: { cteEmissionDate?: string; documents?: any } | null): string | null {
+export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any } | null): string | null {
   if (!shipment) return null;
+  if (shipment.status && !isCteApplicableForStatus(shipment.status)) return null;
+
   if (shipment.cteEmissionDate) return shipment.cteEmissionDate;
   if (shipment.documents?.cte_emission_date) return String(shipment.documents.cte_emission_date);
 
-  const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'] || shipment.documents?.['Documentação Fiscal'];
+  const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
   if (Array.isArray(cteDocs) && cteDocs.length > 0) {
     for (const item of cteDocs) {
       if (typeof item === 'string') {

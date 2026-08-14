@@ -19,7 +19,7 @@ import { can } from '../auth';
 import { tryAcquireShipmentLock, releaseShipmentLock } from '../lib/db';
 import { useEffect, useRef } from 'react';
 import { FileText, X } from 'lucide-react';
-import { getShipmentCte } from '../utils';
+import { getShipmentCte, isCteApplicableForStatus } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 
@@ -148,7 +148,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
       const q = filterCte.trim().toLowerCase();
       result = result.filter(s => {
         const cte = getShipmentCte(s).toLowerCase();
-        return cte.includes(q) || (s.cteNumber && s.cteNumber.toLowerCase().includes(q));
+        return (cte !== '-' && cte.includes(q)) || (isCteApplicableForStatus(s.status) && !!s.cteNumber && s.cteNumber.toLowerCase().includes(q));
       });
     }
     return result;

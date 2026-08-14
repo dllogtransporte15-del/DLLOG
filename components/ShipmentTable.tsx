@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { Shipment, Cargo, User, Vehicle, Client, Product } from '../types';
 import { ShipmentStatus, UserProfile } from '../types';
@@ -13,7 +13,7 @@ import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building, Pencil, Check } from 'lucide-react';
-import { getShipmentCte, getShipmentCteEmissionDate } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
 import { backfillShipmentFiscalNumbers } from '../lib/db';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
@@ -76,6 +76,27 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   const driverLocations = useMemo(() => {
     return new Map(realDriverLocations);
   }, [realDriverLocations]);
+
+  const formatRequestedDateTime = useCallback((shipment: Shipment): string => {
+    const rawDate = shipment.createdAt || shipment.statusHistory?.[0]?.timestamp;
+    if (rawDate) {
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        const dayStr = String(d.getDate()).padStart(2, '0');
+        const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+        const yearStr = d.getFullYear();
+        const hoursStr = String(d.getHours()).padStart(2, '0');
+        const minStr = String(d.getMinutes()).padStart(2, '0');
+        return `${dayStr}/${monthStr}/${yearStr} às ${hoursStr}:${minStr}`;
+      }
+    }
+    if (shipment.scheduledDate) {
+      const parts = shipment.scheduledDate.split('-');
+      const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : shipment.scheduledDate;
+      return shipment.scheduledTime ? `${formattedDate} às ${shipment.scheduledTime}` : formattedDate;
+    }
+    return '-';
+  }, []);
 
   const [showFilters, setShowFilters] = useState(false);
   const [filterPlate, setFilterPlate] = useState<string[]>([]);
@@ -454,13 +475,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           Motivo: {shipment.cancellationReason}
                         </div>
                     )}
-                    {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
+                    {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
                         <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">
                           {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </div>
                     )}
-                    <div className="text-[10px] text-gray-400 mt-1">
-                      {new Date(shipment.scheduledDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                    <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-gray-400 shrink-0" />
+                      <span>Sol.: {formatRequestedDateTime(shipment)}</span>
                     </div>
                   </div>
                 </div>
@@ -590,10 +612,11 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <span className="text-red-500 font-bold text-[10px]">CARGA REMOVIDA</span>
                   )}
                   {(() => {
-                    const cteVal = getShipmentCte(shipment);
-                    const cteDate = getShipmentCteEmissionDate(shipment);
+                    const isCteApplicable = isCteApplicableForStatus(shipment.status);
+                    const cteVal = isCteApplicable ? getShipmentCte(shipment) : '-';
+                    const cteDate = isCteApplicable ? getShipmentCteEmissionDate(shipment) : null;
                     const isEditingThisCte = editingCteId === shipment.id;
-                    const canEditCte = !isClient && !!onUpdateShipmentData;
+                    const canEditCte = isCteApplicable && !isClient && !!onUpdateShipmentData;
 
                     if (isEditingThisCte) {
                       return (
@@ -860,6 +883,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             );
                           })()}
                       </div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-gray-400 shrink-0" />
+                          <span>Solicitado: <span className="font-medium text-gray-700 dark:text-gray-300">{formatRequestedDateTime(shipment)}</span></span>
+                      </div>
                       {(vehicle || shipment.vehicleSetType || shipment.vehicleBodyType) && (
                           <div className="mt-1">
                           <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200">
@@ -892,10 +919,11 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     </td>
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm">
                       {(() => {
-                        const cteVal = getShipmentCte(shipment);
-                        const cteDate = getShipmentCteEmissionDate(shipment);
+                        const isCteApplicable = isCteApplicableForStatus(shipment.status);
+                        const cteVal = isCteApplicable ? getShipmentCte(shipment) : '-';
+                        const cteDate = isCteApplicable ? getShipmentCteEmissionDate(shipment) : null;
                         const isEditingThisCte = editingCteId === shipment.id;
-                        const canEditCte = !isClient && !!onUpdateShipmentData;
+                        const canEditCte = isCteApplicable && !isClient && !!onUpdateShipmentData;
 
                         if (isEditingThisCte) {
                           return (
@@ -1051,7 +1079,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           Motivo: {shipment.cancellationReason}
                         </p>
                       )}
-                      {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
+                      {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
                         <p className="text-xs text-blue-600 dark:text-blue-400 font-bold mt-1">
                           Efetivado: {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </p>

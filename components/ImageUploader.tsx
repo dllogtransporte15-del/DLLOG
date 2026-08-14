@@ -76,12 +76,22 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ title, description, curre
             className="hidden"
             accept="image/png, image/jpeg, image/gif, image/svg+xml"
           />
-          <button
-            onClick={handleButtonClick}
-            className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark"
-          >
-            {currentImage ? 'Alterar Imagem' : 'Carregar Imagem'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleButtonClick}
+              className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors"
+            >
+              {currentImage ? 'Alterar Imagem' : 'Carregar Imagem'}
+            </button>
+            {currentImage && onRemove && (
+              <button
+                onClick={onRemove}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Remover Imagem
+              </button>
+            )}
+          </div>
           {error && <p className="text-red-500 text-xs mt-2 font-medium">{error}</p>}
         </div>
       </div>

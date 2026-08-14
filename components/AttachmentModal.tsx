@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client } from '../types';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
-import { formatWeightPtBr } from '../utils';
+import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
+import { extractFiscalDocNumbers } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
 import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
@@ -41,7 +42,8 @@ interface AttachmentModalProps {
 
 declare const L: any;
 
-const fiscalDocTypes = ['Nota Fiscal', 'CT-e', 'MDF-e', 'Carta Frete', 'Outros'];
+const notaFiscalDocTypes = ['Nota Fiscal'];
+const travelDocTypes = ['CT-e', 'MDF-e', 'Carta Frete', 'Outros'];
 const allowedDocsForClient = [
     'Ticket de Carregamento',
     'Nota Fiscal',
@@ -125,6 +127,43 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
     }
   }, [isOpen, shipment]);
 
+  // AUTO-PARSING: Extração de informações do Contrato de Frete (Pedágio, Adiantamento, % Adiantamento)
+  useEffect(() => {
+    const autoParseFreightDoc = async () => {
+      const filesToProcess: { [key: string]: File[] } = {};
+      if (Object.keys(multiFiles).length > 0) {
+        Object.assign(filesToProcess, multiFiles);
+      }
+      if (singleFiles.length > 0) {
+        filesToProcess[documentName || 'Documento'] = singleFiles;
+      }
+      if (Object.keys(filesToProcess).length > 0) {
+        try {
+          const parsed = await extractFiscalDocNumbers(filesToProcess);
+          let extractedAny = false;
+          if (parsed.tollValue !== undefined) {
+            setTollValue(parsed.tollValue);
+            extractedAny = true;
+          }
+          if (parsed.advanceValue !== undefined) {
+            setAdvanceValue(parsed.advanceValue);
+            extractedAny = true;
+          }
+          if (parsed.advancePercentage !== undefined) {
+            setAdvancePercentage(parsed.advancePercentage);
+            extractedAny = true;
+          }
+          if (extractedAny) {
+            showToast('Informações de frete extraídas do documento com sucesso!', 'success');
+          }
+        } catch (err) {
+          console.warn('[AttachmentModal] Erro ao extrair dados do contrato:', err);
+        }
+      }
+    };
+    autoParseFreightDoc();
+  }, [singleFiles, multiFiles, documentName]);
+
   // AUTO-CALCULATION: Valor pago na conta = ((Frete / Ton) * (ton efetivado) * (%) do adiantamento) - (Valor pago no tag)
   useEffect(() => {
     if (shipment.status === ShipmentStatus.AguardandoAdiantamento) {
@@ -160,6 +199,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   const showRouteField = shipment.status === ShipmentStatus.AguardandoCarregamento;
   const isReadOnlyRoute = [
     ShipmentStatus.AguardandoNota,
+    ShipmentStatus.AguardandoFiscal,
     ShipmentStatus.AguardandoAdiantamento, 
     ShipmentStatus.AguardandoAgendamento, 
     ShipmentStatus.AguardandoDescarga, 
@@ -297,13 +337,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
 
   const handleSave = async () => {
     let filesToAttach: { [key: string]: File[] } = {};
-    if (shipment.status === ShipmentStatus.AguardandoNota) {
+    if (shipment.status === ShipmentStatus.AguardandoNota || shipment.status === ShipmentStatus.AguardandoFiscal) {
       const someFiles = Object.values(multiFiles).some(arr => Array.isArray(arr) && arr.length > 0);
       if (!someFiles) {
         setError('Anexe pelo menos um documento para avançar.');
         return;
       }
-      if (!shipment.bankDetails && !bankDetails) {
+      if (shipment.status === ShipmentStatus.AguardandoNota && !shipment.bankDetails && !bankDetails) {
         setError('Dados bancários são obrigatórios.');
         return;
       }
@@ -624,7 +664,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
           <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
             <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">📄 Números de Documentos Fiscais</p>
             <div className="flex flex-wrap gap-2">
-              {shipment.cteNumber && (
+              {(shipment.cteNumber && isCteApplicableForStatus(shipment.status)) && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 rounded-full text-xs font-semibold">
                   <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
                   CT-e nº {shipment.cteNumber} {shipment.cteEmissionDate ? `(${shipment.cteEmissionDate})` : ''}
@@ -652,7 +692,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                       {shipment.status === ShipmentStatus.AguardandoNota ? (
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                            {fiscalDocTypes.map(docType => (
+                            {notaFiscalDocTypes.map(docType => (
+                                <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} />
+                            ))}
+                        </div>
+                    </div>
+                ) : shipment.status === ShipmentStatus.AguardandoFiscal ? (
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                            {travelDocTypes.map(docType => (
                                 <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} />
                             ))}
                         </div>
@@ -999,7 +1047,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
 
                 <div className="mt-8 flex justify-between items-center">
                     <div>
-                        {shipment.status === ShipmentStatus.AguardandoNota && (
+                        {(shipment.status === ShipmentStatus.AguardandoNota || shipment.status === ShipmentStatus.AguardandoFiscal) && (
                             <button onClick={() => window.open('https://transcunha.atua.com.br/adm/fil_ctrc_emissao.php', '_blank')} className="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center gap-2 font-bold shadow-md shadow-emerald-200 dark:shadow-none">
                                 <ExternalLinkIcon className="w-4 h-4" /> Emitir Documentos
                             </button>

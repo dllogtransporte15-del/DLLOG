@@ -8,7 +8,7 @@ import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { getShipmentCte, getShipmentCteEmissionDate } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
 
 
 interface ShipmentDetailsModalProps {
@@ -152,8 +152,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       driverReferences: shipment.driverReferences,
       ownerContact: shipment.ownerContact,
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
-      cteNumber: shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : ''),
-      cteEmissionDate: shipment.cteEmissionDate || (getShipmentCteEmissionDate(shipment) || ''),
+      cteNumber: isCteApplicableForStatus(shipment.status) ? (shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : '')) : '',
+      cteEmissionDate: isCteApplicableForStatus(shipment.status) ? (shipment.cteEmissionDate || (getShipmentCteEmissionDate(shipment) || '')) : '',
     });
     setIsEditingData(true);
   };

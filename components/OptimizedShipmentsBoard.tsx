@@ -426,7 +426,8 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
     if (!raw) return 'Anexar Documento';
     if (status === ShipmentStatus.AguardandoSeguradora) return 'Anexar Seguradora';
     if (status === ShipmentStatus.PreCadastro) return 'Anexar Cadastro';
-    if (status === ShipmentStatus.AguardandoNota) return 'Anexar NF / CT-e';
+    if (status === ShipmentStatus.AguardandoNota) return 'Anexar NF-e';
+    if (status === ShipmentStatus.AguardandoFiscal) return 'Anexar CT-e / Docs';
     if (status === ShipmentStatus.AguardandoAdiantamento) return 'Anexar Adiantamento';
     if (status === ShipmentStatus.AguardandoDescarga) return 'Anexar Descarga';
     if (status === ShipmentStatus.AguardandoPagamentoSaldo) return 'Anexar Saldo';

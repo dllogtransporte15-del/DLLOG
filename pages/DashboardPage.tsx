@@ -323,20 +323,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   // Kanban Column Configs for different profiles
   const fiscalColumns = useMemo<KanbanColumnConfig[]>(() => [
     {
-      id: 'aguardando-seguradora',
-      title: 'Aguardando Seguradora',
-      statuses: [ShipmentStatus.AguardandoSeguradora],
-      thresholds: { yellow: 30, red: 50 },
-      accentColor: '#3b82f6',
-      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
-    },
-    {
       id: 'aguardando-cadastro',
       title: 'Aguardando Cadastro',
       statuses: [ShipmentStatus.PreCadastro],
       thresholds: { yellow: 60, red: 90 },
       accentColor: '#f59e0b',
       emptyText: 'Nenhum embarque aguardando cadastro ANTT'
+    },
+    {
+      id: 'aguardando-seguradora',
+      title: 'Aguardando Seguradora',
+      statuses: [ShipmentStatus.AguardandoSeguradora],
+      thresholds: { yellow: 30, red: 50 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
     },
     {
       id: 'aguardando-nota',
@@ -344,19 +344,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       statuses: [ShipmentStatus.AguardandoNota],
       thresholds: { yellow: 120, red: 240 },
       accentColor: '#8b5cf6',
+      emptyText: 'Nenhum embarque aguardando nota fiscal'
+    },
+    {
+      id: 'aguardando-fiscal',
+      title: 'Aguardando Fiscal',
+      statuses: [ShipmentStatus.AguardandoFiscal],
+      thresholds: { yellow: 120, red: 240 },
+      accentColor: '#06b6d4',
       emptyText: 'Nenhum embarque aguardando documentação fiscal'
     }
   ], []);
 
   const grColumns = useMemo<KanbanColumnConfig[]>(() => [
-    {
-      id: 'aguardando-seguradora',
-      title: 'Aguardando Seguradora',
-      statuses: [ShipmentStatus.AguardandoSeguradora],
-      thresholds: { yellow: 30, red: 50 },
-      accentColor: '#3b82f6',
-      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
-    },
     {
       id: 'aguardando-cadastro',
       title: 'Aguardando Cadastro',
@@ -364,6 +364,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       thresholds: { yellow: 60, red: 90 },
       accentColor: '#f59e0b',
       emptyText: 'Nenhum embarque aguardando cadastro ANTT'
+    },
+    {
+      id: 'aguardando-seguradora',
+      title: 'Aguardando Seguradora',
+      statuses: [ShipmentStatus.AguardandoSeguradora],
+      thresholds: { yellow: 30, red: 50 },
+      accentColor: '#3b82f6',
+      emptyText: 'Nenhum embarque aguardando liberação da seguradora'
     }
   ], []);
 
@@ -543,6 +551,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         ShipmentStatus.AguardandoSeguradora,
         ShipmentStatus.AguardandoCarregamento,
         ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoFiscal,
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
     ];
@@ -1229,6 +1238,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       { label: ShipmentStatus.PreCadastro, value: myShipments.filter(s => s.status === ShipmentStatus.PreCadastro).length },
       { label: ShipmentStatus.AguardandoCarregamento, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento).length },
       { label: ShipmentStatus.AguardandoNota, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota).length },
+      { label: ShipmentStatus.AguardandoFiscal, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal).length },
       { label: ShipmentStatus.AguardandoDescarga, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga).length },
       { label: ShipmentStatus.Finalizado, value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado).length },
     ].filter(d => d.value > 0);

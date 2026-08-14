@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 import { useDatabase } from './hooks/useDatabase';
 import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Page, ProfilePermissions, HistoryLog, Ticket, TicketHistory, ShipmentLock, Branch, FreightOffer } from './types';
 import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus } from './types';
-import { formatId } from './utils';
+import { formatId, isCteApplicableForStatus } from './utils';
 import { extractFiscalDocNumbers } from './utils/fiscalDocParser';
 import { INITIAL_PERMISSIONS, can } from './auth';
 import { useToast } from './hooks/useToast';
@@ -362,14 +362,27 @@ const App: React.FC = () => {
   useEffect(() => {
     if (themeImage) {
       localStorage.setItem('trancunha_themeImage', themeImage);
+      localStorage.setItem('transcunha_themeImage', themeImage);
       document.body.style.backgroundImage = `url(${themeImage})`;
       document.body.style.backgroundSize = 'cover';
       document.body.style.backgroundPosition = 'center';
       document.body.style.backgroundAttachment = 'fixed';
     } else {
+      localStorage.removeItem('trancunha_themeImage');
+      localStorage.removeItem('transcunha_themeImage');
       document.body.style.backgroundImage = '';
     }
   }, [themeImage]);
+
+  useEffect(() => {
+    if (companyLogo) {
+      localStorage.setItem('trancunha_companyLogo', companyLogo);
+      localStorage.setItem('transcunha_companyLogo', companyLogo);
+    } else {
+      localStorage.removeItem('trancunha_companyLogo');
+      localStorage.removeItem('transcunha_companyLogo');
+    }
+  }, [companyLogo]);
 
   const verifySession = useCallback(async () => {
     setIsAuthChecking(true);
@@ -475,7 +488,8 @@ const App: React.FC = () => {
     [ShipmentStatus.PreCadastro]: ShipmentStatus.AguardandoSeguradora,
     [ShipmentStatus.AguardandoSeguradora]: ShipmentStatus.AguardandoCarregamento,
     [ShipmentStatus.AguardandoCarregamento]: ShipmentStatus.AguardandoNota,
-    [ShipmentStatus.AguardandoNota]: ShipmentStatus.AguardandoAdiantamento,
+    [ShipmentStatus.AguardandoNota]: ShipmentStatus.AguardandoFiscal,
+    [ShipmentStatus.AguardandoFiscal]: ShipmentStatus.AguardandoAdiantamento,
     // AguardandoAdiantamento is now handled conditionally
     [ShipmentStatus.AguardandoAgendamento]: ShipmentStatus.AguardandoDescarga,
     [ShipmentStatus.AguardandoDescarga]: ShipmentStatus.AguardandoPagamentoSaldo,
@@ -996,6 +1010,7 @@ const App: React.FC = () => {
       const postRiskStatuses = [
         ShipmentStatus.AguardandoCarregamento,
         ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoFiscal,
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
@@ -1439,25 +1454,40 @@ const App: React.FC = () => {
     }
 
     // 1b. Extract fiscal document numbers (CT-e, NF-e, MDF-e, Data de Emissão) from attached files
-    let extractedCteNumber: string | undefined = originalShipment.cteNumber;
-    let extractedCteEmissionDate: string | undefined = originalShipment.cteEmissionDate;
+    const targetStatus = nextStatus || originalShipment.status;
+    const canExtractCte = isCteApplicableForStatus(targetStatus);
+
+    let extractedCteNumber: string | undefined = canExtractCte ? originalShipment.cteNumber : undefined;
+    let extractedCteEmissionDate: string | undefined = canExtractCte ? originalShipment.cteEmissionDate : undefined;
     let extractedNfeNumber: string | undefined = originalShipment.nfeNumber;
     let extractedMdfeNumber: string | undefined = originalShipment.mdfeNumber;
     let fiscalDocLog = '';
+    let extractedTollValue: number | undefined = undefined;
+    let extractedAdvanceValue: number | undefined = undefined;
+    let extractedAdvancePercentage: number | undefined = undefined;
+
     if (Object.keys(filesToAttach).length > 0) {
       try {
         const fiscalNums = await extractFiscalDocNumbers(filesToAttach);
-        if (fiscalNums.cteNumber) extractedCteNumber = fiscalNums.cteNumber;
-        if (fiscalNums.cteEmissionDate) extractedCteEmissionDate = fiscalNums.cteEmissionDate;
+        if (canExtractCte && fiscalNums.cteNumber) extractedCteNumber = fiscalNums.cteNumber;
+        if (canExtractCte && fiscalNums.cteEmissionDate) extractedCteEmissionDate = fiscalNums.cteEmissionDate;
         if (fiscalNums.nfeNumber) extractedNfeNumber = fiscalNums.nfeNumber;
         if (fiscalNums.mdfeNumber) extractedMdfeNumber = fiscalNums.mdfeNumber;
-        if (fiscalNums.cteNumber || fiscalNums.cteEmissionDate || fiscalNums.nfeNumber || fiscalNums.mdfeNumber) {
-          fiscalDocLog = [
-            fiscalNums.cteNumber ? `CT-e nº ${fiscalNums.cteNumber}` : null,
-            fiscalNums.cteEmissionDate ? `Emissão: ${fiscalNums.cteEmissionDate}` : null,
-            fiscalNums.nfeNumber ? `NF-e nº ${fiscalNums.nfeNumber}` : null,
-            fiscalNums.mdfeNumber ? `MDF-e nº ${fiscalNums.mdfeNumber}` : null,
-          ].filter(Boolean).join(', ');
+        if (fiscalNums.tollValue !== undefined) extractedTollValue = fiscalNums.tollValue;
+        if (fiscalNums.advanceValue !== undefined) extractedAdvanceValue = fiscalNums.advanceValue;
+        if (fiscalNums.advancePercentage !== undefined) extractedAdvancePercentage = fiscalNums.advancePercentage;
+
+        const docLogs = [
+          (canExtractCte && fiscalNums.cteNumber) ? `CT-e nº ${fiscalNums.cteNumber}` : null,
+          (canExtractCte && fiscalNums.cteEmissionDate) ? `Emissão: ${fiscalNums.cteEmissionDate}` : null,
+          fiscalNums.nfeNumber ? `NF-e nº ${fiscalNums.nfeNumber}` : null,
+          fiscalNums.mdfeNumber ? `MDF-e nº ${fiscalNums.mdfeNumber}` : null,
+          fiscalNums.advanceValue !== undefined ? `Adiantamento: R$ ${fiscalNums.advanceValue.toLocaleString('pt-BR')}` : null,
+          fiscalNums.tollValue !== undefined ? `Pedágio: R$ ${fiscalNums.tollValue.toLocaleString('pt-BR')}` : null,
+          fiscalNums.advancePercentage !== undefined ? `% Adiantamento: ${fiscalNums.advancePercentage}%` : null,
+        ].filter(Boolean);
+        if (docLogs.length > 0) {
+          fiscalDocLog = docLogs.join(', ');
         }
       } catch (e) {
         console.warn('[handleUpdateShipmentAttachment] Could not extract fiscal doc numbers:', e);
@@ -1485,15 +1515,19 @@ const App: React.FC = () => {
     let calculatedAdvanceValue = originalShipment.advanceValue;
     let finalAdvancePercentage = originalShipment.advancePercentage;
     
-    if (advanceValue !== undefined) {
-        calculatedAdvanceValue = advanceValue;
-        finalAdvancePercentage = advancePercentage || originalShipment.advancePercentage;
+    const effectiveAdvanceValue = advanceValue !== undefined ? advanceValue : extractedAdvanceValue;
+    const effectiveAdvancePercentage = advancePercentage !== undefined ? advancePercentage : extractedAdvancePercentage;
+    const effectiveTollValue = tollValue !== undefined ? tollValue : (extractedTollValue !== undefined ? extractedTollValue : originalShipment.tollValue);
+
+    if (effectiveAdvanceValue !== undefined) {
+        calculatedAdvanceValue = effectiveAdvanceValue;
+        finalAdvancePercentage = effectiveAdvancePercentage || originalShipment.advancePercentage;
         historyLogs.push(`Valor pago na conta de R$ ${calculatedAdvanceValue.toLocaleString('pt-BR')} registrado.`);
-    } else if (advancePercentage !== undefined && advancePercentage > 0) {
-        finalAdvancePercentage = advancePercentage;
-        calculatedAdvanceValue = ((updatedDriverFreight * advancePercentage) / 100) - (tollValue || 0);
+    } else if (effectiveAdvancePercentage !== undefined && effectiveAdvancePercentage > 0) {
+        finalAdvancePercentage = effectiveAdvancePercentage;
+        calculatedAdvanceValue = ((updatedDriverFreight * effectiveAdvancePercentage) / 100) - (effectiveTollValue || 0);
         const formattedAdv = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(calculatedAdvanceValue);
-        historyLogs.push(`Pagamento de Adiantamento: ${advancePercentage}% registrado (${formattedAdv}).`);
+        historyLogs.push(`Pagamento de Adiantamento: ${effectiveAdvancePercentage}% registrado (${formattedAdv}).`);
     }
 
     let finalBalanceToReceive = balanceToReceiveValue ?? originalShipment.balanceToReceiveValue;
@@ -1539,7 +1573,7 @@ const App: React.FC = () => {
         driverFreightValue: updatedDriverFreight,
         advancePercentage: finalAdvancePercentage,
         advanceValue: calculatedAdvanceValue,
-        tollValue: tollValue !== undefined ? tollValue : originalShipment.tollValue,
+        tollValue: effectiveTollValue !== undefined ? effectiveTollValue : originalShipment.tollValue,
         balanceToReceiveValue: finalBalanceToReceive,
         discountValue: finalDiscountValue,
         netBalanceValue: finalNetBalanceValue,
@@ -1568,7 +1602,7 @@ const App: React.FC = () => {
     // 3. Prepare Cargo Update (if applicable)
     const statusOrder = [
         ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro,
-        ShipmentStatus.AguardandoCarregamento, ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoCarregamento, ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal,
         ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
@@ -2415,7 +2449,9 @@ const App: React.FC = () => {
       const mainDoc = REQUIRED_DOCUMENT_MAP[status];
       const keys: string[] = mainDoc ? [mainDoc] : [];
       if (status === ShipmentStatus.AguardandoNota) {
-        keys.push('Nota Fiscal', 'CT-e', 'MDF-e', 'Carta Frete', 'Outros', 'cte_number', 'cte_emission_date', 'nfe_number', 'mdfe_number', 'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber');
+        keys.push('Nota Fiscal', 'nfe_number', 'nfeNumber');
+      } else if (status === ShipmentStatus.AguardandoFiscal) {
+        keys.push('CT-e', 'MDF-e', 'Carta Frete', 'Outros', 'cte_number', 'cte_emission_date', 'mdfe_number', 'cteNumber', 'cteEmissionDate', 'mdfeNumber');
       } else if (status === ShipmentStatus.AguardandoSeguradora) {
         keys.push('risk_release_code', 'risk_query_type', 'risk_query_cost', 'riskReleaseCode', 'riskQueryType', 'riskQueryCost');
       } else if (status === ShipmentStatus.AguardandoAdiantamento) {
@@ -2478,10 +2514,10 @@ const App: React.FC = () => {
         riskReleaseCode: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskReleaseCode')) ? undefined : shipment.riskReleaseCode,
         riskQueryType: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryType')) ? undefined : shipment.riskQueryType,
         riskQueryCost: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryCost')) ? undefined : shipment.riskQueryCost,
-        cteNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('cteNumber')) ? undefined : shipment.cteNumber,
-        cteEmissionDate: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('cteEmissionDate')) ? undefined : shipment.cteEmissionDate,
+        cteNumber: (!isCteApplicableForStatus(previousStatus) || keysToRemove.includes('cteNumber')) ? undefined : shipment.cteNumber,
+        cteEmissionDate: (!isCteApplicableForStatus(previousStatus) || keysToRemove.includes('cteEmissionDate')) ? undefined : shipment.cteEmissionDate,
         nfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('nfeNumber')) ? undefined : shipment.nfeNumber,
-        mdfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('mdfeNumber')) ? undefined : shipment.mdfeNumber,
+        mdfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || previousStatus === ShipmentStatus.AguardandoFiscal || keysToRemove.includes('mdfeNumber')) ? undefined : shipment.mdfeNumber,
         advancePercentage: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('advancePercentage')) ? undefined : shipment.advancePercentage,
         advanceValue: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('advanceValue')) ? undefined : shipment.advanceValue,
         tollValue: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('tollValue')) ? undefined : shipment.tollValue,

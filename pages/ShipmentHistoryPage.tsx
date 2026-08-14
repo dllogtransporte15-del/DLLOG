@@ -9,6 +9,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
 import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver } from '../types';
 import { ShipmentStatus } from '../types';
+import { isCteApplicableForStatus, getShipmentCte } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 
 interface ShipmentHistoryPageProps {
@@ -89,7 +90,13 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         }
 
         let matchesCte = true;
-        if (filterCte.trim()) matchesCte = !!(shipment.cteNumber?.toLowerCase().includes(filterCte.trim().toLowerCase()));
+        if (filterCte.trim()) {
+          const cteVal = getShipmentCte(shipment);
+          matchesCte = isCteApplicableForStatus(shipment.status) && (
+            (cteVal !== '-' && cteVal.toLowerCase().includes(filterCte.trim().toLowerCase())) ||
+            !!(shipment.cteNumber?.toLowerCase().includes(filterCte.trim().toLowerCase()))
+          );
+        }
         let matchesNfe = true;
         if (filterNfe.trim()) matchesNfe = !!(shipment.nfeNumber?.toLowerCase().includes(filterNfe.trim().toLowerCase()));
         let matchesMdfe = true;

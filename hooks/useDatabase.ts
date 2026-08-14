@@ -134,8 +134,8 @@ export function useDatabase(currentUser: User | null) {
 
         if (dbPermissions) setProfilePermissions({ ...INITIAL_PERMISSIONS, ...dbPermissions });
         if (dbSettings) {
-          if (dbSettings.company_logo) setCompanyLogo(dbSettings.company_logo);
-          if (dbSettings.theme_image) setThemeImage(dbSettings.theme_image);
+          setCompanyLogo(dbSettings.company_logo || null);
+          setThemeImage(dbSettings.theme_image || null);
         }
 
       } else {
@@ -166,8 +166,8 @@ export function useDatabase(currentUser: User | null) {
 
         if (dbPermissions) setProfilePermissions({ ...INITIAL_PERMISSIONS, ...dbPermissions });
         if (dbSettings) {
-          if (dbSettings.company_logo) setCompanyLogo(dbSettings.company_logo);
-          if (dbSettings.theme_image) setThemeImage(dbSettings.theme_image);
+          setCompanyLogo(dbSettings.company_logo || null);
+          setThemeImage(dbSettings.theme_image || null);
         }
 
         setNextIds(calculateNextIds(
@@ -204,8 +204,8 @@ export function useDatabase(currentUser: User | null) {
       // Even without a user, try to load branding settings for the login page
       fetchAppSettings().then(settings => {
         if (settings) {
-          if (settings.company_logo) setCompanyLogo(settings.company_logo);
-          if (settings.theme_image) setThemeImage(settings.theme_image);
+          setCompanyLogo(settings.company_logo || null);
+          setThemeImage(settings.theme_image || null);
         }
       });
     }
@@ -318,8 +318,8 @@ export function useDatabase(currentUser: User | null) {
           case 'app_settings': {
             const dbSettings = await fetchAppSettings();
             if (dbSettings) {
-              if (dbSettings.company_logo) setCompanyLogo(dbSettings.company_logo);
-              if (dbSettings.theme_image) setThemeImage(dbSettings.theme_image);
+              setCompanyLogo(dbSettings.company_logo || null);
+              setThemeImage(dbSettings.theme_image || null);
             }
             break;
           }
