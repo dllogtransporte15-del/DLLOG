@@ -6,12 +6,11 @@ import VolumeBar from './VolumeBar';
 import { Trash2 } from 'lucide-react';
 import { PlusIcon } from './icons/PlusIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
-import { Search, Filter, X, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, X, ChevronLeft, ChevronRight, ArrowUpDown, AlertCircle, AlertTriangle } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 import { TicketStatus } from '../types';
-import { AlertCircle } from 'lucide-react';
 
 interface LoadTableProps {
   loads: Cargo[];
@@ -33,14 +32,35 @@ interface LoadTableProps {
   onRecommendDrivers?: (load: Cargo) => void;
   onDelete?: (cargoId: string) => void;
   onRequestLoadOrder?: (load: Cargo) => void;
+  onSaveLoad?: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
   currentUser: User;
   stays?: StayRecord[];
   tickets?: Ticket[];
   onFilteredLoadsChange?: (loads: Cargo[]) => void;
 }
 
-const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule, onShowShipments, onRecommendDrivers, onDelete, onRequestLoadOrder, currentUser, stays = [], tickets = [], onFilteredLoadsChange }) => {
+const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule, onShowShipments, onRecommendDrivers, onDelete, onRequestLoadOrder, onSaveLoad, currentUser, stays = [], tickets = [], onFilteredLoadsChange }) => {
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  const [tmsModalCargo, setTmsModalCargo] = useState<Cargo | null>(null);
+  const [tmsLoteInput, setTmsLoteInput] = useState<string>('');
+
+  const handleOpenTmsModal = (cargo: Cargo) => {
+    setTmsModalCargo(cargo);
+    setTmsLoteInput(cargo.tmsLoteNumber || '');
+  };
+
+  const handleSaveTmsLote = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!tmsModalCargo) return;
+    const updatedCargo: Cargo = {
+      ...tmsModalCargo,
+      tmsLoteNumber: tmsLoteInput.trim() || undefined,
+    };
+    if (onSaveLoad) {
+      onSaveLoad(updatedCargo);
+    }
+    setTmsModalCargo(null);
+  };
   
   const [showFilters, setShowFilters] = useState(false);
   const [filterId, setFilterId] = useState<string[]>([]);
@@ -281,17 +301,49 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 {/* ID and Status */}
                 <div className="flex items-center gap-3 min-w-[120px]">
                   <div className="flex flex-col">
-                    <button 
-                      onClick={() => onShowDetails?.(load)}
-                      className="text-sm font-bold text-primary dark:text-blue-400 hover:underline text-left"
-                    >
-                      #{load.sequenceId}
-                    </button>
-                    {tickets.some(t => t.cargoId === load.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
-                      <span className="text-red-500 ml-1 inline-flex items-center" title="Chamado(s) Aberto(s)">
-                        <AlertCircle className="w-4 h-4" />
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        onClick={() => onShowDetails?.(load)}
+                        className="text-sm font-bold text-primary dark:text-blue-400 hover:underline text-left"
+                      >
+                        #{load.sequenceId}
+                      </button>
+
+                      {/* TMS Lote indicator */}
+                      {load.tmsLoteNumber ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenTmsModal(load);
+                          }}
+                          className="inline-flex items-center justify-center w-4 h-4 rounded bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-transform hover:scale-110 cursor-pointer"
+                          title={`Lote TMS: ${load.tmsLoteNumber}`}
+                        >
+                          <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenTmsModal(load);
+                          }}
+                          className="inline-flex items-center justify-center text-amber-500 hover:text-amber-600 transition-transform hover:scale-110 cursor-pointer"
+                          title="Criação de Lote TMS Pendente"
+                        >
+                          <AlertTriangle className="w-4 h-4 fill-amber-400 text-amber-600 dark:text-amber-300" />
+                        </button>
+                      )}
+
+                      {tickets.some(t => t.cargoId === load.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
+                        <span className="text-red-500 ml-0.5 inline-flex items-center" title="Chamado(s) Aberto(s)">
+                          <AlertCircle className="w-4 h-4" />
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] text-gray-400 font-mono truncate w-20" title={load.id}>{load.id.substring(0, 8)}...</span>
                   </div>
                   <span 
@@ -584,6 +636,44 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
             >
               <ChevronRight className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Informar Lote TMS */}
+      {tmsModalCargo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
+              Informe o número do lote criado no TMS:
+            </h3>
+            <form onSubmit={handleSaveTmsLote}>
+              <div className="mb-5">
+                <input
+                  type="text"
+                  value={tmsLoteInput}
+                  onChange={(e) => setTmsLoteInput(e.target.value)}
+                  placeholder="Número do lote TMS..."
+                  autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTmsModalCargo(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md shadow-sm transition-colors"
+                >
+                  OK
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

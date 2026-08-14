@@ -253,6 +253,7 @@ export interface Cargo {
   schedulingPassword?: string;
   allowedProfiles?: UserProfile[];
   allowedUserIds?: string[];
+  tmsLoteNumber?: string;
 }
 
 

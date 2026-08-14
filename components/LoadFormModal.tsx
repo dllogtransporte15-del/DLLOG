@@ -86,7 +86,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         schedulingSystemUrl: '',
         schedulingUser: '',
         schedulingPassword: '',
-        allowedProfiles: [...INTERNAL_PROFILES]
+        allowedProfiles: [...INTERNAL_PROFILES],
+        tmsLoteNumber: ''
       };
     }
 
@@ -124,7 +125,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       schedulingSystemUrl: '',
       schedulingUser: '',
       schedulingPassword: '',
-      allowedProfiles: [...INTERNAL_PROFILES]
+      allowedProfiles: [...INTERNAL_PROFILES],
+      tmsLoteNumber: ''
     };
   };
   
@@ -227,7 +229,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 schedulingUser: editableLoad.schedulingUser || '',
                 schedulingPassword: editableLoad.schedulingPassword || '',
                 allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
-                allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id)
+                allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
+                tmsLoteNumber: editableLoad.tmsLoteNumber || ''
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
@@ -635,8 +638,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
                 {/* Volume Total & Prazo */}
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Detalhes do Volume e Prazo</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Detalhes do Volume, Prazo e Lote</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                         <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Volume Total (ton)</label>
                             <input 
@@ -656,7 +659,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                               value={load.loadingDeadline || ''} 
                               onChange={handleChange} 
                               type="date" 
-                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Lote TMS (Opcional)</label>
+                            <input 
+                              name="tmsLoteNumber" 
+                              value={load.tmsLoteNumber || ''} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Número do Lote TMS"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                             />
                         </div>
                     </div>

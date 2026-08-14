@@ -378,6 +378,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         tickets={tickets}
         onRequestLoadOrder={onRequestLoadOrder}
         onFilteredLoadsChange={handleFilteredLoadsChange}
+        onSaveLoad={onSaveLoad}
       />
 
       <NewShipmentModal

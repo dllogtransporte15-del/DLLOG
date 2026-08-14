@@ -506,13 +506,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                 <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
                   Gerenciar Anexos
                 </h2>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="font-mono text-xs font-bold text-blue-400 bg-blue-950/60 px-2 py-0.5 rounded border border-blue-800/50">
                     {shipment.id}
                   </span>
                   {cargo?.sequenceId && (
                     <span className="text-xs font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
                       Carga #{cargo.sequenceId}
+                    </span>
+                  )}
+                  {cargo?.tmsLoteNumber && (
+                    <span className="text-xs font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/60 flex items-center gap-1" title={`Lote TMS: ${cargo.tmsLoteNumber}`}>
+                      <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded bg-emerald-600 text-white font-bold text-[9px]">✓</span>
+                      Lote TMS: {cargo.tmsLoteNumber}
                     </span>
                   )}
                 </div>
@@ -541,11 +547,25 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
 
             {/* Frete Motorista / ton */}
             <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
-              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Frete Mtr / ton
+              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-between gap-1 mb-1">
+                <span className="flex items-center gap-1">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Frete Mtr / ton
+                </span>
+                <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
+                  shipment.driverFreightType === 'PF'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                }`}>
+                  {shipment.driverFreightType || 'PJ'}
+                </span>
               </div>
-              <div className="font-black text-emerald-400 text-xs">
-                {formatCurrency(driverRate)}
+              <div className="font-black text-emerald-400 text-xs flex items-baseline gap-1.5">
+                <span>{formatCurrency(driverRate)}</span>
+                <span className={`text-[10px] font-bold ${
+                  shipment.driverFreightType === 'PF' ? 'text-amber-400' : 'text-indigo-300'
+                }`}>
+                  ({shipment.driverFreightType || 'PJ'})
+                </span>
               </div>
             </div>
 

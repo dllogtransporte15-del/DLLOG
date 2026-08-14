@@ -137,6 +137,19 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                 <DetailItem label="Produto" value={product?.name} />
                 <DetailItem label="Origem" value={cargo.origin} />
                 <DetailItem label="Destino" value={cargo.destination} />
+                <DetailItem label="Lote TMS">
+                    {cargo.tmsLoteNumber ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-emerald-600 text-white shadow-sm text-[10px]">✓</span>
+                            <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{cargo.tmsLoteNumber}</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-amber-500 font-bold">⚠️</span>
+                            <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">Pendente (Não informado)</span>
+                        </div>
+                    )}
+                </DetailItem>
                 {cargo.originMapLink && <DetailItem label="Link Mapa (Origem)"><a href={cargo.originMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 underline truncate">Abrir link</a></DetailItem>}
                 {cargo.destinationMapLink && <DetailItem label="Link Mapa (Destino)"><a href={cargo.destinationMapLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 underline truncate">Abrir link</a></DetailItem>}
             </div>

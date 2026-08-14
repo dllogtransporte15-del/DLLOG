@@ -190,6 +190,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             currentUser={currentUser}
             stays={stays}
             tickets={tickets}
+            onSaveLoad={handleSaveLoad}
         />
       </div>
 

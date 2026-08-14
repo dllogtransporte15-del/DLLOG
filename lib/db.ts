@@ -331,6 +331,15 @@ export const toCargo = (row: any): Cargo => ({
     }
     return undefined;
   })(),
+  tmsLoteNumber: (() => {
+    if (row.tms_lote_number) return row.tms_lote_number;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_tms_lote') : null;
+    if (metaLog) {
+      return metaLog.description || undefined;
+    }
+    return undefined;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -352,6 +361,17 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
       timestamp: new Date().toISOString(),
       description: JSON.stringify(c.allowedUserIds)
     });
+  }
+  if (c.tmsLoteNumber !== undefined) {
+    history = history.filter(h => h.id !== 'meta_tms_lote');
+    if (c.tmsLoteNumber) {
+      history.push({
+        id: 'meta_tms_lote',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.tmsLoteNumber
+      });
+    }
   }
 
   return {

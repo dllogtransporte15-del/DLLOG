@@ -80,6 +80,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   dailySchedule: 'Agenda Diária',
   originCoords: 'Coordenadas de Origem',
   destinationCoords: 'Coordenadas de Destino',
+  tmsLoteNumber: 'Lote TMS',
 
   // Shipment fields
   driverId: 'Motorista',

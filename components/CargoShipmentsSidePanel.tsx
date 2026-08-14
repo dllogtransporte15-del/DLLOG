@@ -68,7 +68,14 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
           {/* Header */}
           <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
             <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Embarques da Carga #{cargo.sequenceId}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Embarques da Carga #{cargo.sequenceId}</h2>
+                {cargo.tmsLoteNumber && (
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700/60" title={`Lote TMS: ${cargo.tmsLoteNumber}`}>
+                    Lote TMS: {cargo.tmsLoteNumber}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total de {cargoShipments.length} embarques encontrados</p>
             </div>
             <button 

@@ -223,7 +223,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                 <DetailItem label="Origem da Carga" value={cargo?.origin} />
                 <DetailItem label="Destino da Carga" value={cargo?.destination} />
                 <DetailItem label="Produto" value={product?.name} />
-                <DetailItem label="Carga Vinculada" value={cargo?.sequenceId ? `#${cargo.sequenceId}` : cargo?.id} />
+                <DetailItem label="Carga Vinculada" value={cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.tmsLoteNumber ? ` (Lote TMS: ${cargo.tmsLoteNumber})` : ''}` : cargo?.id} />
                 <DetailItem label="Status Atual" value={shipment.status} />
                 <DetailItem label="Comercial (Embarcador)" value={embarcador?.name || 'N/A'} />
                 {shipment.status === 'Cancelado' && shipment.cancellationReason && (
