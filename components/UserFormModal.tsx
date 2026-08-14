@@ -12,15 +12,16 @@ interface UserFormModalProps {
   userToEdit: User | null;
   clients: Client[];
   branches: Branch[];
+  defaultProfile?: UserProfile;
 }
 
-const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, userToEdit, clients, branches }) => {
+const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, userToEdit, clients, branches, defaultProfile }) => {
   const { showToast } = useToast();
   const getInitialState = (): Omit<User, 'id'> => ({
     name: '',
     email: '',
     phone: '',
-    profile: UserProfile.Comercial,
+    profile: defaultProfile || UserProfile.Comercial,
     active: true,
     password: '',
     clientId: undefined,
@@ -38,7 +39,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             setUser(getInitialState());
         }
     }
-  }, [userToEdit, isOpen]);
+  }, [userToEdit, isOpen, defaultProfile]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;

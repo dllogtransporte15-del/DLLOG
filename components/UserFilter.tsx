@@ -11,9 +11,10 @@ export interface UserFilters {
 interface UserFilterProps {
   filters: UserFilters;
   onFilterChange: (filters: UserFilters) => void;
+  availableProfiles?: UserProfile[];
 }
 
-const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange }) => {
+const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availableProfiles }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     onFilterChange({ ...filters, [name]: value });
@@ -29,6 +30,7 @@ const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange }) => {
   };
 
   const isFiltered = filters.id !== '' || filters.name !== '' || filters.profile !== '' || filters.status !== '';
+  const profilesToRender = availableProfiles && availableProfiles.length > 0 ? availableProfiles : Object.values(UserProfile);
 
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-6 border border-gray-200 dark:border-gray-700">
@@ -69,7 +71,7 @@ const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange }) => {
             className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
           >
             <option value="">Todos</option>
-            {Object.values(UserProfile).map(p => (
+            {profilesToRender.map(p => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
