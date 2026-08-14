@@ -522,11 +522,6 @@ const fromShipment = (s: Shipment) => ({
   branch_id: s.branchId || null,
   vehicle_set_type: s.vehicleSetType,
   vehicle_body_type: s.vehicleBodyType,
-  // Fiscal document numbers — explicitly null when undefined so DB columns are cleared on revert
-  cte_number: s.cteNumber ?? null,
-  cte_emission_date: s.cteEmissionDate ?? null,
-  nfe_number: s.nfeNumber ?? null,
-  mdfe_number: s.mdfeNumber ?? null,
 });
 
 export const toUser = (row: any): User => ({
@@ -960,25 +955,10 @@ export async function backfillShipmentFiscalNumbers(
           ...(extracted.mdfeNumber ? { mdfe_number: extracted.mdfeNumber } : {}),
         };
 
-        const updatePayload: any = { documents: updatedDocs };
-        if (extracted.cteNumber) updatePayload.cte_number = extracted.cteNumber;
-        if (extracted.cteEmissionDate) updatePayload.cte_emission_date = extracted.cteEmissionDate;
-        if (extracted.nfeNumber) updatePayload.nfe_number = extracted.nfeNumber;
-        if (extracted.mdfeNumber) updatePayload.mdfe_number = extracted.mdfeNumber;
-
-        let { error: updateError } = await supabase
+        const { error: updateError } = await supabase
           .from('shipments')
-          .update(updatePayload)
+          .update({ documents: updatedDocs })
           .eq('id', row.id);
-
-        if (updateError) {
-          // Fallback caso colunas diretas em shipments não existam na tabela SQL
-          const fallbackRes = await supabase
-            .from('shipments')
-            .update({ documents: updatedDocs })
-            .eq('id', row.id);
-          updateError = fallbackRes.error;
-        }
 
         if (!updateError) {
           console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, Emissão=${extracted.cteEmissionDate || '-'}`);
