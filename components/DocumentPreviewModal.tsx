@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, ExternalLink, FileText, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { X, Download, ExternalLink, FileText, Image as ImageIcon, Loader2, Printer } from 'lucide-react';
+import { openDocumentInNewTab } from '../utils/documentViewer';
 
 interface DocumentPreviewModalProps {
   isOpen: boolean;
@@ -115,8 +116,37 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   };
 
   const handleOpenNewTab = () => {
+    openDocumentInNewTab(fileUrl, displayTitle);
+  };
+
+  const handlePrint = () => {
     const targetUrl = blobUrl || fileUrl;
-    window.open(targetUrl, '_blank');
+    if (!targetUrl) return;
+
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+      if (fileType === 'image') {
+        printWin.document.write(`
+          <html>
+            <head><title>Imprimir ${displayTitle}</title></head>
+            <body style="margin:0; display:flex; justify-content:center; align-items:center; height:100vh;">
+              <img src="${targetUrl}" style="max-width:100%; max-height:100vh;" onload="window.print(); window.close();" />
+            </body>
+          </html>
+        `);
+        printWin.document.close();
+      } else {
+        printWin.document.write(`
+          <html>
+            <head><title>Imprimir ${displayTitle}</title></head>
+            <body style="margin:0; height:100vh;">
+              <iframe src="${targetUrl}" style="width:100%; height:100vh; border:none;" onload="this.contentWindow.focus(); this.contentWindow.print();"></iframe>
+            </body>
+          </html>
+        `);
+        printWin.document.close();
+      }
+    }
   };
 
   return (
@@ -141,6 +171,15 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handlePrint}
+              className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+              title="Imprimir Arquivo"
+            >
+              <Printer className="w-4 h-4" />
+              <span className="hidden sm:inline">Imprimir</span>
+            </button>
+
             <button
               onClick={handleOpenNewTab}
               className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50 rounded-lg transition-colors flex items-center gap-1.5"

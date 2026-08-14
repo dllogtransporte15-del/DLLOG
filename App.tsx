@@ -973,6 +973,44 @@ const App: React.FC = () => {
         (d.name.trim().toLowerCase() === data.driverName.trim().toLowerCase() && data.driverName.trim() !== '') || 
         (d.cpf.replace(/\D/g, '') === (data.driverCpf || '').replace(/\D/g, '') && (data.driverCpf || '').trim() !== '')
     );
+    const isAlreadyRegisteredDriver = !!driverToUse;
+
+    const driverCpfClean = (data.driverCpf || driverToUse?.cpf || '').replace(/\D/g, '');
+    const driverNameClean = (data.driverName || driverToUse?.name || '').trim().toLowerCase();
+
+    const hasPreviousApprovedGrShipment = isAlreadyRegisteredDriver && shipments.some(s => {
+      const sCpfClean = (s.driverCpf || '').replace(/\D/g, '');
+      const sNameClean = (s.driverName || '').trim().toLowerCase();
+      
+      const isDriverMatch = (driverCpfClean !== '' && sCpfClean === driverCpfClean) ||
+                            (driverNameClean !== '' && sNameClean === driverNameClean);
+      if (!isDriverMatch) return false;
+
+      // 1. Explicit riskReleaseCode
+      if (s.riskReleaseCode && s.riskReleaseCode.trim().length > 0) return true;
+
+      // 2. Risk management release document attached
+      if (s.documents && s.documents['Comprovação da Liberação da Seguradora']) return true;
+
+      // 3. Or advanced past AguardandoSeguradora
+      const postRiskStatuses = [
+        ShipmentStatus.AguardandoCarregamento,
+        ShipmentStatus.AguardandoNota,
+        ShipmentStatus.AguardandoAdiantamento,
+        ShipmentStatus.AguardandoAgendamento,
+        ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.AguardandoPagamentoSaldo,
+        ShipmentStatus.Finalizado
+      ];
+      if (postRiskStatuses.includes(s.status)) return true;
+
+      return false;
+    });
+
+    const initialStatus = hasPreviousApprovedGrShipment
+      ? ShipmentStatus.AguardandoSeguradora
+      : ShipmentStatus.PreCadastro;
+
     if (!driverToUse) {
       const newDriverId = formatId(currentNextIds.driver, 'DRV');
       driverToUse = {
@@ -1055,6 +1093,9 @@ const App: React.FC = () => {
     }
     
     let historyMsg = `Embarque ${newShipmentId} criado.`;
+    if (hasPreviousApprovedGrShipment) {
+      historyMsg += ` Motorista já cadastrado com aprovação prévia no GR — direcionado diretamente para Ag. Seguradora.`;
+    }
     if (attachedFileNames.length > 0) historyMsg += ` Anexo(s): ${attachedFileNames.join(', ')}.`;
     if (data.bankDetails) historyMsg += ` Dados bancários preenchidos.`;
 
@@ -1075,7 +1116,7 @@ const App: React.FC = () => {
       driverFreightRateSnapshot: data.driverFreightRateSnapshot ?? (cargos.find(c => c.id === data.cargoId)?.driverFreightValuePerTon || 0),
       companyFreightRateSnapshot: cargos.find(c => c.id === data.cargoId)?.companyFreightValuePerTon,
       driverFreightType: data.driverFreightType || 'PJ',
-      status: ShipmentStatus.PreCadastro,
+      status: initialStatus,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
       paymentMethod: data.paymentMethod,
@@ -1089,7 +1130,7 @@ const App: React.FC = () => {
       driverReferences: data.driverReferences,
       ownerContact: data.ownerContact,
       statusHistory: [{
-        status: ShipmentStatus.PreCadastro,
+        status: initialStatus,
         timestamp: new Date().toISOString(),
         userId: currentUser.id,
       }],
@@ -1138,7 +1179,10 @@ const App: React.FC = () => {
     }
 
     setCurrentPage('shipments');
-    showToast(`Novo embarque ${newShipmentId} criado com sucesso! Motoristas/Veículos não cadastrados foram adicionados automaticamente.`, 'success');
+    const toastMessage = hasPreviousApprovedGrShipment
+      ? `Embarque ${newShipmentId} criado! Por possuir histórico prévio de aprovação na GR, o embarque foi direcionado direto para "Ag. Seguradora".`
+      : `Novo embarque ${newShipmentId} criado com sucesso! Motoristas/Veículos não cadastrados foram adicionados automaticamente.`;
+    showToast(toastMessage, 'success');
   };
 
   const handleMarkArrival = async (shipmentId: string) => {
@@ -1205,14 +1249,13 @@ const App: React.FC = () => {
   };
   
   const handleDeleteShipmentAttachment = async (shipmentId: string, url: string) => {
-    if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     if (!currentUser) return;
     
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !shipment.documents) return;
 
     try {
-      // 1. Storage Removal
+      // 1. Storage Removal (non-blocking best effort)
       await deleteShipmentAttachmentFromStorage(url);
 
       // 2. Database Update
@@ -1220,34 +1263,39 @@ const App: React.FC = () => {
       let foundCategory = '';
       let fileName = '';
 
-      // Find the category and remove the URL
+      const rawParts = url.split('/');
+      const rawDecoded = decodeURIComponent(rawParts[rawParts.length - 1].split('?')[0]);
+      fileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') : rawDecoded;
+
+      // Find the category and remove the URL safely whether it's an Array or a String
       Object.keys(updatedDocuments).forEach(category => {
-        const index = updatedDocuments[category].indexOf(url);
-        if (index !== -1) {
-          foundCategory = category;
-          // Extract filename from URL for history log
-          const urlParts = url.split('/');
-          fileName = decodeURIComponent(urlParts[urlParts.length - 1].split('_').slice(2).join('_'));
-          
-          updatedDocuments[category] = updatedDocuments[category].filter((u: string) => u !== url);
-          if (updatedDocuments[category].length === 0) {
-            delete updatedDocuments[category];
+        const val = updatedDocuments[category];
+        if (Array.isArray(val)) {
+          if (val.includes(url)) {
+            foundCategory = category;
+            updatedDocuments[category] = val.filter((u: string) => u !== url);
+            if (updatedDocuments[category].length === 0) {
+              delete updatedDocuments[category];
+            }
           }
+        } else if (typeof val === 'string' && val === url) {
+          foundCategory = category;
+          delete updatedDocuments[category];
         }
       });
 
       const updatedShipment: Shipment = {
         ...shipment,
         documents: updatedDocuments,
-        history: [...shipment.history, createHistoryLog(`Anexo removido (${foundCategory}): ${fileName || 'Arquivo'}`)]
+        history: [...shipment.history, createHistoryLog(`Anexo removido (${foundCategory || 'Geral'}): ${fileName || 'Arquivo'}`)]
       };
 
       await upsertShipment(updatedShipment);
       setShipments(prev => prev.map(s => s.id === shipmentId ? updatedShipment : s));
       showToast('Anexo removido com sucesso!', 'success');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao remover anexo:', error);
-      showToast('Erro ao remover anexo. Verifique sua conexão.', 'error');
+      showToast(`Erro ao remover anexo: ${error?.message || 'Verifique sua conexão.'}`, 'error');
     }
   };
 
@@ -2362,10 +2410,51 @@ const App: React.FC = () => {
     const previousStatusEntry = historyCopy[historyCopy.length - 1];
     const previousStatus = previousStatusEntry.status;
 
-    const docTypeToRemove = REQUIRED_DOCUMENT_MAP[previousStatus];
+    // Build comprehensive list of document and metadata keys to clear for current and reverted status
+    const getDocKeysForStatus = (status: ShipmentStatus): string[] => {
+      const mainDoc = REQUIRED_DOCUMENT_MAP[status];
+      const keys: string[] = mainDoc ? [mainDoc] : [];
+      if (status === ShipmentStatus.AguardandoNota) {
+        keys.push('Nota Fiscal', 'CT-e', 'MDF-e', 'Carta Frete', 'Outros', 'cte_number', 'cte_emission_date', 'nfe_number', 'mdfe_number', 'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber');
+      } else if (status === ShipmentStatus.AguardandoSeguradora) {
+        keys.push('risk_release_code', 'risk_query_type', 'risk_query_cost', 'riskReleaseCode', 'riskQueryType', 'riskQueryCost');
+      } else if (status === ShipmentStatus.AguardandoAdiantamento) {
+        keys.push('advance_percentage', 'advance_value', 'toll_value', 'advancePercentage', 'advanceValue', 'tollValue');
+      } else if (status === ShipmentStatus.AguardandoDescarga) {
+        keys.push('unloaded_tonnage', 'unloadedTonnage');
+      } else if (status === ShipmentStatus.AguardandoPagamentoSaldo) {
+        keys.push('balance_to_receive_value', 'discount_value', 'net_balance_value', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue');
+      }
+      return keys;
+    };
+
+    const keysToRemove = Array.from(new Set([
+      ...getDocKeysForStatus(currentStatus),
+      ...getDocKeysForStatus(previousStatus)
+    ]));
+
     const updatedDocuments = { ...(shipment.documents || {}) };
-    if (docTypeToRemove && updatedDocuments[docTypeToRemove]) {
-        delete updatedDocuments[docTypeToRemove];
+    const filesToDelete: string[] = [];
+
+    keysToRemove.forEach(key => {
+      if (updatedDocuments[key]) {
+        const val = updatedDocuments[key];
+        if (Array.isArray(val)) {
+          val.forEach(item => {
+            if (typeof item === 'string' && (item.startsWith('http') || item.includes('/'))) {
+              filesToDelete.push(item);
+            }
+          });
+        } else if (typeof val === 'string' && (val.startsWith('http') || val.includes('/'))) {
+          filesToDelete.push(val);
+        }
+        delete updatedDocuments[key];
+      }
+    });
+
+    // Best-effort storage deletion of physical files associated with cleared keys
+    for (const fileUrl of filesToDelete) {
+      await deleteShipmentAttachmentFromStorage(fileUrl);
     }
 
     let updatedCargo: Cargo | undefined;
@@ -2386,7 +2475,21 @@ const App: React.FC = () => {
         status: previousStatus,
         statusHistory: historyCopy,
         documents: Object.keys(updatedDocuments).length > 0 ? updatedDocuments : undefined,
-        history: [...shipment.history, createHistoryLog(`Status revertido de "${currentStatus}" para "${previousStatus}" por ${currentUser.name}. Anexos do último passo removidos.`)]
+        riskReleaseCode: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskReleaseCode')) ? undefined : shipment.riskReleaseCode,
+        riskQueryType: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryType')) ? undefined : shipment.riskQueryType,
+        riskQueryCost: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryCost')) ? undefined : shipment.riskQueryCost,
+        cteNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('cteNumber')) ? undefined : shipment.cteNumber,
+        cteEmissionDate: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('cteEmissionDate')) ? undefined : shipment.cteEmissionDate,
+        nfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('nfeNumber')) ? undefined : shipment.nfeNumber,
+        mdfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('mdfeNumber')) ? undefined : shipment.mdfeNumber,
+        advancePercentage: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('advancePercentage')) ? undefined : shipment.advancePercentage,
+        advanceValue: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('advanceValue')) ? undefined : shipment.advanceValue,
+        tollValue: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('tollValue')) ? undefined : shipment.tollValue,
+        unloadedTonnage: (previousStatus === ShipmentStatus.AguardandoDescarga || keysToRemove.includes('unloadedTonnage')) ? undefined : shipment.unloadedTonnage,
+        balanceToReceiveValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('balanceToReceiveValue')) ? undefined : shipment.balanceToReceiveValue,
+        discountValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('discountValue')) ? undefined : shipment.discountValue,
+        netBalanceValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('netBalanceValue')) ? undefined : shipment.netBalanceValue,
+        history: [...shipment.history, createHistoryLog(`Status revertido de "${currentStatus}" para "${previousStatus}" por ${currentUser.name}. Anexos e dados da etapa removidos para reanexação.`)]
     };
 
     setShipments((prev: Shipment[]) => prev.map(s => s.id === shipmentId ? updatedShipment : s));
@@ -2397,6 +2500,7 @@ const App: React.FC = () => {
     try {
         await upsertShipment(updatedShipment);
         if (updatedCargo) await upsertCargo(updatedCargo);
+        showToast(`Status revertido para ${previousStatus}. Anexos anteriores removidos para novo envio.`, 'success');
     } catch (err) {
         console.error('Erro ao salvar reversão:', err);
         showToast("Erro ao salvar a reversão no banco de dados.", 'error');

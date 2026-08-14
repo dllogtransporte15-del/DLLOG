@@ -1089,23 +1089,28 @@ export function getShipmentAttachmentUrl(path: string): string {
 }
 
 export async function deleteShipmentAttachmentFromStorage(url: string): Promise<void> {
-  // Extract path from public URL
-  // Example URL: https://[project].supabase.co/storage/v1/object/public/shipment_attachments/SHP-123/Arquivos_Iniciais_123456_file.pdf
-  const parts = url.split('/shipment_attachments/');
-  if (parts.length < 2) {
-    console.error('[deleteShipmentAttachmentFromStorage] Could not parse path from URL:', url);
-    return;
-  }
-  
-  const path = decodeURIComponent(parts[1]);
-  
-  const { error } = await supabase.storage
-    .from('shipment_attachments')
-    .remove([path]);
+  if (!url) return;
+  try {
+    let path = url;
+    if (url.includes('/shipment_attachments/')) {
+      const parts = url.split('/shipment_attachments/');
+      path = decodeURIComponent(parts[1]);
+    } else {
+      path = decodeURIComponent(url);
+    }
+    
+    // Clean query parameters if present
+    path = path.split('?')[0];
 
-  if (error) {
-    console.error(`[deleteShipmentAttachmentFromStorage] Error deleting path ${path}:`, error);
-    throw error;
+    const { error } = await supabase.storage
+      .from('shipment_attachments')
+      .remove([path]);
+
+    if (error) {
+      console.warn(`[deleteShipmentAttachmentFromStorage] Supabase storage deletion warning for path ${path}:`, error);
+    }
+  } catch (err) {
+    console.warn('[deleteShipmentAttachmentFromStorage] Exception when attempting storage deletion:', err);
   }
 }
 

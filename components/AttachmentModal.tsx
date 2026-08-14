@@ -5,6 +5,7 @@ import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../ser
 import { formatWeightPtBr } from '../utils';
 import { useToast } from '../hooks/useToast';
 import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard } from 'lucide-react';
+import { openDocumentInNewTab } from '../utils/documentViewer';
 
 interface AttachmentModalProps {
   isOpen: boolean;
@@ -404,21 +405,27 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
     <ul className="space-y-4">
       {docs.map(([docType, files]) => (
         <li key={docType}>
-          <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{docType}:</p>
-          <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-400">
+          <p className="font-medium text-sm text-gray-800 dark:text-gray-200 mb-1">{docType}:</p>
+          <div className="flex flex-wrap gap-2">
             {Array.isArray(files) && files.map((file, index) => {
-              const downloadUrl = file.startsWith('http') 
-                ? (file.includes('?') ? `${file}&download=` : `${file}?download=`)
-                : file;
+              const fileName = typeof file === 'string' ? (file.split('/').pop()?.split('?')[0] || '') : '';
+              const rawDecoded = decodeURIComponent(fileName);
+              const cleanFileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') || rawDecoded : (rawDecoded || `Anexo ${index + 1}`);
+              
               return (
-              <li key={index}>
-                <a href={downloadUrl} target="_blank" rel="noopener noreferrer" download className="text-blue-600 dark:text-blue-400 hover:underline">
-                  {file.split('_').pop() || 'Acessar Anexo'}
-                </a>
-              </li>
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg text-xs font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800/50"
+                  title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
+                >
+                  <PaperclipIcon className="w-3.5 h-3.5" />
+                  <span className="truncate max-w-[200px]">{cleanFileName || 'Visualizar Anexo'}</span>
+                </button>
               );
             })}
-          </ul>
+          </div>
         </li>
       ))}
     </ul>
