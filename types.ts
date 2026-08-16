@@ -6,6 +6,7 @@ export enum UserProfile {
   Embarcador = "Embarcador",
   Supervisor = "Supervisor",
   Comercial = "Comercial",
+  GerenteComercial = "Gerente Comercial",
   Diretor = "Diretor",
   Fiscal = "Fiscal",
   Financeiro = "Financeiro",
@@ -20,6 +21,7 @@ export const INTERNAL_PROFILES: UserProfile[] = [
   UserProfile.Admin,
   UserProfile.Diretor,
   UserProfile.Supervisor,
+  UserProfile.GerenteComercial,
   UserProfile.Comercial,
   UserProfile.Financeiro,
   UserProfile.Fiscal,
@@ -50,6 +52,14 @@ export interface User {
   authId?: string;
   passwordUpdatedAt?: string;
   branchId?: string;
+  hasCommercialCommission?: boolean;
+  commercialFixedSalary?: number;
+  commercialMatrizRate?: number;
+  commercialFiliaisRate?: number;
+  commercialSelectedBranchIds?: string[];
+  commercialCalculationMode?: 'bruto' | 'liquido';
+  commercialIsAgencyMode?: boolean;
+  commercialAgencySharePercent?: number;
   customPermissions?: { [key in Page]?: CrudPermissions };
 }
 

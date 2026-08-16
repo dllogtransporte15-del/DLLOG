@@ -26,6 +26,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
     password: '',
     clientId: undefined,
     branchId: undefined,
+    hasCommercialCommission: defaultProfile === UserProfile.GerenteComercial || defaultProfile === UserProfile.Comercial,
   });
 
   const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string }>(getInitialState());
@@ -54,6 +55,9 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
       const newState = { ...prev, [name]: updatedValue };
       if (name === 'profile' && value !== UserProfile.Cliente) {
         delete newState.clientId;
+      }
+      if (name === 'profile' && (value === UserProfile.GerenteComercial)) {
+        newState.hasCommercialCommission = true;
       }
       return newState;
     });
@@ -131,6 +135,172 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
               {branches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.city}-{b.state})</option>)}
             </select>
             <p className="text-[10px] text-gray-500 mt-1">Usuários sem filial verão dados de todas as filiais (perfil admin/diretor).</p>
+          </div>
+
+          {/* ATIVAR COMISSÃO COMERCIAL (GERENTE COMERCIAL) */}
+          <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl border border-blue-200/80 dark:border-blue-800/80 space-y-2">
+            <div className="flex items-center">
+              <input 
+                type="checkbox" 
+                id="hasCommercialCommission" 
+                name="hasCommercialCommission" 
+                checked={user.hasCommercialCommission || false} 
+                onChange={handleChange} 
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+              />
+              <label htmlFor="hasCommercialCommission" className="ml-2 block text-sm font-bold text-gray-900 dark:text-gray-200 cursor-pointer">
+                Ativar Comissão Comercial (Gerente Comercial)
+              </label>
+            </div>
+            <p className="text-[11px] text-gray-600 dark:text-gray-400 pl-6">
+              Personalize a base de cálculo individual deste comercial (Fixo R$, % Matriz e % Filiais):
+            </p>
+
+            {user.hasCommercialCommission && (
+              <div className="space-y-3 pt-2 border-t border-blue-200/60 dark:border-blue-800/60">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    Tipo de Base de Cálculo do Faturamento:
+                  </label>
+                  <div className="flex items-center gap-4 text-xs font-bold">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="commercialCalculationMode" 
+                        value="bruto" 
+                        checked={(user.commercialCalculationMode || 'bruto') === 'bruto'} 
+                        onChange={() => setUser(prev => ({ ...prev, commercialCalculationMode: 'bruto' }))} 
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>Faturamento BRUTO</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="commercialCalculationMode" 
+                        value="liquido" 
+                        checked={user.commercialCalculationMode === 'liquido'} 
+                        onChange={() => setUser(prev => ({ ...prev, commercialCalculationMode: 'liquido' }))} 
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>Faturamento LÍQUIDO (Margem)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* MODALIDADE AGÊNCIA (REPARTIDA) */}
+                <div className="p-2.5 bg-purple-50/60 dark:bg-purple-950/40 rounded-lg border border-purple-200/70 dark:border-purple-800/70 space-y-2">
+                  <div className="flex items-center">
+                    <input 
+                      type="checkbox" 
+                      id="commercialIsAgencyMode" 
+                      name="commercialIsAgencyMode" 
+                      checked={user.commercialIsAgencyMode || false} 
+                      onChange={(e) => setUser(prev => ({ ...prev, commercialIsAgencyMode: e.target.checked }))} 
+                      className="h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    />
+                    <label htmlFor="commercialIsAgencyMode" className="ml-2 block text-xs font-bold text-purple-950 dark:text-purple-200 cursor-pointer">
+                      Ativar Modalidade Agência (Comissão Repartida entre a Equipe)
+                    </label>
+                  </div>
+                  {user.commercialIsAgencyMode && (
+                    <div className="pl-6 pt-1 space-y-1.5 text-xs">
+                      <p className="text-[11px] text-purple-800 dark:text-purple-300">
+                        A comissão (ex: 30%) será dividida entre os membros desta agência/filial.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
+                          Participação do Usuário na Agência (%):
+                        </label>
+                        <input 
+                          type="number" 
+                          step="1" 
+                          min="1" 
+                          max="100" 
+                          name="commercialAgencySharePercent" 
+                          value={user.commercialAgencySharePercent ?? ''} 
+                          onChange={(e) => setUser(prev => ({ ...prev, commercialAgencySharePercent: parseFloat(e.target.value) || undefined }))} 
+                          placeholder="Ex: 50 (Vazio = igualitária)" 
+                          className="p-1 text-xs w-48 border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300">Fixo (R$)</label>
+                    <input 
+                      type="number" 
+                      step="100" 
+                      name="commercialFixedSalary" 
+                      value={user.commercialFixedSalary ?? 5000} 
+                      onChange={(e) => setUser(prev => ({ ...prev, commercialFixedSalary: parseFloat(e.target.value) || 0 }))} 
+                      className="mt-1 p-1.5 text-xs w-full border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold"
+                      placeholder="5000"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300">% Matriz</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      name="commercialMatrizRate" 
+                      value={user.commercialMatrizRate ?? 0.20} 
+                      onChange={(e) => setUser(prev => ({ ...prev, commercialMatrizRate: parseFloat(e.target.value) || 0 }))} 
+                      className="mt-1 p-1.5 text-xs w-full border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold"
+                      placeholder="0.20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300">% Filiais</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      name="commercialFiliaisRate" 
+                      value={user.commercialFiliaisRate ?? 0.10} 
+                      onChange={(e) => setUser(prev => ({ ...prev, commercialFiliaisRate: parseFloat(e.target.value) || 0 }))} 
+                      className="mt-1 p-1.5 text-xs w-full border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold"
+                      placeholder="0.10"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    Filiais Selecionadas p/ Comissão (% Filiais):
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 max-h-28 overflow-y-auto p-2 bg-white dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-xs">
+                    {branches.filter(b => !b.name.toLowerCase().includes('matriz')).map(b => {
+                      const nonMatrizIds = branches.filter(br => !br.name.toLowerCase().includes('matriz')).map(br => br.id);
+                      const selectedIds = user.commercialSelectedBranchIds || nonMatrizIds;
+                      const isChecked = selectedIds.includes(b.id);
+
+                      return (
+                        <label key={b.id} className="flex items-center gap-2 cursor-pointer font-medium">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              const updated = checked 
+                                ? [...selectedIds, b.id]
+                                : selectedIds.filter(id => id !== b.id);
+                              setUser(prev => ({ ...prev, commercialSelectedBranchIds: updated }));
+                            }}
+                            className="rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span>{b.name} ({b.state})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center">

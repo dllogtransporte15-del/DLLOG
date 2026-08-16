@@ -1392,12 +1392,35 @@ const App: React.FC = () => {
         nextStatus = ShipmentStatus.Cancelado;
     } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
         nextStatus = ShipmentStatus.AguardandoDescarga;
+    } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
+        const advPct = advancePercentage !== undefined ? advancePercentage : originalShipment.advancePercentage;
+        const advVal = advanceValue !== undefined ? advanceValue : originalShipment.advanceValue;
+        const is0PercentAdvance = advPct === 0 || advVal === 0;
+
+        if (is0PercentAdvance) {
+            const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
+            if (relatedCargo?.requiresScheduling) {
+                nextStatus = ShipmentStatus.AguardandoAgendamento;
+            } else {
+                nextStatus = ShipmentStatus.AguardandoDescarga;
+            }
+        } else {
+            nextStatus = ShipmentStatus.AguardandoAdiantamento;
+        }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
         const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
         if (relatedCargo?.requiresScheduling) {
             nextStatus = ShipmentStatus.AguardandoAgendamento;
         } else {
             nextStatus = ShipmentStatus.AguardandoDescarga;
+        }
+    } else if (originalShipment.status === ShipmentStatus.AguardandoDescarga) {
+        const is100PercentAdvance = (originalShipment.advancePercentage && originalShipment.advancePercentage >= 100) || 
+                                     (originalShipment.advanceValue && originalShipment.driverFreightValue && originalShipment.advanceValue >= originalShipment.driverFreightValue);
+        if (is100PercentAdvance) {
+            nextStatus = ShipmentStatus.Finalizado;
+        } else {
+            nextStatus = ShipmentStatus.AguardandoPagamentoSaldo;
         }
     } else {
         nextStatus = nextStatusMap[originalShipment.status];
@@ -1654,10 +1677,14 @@ const App: React.FC = () => {
         const commentMsg = `Chamado criado automaticamente após o envio do comprovante de descarga pelo motorista ${currentUser.name}.`;
         const assignedToId = originalShipment.embarcadorId || '';
 
+        const is100PercentAdvance = (originalShipment.advancePercentage && originalShipment.advancePercentage >= 100) || 
+                                     (originalShipment.advanceValue && originalShipment.driverFreightValue && originalShipment.advanceValue >= originalShipment.driverFreightValue);
+        const targetStatusText = is100PercentAdvance ? '"Finalizado"' : '"Ag. Saldo"';
+
         createdTicket = {
             id: newTicketId,
             title: `Confirmação de Descarga - Embarque ${shipmentId}`,
-            description: `O motorista ${currentUser.name} anexou o Comprovante de Descarga para o embarque ${shipmentId}.\nPor favor, confirme o peso descarregado (Informado pelo motorista: ${unloadedTonnage ? unloadedTonnage + ' Ton' : 'Não informado'}) e altere o status do embarque para "Ag. Saldo".`,
+            description: `O motorista ${currentUser.name} anexou o Comprovante de Descarga para o embarque ${shipmentId}.\nPor favor, confirme o peso descarregado (Informado pelo motorista: ${unloadedTonnage ? unloadedTonnage + ' Ton' : 'Não informado'}) e altere o status do embarque para ${targetStatusText}.`,
             status: TicketStatus.Aberto,
             priority: TicketPriority.Alta,
             createdById: currentUser.id,
@@ -2373,7 +2400,13 @@ const App: React.FC = () => {
       setUsers(prev => [saved, ...prev]);
       setNextIds((prev: any) => ({ ...prev, user: prev.user + 1 }));
     }
-    try { await upsertUser(saved); } catch(err) { console.error('Erro ao salvar usuário:', err); }
+    try { 
+      await upsertUser(saved); 
+      showToast('Configurações do usuário salvas com sucesso no banco de dados!', 'success');
+    } catch(err) { 
+      console.error('Erro ao salvar usuário no Supabase:', err); 
+      showToast('Erro ao salvar usuário no banco de dados.', 'error');
+    }
   };
   
   const handleDeleteUser = async (userId: string) => {
@@ -2611,7 +2644,7 @@ const App: React.FC = () => {
         <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} />} />
         <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
         <Route path="/financial" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
-        <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} />} />
+        <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} />} />
         <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} />} />
         <Route path="/appearance" element={<AppearancePage currentLogo={companyLogo} onSaveLogo={handleSaveLogo} currentTheme={themeImage} onSaveTheme={handleSaveThemeImage} />} />
         <Route path="/system-monitor" element={<SystemMonitorPage currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} />} />
@@ -2697,6 +2730,10 @@ const App: React.FC = () => {
         companyLogo={companyLogo}
         onOpenTickets={() => setIsTicketModalOpen(true)}
         tickets={tickets}
+        shipments={shipments}
+        freightOffers={freightOffers}
+        cargos={cargos}
+        drivers={drivers}
       />
       <main className="flex-1 overflow-y-auto" style={{ zoom: 0.8 }}>
         <div className={isOperationalPage ? "px-6 py-8" : "container mx-auto px-6 py-8"}>

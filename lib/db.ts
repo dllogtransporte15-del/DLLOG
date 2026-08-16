@@ -524,37 +524,66 @@ const fromShipment = (s: Shipment) => ({
   vehicle_body_type: s.vehicleBodyType,
 });
 
-export const toUser = (row: any): User => ({
-  id: row.id,
-  name: row.name,
-  email: row.email,
-  profile: row.profile,
-  active: row.active,
-  phone: row.phone,
-  password: row.password,
-  clientId: row.client_id,
-  requirePasswordChange: row.require_password_change,
-  authId: row.auth_id,
-  passwordUpdatedAt: row.password_updated_at,
-  branchId: row.branch_id,
-  customPermissions: row.permissions,
-});
+export const toUser = (row: any): User => {
+  const perms = typeof row.permissions === 'object' && row.permissions ? row.permissions : {};
 
-export const fromUser = (u: User | Omit<User, 'id'>) => ({
-  id: (u as User).id,
-  name: u.name,
-  email: u.email,
-  profile: u.profile,
-  active: u.active,
-  phone: u.phone,
-  password: u.password,
-  client_id: u.clientId,
-  require_password_change: u.requirePasswordChange,
-  auth_id: u.authId,
-  password_updated_at: u.passwordUpdatedAt,
-  branch_id: u.branchId || null,
-  permissions: (u as User).customPermissions,
-});
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    profile: row.profile,
+    active: row.active,
+    phone: row.phone,
+    password: row.password,
+    clientId: row.client_id,
+    requirePasswordChange: row.require_password_change,
+    authId: row.auth_id,
+    passwordUpdatedAt: row.password_updated_at,
+    branchId: row.branch_id,
+    customPermissions: row.permissions,
+    hasCommercialCommission: perms.hasCommercialCommission ?? row.has_commercial_commission ?? (row.profile === 'Gerente Comercial'),
+    commercialFixedSalary: perms.commercialFixedSalary ?? row.commercial_fixed_salary ?? undefined,
+    commercialMatrizRate: perms.commercialMatrizRate ?? row.commercial_matriz_rate ?? undefined,
+    commercialFiliaisRate: perms.commercialFiliaisRate ?? row.commercial_filiais_rate ?? undefined,
+    commercialSelectedBranchIds: perms.commercialSelectedBranchIds ?? row.commercial_selected_branch_ids ?? undefined,
+    commercialCalculationMode: perms.commercialCalculationMode ?? row.commercial_calculation_mode ?? 'bruto',
+    commercialIsAgencyMode: perms.commercialIsAgencyMode ?? false,
+    commercialAgencySharePercent: perms.commercialAgencySharePercent ?? undefined,
+  };
+};
+
+export const fromUser = (u: User | Omit<User, 'id'>) => {
+  const currentPerms = typeof (u as any).customPermissions === 'object' && (u as any).customPermissions ? (u as any).customPermissions : {};
+  const hasComm = u.hasCommercialCommission ?? false;
+
+  const permissionsPayload = {
+    ...currentPerms,
+    hasCommercialCommission: hasComm,
+    commercialFixedSalary: u.commercialFixedSalary,
+    commercialMatrizRate: u.commercialMatrizRate,
+    commercialFiliaisRate: u.commercialFiliaisRate,
+    commercialSelectedBranchIds: u.commercialSelectedBranchIds,
+    commercialCalculationMode: u.commercialCalculationMode || 'bruto',
+    commercialIsAgencyMode: u.commercialIsAgencyMode ?? false,
+    commercialAgencySharePercent: u.commercialAgencySharePercent,
+  };
+
+  return {
+    id: (u as User).id,
+    name: u.name,
+    email: u.email,
+    profile: u.profile,
+    active: u.active,
+    phone: u.phone,
+    password: u.password,
+    client_id: u.clientId,
+    require_password_change: u.requirePasswordChange,
+    auth_id: u.authId,
+    password_updated_at: u.passwordUpdatedAt,
+    branch_id: u.branchId || null,
+    permissions: permissionsPayload,
+  };
+};
 
 const toTicket = (row: any): Ticket => {
   let cleanDesc = row.description || '';

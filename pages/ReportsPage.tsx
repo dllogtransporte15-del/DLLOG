@@ -29,11 +29,12 @@ interface ReportsPageProps {
   branches: Branch[];
   stays?: StayRecord[];
   companyLogo?: string | null;
+  onSaveUser?: (userData: User | Omit<User, 'id'>) => void;
 }
 
 type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas';
 
-const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], companyLogo }) => {
+const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], companyLogo, onSaveUser }) => {
   const [activeReport, setActiveReport] = useState<ActiveReport>('comercial');
   const [loadingStays, setLoadingStays] = useState(false);
   
@@ -217,7 +218,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const renderReport = () => {
     switch(activeReport) {
       case 'comercial':
-        return <SupervisorReport shipments={filteredShipments} cargos={cargos} users={users} stays={stays} />;
+        return <SupervisorReport shipments={filteredShipments} cargos={cargos} users={users} branches={branches} stays={stays} onSaveUser={onSaveUser as any} currentUser={currentUser} />;
       case 'embarcadores':
         return <ShipperReport shipments={filteredShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} companyLogo={companyLogo} />;
       case 'clientes':
@@ -248,7 +249,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const isEmbarcador = currentUser?.profile === UserProfile.Embarcador;
 
   const navItems = [
-      ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Supervisão', icon: BriefcaseIcon }] : []),
+      ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Comercial', icon: BriefcaseIcon }] : []),
       { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon },
       ...(!isEmbarcador ? [
         { id: 'clientes', label: 'Clientes', icon: UsersIcon },

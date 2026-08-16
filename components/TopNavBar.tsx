@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Page, User, ProfilePermissions, Ticket } from '../types';
+import type { Page, User, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver } from '../types';
 import { UserProfile, TicketStatus } from '../types';
 import { can } from '../auth';
+import NotificationBell from './NotificationBell';
 import { DashboardIcon } from './icons/DashboardIcon';
 import { ClientsIcon } from './icons/ClientsIcon';
 import { TruckIcon } from './icons/TruckIcon';
@@ -17,7 +18,6 @@ import { LogOutIcon } from './icons/LogOutIcon';
 import { MapIcon } from './icons/MapIcon';
 import { ImageIcon } from './icons/ImageIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
-import { BellIcon } from './icons/BellIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ToolIcon } from './icons/ToolIcon';
@@ -35,6 +35,10 @@ interface TopNavBarProps {
   companyLogo: string | null;
   onOpenTickets: () => void;
   tickets: Ticket[];
+  shipments?: Shipment[];
+  freightOffers?: FreightOffer[];
+  cargos?: Cargo[];
+  drivers?: Driver[];
 }
 
 interface NavItem {
@@ -97,7 +101,7 @@ const navItems: NavItem[] = [
   }
 ];
 
-const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setCurrentPage, profilePermissions, companyLogo, onOpenTickets, tickets }) => {
+const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setCurrentPage, profilePermissions, companyLogo, onOpenTickets, tickets, shipments, freightOffers, cargos, drivers }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -261,20 +265,16 @@ const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setC
                 <DriverLocationTracker user={user} />
              )}
              
-             <div className="relative">
-                <button
-                onClick={onOpenTickets}
-                className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
-                aria-label="Abrir chamados"
-                >
-                    <BellIcon className="w-6 h-6" />
-                </button>
-                {myOpenTicketsCount > 0 && (
-                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-100 transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">
-                    {myOpenTicketsCount}
-                </span>
-                )}
-            </div>
+             <NotificationBell
+               user={user}
+               shipments={shipments}
+               freightOffers={freightOffers}
+               cargos={cargos}
+               drivers={drivers}
+               tickets={tickets}
+               onOpenTickets={onOpenTickets}
+               onNavigateTo={(page) => setCurrentPage(page)}
+             />
 
             <div className="relative" ref={openDropdown === 'user' ? dropdownRef : null}>
               <button onClick={() => handleDropdownToggle('user')} className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
