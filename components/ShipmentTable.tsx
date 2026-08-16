@@ -68,9 +68,24 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     driverName: string;
     lat: number;
     lng: number;
+    timestamp?: string;
+    isOffline?: boolean;
   } | null>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const formatLocationTimestamp = useCallback((ts?: string): string => {
+    if (!ts) return 'Data/hora não registrada';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return ts;
+    const dayStr = String(d.getDate()).padStart(2, '0');
+    const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+    const yearStr = d.getFullYear();
+    const hoursStr = String(d.getHours()).padStart(2, '0');
+    const minStr = String(d.getMinutes()).padStart(2, '0');
+    const secStr = String(d.getSeconds()).padStart(2, '0');
+    return `${dayStr}/${monthStr}/${yearStr} às ${hoursStr}:${minStr}:${secStr}`;
+  }, []);
 
   const realDriverLocations = useDriverLocations();
   const driverLocations = useMemo(() => {
@@ -503,8 +518,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             return matchName || matchId;
                           }) as any;
 
-                          if (locationInfo) {
-                              if (locationInfo.isAppActive && locationInfo.lat === 0 && locationInfo.lng === 0) {
+                          if (locationInfo && locationInfo.isAppActive) {
+                              if (locationInfo.lat === 0 && locationInfo.lng === 0) {
                                 return (
                                   <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-blue-500 cursor-help">
                                       <Smartphone className="w-4 h-4 animate-pulse" />
@@ -517,7 +532,9 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                       onClick={() => setActiveDriverMap({
                                         driverName: shipment.driverName,
                                         lat: locationInfo.lat,
-                                        lng: locationInfo.lng
+                                        lng: locationInfo.lng,
+                                        timestamp: locationInfo.timestamp,
+                                        isOffline: false,
                                       })}
                                       title="App conectado. Ver localização em tempo real."
                                       className="text-blue-500 hover:text-blue-600 transition-colors focus:outline-none"
@@ -527,13 +544,42 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                               );
                           }
 
-                          if (driver?.has_app) {
+                          if (driver?.has_app || (locationInfo && (locationInfo.lat !== 0 || locationInfo.lng !== 0))) {
+                              const hasCoords = locationInfo && typeof locationInfo.lat === 'number' && typeof locationInfo.lng === 'number' && (locationInfo.lat !== 0 || locationInfo.lng !== 0);
+                              const formattedTime = hasCoords ? formatLocationTimestamp(locationInfo.timestamp) : null;
+                              const titleText = hasCoords 
+                                ? `Motorista possui o aplicativo (Localização inativa - Última visualização: ${formattedTime})`
+                                : "Motorista possui o aplicativo (Localização inativa)";
+
+                              const handleOfflineClick = () => {
+                                if (hasCoords) {
+                                  alert(
+                                    `Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n` +
+                                    `Última visualização das coordenadas:\n` +
+                                    `• Data/Hora: ${formattedTime}\n` +
+                                    `• Coordenadas: ${locationInfo.lat.toFixed(6)}, ${locationInfo.lng.toFixed(6)}`
+                                  );
+                                  setActiveDriverMap({
+                                    driverName: shipment.driverName,
+                                    lat: locationInfo.lat,
+                                    lng: locationInfo.lng,
+                                    timestamp: locationInfo.timestamp,
+                                    isOffline: true,
+                                  });
+                                } else {
+                                  alert(
+                                    'Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n' +
+                                    'Nenhuma coordenada foi registrada anteriormente para este motorista.'
+                                  );
+                                }
+                              };
+
                               return (
                                 <button
                                     type="button"
-                                    onClick={() => alert('Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.')}
-                                    title="Motorista possui o aplicativo (Localização inativa)"
-                                    className="text-gray-400 hover:text-blue-500 transition-colors focus:outline-none"
+                                    onClick={handleOfflineClick}
+                                    title={titleText}
+                                    className="text-gray-400 hover:text-amber-600 transition-colors focus:outline-none"
                                 >
                                     <Smartphone className="w-4 h-4" />
                                 </button>
@@ -838,8 +884,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                               return matchName || matchId;
                             }) as any;
 
-                            if (locationInfo) {
-                                if (locationInfo.isAppActive && locationInfo.lat === 0 && locationInfo.lng === 0) {
+                            if (locationInfo && locationInfo.isAppActive) {
+                                if (locationInfo.lat === 0 && locationInfo.lng === 0) {
                                   return (
                                     <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-blue-500 cursor-help">
                                         <Smartphone className="w-4 h-4 animate-pulse" />
@@ -852,7 +898,9 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                         onClick={() => setActiveDriverMap({
                                           driverName: shipment.driverName,
                                           lat: locationInfo.lat,
-                                          lng: locationInfo.lng
+                                          lng: locationInfo.lng,
+                                          timestamp: locationInfo.timestamp,
+                                          isOffline: false,
                                         })}
                                         title="App conectado. Ver localização em tempo real."
                                         className="text-blue-500 hover:text-blue-600 transition-colors focus:outline-none"
@@ -862,13 +910,42 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                 );
                             }
 
-                            if (driver?.has_app) {
+                            if (driver?.has_app || (locationInfo && (locationInfo.lat !== 0 || locationInfo.lng !== 0))) {
+                                const hasCoords = locationInfo && typeof locationInfo.lat === 'number' && typeof locationInfo.lng === 'number' && (locationInfo.lat !== 0 || locationInfo.lng !== 0);
+                                const formattedTime = hasCoords ? formatLocationTimestamp(locationInfo.timestamp) : null;
+                                const titleText = hasCoords 
+                                  ? `Motorista possui o aplicativo (Localização inativa - Última visualização: ${formattedTime})`
+                                  : "Motorista possui o aplicativo (Localização inativa)";
+
+                                const handleOfflineClick = () => {
+                                  if (hasCoords) {
+                                    alert(
+                                      `Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n` +
+                                      `Última visualização das coordenadas:\n` +
+                                      `• Data/Hora: ${formattedTime}\n` +
+                                      `• Coordenadas: ${locationInfo.lat.toFixed(6)}, ${locationInfo.lng.toFixed(6)}`
+                                    );
+                                    setActiveDriverMap({
+                                      driverName: shipment.driverName,
+                                      lat: locationInfo.lat,
+                                      lng: locationInfo.lng,
+                                      timestamp: locationInfo.timestamp,
+                                      isOffline: true,
+                                    });
+                                  } else {
+                                    alert(
+                                      'Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n' +
+                                      'Nenhuma coordenada foi registrada anteriormente para este motorista.'
+                                    );
+                                  }
+                                };
+
                                 return (
                                   <button
                                       type="button"
-                                      onClick={() => alert('Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.')}
-                                      title="Motorista possui o aplicativo (Localização inativa)"
-                                      className="text-gray-400 hover:text-blue-500 transition-colors focus:outline-none"
+                                      onClick={handleOfflineClick}
+                                      title={titleText}
+                                      className="text-gray-400 hover:text-amber-600 transition-colors focus:outline-none"
                                   >
                                       <Smartphone className="w-4 h-4" />
                                   </button>
@@ -1338,9 +1415,18 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
             Localização do Motorista: {activeDriverMap.driverName}
           </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Coordenadas: {activeDriverMap.lat.toFixed(6)}, {activeDriverMap.lng.toFixed(6)}
-          </p>
+          {activeDriverMap.isOffline ? (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg text-amber-800 dark:text-amber-300 text-xs">
+              <p className="font-semibold text-amber-900 dark:text-amber-200 mb-0.5">⚠️ Aplicativo off-line / transmissão inativa no momento</p>
+              <p>Última visualização das coordenadas: <span className="font-medium">{formatLocationTimestamp(activeDriverMap.timestamp)}</span></p>
+              <p className="font-mono mt-0.5 text-[11px]">Coordenadas: {activeDriverMap.lat.toFixed(6)}, {activeDriverMap.lng.toFixed(6)}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              Coordenadas (ao vivo): {activeDriverMap.lat.toFixed(6)}, {activeDriverMap.lng.toFixed(6)}
+              {activeDriverMap.timestamp && ` • Atualizado em ${formatLocationTimestamp(activeDriverMap.timestamp)}`}
+            </p>
+          )}
           <div className="w-full h-[400px] rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100">
             <iframe
               title={`Mapa contendo localização de ${activeDriverMap.driverName}`}
