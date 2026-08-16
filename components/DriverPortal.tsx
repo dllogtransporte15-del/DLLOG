@@ -54,6 +54,84 @@ const getDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): 
   return Math.round(R * c * 10) / 10;
 };
 
+// Filter driver documents to ONLY allowed categories:
+// - Nota fiscal
+// - Cte
+// - Mdfe
+// - Carta Frete
+// - Agendamento (Se houver)
+interface DriverDocItem {
+  key: string;
+  label: string;
+  url: string;
+}
+
+const getDriverVisibleDocuments = (documents?: Record<string, any>): DriverDocItem[] => {
+  if (!documents) return [];
+
+  const allowedCategories: { label: string; matchers: string[] }[] = [
+    { label: 'Nota Fiscal', matchers: ['nota fiscal', 'nf-e', 'nfe'] },
+    { label: 'CT-e', matchers: ['ct-e', 'cte', 'documentos de viagem'] },
+    { label: 'MDF-e', matchers: ['mdf-e', 'mdfe'] },
+    { label: 'Carta Frete', matchers: ['carta frete', 'carta_frete', 'contrato de frete'] },
+    { label: 'Agendamento', matchers: ['agendamento', 'comprovante de agendamento'] },
+  ];
+
+  const result: DriverDocItem[] = [];
+
+  Object.entries(documents).forEach(([key, val]) => {
+    if (!val) return;
+    const keyLower = key.toLowerCase().trim();
+
+    // Ignore internal metadata fields
+    if (
+      keyLower.includes('number') ||
+      keyLower.includes('date') ||
+      keyLower.includes('cost') ||
+      keyLower.includes('type') ||
+      keyLower.includes('code') ||
+      keyLower.includes('key') ||
+      keyLower.includes('method') ||
+      keyLower.includes('percentage') ||
+      keyLower.includes('value')
+    ) {
+      return;
+    }
+
+    const category = allowedCategories.find(cat =>
+      cat.matchers.some(m => keyLower === m || keyLower.includes(m))
+    );
+
+    if (!category) return;
+
+    let url: string | null = null;
+    if (typeof val === 'string') {
+      if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:') || val.startsWith('/')) {
+        url = val;
+      }
+    } else if (Array.isArray(val) && val.length > 0) {
+      const first = val[0];
+      if (typeof first === 'string' && (first.startsWith('http://') || first.startsWith('https://') || first.startsWith('data:') || first.startsWith('/'))) {
+        url = first;
+      } else if (first && typeof first === 'object' && first.url) {
+        url = first.url;
+      }
+    } else if (typeof val === 'object' && val.url) {
+      url = val.url;
+    }
+
+    if (url) {
+      result.push({
+        key,
+        label: category.label,
+        url,
+      });
+    }
+  });
+
+  return result;
+};
+
 const DriverPortal: React.FC<DriverPortalProps> = ({
   currentUser,
   onLogout,
@@ -530,6 +608,9 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
               ) : (
                 activeShipments.map(s => {
                   const cargo = cargos.find(c => c.id === s.cargoId);
+                  const isExpanded = !!expandedShipments[s.id];
+                  const visibleDocs = getDriverVisibleDocuments(s.documents);
+
                   return (
                     <div key={s.id} className="bg-[#121A2D] rounded-2xl p-4 border border-cyan-900/50 shadow-lg space-y-3">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
@@ -549,6 +630,42 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
                           <span>Tonelagem: <b className="text-slate-200">{s.shipmentTonnage} ton</b></span>
                           <span>Frete/ton: <b className="text-cyan-400">R$ {s.driverFreightValue.toFixed(2)}</b></span>
                         </div>
+                      </div>
+
+                      {/* ACCORDION DROPDOWN FOR DOCUMENTS */}
+                      <div className="pt-1 border-t border-slate-800/60">
+                        <button
+                          onClick={() => toggleExpandShipment(s.id)}
+                          className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-300 font-semibold text-xs border border-slate-700/60 transition-all"
+                        >
+                          <span className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-cyan-400" />
+                            Documentos do Embarque ({visibleDocs.length})
+                          </span>
+                          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {isExpanded && (
+                          <div className="mt-2 p-3 rounded-xl bg-[#0E1526] border border-slate-800 space-y-2 text-xs">
+                            {visibleDocs.length > 0 ? (
+                              visibleDocs.map(doc => (
+                                <div key={doc.key} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/40">
+                                  <span className="text-slate-200 font-bold">{doc.label}</span>
+                                  <a
+                                    href={doc.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-cyan-400 hover:text-cyan-300 hover:underline font-bold text-xs flex items-center gap-1"
+                                  >
+                                    Ver Documento
+                                  </a>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-slate-500 italic text-center py-1">Nenhum documento disponível no momento.</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -573,6 +690,7 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
                   const destination = cargo?.destination || 'Destino';
                   const totalValue = s.shipmentTonnage * s.driverFreightValue;
                   const isExpanded = !!expandedShipments[s.id];
+                  const visibleDocs = getDriverVisibleDocuments(s.documents);
 
                   return (
                     <div key={s.id} className="bg-[#121A2D] rounded-2xl p-4 border border-slate-800/80 space-y-3 shadow-md">
@@ -616,36 +734,29 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
                         >
                           <span className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-cyan-400" />
-                            Documentos do Embarque
+                            Documentos do Embarque ({visibleDocs.length})
                           </span>
                           <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                         </button>
 
                         {isExpanded && (
                           <div className="mt-2 p-3 rounded-xl bg-[#0E1526] border border-slate-800 space-y-2 text-xs">
-                            {s.documents && Object.keys(s.documents).length > 0 ? (
-                              Object.entries(s.documents).map(([docKey, docVal]) => {
-                                const url = typeof docVal === 'string' ? docVal : (Array.isArray(docVal) ? docVal[0] : null);
-                                return (
-                                  <div key={docKey} className="flex items-center justify-between p-2 rounded-lg bg-slate-800/40">
-                                    <span className="text-slate-300 font-medium">{docKey}</span>
-                                    {url ? (
-                                      <a
-                                        href={url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-cyan-400 hover:underline font-bold text-[11px]"
-                                      >
-                                        Ver Documento
-                                      </a>
-                                    ) : (
-                                      <span className="text-slate-500 italic">Anexado</span>
-                                    )}
-                                  </div>
-                                );
-                              })
+                            {visibleDocs.length > 0 ? (
+                              visibleDocs.map(doc => (
+                                <div key={doc.key} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/40">
+                                  <span className="text-slate-200 font-bold">{doc.label}</span>
+                                  <a
+                                    href={doc.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-cyan-400 hover:text-cyan-300 hover:underline font-bold text-xs flex items-center gap-1"
+                                  >
+                                    Ver Documento
+                                  </a>
+                                </div>
+                              ))
                             ) : (
-                              <p className="text-slate-500 italic text-center py-1">Nenhum documento anexado.</p>
+                              <p className="text-slate-500 italic text-center py-1">Nenhum documento disponível no momento.</p>
                             )}
                           </div>
                         )}
