@@ -493,8 +493,15 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <div className="flex items-center gap-1.5">
                       <div className="font-medium dark:text-gray-200">{shipment.driverName}</div>
                       {(() => {
-                          const driver = drivers?.find(d => d.name === shipment.driverName);
-                          const locationInfo = Array.from(driverLocations.values()).find(loc => loc.driverName === shipment.driverName) as any;
+                          const driver = drivers?.find(d => d.name === shipment.driverName || (d.cpf && d.cpf === shipment.driverCpf));
+                          const locationInfo = Array.from(driverLocations.values()).find((loc: any) => {
+                            if (!loc) return false;
+                            const locName = (loc.driverName || '').trim().toLowerCase();
+                            const shipName = (shipment.driverName || '').trim().toLowerCase();
+                            const matchName = locName && shipName && (locName.includes(shipName) || shipName.includes(locName));
+                            const matchId = driver && (loc.driverId === driver.id || loc.driverId === driver.cpf);
+                            return matchName || matchId;
+                          }) as any;
 
                           if (locationInfo) {
                               if (locationInfo.isAppActive && locationInfo.lat === 0 && locationInfo.lng === 0) {
@@ -821,8 +828,15 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       <div className="flex items-center gap-1.5">
                         <div className="text-sm text-gray-900 dark:text-white">{shipment.driverName}</div>
                         {(() => {
-                            const driver = drivers?.find(d => d.name === shipment.driverName);
-                            const locationInfo = Array.from(driverLocations.values()).find(loc => loc.driverName === shipment.driverName) as any;
+                            const driver = drivers?.find(d => d.name === shipment.driverName || (d.cpf && d.cpf === shipment.driverCpf));
+                            const locationInfo = Array.from(driverLocations.values()).find((loc: any) => {
+                              if (!loc) return false;
+                              const locName = (loc.driverName || '').trim().toLowerCase();
+                              const shipName = (shipment.driverName || '').trim().toLowerCase();
+                              const matchName = locName && shipName && (locName.includes(shipName) || shipName.includes(locName));
+                              const matchId = driver && (loc.driverId === driver.id || loc.driverId === driver.cpf);
+                              return matchName || matchId;
+                            }) as any;
 
                             if (locationInfo) {
                                 if (locationInfo.isAppActive && locationInfo.lat === 0 && locationInfo.lng === 0) {

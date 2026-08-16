@@ -8,9 +8,9 @@ import PermissionsModal from '../components/PermissionsModal';
 import type { User, ProfilePermissions, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { can } from '../auth';
-import { Building2, Globe, Users } from 'lucide-react';
+import { Building2, Globe, Truck, Users } from 'lucide-react';
 
-export type UserTabType = 'internal' | 'external' | 'all';
+export type UserTabType = 'internal' | 'external_clients' | 'external_drivers' | 'all';
 
 interface UsersPageProps {
   users: User[];
@@ -44,16 +44,20 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
   const canUpdateUser = can('update', currentUser, 'users-register', profilePermissions);
   const canDeleteUser = can('delete', currentUser, 'users-register', profilePermissions);
 
-  const internalCount = useMemo(() => users.filter(u => !isExternalUserProfile(u.profile)).length, [users]);
-  const externalCount = useMemo(() => users.filter(u => isExternalUserProfile(u.profile)).length, [users]);
+  const internalCount = useMemo(() => users.filter(u => u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista).length, [users]);
+  const externalClientsCount = useMemo(() => users.filter(u => u.profile === UserProfile.Cliente).length, [users]);
+  const externalDriversCount = useMemo(() => users.filter(u => u.profile === UserProfile.Motorista).length, [users]);
   const allCount = users.length;
 
   const availableProfiles = useMemo(() => {
     if (activeTab === 'internal') {
-      return Object.values(UserProfile).filter(p => !isExternalUserProfile(p));
+      return Object.values(UserProfile).filter(p => p !== UserProfile.Cliente && p !== UserProfile.Motorista);
     }
-    if (activeTab === 'external') {
-      return Object.values(UserProfile).filter(p => isExternalUserProfile(p));
+    if (activeTab === 'external_clients') {
+      return [UserProfile.Cliente];
+    }
+    if (activeTab === 'external_drivers') {
+      return [UserProfile.Motorista];
     }
     return Object.values(UserProfile);
   }, [activeTab]);
@@ -61,10 +65,11 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
   const handleTabChange = (tab: UserTabType) => {
     setActiveTab(tab);
     if (filters.profile) {
-      const isExt = isExternalUserProfile(filters.profile as UserProfile);
-      if (tab === 'internal' && isExt) {
+      if (tab === 'internal' && isExternalUserProfile(filters.profile as UserProfile)) {
         setFilters(prev => ({ ...prev, profile: '' }));
-      } else if (tab === 'external' && !isExt) {
+      } else if (tab === 'external_clients' && filters.profile !== UserProfile.Cliente) {
+        setFilters(prev => ({ ...prev, profile: '' }));
+      } else if (tab === 'external_drivers' && filters.profile !== UserProfile.Motorista) {
         setFilters(prev => ({ ...prev, profile: '' }));
       }
     }
@@ -74,7 +79,8 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
     return users.filter(user => {
       // Category Tab Filter
       if (activeTab === 'internal' && isExternalUserProfile(user.profile)) return false;
-      if (activeTab === 'external' && !isExternalUserProfile(user.profile)) return false;
+      if (activeTab === 'external_clients' && user.profile !== UserProfile.Cliente) return false;
+      if (activeTab === 'external_drivers' && user.profile !== UserProfile.Motorista) return false;
 
       // Inputs & Dropdown Filters
       const idMatch = !filters.id || (user.id && user.id.toLowerCase().includes(filters.id.toLowerCase()));
@@ -103,7 +109,8 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
     handleCloseUserModal();
   };
 
-  const defaultProfileForNewUser = activeTab === 'external' ? UserProfile.Cliente : UserProfile.Comercial;
+  const defaultProfileForNewUser = activeTab === 'external_drivers' ? UserProfile.Motorista : (activeTab === 'external_clients' ? UserProfile.Cliente : UserProfile.Comercial);
+  const addUserButtonLabel = activeTab === 'external_drivers' ? 'Adicionar Motorista' : (activeTab === 'external_clients' ? 'Adicionar Cliente' : 'Adicionar Usuário');
 
   return (
     <>
@@ -121,13 +128,13 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
                   onClick={handleOpenUserModal}
                   className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary font-medium text-sm transition-colors"
               >
-                  {activeTab === 'external' ? 'Adicionar Cliente' : 'Adicionar Usuário'}
+                  {addUserButtonLabel}
               </button>
           )}
       </Header>
 
-      {/* Tabs: Usuários Internos vs Usuários Externos vs Todos */}
-      <div className="mb-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-lg px-4 shadow-sm">
+      {/* Tabs: Usuários Internos vs Usuários Externos (Clientes) vs Usuários Externos (Motoristas) vs Todos */}
+      <div className="mb-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-lg px-4 shadow-sm overflow-x-auto">
         <nav className="-mb-px flex space-x-4 sm:space-x-8" aria-label="Tabs">
           <button
             onClick={() => handleTabChange('internal')}
@@ -149,9 +156,9 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
           </button>
 
           <button
-            onClick={() => handleTabChange('external')}
+            onClick={() => handleTabChange('external_clients')}
             className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
-              activeTab === 'external'
+              activeTab === 'external_clients'
                 ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400 font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
@@ -159,11 +166,30 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
             <Globe className="w-4 h-4 mr-2" />
             <span>Usuários Externos (Clientes)</span>
             <span className={`ml-2 px-2.5 py-0.5 text-xs rounded-full font-bold transition-colors ${
-              activeTab === 'external'
+              activeTab === 'external_clients'
                 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}>
-              {externalCount}
+              {externalClientsCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange('external_drivers')}
+            className={`whitespace-nowrap flex items-center py-4 px-2 border-b-2 font-medium text-sm transition-all duration-200 ${
+              activeTab === 'external_drivers'
+                ? 'border-primary text-primary dark:border-blue-400 dark:text-blue-400 font-bold'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            <Truck className="w-4 h-4 mr-2" />
+            <span>Usuários Externos (Motoristas)</span>
+            <span className={`ml-2 px-2.5 py-0.5 text-xs rounded-full font-bold transition-colors ${
+              activeTab === 'external_drivers'
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+            }`}>
+              {externalDriversCount}
             </span>
           </button>
 

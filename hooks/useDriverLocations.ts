@@ -20,20 +20,41 @@ export function useDriverLocations() {
         Object.keys(state).forEach((key) => {
           const presences = state[key] as any[];
           if (presences && presences.length > 0) {
-            // Pegar a presença mais recente
             const latest = presences[presences.length - 1];
+            const locObj = latest.location || (typeof latest.lat === 'number' ? latest : null);
 
-            // Só adicionar ao mapa se tiver localização GPS real (lat/lng != 0)
             if (
-              latest.location &&
-              typeof latest.location.lat === 'number' &&
-              typeof latest.location.lng === 'number' &&
-              (latest.location.lat !== 0 || latest.location.lng !== 0)
+              locObj &&
+              typeof locObj.lat === 'number' &&
+              typeof locObj.lng === 'number' &&
+              (locObj.lat !== 0 || locObj.lng !== 0)
             ) {
-              console.log(`[useDriverLocations] Motorista ${key} localizado em:`, latest.location.lat, latest.location.lng);
-              locations.set(key, latest.location as DriverLocation);
+              const locationData: DriverLocation = {
+                driverId: locObj.driverId || latest.driverId || key,
+                driverName: locObj.driverName || latest.driverName || '',
+                lat: locObj.lat,
+                lng: locObj.lng,
+                speed: locObj.speed ?? null,
+                heading: locObj.heading ?? null,
+                timestamp: locObj.timestamp || new Date().toISOString(),
+              };
+              locations.set(key, locationData);
+              if (locationData.driverName) {
+                locations.set(locationData.driverName.trim().toLowerCase(), locationData);
+              }
             } else {
-              console.log(`[useDriverLocations] Motorista ${key} online mas sem GPS ainda.`);
+              const pendingData: any = {
+                driverId: latest.driverId || key,
+                driverName: latest.driverName || '',
+                lat: 0,
+                lng: 0,
+                isAppActive: true,
+                timestamp: new Date().toISOString(),
+              };
+              locations.set(key, pendingData);
+              if (pendingData.driverName) {
+                locations.set(pendingData.driverName.trim().toLowerCase(), pendingData);
+              }
             }
           }
         });
@@ -45,7 +66,6 @@ export function useDriverLocations() {
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         console.log(`[useDriverLocations] Motorista saiu: ${key}`, leftPresences);
-        // Remover do mapa quando o motorista desconectar
         setDriverLocations(prev => {
           const next = new Map(prev);
           next.delete(key);

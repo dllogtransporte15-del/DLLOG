@@ -41,6 +41,7 @@ import RiskManagementPage from './pages/RiskManagementPage';
 import TopNavBar from './components/TopNavBar';
 import TicketModal from './components/TicketModal';
 import PasswordChangeModal from './components/PasswordChangeModal';
+import DriverPortal from './components/DriverPortal';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
@@ -2644,6 +2645,39 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return <LoginPage onLogin={handleLogin} users={users} companyLogo={companyLogo} profilePermissions={profilePermissions} />;
+  }
+
+  if (currentUser.profile === UserProfile.Motorista) {
+    return (
+      <>
+        <DriverPortal
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          cargos={activeLoads}
+          shipments={visibleShipments}
+          products={products}
+          drivers={drivers}
+          vehicles={vehicles}
+          onRequestLoadOrder={handleRequestLoadOrder}
+          onUpdateShipmentAttachment={handleUpdateShipmentAttachment}
+          companyLogo={companyLogo}
+        />
+        <SelectEmbarcadorModal
+          isOpen={isSelectEmbarcadorModalOpen}
+          onClose={() => setIsSelectEmbarcadorModalOpen(false)}
+          onConfirm={handleConfirmRequestOrder}
+          users={users}
+          cargo={selectedCargoForRequest}
+        />
+        {currentUser?.requirePasswordChange && (
+          <PasswordChangeModal 
+            user={currentUser} 
+            onPasswordChange={handlePasswordChange} 
+            onCancel={handleLogout}
+          />
+        )}
+      </>
+    );
   }
 
   const operationalPages: Page[] = ['loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'risk-management'];
