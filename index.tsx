@@ -13,16 +13,20 @@ import { ToastContainer } from './components/Toast';
 import { ReloadPrompt } from './components/ReloadPrompt';
 import { BrowserRouter } from 'react-router-dom';
 
+import ErrorBoundary from './components/ErrorBoundary';
+
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
-      <ToastProvider>
-        <App />
-        <ToastContainer />
-        <ReloadPrompt />
-      </ToastProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ToastProvider>
+          <App />
+          <ToastContainer />
+          <ReloadPrompt />
+        </ToastProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>
 );
 

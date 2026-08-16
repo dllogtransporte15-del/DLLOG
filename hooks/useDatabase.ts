@@ -79,12 +79,22 @@ export function useDatabase(currentUser: User | null) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   
-  const [companyLogo, setCompanyLogo] = useState<string | null>(() => localStorage.getItem('transcunha_companyLogo') || localStorage.getItem('trancunha_companyLogo'));
-  const [themeImage, setThemeImage] = useState<string | null>(() => localStorage.getItem('transcunha_themeImage') || localStorage.getItem('trancunha_themeImage'));
+  const [companyLogo, setCompanyLogo] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('transcunha_companyLogo') || localStorage.getItem('trancunha_companyLogo');
+    } catch { return null; }
+  });
+  const [themeImage, setThemeImage] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('transcunha_themeImage') || localStorage.getItem('trancunha_themeImage');
+    } catch { return null; }
+  });
 
   const [nextIds, setNextIds] = useState(() => {
-    const saved = localStorage.getItem('transcunha_nextIds') || localStorage.getItem('trancunha_nextIds');
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('transcunha_nextIds') || localStorage.getItem('trancunha_nextIds');
+      if (saved) return JSON.parse(saved);
+    } catch {}
     return { client: 100, owner: 100, driver: 100, vehicle: 100, product: 100, shipment: 100, cargo: 100, user: 100, ticket: 1, branch: 10, freightOffer: 1, history: 1000 };
   });
 

@@ -362,27 +362,36 @@ const App: React.FC = () => {
   }, [freightOffers, cargos, currentUser, playNotificationSound]);
 
   useEffect(() => {
-    if (themeImage) {
-      localStorage.setItem('trancunha_themeImage', themeImage);
-      localStorage.setItem('transcunha_themeImage', themeImage);
-      document.body.style.backgroundImage = `url(${themeImage})`;
-      document.body.style.backgroundSize = 'cover';
-      document.body.style.backgroundPosition = 'center';
-      document.body.style.backgroundAttachment = 'fixed';
-    } else {
-      localStorage.removeItem('trancunha_themeImage');
-      localStorage.removeItem('transcunha_themeImage');
-      document.body.style.backgroundImage = '';
+    try {
+      if (themeImage) {
+        localStorage.setItem('transcunha_themeImage', themeImage);
+        document.body.style.backgroundImage = `url("${themeImage.replace(/"/g, '\\"')}")`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundAttachment = 'fixed';
+      } else {
+        localStorage.removeItem('trancunha_themeImage');
+        localStorage.removeItem('transcunha_themeImage');
+        document.body.style.backgroundImage = '';
+      }
+    } catch (e) {
+      console.warn('[App] Não foi possível salvar tema no localStorage:', e);
+      if (themeImage) {
+        document.body.style.backgroundImage = `url("${themeImage.replace(/"/g, '\\"')}")`;
+      }
     }
   }, [themeImage]);
 
   useEffect(() => {
-    if (companyLogo) {
-      localStorage.setItem('trancunha_companyLogo', companyLogo);
-      localStorage.setItem('transcunha_companyLogo', companyLogo);
-    } else {
-      localStorage.removeItem('trancunha_companyLogo');
-      localStorage.removeItem('transcunha_companyLogo');
+    try {
+      if (companyLogo) {
+        localStorage.setItem('transcunha_companyLogo', companyLogo);
+      } else {
+        localStorage.removeItem('trancunha_companyLogo');
+        localStorage.removeItem('transcunha_companyLogo');
+      }
+    } catch (e) {
+      console.warn('[App] Não foi possível salvar logo no localStorage:', e);
     }
   }, [companyLogo]);
 
@@ -2719,7 +2728,7 @@ const App: React.FC = () => {
   return (
     <div 
       className="flex flex-col h-screen bg-light-bg dark:bg-dark-bg text-gray-800 dark:text-gray-200 portal-theme-bg"
-      style={{ '--theme-bg': themeImage ? `url(${themeImage})` : 'none' } as React.CSSProperties}
+      style={{ '--theme-bg': themeImage ? `url("${themeImage.replace(/"/g, '\\"')}")` : 'none' } as React.CSSProperties}
     >
       <TopNavBar
         user={currentUser}
