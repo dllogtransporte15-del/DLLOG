@@ -43,6 +43,7 @@ import TopNavBar from './components/TopNavBar';
 import TicketModal from './components/TicketModal';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import DriverPortal from './components/DriverPortal';
+import NewShipmentModal from './components/NewShipmentModal';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
@@ -104,6 +105,9 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   cteEmissionDate: 'Data/Hora de Emissão do CT-e',
   nfeNumber: 'Número da NF-e',
   mdfeNumber: 'Número do MDF-e',
+  riskQueryType: 'Tipo de Consulta de Risco (Modalidade)',
+  riskQueryCost: 'Custo da Consulta de Risco',
+  riskReleaseCode: 'Código de Liberação da Seguradora',
 };
 
 interface NewShipmentRequestData extends Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'> {
@@ -133,6 +137,7 @@ const App: React.FC = () => {
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
   const [offerToConvert, setOfferToConvert] = useState<FreightOffer | null>(null);
+  const [offerForNewShipment, setOfferForNewShipment] = useState<FreightOffer | null>(null);
   const [isSelectEmbarcadorModalOpen, setIsSelectEmbarcadorModalOpen] = useState(false);
   const [selectedCargoForRequest, setSelectedCargoForRequest] = useState<Cargo | null>(null);
   
@@ -993,6 +998,33 @@ const App: React.FC = () => {
     setSelectedCargoForRequest(null);
   };
 
+  const handleAcceptOrderRequestFromNotification = async (offer: FreightOffer) => {
+    if (currentUser) {
+      const history = [...(offer.history || []), {
+        id: `log_${Date.now()}_sys`,
+        userId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        description: `Solicitação de ordem de carregamento aceita por ${currentUser.name}. Abrindo formulário de embarque...`
+      }];
+      await handleSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+      showToast('Solicitação aceita! Preenchendo dados do embarque...', 'success');
+    }
+    setOfferForNewShipment(offer);
+  };
+
+  const handleRefuseOrderRequestFromNotification = async (offer: FreightOffer, reason?: string) => {
+    if (currentUser) {
+      const history = [...(offer.history || []), {
+        id: `log_${Date.now()}_sys`,
+        userId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        description: `Solicitação de ordem de carregamento recusada por ${currentUser.name}.${reason ? ` Motivo: ${reason}` : ''}`
+      }];
+      await handleSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+      showToast('Solicitação de ordem de carregamento recusada com sucesso.', 'success');
+    }
+  };
+
   const handleDeleteFreightOffer = async (offer: FreightOffer) => {
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     try {
@@ -1839,7 +1871,8 @@ const App: React.FC = () => {
       'horsePlate', 'trailer1Plate', 'trailer2Plate', 'trailer3Plate', 
       'vehicleTag', 'vehicleSetType', 'vehicleBodyType',
       'shipmentTonnage', 'bankDetails', 'driverReferences', 'ownerContact', 'anttOwnerIdentifier',
-      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber'
+      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber',
+      'riskQueryType', 'riskQueryCost', 'riskReleaseCode'
     ];
 
     fieldsToTrack.forEach(field => {
@@ -1885,6 +1918,9 @@ const App: React.FC = () => {
       ...(data.cteEmissionDate !== undefined ? { cte_emission_date: data.cteEmissionDate } : {}),
       ...(data.nfeNumber !== undefined ? { nfe_number: data.nfeNumber } : {}),
       ...(data.mdfeNumber !== undefined ? { mdfe_number: data.mdfeNumber } : {}),
+      ...(data.riskQueryType !== undefined ? { risk_query_type: data.riskQueryType } : {}),
+      ...(data.riskQueryCost !== undefined ? { risk_query_cost: data.riskQueryCost } : {}),
+      ...(data.riskReleaseCode !== undefined ? { risk_release_code: data.riskReleaseCode } : {}),
     };
 
     const updatedShipment: Shipment = { 
@@ -2795,6 +2831,13 @@ const App: React.FC = () => {
         freightOffers={freightOffers}
         cargos={cargos}
         drivers={drivers}
+        clients={clients}
+        products={products}
+        vehicles={vehicles}
+        users={users}
+        onAcceptOrderRequest={handleAcceptOrderRequestFromNotification}
+        onRefuseOrderRequest={handleRefuseOrderRequestFromNotification}
+        onSaveFreightOffer={handleSaveFreightOffer}
       />
       <main className="flex-1 overflow-y-auto" style={{ zoom: 0.8 }}>
         <div className={isOperationalPage ? "px-6 py-8" : "container mx-auto px-6 py-8"}>
@@ -2824,6 +2867,27 @@ const App: React.FC = () => {
           if (type === 'shipment') setCurrentPage('shipments');
         }}
       />
+      {offerForNewShipment && (
+        <NewShipmentModal
+          isOpen={!!offerForNewShipment}
+          onClose={() => setOfferForNewShipment(null)}
+          onSave={async (data) => {
+            await handleCreateShipment({
+              cargoId: offerForNewShipment.cargoId,
+              ...data
+            });
+            setOfferForNewShipment(null);
+          }}
+          cargo={cargos.find(c => c.id === offerForNewShipment.cargoId) || null}
+          drivers={drivers}
+          clients={clients}
+          vehicles={vehicles}
+          currentUser={currentUser}
+          shipments={shipments}
+          users={users}
+          offer={offerForNewShipment}
+        />
+      )}
       {currentUser?.requirePasswordChange && (
         <PasswordChangeModal 
           user={currentUser} 

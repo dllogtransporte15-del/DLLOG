@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Ticket, User, Shipment, FreightOffer, Cargo, Driver, Page } from '../types';
+import type { Ticket, User, Shipment, FreightOffer, Cargo, Driver, Page, Client, Product, Vehicle } from '../types';
 import NotificationBell from './NotificationBell';
 
 interface MainHeaderProps {
@@ -10,7 +10,14 @@ interface MainHeaderProps {
   freightOffers?: FreightOffer[];
   cargos?: Cargo[];
   drivers?: Driver[];
+  clients?: Client[];
+  products?: Product[];
+  vehicles?: Vehicle[];
+  users?: User[];
   onNavigateTo?: (page: Page) => void;
+  onAcceptOrderRequest?: (offer: FreightOffer) => void | Promise<void>;
+  onRefuseOrderRequest?: (offer: FreightOffer, reason?: string) => void | Promise<void>;
+  onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void> | void;
 }
 
 const MainHeader: React.FC<MainHeaderProps> = ({ 
@@ -21,7 +28,14 @@ const MainHeader: React.FC<MainHeaderProps> = ({
   freightOffers = [],
   cargos = [],
   drivers = [],
-  onNavigateTo
+  clients = [],
+  products = [],
+  vehicles = [],
+  users = [],
+  onNavigateTo,
+  onAcceptOrderRequest,
+  onRefuseOrderRequest,
+  onSaveFreightOffer
 }) => {
   return (
     <header className="bg-white dark:bg-gray-800 shadow-sm z-10 border-b dark:border-gray-700">
@@ -33,9 +47,16 @@ const MainHeader: React.FC<MainHeaderProps> = ({
             freightOffers={freightOffers}
             cargos={cargos}
             drivers={drivers}
+            clients={clients}
+            products={products}
+            vehicles={vehicles}
+            users={users}
             tickets={tickets}
             onOpenTickets={onOpenTickets}
             onNavigateTo={onNavigateTo}
+            onAcceptOrderRequest={onAcceptOrderRequest}
+            onRefuseOrderRequest={onRefuseOrderRequest}
+            onSaveFreightOffer={onSaveFreightOffer}
           />
         </div>
       </div>

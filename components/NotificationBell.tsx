@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page } from '../types';
+import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus } from '../types';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
-import { AlertTriangle, Flame, Truck, ShieldAlert, FileCheck2, Volume2, VolumeX, ChevronRight, X } from 'lucide-react';
+import { AlertTriangle, Flame, Truck, ShieldAlert, FileCheck2, Volume2, VolumeX, ChevronRight, X, CheckCircle, XCircle } from 'lucide-react';
+import OrderRequestDecisionModal from './OrderRequestDecisionModal';
 
 export interface SystemAlert {
   id: string;
@@ -23,9 +24,16 @@ interface NotificationBellProps {
   freightOffers?: FreightOffer[];
   cargos?: Cargo[];
   drivers?: Driver[];
+  clients?: Client[];
+  products?: Product[];
+  vehicles?: Vehicle[];
+  users?: User[];
   tickets?: Ticket[];
   onOpenTickets?: () => void;
   onNavigateTo?: (page: Page) => void;
+  onAcceptOrderRequest?: (offer: FreightOffer) => void | Promise<void>;
+  onRefuseOrderRequest?: (offer: FreightOffer, reason?: string) => void | Promise<void>;
+  onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void> | void;
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({
@@ -34,11 +42,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   freightOffers = [],
   cargos = [],
   drivers = [],
+  clients = [],
+  products = [],
+  vehicles = [],
+  users = [],
   tickets = [],
   onOpenTickets,
-  onNavigateTo
+  onNavigateTo,
+  onAcceptOrderRequest,
+  onRefuseOrderRequest,
+  onSaveFreightOffer
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [decisionOffer, setDecisionOffer] = useState<FreightOffer | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
     return localStorage.getItem('transcunha_audio_muted') === 'true';
   });
@@ -65,6 +81,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
   const driverMap = useMemo(() => new Map(drivers.map(d => [d.id, d])), [drivers]);
+  const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
+  const productMap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
 
   // Formatar minutos passados
   const formatElapsedTime = (minutes: number): string => {
@@ -230,6 +248,16 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   }, [activeAlerts, totalCount, criticalCount, isAudioMuted]);
 
   const handleAlertClick = (alert: SystemAlert) => {
+    if (alert.type === 'order_request') {
+      const offerId = alert.relatedId || alert.id.replace('order_', '');
+      const matchedOffer = freightOffers.find(o => o.id === offerId);
+      if (matchedOffer) {
+        setIsOpen(false);
+        setDecisionOffer(matchedOffer);
+        return;
+      }
+    }
+
     setIsOpen(false);
     if (alert.type === 'ticket' && onOpenTickets) {
       onOpenTickets();
@@ -238,155 +266,234 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     }
   };
 
+  const handleOpenDecisionForOffer = (e: React.MouseEvent, offerId: string) => {
+    e.stopPropagation();
+    const matchedOffer = freightOffers.find(o => o.id === offerId);
+    if (matchedOffer) {
+      setIsOpen(false);
+      setDecisionOffer(matchedOffer);
+    }
+  };
+
   return (
-    <div className="relative" ref={dropdownRef}>
-      {/* BOTÃO DO SINO VISUAL E SONORO */}
-      <button
-        onClick={() => setIsOpen(prev => !prev)}
-        className={`relative p-2 rounded-full transition-all focus:outline-none ${
-          criticalCount > 0
-            ? 'text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 animate-pulse ring-2 ring-rose-500/50'
-            : totalCount > 0
-            ? 'text-amber-600 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-950/50 hover:bg-amber-200'
-            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-        }`}
-        aria-label="Notificações e Alertas"
-        title={totalCount > 0 ? `${totalCount} alerta(s) pendente(s)` : 'Sem alertas no momento'}
-      >
-        <BellIcon className={`w-6 h-6 ${criticalCount > 0 ? 'animate-bounce' : ''}`} />
+    <>
+      <div className="relative" ref={dropdownRef}>
+        {/* BOTÃO DO SINO VISUAL E SONORO */}
+        <button
+          onClick={() => setIsOpen(prev => !prev)}
+          className={`relative p-2 rounded-full transition-all focus:outline-none ${
+            criticalCount > 0
+              ? 'text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 animate-pulse ring-2 ring-rose-500/50'
+              : totalCount > 0
+              ? 'text-amber-600 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-950/50 hover:bg-amber-200'
+              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+          }`}
+          aria-label="Notificações e Alertas"
+          title={totalCount > 0 ? `${totalCount} alerta(s) pendente(s)` : 'Sem alertas no momento'}
+        >
+          <BellIcon className={`w-6 h-6 ${criticalCount > 0 ? 'animate-bounce' : ''}`} />
 
-        {/* BADGE VISUAL DE CONTAGEM DE ALERTAS */}
-        {totalCount > 0 && (
-          <span className={`absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-black leading-none text-white transform rounded-full shadow-md ${
-            criticalCount > 0 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
-          }`}>
-            {totalCount}
-          </span>
-        )}
-      </button>
+          {/* BADGE VISUAL DE CONTAGEM DE ALERTAS */}
+          {totalCount > 0 && (
+            <span className={`absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-black leading-none text-white transform rounded-full shadow-md ${
+              criticalCount > 0 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+            }`}>
+              {totalCount}
+            </span>
+          )}
+        </button>
 
-      {/* DROPDOWN POPUP DE NOTIFICAÇÕES */}
-      {isOpen && (
-        <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-in fade-in zoom-in duration-150">
-          {/* HEADER DO POPUP */}
-          <div className="p-4 bg-gradient-to-r from-blue-900 via-slate-900 to-slate-900 text-white flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BellIcon className="w-5 h-5 text-amber-400" />
-              <h4 className="font-bold text-sm">Central de Alertas</h4>
-              {totalCount > 0 && (
-                <span className="px-2 py-0.5 text-[11px] font-extrabold bg-amber-500/30 text-amber-300 rounded-full border border-amber-500/40">
-                  {totalCount}
-                </span>
+        {/* DROPDOWN POPUP DE NOTIFICAÇÕES */}
+        {isOpen && (
+          <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-in fade-in zoom-in duration-150">
+            {/* HEADER DO POPUP */}
+            <div className="p-4 bg-gradient-to-r from-blue-900 via-slate-900 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BellIcon className="w-5 h-5 text-amber-400" />
+                <h4 className="font-bold text-sm">Central de Alertas</h4>
+                {totalCount > 0 && (
+                  <span className="px-2 py-0.5 text-[11px] font-extrabold bg-amber-500/30 text-amber-300 rounded-full border border-amber-500/40">
+                    {totalCount}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* MUTE / UNMUTE AUDIO BOTÃO */}
+                <button
+                  onClick={toggleAudioMute}
+                  title={isAudioMuted ? 'Ativar alerta sonoro' : 'Silenciar alerta sonoro'}
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-semibold"
+                >
+                  {isAudioMuted ? (
+                    <>
+                      <VolumeX className="w-4 h-4 text-rose-400" />
+                      <span className="hidden sm:inline text-rose-300">Mudo</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-4 h-4 text-emerald-400" />
+                      <span className="hidden sm:inline text-emerald-300">Som On</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* LISTA DE ALERTAS */}
+            <div className="max-h-96 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/60">
+              {totalCount === 0 ? (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400 space-y-2">
+                  <FileCheck2 className="w-8 h-8 text-emerald-500 mx-auto opacity-60" />
+                  <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Nenhum alerta pendente!</p>
+                  <p className="text-[11px] text-gray-400">Você receberá avisos sonoros e visuais quando houver solicitações ou SLAs em atenção/crítico.</p>
+                </div>
+              ) : (
+                activeAlerts.map(alert => {
+                  const isCritical = alert.urgency === 'critical';
+                  const isOrderRequest = alert.type === 'order_request';
+                  const offerId = alert.relatedId || alert.id.replace('order_', '');
+
+                  return (
+                    <div
+                      key={alert.id}
+                      onClick={() => handleAlertClick(alert)}
+                      className={`p-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-all flex items-start gap-3 border-l-4 ${
+                        isCritical
+                          ? 'border-l-rose-500 bg-rose-50/40 dark:bg-rose-950/20'
+                          : isOrderRequest
+                          ? 'border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10'
+                          : 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
+                      }`}
+                    >
+                      <div className="shrink-0 mt-0.5">
+                        {alert.type === 'order_request' && (
+                          <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
+                            <Truck className="w-4 h-4" />
+                          </div>
+                        )}
+                        {alert.type === 'fiscal_sla' && (
+                          <div className={`p-2 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400'}`}>
+                            {isCritical ? <Flame className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                          </div>
+                        )}
+                        {alert.type === 'insurance_sla' && (
+                          <div className={`p-2 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400'}`}>
+                            <ShieldAlert className="w-4 h-4" />
+                          </div>
+                        )}
+                        {alert.type === 'ticket' && (
+                          <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={`text-xs font-black ${
+                            isCritical 
+                              ? 'text-rose-600 dark:text-rose-400' 
+                              : isOrderRequest 
+                              ? 'text-blue-900 dark:text-blue-200' 
+                              : 'text-gray-900 dark:text-white'
+                          }`}>
+                            {alert.title}
+                          </span>
+                          {alert.elapsedMinutes !== undefined && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold font-mono ${
+                              isCritical ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
+                            }`}>
+                              {formatElapsedTime(alert.elapsedMinutes)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-snug">
+                          {alert.message}
+                        </p>
+
+                        {/* Botões de Ação Rápida para Solicitação de Ordem */}
+                        {isOrderRequest && (
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenDecisionForOffer(e, offerId)}
+                              className="px-2.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Aceitar / Recusar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 self-center" />
+                    </div>
+                  );
+                })
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* MUTE / UNMUTE AUDIO BOTÃO */}
-              <button
-                onClick={toggleAudioMute}
-                title={isAudioMuted ? 'Ativar alerta sonoro' : 'Silenciar alerta sonoro'}
-                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-semibold"
-              >
-                {isAudioMuted ? (
-                  <>
-                    <VolumeX className="w-4 h-4 text-rose-400" />
-                    <span className="hidden sm:inline text-rose-300">Mudo</span>
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="w-4 h-4 text-emerald-400" />
-                    <span className="hidden sm:inline text-emerald-300">Som On</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+            {/* FOOTER DO POPUP */}
+            <div className="p-3 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-100 dark:border-gray-700 text-center">
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                Alertas ativos calculados em tempo real de acordo com seu perfil.
+              </p>
             </div>
           </div>
+        )}
+      </div>
 
-          {/* LISTA DE ALERTAS */}
-          <div className="max-h-96 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700/60">
-            {totalCount === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400 space-y-2">
-                <FileCheck2 className="w-8 h-8 text-emerald-500 mx-auto opacity-60" />
-                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Nenhum alerta pendente!</p>
-                <p className="text-[11px] text-gray-400">Você receberá avisos sonoros e visuais quando houver solicitações ou SLAs em atenção/crítico.</p>
-              </div>
-            ) : (
-              activeAlerts.map(alert => {
-                const isCritical = alert.urgency === 'critical';
-                return (
-                  <div
-                    key={alert.id}
-                    onClick={() => handleAlertClick(alert)}
-                    className={`p-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-all flex items-start gap-3 border-l-4 ${
-                      isCritical
-                        ? 'border-l-rose-500 bg-rose-50/40 dark:bg-rose-950/20'
-                        : 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
-                    }`}
-                  >
-                    <div className="shrink-0 mt-0.5">
-                      {alert.type === 'order_request' && (
-                        <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
-                          <Truck className="w-4 h-4" />
-                        </div>
-                      )}
-                      {alert.type === 'fiscal_sla' && (
-                        <div className={`p-2 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400'}`}>
-                          {isCritical ? <Flame className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-                        </div>
-                      )}
-                      {alert.type === 'insurance_sla' && (
-                        <div className={`p-2 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400'}`}>
-                          <ShieldAlert className="w-4 h-4" />
-                        </div>
-                      )}
-                      {alert.type === 'ticket' && (
-                        <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
-                          <AlertTriangle className="w-4 h-4" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className={`text-xs font-black ${isCritical ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>
-                          {alert.title}
-                        </span>
-                        {alert.elapsedMinutes !== undefined && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold font-mono ${
-                            isCritical ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
-                          }`}>
-                            {formatElapsedTime(alert.elapsedMinutes)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-snug">
-                        {alert.message}
-                      </p>
-                    </div>
-
-                    <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 self-center" />
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* FOOTER DO POPUP */}
-          <div className="p-3 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-100 dark:border-gray-700 text-center">
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              Alertas ativos calculados em tempo real de acordo com seu perfil.
-            </p>
-          </div>
-        </div>
+      {/* MODAL DE DECISÃO DA SOLICITAÇÃO DE ORDEM */}
+      {decisionOffer && (
+        <OrderRequestDecisionModal
+          isOpen={!!decisionOffer}
+          onClose={() => setDecisionOffer(null)}
+          offer={decisionOffer}
+          cargo={decisionOffer.cargoId ? cargoMap.get(decisionOffer.cargoId) : undefined}
+          driver={driverMap.get(decisionOffer.driverId || '')}
+          driverUser={users?.find(u => u.id === decisionOffer.driverId)}
+          client={clients?.find(c => c.id === (decisionOffer.clientId || (decisionOffer.cargoId ? cargoMap.get(decisionOffer.cargoId)?.clientId : '')))}
+          product={products?.find(p => p.id === (decisionOffer.productId || (decisionOffer.cargoId ? cargoMap.get(decisionOffer.cargoId)?.productId : '')))}
+          requestedEmbarcador={users?.find(u => u.id === decisionOffer.requestedEmbarcadorId)}
+          onAccept={async (offer) => {
+            setDecisionOffer(null);
+            if (onAcceptOrderRequest) {
+              await onAcceptOrderRequest(offer);
+            } else if (onSaveFreightOffer) {
+              const history = [...(offer.history || []), {
+                id: `log_${Date.now()}_sys`,
+                userId: user.id,
+                timestamp: new Date().toISOString(),
+                description: `Solicitação aceita por ${user.name}.`
+              }];
+              await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
+            }
+          }}
+          onRefuse={async (offer, reason) => {
+            setDecisionOffer(null);
+            if (onRefuseOrderRequest) {
+              await onRefuseOrderRequest(offer, reason);
+            } else if (onSaveFreightOffer) {
+              const history = [...(offer.history || []), {
+                id: `log_${Date.now()}_sys`,
+                userId: user.id,
+                timestamp: new Date().toISOString(),
+                description: `Solicitação recusada por ${user.name}.${reason ? ` Motivo: ${reason}` : ''}`
+              }];
+              await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+            }
+          }}
+        />
       )}
-    </div>
+    </>
   );
 };
 

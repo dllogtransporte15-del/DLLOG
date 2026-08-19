@@ -1,7 +1,5 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Page, User, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver } from '../types';
-import { UserProfile, TicketStatus } from '../types';
 import { can } from '../auth';
 import NotificationBell from './NotificationBell';
 import { DashboardIcon } from './icons/DashboardIcon';
@@ -26,6 +24,9 @@ import { InfoIcon } from './icons/InfoIcon';
 import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
+import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
+import { UserProfile, TicketStatus } from '../types';
+
 interface TopNavBarProps {
   user: User;
   onLogout: () => void;
@@ -39,6 +40,13 @@ interface TopNavBarProps {
   freightOffers?: FreightOffer[];
   cargos?: Cargo[];
   drivers?: Driver[];
+  clients?: Client[];
+  products?: Product[];
+  vehicles?: Vehicle[];
+  users?: User[];
+  onAcceptOrderRequest?: (offer: FreightOffer) => void | Promise<void>;
+  onRefuseOrderRequest?: (offer: FreightOffer, reason?: string) => void | Promise<void>;
+  onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void> | void;
 }
 
 interface NavItem {
@@ -102,7 +110,27 @@ const navItems: NavItem[] = [
   }
 ];
 
-const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setCurrentPage, profilePermissions, companyLogo, onOpenTickets, tickets, shipments, freightOffers, cargos, drivers }) => {
+const TopNavBar: React.FC<TopNavBarProps> = ({ 
+  user, 
+  onLogout, 
+  currentPage, 
+  setCurrentPage, 
+  profilePermissions, 
+  companyLogo, 
+  onOpenTickets, 
+  tickets, 
+  shipments, 
+  freightOffers, 
+  cargos, 
+  drivers,
+  clients,
+  products,
+  vehicles,
+  users,
+  onAcceptOrderRequest,
+  onRefuseOrderRequest,
+  onSaveFreightOffer
+}) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -266,16 +294,23 @@ const TopNavBar: React.FC<TopNavBarProps> = ({ user, onLogout, currentPage, setC
                 <DriverLocationTracker user={user} />
              )}
              
-             <NotificationBell
-               user={user}
-               shipments={shipments}
-               freightOffers={freightOffers}
-               cargos={cargos}
-               drivers={drivers}
-               tickets={tickets}
-               onOpenTickets={onOpenTickets}
-               onNavigateTo={(page) => setCurrentPage(page)}
-             />
+              <NotificationBell
+                user={user}
+                shipments={shipments}
+                freightOffers={freightOffers}
+                cargos={cargos}
+                drivers={drivers}
+                clients={clients}
+                products={products}
+                vehicles={vehicles}
+                users={users}
+                tickets={tickets}
+                onOpenTickets={onOpenTickets}
+                onNavigateTo={(page) => setCurrentPage(page)}
+                onAcceptOrderRequest={onAcceptOrderRequest}
+                onRefuseOrderRequest={onRefuseOrderRequest}
+                onSaveFreightOffer={onSaveFreightOffer}
+              />
 
             <div className="relative" ref={openDropdown === 'user' ? dropdownRef : null}>
               <button onClick={() => handleDropdownToggle('user')} className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">

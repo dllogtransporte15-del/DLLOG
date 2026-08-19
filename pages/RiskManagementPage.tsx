@@ -18,6 +18,7 @@ import {
   Truck, 
   X, 
   Eye, 
+  Edit,
   AlertCircle,
   ArrowUpDown,
   ArrowUp,
@@ -31,6 +32,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import EditRiskQueryModal from '../components/EditRiskQueryModal';
 import RiskQueryTypesPage from './RiskQueryTypesPage';
 
 interface RiskManagementPageProps {
@@ -162,6 +164,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
 
   // Modals
   const [selectedShipmentForDetails, setSelectedShipmentForDetails] = useState<Shipment | null>(null);
+  const [shipmentToEditRisk, setShipmentToEditRisk] = useState<Shipment | null>(null);
   const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
 
   // Fast maps
@@ -1627,13 +1630,22 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
 
                         {/* Ações */}
                         <td className="px-3.5 py-3 text-center">
-                          <button
-                            onClick={() => setSelectedShipmentForDetails(row.shipment)}
-                            className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
-                            title="Ver detalhes do embarque"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setShipmentToEditRisk(row.shipment)}
+                              className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 transition-colors"
+                              title="Editar modalidade / tipo de consulta"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setSelectedShipmentForDetails(row.shipment)}
+                              className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
+                              title="Ver detalhes do embarque"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1824,6 +1836,25 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           onUpdateShipmentData={onUpdateShipmentData}
           onAddAttachments={onAddAttachments}
           onDeleteAttachment={onDeleteAttachment}
+        />
+      )}
+
+      {/* Edit Risk Query Modal */}
+      {shipmentToEditRisk && (
+        <EditRiskQueryModal
+          isOpen={!!shipmentToEditRisk}
+          onClose={() => setShipmentToEditRisk(null)}
+          shipment={shipmentToEditRisk}
+          cargo={cargos.find(c => c.id === shipmentToEditRisk.cargoId)}
+          client={clientMap.get(cargos.find(c => c.id === shipmentToEditRisk.cargoId)?.clientId || '')}
+          driver={driverMap.get(shipmentToEditRisk.driverCpf ? shipmentToEditRisk.driverCpf.replace(/\D/g, '') : shipmentToEditRisk.driverName.toLowerCase())}
+          vehicle={vehicleMap.get(shipmentToEditRisk.horsePlate ? shipmentToEditRisk.horsePlate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '')}
+          riskQueryOptions={riskQueryOptions}
+          onSave={async (shipmentId, data) => {
+            if (onUpdateShipmentData) {
+              await onUpdateShipmentData(shipmentId, data);
+            }
+          }}
         />
       )}
 
