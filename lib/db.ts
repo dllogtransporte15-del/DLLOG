@@ -2,8 +2,9 @@ import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import { isCteApplicableForStatus } from '../utils';
 import type {
-  Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer
+  Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
 } from '../types';
+import { DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
@@ -646,6 +647,25 @@ const fromBranch = (b: Branch | Omit<Branch, 'id' | 'createdAt'>) => ({
   state: b.state,
 });
 
+const toRiskQueryOption = (row: any): RiskQueryOption => ({
+  id: row.id,
+  name: row.name || '',
+  cost: Number(row.cost !== undefined && row.cost !== null ? row.cost : 0),
+  active: row.active !== false,
+  orderIndex: row.order_index !== undefined ? Number(row.order_index) : undefined,
+  description: row.description || '',
+  createdAt: row.created_at || '',
+});
+
+const fromRiskQueryOption = (opt: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => ({
+  id: (opt as RiskQueryOption).id,
+  name: opt.name,
+  cost: opt.cost,
+  active: opt.active !== false,
+  order_index: opt.orderIndex ?? 0,
+  description: opt.description || '',
+});
+
 // ─────────────────────────────────────────────
 // FETCH HELPERS: Handle Auth Errors
 // ─────────────────────────────────────────────
@@ -855,6 +875,107 @@ export async function fetchAppSettings(): Promise<{ company_logo: string | null;
   const { data, error } = await supabase.from('app_settings').select('company_logo, theme_image').eq('id', 1).single();
   if (error) return null;
   return data || null;
+}
+
+export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
+  try {
+    const { data, error } = await supabase.from('risk_query_options').select('*').order('order_index', { ascending: true });
+    if (!error && data && data.length > 0) {
+      const options = data.map(toRiskQueryOption);
+      try {
+        localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
+      } catch {}
+      return options;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not query risk_query_options table, checking storage fallback:', err);
+  }
+
+  // Fallback to localStorage or DEFAULT_RISK_QUERY_OPTIONS
+  try {
+    const saved = localStorage.getItem('transcunha_risk_query_options');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  return DEFAULT_RISK_QUERY_OPTIONS;
+}
+
+export async function upsertRiskQueryOption(option: RiskQueryOption | Omit<RiskQueryOption, 'id'>): Promise<RiskQueryOption> {
+  const isUuid = 'id' in option && typeof option.id === 'string' && option.id.trim() !== '';
+  const optId = isUuid ? (option as RiskQueryOption).id : (option.name.toLowerCase().replace(/[^a-z0-9]/g, '_') || crypto.randomUUID());
+  
+  const finalOption: RiskQueryOption = {
+    ...option,
+    id: optId,
+    cost: Number(option.cost || 0),
+    active: option.active !== false,
+    orderIndex: option.orderIndex !== undefined ? Number(option.orderIndex) : 1,
+    description: option.description || '',
+    createdAt: ('createdAt' in option && option.createdAt) ? (option as RiskQueryOption).createdAt : new Date().toISOString(),
+  };
+
+  try {
+    const { error } = await supabase.from('risk_query_options').upsert(fromRiskQueryOption(finalOption));
+    if (error) {
+      console.warn('[DB] Error upserting to risk_query_options table:', error.message);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception upserting risk_query_option:', err);
+  }
+
+  // Also update local storage
+  try {
+    const current = await fetchRiskQueryOptions();
+    const existingIdx = current.findIndex(o => o.id === finalOption.id || o.name.toLowerCase() === finalOption.name.toLowerCase());
+    let nextList: RiskQueryOption[];
+    if (existingIdx >= 0) {
+      nextList = [...current];
+      nextList[existingIdx] = finalOption;
+    } else {
+      nextList = [...current, finalOption];
+    }
+    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(nextList));
+  } catch {}
+
+  return finalOption;
+}
+
+export async function deleteRiskQueryOption(id: string): Promise<void> {
+  try {
+    const { error } = await supabase.from('risk_query_options').delete().eq('id', id);
+    if (error) {
+      console.warn('[DB] Error deleting from risk_query_options table:', error.message);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception deleting risk_query_option:', err);
+  }
+
+  try {
+    const current = await fetchRiskQueryOptions();
+    const nextList = current.filter(o => o.id !== id);
+    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(nextList));
+  } catch {}
+}
+
+export async function saveAllRiskQueryOptions(options: RiskQueryOption[]): Promise<void> {
+  try {
+    const payload = options.map(fromRiskQueryOption);
+    const { error } = await supabase.from('risk_query_options').upsert(payload);
+    if (error) {
+      console.warn('[DB] Error saving all risk_query_options:', error.message);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception in saveAllRiskQueryOptions:', err);
+  }
+
+  try {
+    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
+  } catch {}
 }
 
 // ─────────────────────────────────────────────

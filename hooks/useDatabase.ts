@@ -3,13 +3,15 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import type { 
   User, Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, Ticket,
-  ProfilePermissions, ShipmentLock, Branch, FreightOffer
+  ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
 } from '../types';
 import { INITIAL_PERMISSIONS } from '../auth';
+import { DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { 
   fetchClients, fetchOwners, fetchDrivers, fetchVehicles, fetchProducts,
   fetchCargos, fetchShipments, fetchUsers, fetchTickets, fetchProfilePermissions,
   fetchAppSettings, fetchShipmentLocks, fetchBranches, fetchFreightOffers,
+  fetchRiskQueryOptions,
   backfillShipmentFiscalNumbers
 } from '../lib/db';
 import { getAllToolStays, StayRecord } from '../utils/toolStorage';
@@ -74,6 +76,13 @@ export function useDatabase(currentUser: User | null) {
   const [freightOffers, setFreightOffers] = useState<FreightOffer[]>([]);
   const [stays, setStays] = useState<StayRecord[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [riskQueryOptions, setRiskQueryOptions] = useState<RiskQueryOption[]>(() => {
+    try {
+      const saved = localStorage.getItem('transcunha_risk_query_options');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_RISK_QUERY_OPTIONS;
+  });
   const [activeLocks, setActiveLocks] = useState<ShipmentLock[]>([]);
   const [profilePermissions, setProfilePermissions] = useState<ProfilePermissions>(INITIAL_PERMISSIONS);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,10 +138,10 @@ export function useDatabase(currentUser: User | null) {
         // Skip heavy tables: drivers (914), vehicles (1000), users, locks, branches, etc.
         const [
           dbCargos, dbShipments, dbSettings, dbPermissions,
-          dbProducts, dbClients, dbFreightOffers, dbUsers
+          dbProducts, dbClients, dbFreightOffers, dbUsers, dbRiskOptions
         ] = await Promise.all([
           fetchCargos(), fetchShipments(), fetchAppSettings(), fetchProfilePermissions(),
-          fetchProducts(), fetchClients(), fetchFreightOffers(), fetchUsers()
+          fetchProducts(), fetchClients(), fetchFreightOffers(), fetchUsers(), fetchRiskQueryOptions()
         ]);
 
         setCargos(dbCargos);
@@ -141,6 +150,7 @@ export function useDatabase(currentUser: User | null) {
         setClients(dbClients);
         setFreightOffers(dbFreightOffers);
         setUsers(dbUsers);
+        if (dbRiskOptions && dbRiskOptions.length > 0) setRiskQueryOptions(dbRiskOptions);
 
         if (dbPermissions) setProfilePermissions({ ...INITIAL_PERMISSIONS, ...dbPermissions });
         if (dbSettings) {
@@ -152,12 +162,12 @@ export function useDatabase(currentUser: User | null) {
         const [
           dbClients, dbOwners, dbDrivers, dbVehicles, dbProducts, dbCargos, 
           dbShipments, dbUsers, dbTickets, dbPermissions, dbSettings, dbLocks, dbBranches,
-          dbStays, dbFreightOffers
+          dbStays, dbFreightOffers, dbRiskOptions
         ] = await Promise.all([
           fetchClients(), fetchOwners(), fetchDrivers(), fetchVehicles(), fetchProducts(),
           fetchCargos(), fetchShipments(), fetchUsers(), fetchTickets(),
           fetchProfilePermissions(), fetchAppSettings(), fetchShipmentLocks(),
-          fetchBranches(), getAllToolStays(), fetchFreightOffers()
+          fetchBranches(), getAllToolStays(), fetchFreightOffers(), fetchRiskQueryOptions()
         ]);
 
         setClients(dbClients);
@@ -173,6 +183,7 @@ export function useDatabase(currentUser: User | null) {
         setStays(dbStays);
         setBranches(dbBranches);
         setActiveLocks(dbLocks);
+        if (dbRiskOptions && dbRiskOptions.length > 0) setRiskQueryOptions(dbRiskOptions);
 
         if (dbPermissions) setProfilePermissions({ ...INITIAL_PERMISSIONS, ...dbPermissions });
         if (dbSettings) {
@@ -333,6 +344,13 @@ export function useDatabase(currentUser: User | null) {
             }
             break;
           }
+          case 'risk_query_options': {
+            const dbRiskOptions = await fetchRiskQueryOptions();
+            if (dbRiskOptions && dbRiskOptions.length > 0) {
+              setRiskQueryOptions(dbRiskOptions);
+            }
+            break;
+          }
           default:
             // If unknown table, fallback to background reload
             loadAllData(true);
@@ -416,6 +434,7 @@ export function useDatabase(currentUser: User | null) {
     freightOffers, setFreightOffers,
     stays, setStays,
     branches, setBranches,
+    riskQueryOptions, setRiskQueryOptions,
     activeLocks, setActiveLocks,
     profilePermissions, setProfilePermissions,
     isLoading, loadError,

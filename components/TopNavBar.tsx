@@ -74,6 +74,7 @@ const navItems: NavItem[] = [
         { id: 'vehicles', label: 'Veículos', icon: TruckIcon },
         { id: 'loads', label: 'Cargas', icon: PackageIcon },
         { id: 'products', label: 'Produtos', icon: PackageIcon },
+        { id: 'risk-query-types', label: 'Tipos de Consulta GR', icon: ShieldCheck },
     ]
   },
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },

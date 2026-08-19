@@ -12,7 +12,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import TransferShipmentModal from '../components/TransferShipmentModal';
 import EditScheduledDateTimeModal from '../components/EditScheduledDateTimeModal';
 import SwapCargoModal from '../components/SwapCargoModal';
-import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product, Vehicle, ShipmentLock } from '../types';
+import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product, Vehicle, ShipmentLock, RiskQueryOption } from '../types';
 
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
 import { can } from '../auth';
@@ -67,6 +67,7 @@ interface ShipmentsPageProps {
   onSwapCargo: (shipmentId: string, newCargoId: string) => void;
   stays?: StayRecord[];
   tickets?: Ticket[];
+  riskQueryOptions?: RiskQueryOption[];
 }
 
 
@@ -78,7 +79,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   profilePermissions, users, onUpdateAttachment, onAddAttachments, onUpdatePrice, onConfirmCancel, 
   onUpdateAnttAndBankDetails, onTransferShipment, onMarkArrival, onDeleteShipment,
   onRevertStatus, onUpdateScheduledDateTime, onUpdateShipmentData, activeLocks, onModalStateChange,
-  companyLogo, onDeleteAttachment, onSwapCargo, stays = [], tickets = []
+  companyLogo, onDeleteAttachment, onSwapCargo, stays = [], tickets = [], riskQueryOptions
 }) => {
 
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(ShipmentStatus.PreCadastro);
@@ -350,6 +351,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           products={products}
           clients={clients}
           users={users}
+          riskQueryOptions={riskQueryOptions}
         />
       )}
 

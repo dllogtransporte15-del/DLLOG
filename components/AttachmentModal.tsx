@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
@@ -38,6 +38,7 @@ interface AttachmentModalProps {
   products?: Product[];
   clients?: Client[];
   users?: User[];
+  riskQueryOptions?: RiskQueryOption[];
 }
 
 declare const L: any;
@@ -76,7 +77,21 @@ const FileInput: React.FC<{ label: string; onFileChange: (files: FileList | null
 };
 
 
-const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSave, shipment, documentName, currentUser, cargo, canSave = true, requiresRiskManagement = true, products = [], clients = [], users = [] }) => {
+const AttachmentModal: React.FC<AttachmentModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  shipment, 
+  documentName, 
+  currentUser, 
+  cargo, 
+  canSave = true, 
+  requiresRiskManagement = true, 
+  products = [], 
+  clients = [], 
+  users = [],
+  riskQueryOptions = DEFAULT_RISK_QUERY_OPTIONS 
+}) => {
   const [singleFiles, setSingleFiles] = useState<File[]>([]);
   const [multiFiles, setMultiFiles] = useState<{ [key: string]: File[] }>({});
   const [bankDetails, setBankDetails] = useState('');
@@ -90,7 +105,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
   const [unloadedTonnage, setUnloadedTonnage] = useState<number | ''>('');
   const [route, setRoute] = useState('');
   const [riskReleaseCode, setRiskReleaseCode] = useState('');
-  const [riskQueryType, setRiskQueryType] = useState<RiskQueryType | ''>('');
+  const [riskQueryType, setRiskQueryType] = useState<string>('');
   const [grStatus, setGrStatus] = useState<'aprovado' | 'reprovado' | 'reprovado_restrito'>('aprovado');
   const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -397,7 +412,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
         }
     }
 
-    const calculatedRiskCost = riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0) : undefined;
+    const matchedOption = riskQueryOptions.find(o => o.name === riskQueryType);
+    const calculatedRiskCost = matchedOption ? matchedOption.cost : (riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0) : undefined);
     const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
 
     setError('');
@@ -778,16 +794,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                         </label>
                                         <select 
                                             value={riskQueryType} 
-                                            onChange={(e) => setRiskQueryType(e.target.value as RiskQueryType)} 
+                                            onChange={(e) => setRiskQueryType(e.target.value)} 
                                             className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20"
                                             required
                                         >
                                             <option value="" disabled>Selecione a modalidade de consulta...</option>
-                                            <option value={RiskQueryType.Siga}>1 - SIGA (Valor: R$ 7,00)</option>
-                                            <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (Valor: R$ 15,00)</option>
-                                            <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (Valor: R$ 33,00)</option>
-                                            <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (Valor: R$ 70,00)</option>
-                                            <option value={RiskQueryType.LiberacaoSimplificada}>5 - Liberação Simplificada (Valor: R$ 0,00)</option>
+                                            {riskQueryOptions
+                                              .filter(opt => opt.active || opt.name === riskQueryType)
+                                              .sort((a, b) => (a.orderIndex ?? 999) - (b.orderIndex ?? 999))
+                                              .map((opt, idx) => (
+                                                <option key={opt.id || idx} value={opt.name}>
+                                                  {(opt.orderIndex ?? (idx + 1))} - {opt.name} (Valor: R$ {opt.cost.toFixed(2).replace('.', ',')})
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                 </div>
@@ -796,7 +815,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({ isOpen, onClose, onSa
                                     <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
                                         <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
                                         <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
-                                            R$ {(RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0).toFixed(2).replace('.', ',')}
+                                            R$ {(riskQueryOptions.find(o => o.name === riskQueryType)?.cost ?? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0)).toFixed(2).replace('.', ',')}
                                         </span>
                                     </div>
                                 )}

@@ -1,6 +1,6 @@
 // FIX: Moved Page type definition from App.tsx to here so it can be shared across modules.
 // FIX: Added 'embarcadores' and 'operational-map' to the page list to resolve type errors.
-export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management';
+export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types';
 
 export enum UserProfile {
   Embarcador = "Embarcador",
@@ -304,6 +304,24 @@ export enum RiskQueryType {
   Vitimologia = 'Vitimologia',
   LiberacaoSimplificada = 'Liberação Simplificada',
 }
+
+export interface RiskQueryOption {
+  id: string;
+  name: string;
+  cost: number;
+  active: boolean;
+  orderIndex?: number;
+  description?: string;
+  createdAt?: string;
+}
+
+export const DEFAULT_RISK_QUERY_OPTIONS: RiskQueryOption[] = [
+  { id: 'siga', name: 'SIGA', cost: 7.00, active: true, orderIndex: 1, description: 'Consulta padrão SIGA' },
+  { id: 'consulta_biometria', name: 'Consulta + Biometria', cost: 15.00, active: true, orderIndex: 2, description: 'Consulta com validação biométrica' },
+  { id: 'cadastro_consulta_geral', name: 'Cadastro + Consulta Geral', cost: 33.00, active: true, orderIndex: 3, description: 'Cadastro completo e consulta geral' },
+  { id: 'vitimologia', name: 'Vitimologia', cost: 70.00, active: true, orderIndex: 4, description: 'Análise aprofundada de vitimologia' },
+  { id: 'liberacao_simplificada', name: 'Liberação Simplificada', cost: 0.00, active: true, orderIndex: 5, description: 'Liberação sem custo / simplificada' },
+];
 
 export const RISK_QUERY_COST_MAP: Record<RiskQueryType, number> = {
   [RiskQueryType.Siga]: 7.00,

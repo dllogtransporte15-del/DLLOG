@@ -38,6 +38,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'branches': 'Filiais',
   'system-monitor': 'Monitoramento do Sistema',
   'risk-management': 'Gerenciadora de Risco',
+  'risk-query-types': 'Tipos de Consulta GR',
 };
 
 const CATEGORIES = [
@@ -45,7 +46,7 @@ const CATEGORIES = [
   { name: 'Operacional', pages: ['loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'operational-loads', 'risk-management'] as Page[] },
   { name: 'Financeiro', pages: ['financial', 'commissions'] as Page[] },
   { name: 'Relatórios', pages: ['reports'] as Page[] },
-  { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'products', 'users-register', 'branches'] as Page[] },
+  { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
   { name: 'Configurações', pages: ['appearance'] as Page[] },
   { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor'] as Page[] }
 ];

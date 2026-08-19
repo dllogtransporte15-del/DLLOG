@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import type { Shipment, Cargo, Client, Driver, Vehicle, User } from '../types';
-import { ShipmentStatus, RiskQueryType, RISK_QUERY_COST_MAP } from '../types';
+import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions } from '../types';
+import { ShipmentStatus, RiskQueryType, RISK_QUERY_COST_MAP, DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { 
   ShieldCheck, 
   AlertTriangle, 
@@ -24,12 +24,14 @@ import {
   ArrowDown,
   Filter,
   FilterX,
-  RotateCcw
+  RotateCcw,
+  Sliders
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import RiskQueryTypesPage from './RiskQueryTypesPage';
 
 interface RiskManagementPageProps {
   shipments: Shipment[];
@@ -40,6 +42,11 @@ interface RiskManagementPageProps {
   users: User[];
   currentUser: User | null;
   companyLogo?: string | null;
+  riskQueryOptions?: RiskQueryOption[];
+  onSaveRiskQueryOption?: (option: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => Promise<void> | void;
+  onDeleteRiskQueryOption?: (optionId: string) => Promise<void> | void;
+  onRestoreRiskQueryDefaults?: () => Promise<void> | void;
+  profilePermissions?: ProfilePermissions;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
@@ -117,14 +124,19 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   users = [],
   currentUser,
   companyLogo,
+  riskQueryOptions = DEFAULT_RISK_QUERY_OPTIONS,
+  onSaveRiskQueryOption,
+  onDeleteRiskQueryOption,
+  onRestoreRiskQueryDefaults,
+  profilePermissions = {},
   onUpdatePrice,
   onUpdateShipmentData,
   onAddAttachments,
   onDeleteAttachment,
   onModalStateChange
 }) => {
-  // Tabs: 'operational' | 'analytics'
-  const [activeTab, setActiveTab] = useState<'operational' | 'analytics'>('operational');
+  // Tabs: 'operational' | 'analytics' | 'query_types'
+  const [activeTab, setActiveTab] = useState<'operational' | 'analytics' | 'query_types'>('operational');
 
   // Global / Quick Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -157,6 +169,11 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
   const driverMap = useMemo(() => new Map(drivers.map(d => [d.cpf ? d.cpf.replace(/\D/g, '') : d.name.toLowerCase(), d])), [drivers]);
   const vehicleMap = useMemo(() => new Map(vehicles.map(v => [v.plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase(), v])), [vehicles]);
+  const costMapFromOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    riskQueryOptions.forEach(o => map.set(o.name, o.cost));
+    return map;
+  }, [riskQueryOptions]);
 
   // Transform all relevant shipments
   const allRiskRows = useMemo<RiskShipmentRow[]>(() => {
@@ -182,6 +199,8 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         let queryCost = 0;
         if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
           queryCost = Number(s.riskQueryCost);
+        } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType)) {
+          queryCost = costMapFromOptions.get(s.riskQueryType)!;
         } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType as RiskQueryType] !== undefined) {
           queryCost = RISK_QUERY_COST_MAP[s.riskQueryType as RiskQueryType];
         } else if (s.status === ShipmentStatus.AguardandoSeguradora) {
@@ -814,6 +833,17 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               <BarChart3 className="w-3.5 h-3.5" />
               Métricas & Desperdício
             </button>
+            <button
+              onClick={() => setActiveTab('query_types')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'query_types'
+                  ? 'bg-white dark:bg-gray-800 text-primary dark:text-blue-400 shadow-xs'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              Modalidades de Consulta
+            </button>
           </div>
 
           {/* Export Buttons */}
@@ -1371,11 +1401,9 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                         className="w-full p-1.5 text-[11px] bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-800 dark:text-gray-200 focus:ring-1 focus:ring-primary focus:outline-none"
                       >
                         <option value="ALL">Todas</option>
-                        <option value={RiskQueryType.Siga}>SIGA</option>
-                        <option value={RiskQueryType.ConsultaBiometria}>Biometria</option>
-                        <option value={RiskQueryType.CadastroConsultaGeral}>Geral</option>
-                        <option value={RiskQueryType.Vitimologia}>Vitimologia</option>
-                        <option value={RiskQueryType.LiberacaoSimplificada}>Simplificada</option>
+                        {riskQueryOptions.map(opt => (
+                          <option key={opt.id} value={opt.name}>{opt.name}</option>
+                        ))}
                       </select>
                     </th>
 
@@ -1645,7 +1673,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
             </div>
           )}
         </div>
-      ) : (
+      ) : activeTab === 'analytics' ? (
         /* Tab 2: Analytics & Cancellation Losses */
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1767,6 +1795,16 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
             )}
           </div>
         </div>
+      ) : (
+        /* Tab 3: Modalidades de Consulta (Gerenciamento e Cadastro) */
+        <RiskQueryTypesPage
+          riskQueryOptions={riskQueryOptions}
+          onSaveOption={onSaveRiskQueryOption || (() => {})}
+          onDeleteOption={onDeleteRiskQueryOption || (() => {})}
+          onRestoreDefaults={onRestoreRiskQueryDefaults}
+          currentUser={currentUser || ({} as User)}
+          profilePermissions={profilePermissions}
+        />
       )}
 
       {/* Shipment Details Modal */}
