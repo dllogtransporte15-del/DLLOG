@@ -90,8 +90,24 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   products = [], 
   clients = [], 
   users = [],
-  riskQueryOptions = DEFAULT_RISK_QUERY_OPTIONS 
+  riskQueryOptions: propRiskQueryOptions 
 }) => {
+  const riskQueryOptions = React.useMemo<RiskQueryOption[]>(() => {
+    if (propRiskQueryOptions && propRiskQueryOptions.length > 0) {
+      return propRiskQueryOptions;
+    }
+    try {
+      const saved = localStorage.getItem('transcunha_risk_query_options');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return DEFAULT_RISK_QUERY_OPTIONS;
+  }, [propRiskQueryOptions]);
+
   const [singleFiles, setSingleFiles] = useState<File[]>([]);
   const [multiFiles, setMultiFiles] = useState<{ [key: string]: File[] }>({});
   const [bankDetails, setBankDetails] = useState('');

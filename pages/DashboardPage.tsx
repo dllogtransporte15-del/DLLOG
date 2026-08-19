@@ -14,7 +14,7 @@ import { DashboardIcon } from '../components/icons/DashboardIcon';
 import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
 import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
-import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer } from '../types';
+import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import AttachmentModal from '../components/AttachmentModal';
 import CadastroAnttModal from '../components/CadastroAnttModal';
@@ -110,6 +110,7 @@ interface DashboardPageProps {
   onConvertToCargo?: (offer: FreightOffer) => void;
   onCreateShipment?: (data: any) => Promise<void>;
   allShipments?: Shipment[];
+  riskQueryOptions?: RiskQueryOption[];
 }
 
 
@@ -267,7 +268,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onDeleteFreightOffer, 
   onConvertToCargo, 
   onCreateShipment, 
-  allShipments 
+  allShipments,
+  riskQueryOptions
 }) => {
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
   const [isOfferModalOpen, setIsOfferModalOpen] = React.useState(false);
@@ -976,6 +978,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
                 ?.requiresRiskManagement !== false
             }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1045,6 +1051,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
                 ?.requiresRiskManagement !== false
             }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1114,6 +1124,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
                 ?.requiresRiskManagement !== false
             }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1183,6 +1197,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
                 ?.requiresRiskManagement !== false
             }
+            products={products}
+            clients={clients}
+            users={users}
+            riskQueryOptions={riskQueryOptions}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1713,6 +1731,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
               ?.requiresRiskManagement !== false
           }
+          products={products}
+          clients={clients}
+          users={users}
+          riskQueryOptions={riskQueryOptions}
         />
       )}
 

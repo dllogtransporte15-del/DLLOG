@@ -10,7 +10,7 @@ import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
 import RecommendedDriversModal from '../components/RecommendedDriversModal';
 import AttachmentModal from '../components/AttachmentModal';
 import { REQUIRED_DOCUMENT_MAP } from '../types';
-import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch } from '../types';
+import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption } from '../types';
 import { can } from '../auth';
 import { CopyIcon } from '../components/icons/CopyIcon';
 import { CargoStatus, UserProfile, ShipmentStatus } from '../types';
@@ -61,6 +61,7 @@ interface OperationalLoadsPageProps {
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  riskQueryOptions?: RiskQueryOption[];
 }
 
 const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
@@ -103,6 +104,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   onRequestLoadOrder,
   onUpdateAttachment,
   onAddAttachments,
+  riskQueryOptions,
 }) => {
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
@@ -471,6 +473,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           products={products}
           clients={clients}
           users={users}
+          riskQueryOptions={riskQueryOptions}
         />
       )}
 

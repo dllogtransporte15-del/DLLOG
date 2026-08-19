@@ -7,7 +7,7 @@ import HistoryModal from '../components/HistoryModal';
 import AttachmentModal from '../components/AttachmentModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
-import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver } from '../types';
+import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver, RiskQueryOption } from '../types';
 import { ShipmentStatus } from '../types';
 import { isCteApplicableForStatus, getShipmentCte } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
@@ -27,9 +27,10 @@ interface ShipmentHistoryPageProps {
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
   stays?: StayRecord[];
+  riskQueryOptions?: RiskQueryOption[];
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, stays = [] }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, stays = [], riskQueryOptions }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -243,6 +244,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             products={products}
             clients={clients}
             users={users}
+            riskQueryOptions={riskQueryOptions}
         />
       )}
 

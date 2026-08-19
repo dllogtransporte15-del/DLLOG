@@ -1060,11 +1060,11 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               className="w-full p-2 text-xs bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200"
             >
               <option value="ALL">Todas as Modalidades</option>
-              <option value={RiskQueryType.Siga}>1 - SIGA (R$ 7,00)</option>
-              <option value={RiskQueryType.ConsultaBiometria}>2 - Consulta + Biometria (R$ 15,00)</option>
-              <option value={RiskQueryType.CadastroConsultaGeral}>3 - Cadastro + Consulta Geral (R$ 33,00)</option>
-              <option value={RiskQueryType.Vitimologia}>4 - Vitimologia (R$ 70,00)</option>
-              <option value={RiskQueryType.LiberacaoSimplificada}>5 - Liberação Simplificada (R$ 0,00)</option>
+              {riskQueryOptions.map((opt, idx) => (
+                <option key={opt.id || idx} value={opt.name}>
+                  {(opt.orderIndex ?? (idx + 1))} - {opt.name} (R$ {opt.cost.toFixed(2).replace('.', ',')})
+                </option>
+              ))}
             </select>
           </div>
 
