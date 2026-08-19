@@ -122,7 +122,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const canUpdate = can('update', currentUser, 'shipments', profilePermissions);
   const canDelete = can('delete', currentUser, 'shipments', profilePermissions);
 
-  const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal];
+  const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
   const canPerformSpecialActions = currentUser && allowedProfilesForActions.includes(currentUser.profile);
   
   const canEditPrice = canUpdate && canPerformSpecialActions;

@@ -40,6 +40,21 @@ if (INITIAL_PERMISSIONS[UserProfile.Embarcador] && INITIAL_PERMISSIONS[UserProfi
     INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.create = true;
 }
 
+// Specifically ensure 'update' and 'create' permissions for 'GerenciadoraDeRisco' profile
+if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]) {
+    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']) {
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']!.update = true;
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']!.create = true;
+    }
+    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']) {
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']!.update = true;
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']!.create = true;
+    }
+    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['shipments']) {
+        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['shipments']!.update = true;
+    }
+}
+
 
 export const can = (
   action: keyof CrudPermissions,
