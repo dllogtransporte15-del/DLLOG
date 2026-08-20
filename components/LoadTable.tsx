@@ -74,6 +74,50 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
   const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.nomeFantasia || 'N/A';
   const getProductName = (productId: string) => products.find(p => p.id === productId)?.name || 'N/A';
 
+  const getPayerBranchInfo = (load: Cargo) => {
+    const client = clients.find(c => c.id === load.clientId);
+    if (!client) return null;
+
+    const branches = client.secondaryCnpjs || [];
+    // Apenas exibe se o cliente possuir múltiplas filiais/CNPJs secundários ou filial/CNPJ específico na carga
+    if (branches.length === 0 && !load.clientBranchId && !load.clientCnpj) {
+      return null;
+    }
+
+    let branch = undefined;
+    if (load.clientBranchId) {
+      branch = branches.find(b => b.id === load.clientBranchId);
+    }
+    if (!branch && load.clientCnpj) {
+      const cleanLoadCnpj = load.clientCnpj.replace(/\D/g, '');
+      branch = branches.find(b => b.cnpj.replace(/\D/g, '') === cleanLoadCnpj);
+    }
+
+    if (branch) {
+      const branchName = branch.nomeFantasia || branch.razaoSocial || 'Filial';
+      return {
+        isBranch: true,
+        name: branchName,
+        cnpj: branch.cnpj,
+        city: branch.city,
+        state: branch.state,
+      };
+    }
+
+    // Se possui filiais cadastradas mas a carga é da Matriz
+    if (branches.length > 0) {
+      return {
+        isBranch: false,
+        name: client.nomeFantasia ? `${client.nomeFantasia} (Matriz)` : 'Matriz',
+        cnpj: client.cnpj,
+        city: client.city,
+        state: client.state,
+      };
+    }
+
+    return null;
+  };
+
   // Opções únicas baseadas nas cargas listadas
   const idOptions = Array.from(new Set(loads.map(l => l.sequenceId?.toString() || ''))).filter(Boolean).sort();
   const clientOptions = Array.from(new Set(loads.map(l => getClientName(l.clientId)))).filter(Boolean).sort();
@@ -389,9 +433,26 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 </div>
 
                 {/* Client and Product */}
-                <div className="flex-1 xl:flex-none xl:w-[260px] min-w-[200px]">
+                <div className="flex-1 xl:flex-none xl:w-[260px] min-w-[200px] flex flex-col justify-center">
                   <div className="text-sm font-bold text-gray-900 dark:text-white truncate" title={getClientName(load.clientId)}>{getClientName(load.clientId)}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={getProductName(load.productId)}>{getProductName(load.productId)}</div>
+                  {(() => {
+                    const payerInfo = getPayerBranchInfo(load);
+                    if (!payerInfo) return null;
+                    return (
+                      <div 
+                        className={`mt-1 inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border max-w-full truncate ${
+                          payerInfo.isBranch
+                            ? 'bg-blue-50/80 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200/80 dark:border-blue-800/60'
+                            : 'bg-gray-50 text-gray-700 dark:bg-gray-700/60 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                        }`}
+                        title={`CNPJ / Filial Pagadora: ${payerInfo.name} — CNPJ: ${payerInfo.cnpj}${payerInfo.city ? ` (${payerInfo.city}/${payerInfo.state || ''})` : ''}`}
+                      >
+                        <span className="text-[9px] uppercase font-bold tracking-wider opacity-75 shrink-0">Pagadora:</span>
+                        <span className="font-semibold truncate">{payerInfo.name}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Programação Futura (Calendário) */}

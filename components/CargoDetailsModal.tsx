@@ -133,7 +133,44 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         
         <div className="flex-1 overflow-y-auto space-y-6 pr-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                <DetailItem label="Cliente" value={client?.nomeFantasia} />
+                <DetailItem label="Cliente" value={client?.nomeFantasia || client?.razaoSocial} />
+                {(() => {
+                  const branches = client?.secondaryCnpjs || [];
+                  let branch = undefined;
+                  if (cargo.clientBranchId) {
+                    branch = branches.find(b => b.id === cargo.clientBranchId);
+                  }
+                  if (!branch && cargo.clientCnpj) {
+                    const cleanCnpj = cargo.clientCnpj.replace(/\D/g, '');
+                    branch = branches.find(b => b.cnpj.replace(/\D/g, '') === cleanCnpj);
+                  }
+
+                  if (branch) {
+                    return (
+                      <DetailItem label="CNPJ / Filial Pagadora">
+                        <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                          {branch.nomeFantasia || branch.razaoSocial || 'Filial'}
+                          <span className="font-mono text-xs text-gray-600 dark:text-gray-400 ml-1.5 font-normal">({branch.cnpj})</span>
+                          {branch.city && <span className="text-xs text-gray-500 ml-1 font-normal">[{branch.city}/{branch.state}]</span>}
+                        </p>
+                      </DetailItem>
+                    );
+                  }
+                  if (branches.length > 0) {
+                    return (
+                      <DetailItem label="CNPJ / Filial Pagadora">
+                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                          Matriz
+                          <span className="font-mono text-xs text-gray-600 dark:text-gray-400 ml-1.5 font-normal">({client?.cnpj})</span>
+                          {client?.city && <span className="text-xs text-gray-500 ml-1 font-normal">[{client.city}/{client.state}]</span>}
+                        </p>
+                      </DetailItem>
+                    );
+                  }
+                  return (
+                    <DetailItem label="CNPJ Principal" value={client?.cnpj} />
+                  );
+                })()}
                 <DetailItem label="Produto" value={product?.name} />
                 <DetailItem label="Origem" value={cargo.origin} />
                 <DetailItem label="Destino" value={cargo.destination} />

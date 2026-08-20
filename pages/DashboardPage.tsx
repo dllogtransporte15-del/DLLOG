@@ -27,6 +27,7 @@ import { getMatchedCargo } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
+import ClientBranchesHistoryModal from '../components/ClientBranchesHistoryModal';
 
 type DashboardViewMode = 'geral' | 'fiscal' | 'financeiro' | 'supervisor';
 
@@ -281,6 +282,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [offerFilterDestination, setOfferFilterDestination] = React.useState<string>('');
   const [selectedDriverForHistoryId, setSelectedDriverForHistoryId] = React.useState<string | null>(null);
   const [offerForNewShipment, setOfferForNewShipment] = React.useState<FreightOffer | null>(null);
+  const [selectedClientForBranchesHistory, setSelectedClientForBranchesHistory] = useState<Client | null>(null);
   
   // Modals state for quick direct actions (Attachment and ANTT)
   const [selectedShipmentForAttachment, setSelectedShipmentForAttachment] = useState<Shipment | null>(null);
@@ -470,7 +472,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    const volumesByClient: Record<string, number> = {};
+    const volumesByClient: Record<string, { total: number; branches: Record<string, { name: string; cnpj: string; city?: string; state?: string; volume: number; shipmentsCount: number }> }> = {};
 
     shipments.forEach(s => {
       // Find when it reached Aguardando Nota (effective volume)
@@ -480,7 +482,51 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
           const cargo = cargos.find(c => c.id === s.cargoId);
           if (cargo) {
-            volumesByClient[cargo.clientId] = (volumesByClient[cargo.clientId] || 0) + s.shipmentTonnage;
+            const client = clients.find(c => c.id === cargo.clientId);
+            if (!volumesByClient[cargo.clientId]) {
+              volumesByClient[cargo.clientId] = { total: 0, branches: {} };
+            }
+            const clientEntry = volumesByClient[cargo.clientId];
+            const tonnage = Number(s.shipmentTonnage) || 0;
+            clientEntry.total += tonnage;
+
+            // Resolve branch
+            let branchKey = 'matriz';
+            let branchName = client?.nomeFantasia ? `${client.nomeFantasia} (Matriz)` : 'Matriz';
+            let branchCnpj = client?.cnpj || '';
+            let branchCity = client?.city;
+            let branchState = client?.state;
+
+            const branches = client?.secondaryCnpjs || [];
+            let matchedBranch = undefined;
+            if (cargo.clientBranchId) {
+              matchedBranch = branches.find(b => b.id === cargo.clientBranchId);
+            }
+            if (!matchedBranch && cargo.clientCnpj) {
+              const cleanCnpj = cargo.clientCnpj.replace(/\D/g, '');
+              matchedBranch = branches.find(b => b.cnpj.replace(/\D/g, '') === cleanCnpj);
+            }
+
+            if (matchedBranch) {
+              branchKey = matchedBranch.id || matchedBranch.cnpj;
+              branchName = matchedBranch.nomeFantasia || matchedBranch.razaoSocial || 'Filial';
+              branchCnpj = matchedBranch.cnpj;
+              branchCity = matchedBranch.city;
+              branchState = matchedBranch.state;
+            }
+
+            if (!clientEntry.branches[branchKey]) {
+              clientEntry.branches[branchKey] = {
+                name: branchName,
+                cnpj: branchCnpj,
+                city: branchCity,
+                state: branchState,
+                volume: 0,
+                shipmentsCount: 0,
+              };
+            }
+            clientEntry.branches[branchKey].volume += tonnage;
+            clientEntry.branches[branchKey].shipmentsCount += 1;
           }
         }
       }
@@ -489,12 +535,25 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-purple-500', 'bg-red-500', 'bg-yellow-500', 'bg-pink-500', 'bg-indigo-500'];
     
     return Object.entries(volumesByClient)
-      .map(([clientId, value], index) => {
+      .map(([clientId, data], index) => {
         const client = clients.find(c => c.id === clientId);
+        const subItems = Object.values(data.branches)
+          .map(b => ({
+            label: b.name,
+            value: b.volume,
+            cnpj: b.cnpj,
+            city: b.city,
+            state: b.state,
+            shipmentsCount: b.shipmentsCount
+          }))
+          .sort((a, b) => b.value - a.value);
+
         return {
+          clientId,
           label: client ? client.nomeFantasia || client.razaoSocial : 'Desconhecido',
-          value,
-          color: colors[index % colors.length]
+          value: data.total,
+          color: colors[index % colors.length],
+          subItems: (client?.secondaryCnpjs && client.secondaryCnpjs.length > 0) || subItems.length > 1 ? subItems : undefined,
         };
       })
       .sort((a, b) => b.value - a.value);
@@ -600,11 +659,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const getEffectiveDate = (s: Shipment) => {
       const entry = s.statusHistory?.find(h => 
         h.status === ShipmentStatus.AguardandoNota || 
-        h.status === 'Ag. Nota' || 
-        h.status === 'Aguardando Nota' ||
-        h.status === 'Aguardando Nota Fiscal' ||
+        (h.status as string) === 'Ag. Nota' || 
+        (h.status as string) === 'Aguardando Nota' ||
+        (h.status as string) === 'Aguardando Nota Fiscal' ||
         h.status === ShipmentStatus.Finalizado ||
-        h.status === 'Finalizado'
+        (h.status as string) === 'Finalizado'
       );
       if (entry?.timestamp) return new Date(entry.timestamp);
       if (s.createdAt) return new Date(s.createdAt);
@@ -612,7 +671,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     };
     
     myShipments.forEach(s => {
-        if (s.status === ShipmentStatus.Cancelado || s.status === 'Cancelado') return;
+        if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado') return;
 
         // Volume calculations
         const effectiveDate = getEffectiveDate(s);
@@ -858,7 +917,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6">
             <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
-            <DonutChartCard title="Volume Carregado por Cliente (Mês)" data={clientVolumeData} unit="t" />
+            <DonutChartCard 
+              title="Volume Carregado por Cliente (Mês)" 
+              data={clientVolumeData} 
+              unit="t" 
+              onViewClientHistory={(clientId) => {
+                const cl = clients.find(c => c.id === clientId);
+                if (cl) setSelectedClientForBranchesHistory(cl);
+              }}
+            />
           </div>
           <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
           <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} />
@@ -1325,12 +1392,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const myShipments = allShipmentsPool.filter(s => clientCargoIds.has(s.cargoId));
 
     const funnelData = [
-      { label: 'Ag. Cadastro', value: myShipments.filter(s => s.status === ShipmentStatus.PreCadastro || s.status === 'Ag. Cadastro').length },
-      { label: 'Ag. Carregamento', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento || s.status === 'Ag. Carregamento').length },
-      { label: 'Ag. Nota', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota || s.status === 'Ag. Nota').length },
-      { label: 'Ag. Fiscal', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal || s.status === 'Ag. Fiscal').length },
-      { label: 'Ag. Descarga', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga || s.status === 'Ag. Descarga').length },
-      { label: 'Finalizado', value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado || s.status === 'Finalizado').length },
+      { label: 'Ag. Cadastro', value: myShipments.filter(s => s.status === ShipmentStatus.PreCadastro || (s.status as string) === 'Ag. Cadastro').length },
+      { label: 'Ag. Carregamento', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento || (s.status as string) === 'Ag. Carregamento').length },
+      { label: 'Ag. Nota', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota || (s.status as string) === 'Ag. Nota').length },
+      { label: 'Ag. Fiscal', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal || (s.status as string) === 'Ag. Fiscal').length },
+      { label: 'Ag. Descarga', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga || (s.status as string) === 'Ag. Descarga').length },
+      { label: 'Finalizado', value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado || (s.status as string) === 'Finalizado').length },
     ].filter(d => d.value > 0);
 
     return (
@@ -1788,7 +1855,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-6">
                 <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
-                <DonutChartCard title="Volume Carregado por Cliente (Mês)" data={clientVolumeData} unit="t" />
+                <DonutChartCard 
+                  title="Volume Carregado por Cliente (Mês)" 
+                  data={clientVolumeData} 
+                  unit="t" 
+                  onViewClientHistory={(clientId) => {
+                    const cl = clients.find(c => c.id === clientId);
+                    if (cl) setSelectedClientForBranchesHistory(cl);
+                  }}
+                />
             </div>
             <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
             {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
@@ -1858,6 +1933,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           shipment={selectedShipmentForAntt}
         />
       )}
+
+      <ClientBranchesHistoryModal
+        isOpen={!!selectedClientForBranchesHistory}
+        onClose={() => setSelectedClientForBranchesHistory(null)}
+        client={selectedClientForBranchesHistory}
+        shipments={allShipments || shipments}
+        cargos={cargos}
+        products={products}
+        onNavigateToReports={() => navigate('/reports')}
+        onOpenShipmentDetails={(s) => setDetailsModalShipment(s)}
+      />
     </>
   );
 };
