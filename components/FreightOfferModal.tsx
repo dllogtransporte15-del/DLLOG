@@ -3,7 +3,7 @@ import type { Client, Product, FreightOffer } from '../types';
 import { FreightOfferStatus } from '../types';
 import { 
   XIcon, PackageIcon, MapPinIcon, CalendarIcon, ScaleIcon, PaperclipIcon, 
-  Navigation, Route as RouteIcon, Loader2, AlertCircle, CheckCircle2, Clock
+  Navigation, Route as RouteIcon, Loader2, AlertCircle, CheckCircle2, Clock, Building2
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -115,9 +115,15 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
 
+  const [selectedBranchKey, setSelectedBranchKey] = useState<string>('matriz');
+  const [selectedClientCnpj, setSelectedClientCnpj] = useState<string>('');
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+
   // Reset modal state when opening/closing or when editingOffer changes
   useEffect(() => {
     if (isOpen) {
+      const activeClient = currentClient || (editingOffer ? clients.find(c => c.id === editingOffer.clientId) : undefined) || clients[0];
+      
       if (editingOffer) {
         setFormData({
           origin: editingOffer.origin || '',
@@ -137,6 +143,9 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
             ? editingOffer.additionalDestinations.map(d => ({ city: d.city, location: d.location || '' }))
             : []
         );
+        setSelectedBranchKey(editingOffer.clientBranchId ? `branch_${editingOffer.clientBranchId}` : (editingOffer.clientCnpj || 'matriz'));
+        setSelectedClientCnpj(editingOffer.clientCnpj || activeClient?.cnpj || '');
+        setSelectedBranchId(editingOffer.clientBranchId || '');
       } else {
         setFormData({
           origin: '',
@@ -152,12 +161,15 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
           observations: '',
         });
         setAdditionalDestinations([]);
+        setSelectedBranchKey('matriz');
+        setSelectedClientCnpj(activeClient?.cnpj || '');
+        setSelectedBranchId('');
       }
       setAttachments([]);
       setRouteData(null);
       setRouteError(null);
     }
-  }, [isOpen, editingOffer]);
+  }, [isOpen, editingOffer, currentClient, clients]);
 
   const parseCoordinatesFromText = (str: string | undefined): { lat: number; lng: number } | null => {
     if (!str) return null;
@@ -539,10 +551,15 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
 
       const mergedAttachments = [...(editingOffer?.attachments || []), ...uploadedUrls];
 
+      const finalClientCnpj = selectedClientCnpj || targetClient.cnpj;
+      const finalBranchId = selectedBranchId || undefined;
+
       if (editingOffer) {
         const updatedOffer: FreightOffer = {
           ...editingOffer,
           clientId: targetClient.id,
+          clientCnpj: finalClientCnpj,
+          clientBranchId: finalBranchId,
           origin: formData.origin,
           originLocation: formData.originLocation,
           destination: formData.destination,
@@ -562,7 +579,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
               id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
               userId: targetClient.id,
               timestamp: new Date().toISOString(),
-              description: 'Oferta editada pelo cliente.'
+              description: `Oferta editada pelo cliente. CNPJ Solicitante: ${finalClientCnpj || 'Matriz'}`
             }
           ]
         };
@@ -570,6 +587,8 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
       } else {
         await onSave({
           clientId: targetClient.id,
+          clientCnpj: finalClientCnpj,
+          clientBranchId: finalBranchId,
           origin: formData.origin,
           originLocation: formData.originLocation,
           destination: formData.destination,
@@ -631,6 +650,53 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
             {/* Form Column (6/12) */}
             <div className="lg:col-span-6 space-y-5">
               <form id="freight-offer-form" onSubmit={handleSubmit} className="space-y-4">
+                
+                {/* CNPJ / Filial Solicitante Selection (se houver filiais ou múltiplos CNPJs) */}
+                {(() => {
+                  const targetClient = currentClient || (editingOffer ? clients.find(c => c.id === editingOffer.clientId) : undefined) || clients[0];
+                  const branches = targetClient?.secondaryCnpjs || [];
+                  
+                  if (!targetClient || branches.length === 0) return null;
+
+                  return (
+                    <div className="p-4 bg-indigo-50/70 dark:bg-indigo-900/25 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-2">
+                      <label className="block text-xs font-bold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        CNPJ / Filial Solicitante da Cotação <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedBranchKey}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedBranchKey(val);
+                          if (val.startsWith('branch_')) {
+                            const bId = val.replace('branch_', '');
+                            const b = branches.find(item => item.id === bId);
+                            setSelectedBranchId(bId);
+                            setSelectedClientCnpj(b?.cnpj || '');
+                          } else {
+                            setSelectedBranchId('');
+                            setSelectedClientCnpj(targetClient.cnpj || '');
+                          }
+                        }}
+                        className="w-full px-3 py-2 text-sm border border-indigo-300 dark:border-indigo-600 rounded-lg dark:bg-gray-700 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 shadow-xs"
+                      >
+                        <option value="matriz">
+                          Matriz — CNPJ: {targetClient.cnpj} {targetClient.city ? `(${targetClient.city}/${targetClient.state})` : ''}
+                        </option>
+                        {branches.map(b => (
+                          <option key={b.id} value={`branch_${b.id}`}>
+                            {b.nomeFantasia || b.razaoSocial || 'Filial'} — CNPJ: {b.cnpj} {b.city ? `(${b.city}/${b.state})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                        Selecione para qual CNPJ ou unidade filial esta cotação de frete pertence.
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 <div className="bg-gray-50 dark:bg-gray-700/40 p-4 rounded-xl border border-gray-200/80 dark:border-gray-600 space-y-4">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
                     <MapPinIcon className="w-4 h-4 text-indigo-500" />

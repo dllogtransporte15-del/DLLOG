@@ -400,6 +400,11 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                        <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded-md tracking-wider uppercase">{item.id}</span>
+                            {activeView === 'estadias' && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase ${item.calculationType === 'DAILY_FIXED' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200/50' : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200/50'}`}>
+                                {item.calculationType === 'DAILY_FIXED' ? 'Diária Fixa' : 'Ton / Hora'}
+                              </span>
+                            )}
                             <span className="text-xs text-slate-400 font-medium">{format(parseISO(item.date), 'dd/MM/yyyy')} às {format(parseISO(item.date), 'HH:mm')}</span>
                           </div>
                           <h3 className="text-lg font-bold text-slate-800 dark:text-white leading-tight">
@@ -473,7 +478,11 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                <div>
                                  <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">Valor Calculado / Solicitado</div>
                                  <div className="text-xl font-bold text-slate-800 dark:text-white">{formatCurrency(item.totalValue)}</div>
-                                 <div className="text-[10px] text-slate-500 mt-1">({formatCurrency(item.valuePerHour)} / Ton-Hora)</div>
+                                 <div className="text-[10px] text-slate-500 mt-1">
+                                    {item.calculationType === 'DAILY_FIXED' 
+                                      ? `(${formatCurrency(item.dailyRate || item.valuePerHour)} / Diária)` 
+                                      : `(${formatCurrency(item.valuePerHour)} / Ton-Hora)`}
+                                  </div>
                                </div>
 
                                <div className="pt-3 border-t border-slate-100 dark:border-gray-700 space-y-4">
@@ -626,10 +635,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                  </div>
                                  <div className="flex items-center justify-between pt-2">
                                    <div>
-                                     <div className="text-[10px] text-slate-400 font-bold uppercase">Lucro da Estadia</div>
-                                     <div className={`text-lg font-bold ${((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0)) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                                       {formatCurrency((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0))}
-                                     </div>
+                                      <div className="text-[10px] text-slate-400 font-bold uppercase">
+                                        {((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0)) >= 0 
+                                          ? 'Lucro da Estadia' 
+                                          : 'Déficit da Estadia'}
+                                      </div>
+                                      <div className={`text-lg font-bold ${((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                        {formatCurrency((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0))}
+                                      </div>
                                    </div>
                                    <button 
                                      onClick={handleSaveStayFinancials} 

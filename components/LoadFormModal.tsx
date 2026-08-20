@@ -87,13 +87,16 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         schedulingUser: '',
         schedulingPassword: '',
         allowedProfiles: [...INTERNAL_PROFILES],
-        tmsLoteNumber: ''
+        tmsLoteNumber: '',
+        clientCnpj: offerToConvert.clientCnpj || '',
+        clientBranchId: offerToConvert.clientBranchId || ''
       };
     }
 
+    const firstClient = clients[0];
     return {
       sequenceId: newSequenceId,
-      clientId: clients[0]?.id || '',
+      clientId: firstClient?.id || '',
       productId: products[0]?.id || '',
       origin: '',
       originLocation: '',
@@ -126,7 +129,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       schedulingUser: '',
       schedulingPassword: '',
       allowedProfiles: [...INTERNAL_PROFILES],
-      tmsLoteNumber: ''
+      tmsLoteNumber: '',
+      clientCnpj: firstClient?.cnpj || '',
+      clientBranchId: ''
     };
   };
   
@@ -230,7 +235,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 schedulingPassword: editableLoad.schedulingPassword || '',
                 allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
                 allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
-                tmsLoteNumber: editableLoad.tmsLoteNumber || ''
+                tmsLoteNumber: editableLoad.tmsLoteNumber || '',
+                clientCnpj: editableLoad.clientCnpj || '',
+                clientBranchId: editableLoad.clientBranchId || ''
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
@@ -539,18 +546,81 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           {step === 1 && (
             <div className="space-y-4">
                 
-                {/* Cliente Tomador */}
-                <div className="space-y-1">
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Cliente Tomador</label>
-                    <select 
-                      name="clientId" 
-                      value={load.clientId} 
-                      onChange={handleChange} 
-                      className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 focus:border-transparent transition-all shadow-xs font-medium" 
-                      required
-                    >
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.nomeFantasia || c.razaoSocial}</option>)}
-                    </select>
+                {/* Cliente Tomador e CNPJ Pagador */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          Cliente Tomador (Empresa)
+                        </label>
+                        <select 
+                          name="clientId" 
+                          value={load.clientId} 
+                          onChange={(e) => {
+                            const newClientId = e.target.value;
+                            const selClient = clients.find(c => c.id === newClientId);
+                            setLoad(prev => ({
+                              ...prev,
+                              clientId: newClientId,
+                              clientCnpj: selClient?.cnpj || '',
+                              clientBranchId: ''
+                            }));
+                          }} 
+                          className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 focus:border-transparent transition-all shadow-xs font-medium" 
+                          required
+                        >
+                            {clients.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.nomeFantasia || c.razaoSocial} {c.secondaryCnpjs && c.secondaryCnpjs.length > 0 ? `(${c.secondaryCnpjs.length + 1} CNPJs)` : `(${c.cnpj})`}
+                              </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          CNPJ / Filial Pagadora
+                        </label>
+                        {(() => {
+                          const selectedClient = clients.find(c => c.id === load.clientId);
+                          const branches = selectedClient?.secondaryCnpjs || [];
+                          
+                          return (
+                            <select
+                              value={load.clientBranchId ? `branch_${load.clientBranchId}` : (load.clientCnpj || selectedClient?.cnpj || '')}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val.startsWith('branch_')) {
+                                  const branchId = val.replace('branch_', '');
+                                  const foundBranch = branches.find(b => b.id === branchId);
+                                  setLoad(prev => ({
+                                    ...prev,
+                                    clientBranchId: branchId,
+                                    clientCnpj: foundBranch?.cnpj || ''
+                                  }));
+                                } else {
+                                  setLoad(prev => ({
+                                    ...prev,
+                                    clientBranchId: '',
+                                    clientCnpj: val || selectedClient?.cnpj || ''
+                                  }));
+                                }
+                              }}
+                              className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 focus:border-transparent transition-all shadow-xs font-medium"
+                            >
+                              {selectedClient && (
+                                <option value={selectedClient.cnpj}>
+                                  Matriz — CNPJ: {selectedClient.cnpj} {selectedClient.city ? `(${selectedClient.city}/${selectedClient.state})` : ''}
+                                </option>
+                              )}
+                              {branches.map(b => (
+                                <option key={b.id} value={`branch_${b.id}`}>
+                                  {b.nomeFantasia || b.razaoSocial || 'Filial'} — CNPJ: {b.cnpj} {b.city ? `(${b.city}/${b.state})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                    </div>
                 </div>
 
                 {/* Origem e Destino Side-by-Side Cards */}

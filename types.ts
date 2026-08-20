@@ -60,6 +60,7 @@ export interface User {
   commercialCalculationMode?: 'bruto' | 'liquido';
   commercialIsAgencyMode?: boolean;
   commercialAgencySharePercent?: number;
+  availableForDriverRequests?: boolean;
   customPermissions?: { [key in Page]?: CrudPermissions };
 }
 
@@ -73,6 +74,22 @@ export enum DriverPaymentMethod {
   PixEFrete = "PIX - E-FRETE",
   DepositoConta = "DEPOSITO EM CONTA",
   SmsCartaFrete = "SMS CARTA FRETE",
+}
+
+export interface ClientBranchCnpj {
+  id: string;
+  cnpj: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  city?: string;
+  state?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  paymentMethod?: PaymentMethod;
+  paymentTerm?: number;
+  requiresExternalOrder?: boolean;
+  requiresScheduling?: boolean;
 }
 
 export interface Client {
@@ -89,6 +106,7 @@ export interface Client {
   paymentTerm: number; // e.g., 15, 30, 45 days
   requiresExternalOrder: boolean;
   requiresScheduling: boolean;
+  secondaryCnpjs?: ClientBranchCnpj[];
 }
 
 export enum OwnerType {
@@ -264,6 +282,8 @@ export interface Cargo {
   allowedProfiles?: UserProfile[];
   allowedUserIds?: string[];
   tmsLoteNumber?: string;
+  clientCnpj?: string;
+  clientBranchId?: string;
 }
 
 
@@ -511,5 +531,7 @@ export interface FreightOffer {
   freightType?: 'CIF' | 'FOB';
   hasIcms?: boolean;
   icmsPercentage?: number;
+  clientCnpj?: string;
+  clientBranchId?: string;
 }
 

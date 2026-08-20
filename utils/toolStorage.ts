@@ -25,6 +25,9 @@ export interface StayRecord {
   valuePerHour: number;
   tolerance: number;
   totalValue: number;
+  calculationType?: 'TON_HOUR' | 'DAILY_FIXED';
+  dailyRate?: number;
+  daysCount?: number;
   approvedValue?: number;
   driverPaidValue?: number;
   cteUrl?: string;
@@ -154,6 +157,8 @@ export async function getToolStays(userId: string): Promise<StayRecord[]> {
     valuePerHour: Number(row.value_per_hour),
     tolerance: Number(row.tolerance),
     totalValue: Number(row.total_value),
+    calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+    dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
     approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
     driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
     cteUrl: row.cte_url ?? undefined,
@@ -191,6 +196,8 @@ export async function getAllToolStays(): Promise<StayRecord[]> {
     valuePerHour: Number(row.value_per_hour),
     tolerance: Number(row.tolerance),
     totalValue: Number(row.total_value),
+    calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+    dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
     approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
     driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
     cteUrl: row.cte_url ?? undefined,
@@ -230,6 +237,8 @@ export async function getToolStaysByShipment(shipmentId: string): Promise<StayRe
     valuePerHour: Number(row.value_per_hour),
     tolerance: Number(row.tolerance),
     totalValue: Number(row.total_value),
+    calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+    dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
     approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
     driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
     status: row.status ?? undefined,
@@ -245,6 +254,8 @@ export async function saveToolStay(
   stay: Omit<StayRecord, 'id' | 'date'>
 ): Promise<StayRecord | null> {
   if (!userId) return null;
+
+  const stayStatus = stay.calculationType || stay.status || 'TON_HOUR';
 
   const { data, error } = await supabase
     .from('tool_stays')
@@ -268,7 +279,7 @@ export async function saveToolStay(
       driver_paid_value: stay.driverPaidValue ?? null,
       cte_url: stay.cteUrl ?? null,
       payment_proof_url: stay.paymentProofUrl ?? null,
-      status: stay.status ?? null,
+      status: stayStatus,
       shipment_id: stay.shipmentId ?? null,
     })
     .select('*')
@@ -296,6 +307,8 @@ export async function saveToolStay(
         valuePerHour: Number(data.value_per_hour),
         tolerance: Number(data.tolerance),
         totalValue: Number(data.total_value),
+        calculationType: (data.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+        dailyRate: data.status === 'DAILY_FIXED' ? Number(data.value_per_hour) : undefined,
         approvedValue: data.approved_value != null ? Number(data.approved_value) : undefined,
         driverPaidValue: data.driver_paid_value != null ? Number(data.driver_paid_value) : undefined,
         status: data.status ?? undefined,
@@ -386,6 +399,8 @@ export async function updateToolStay(
         valuePerHour: Number(data.value_per_hour),
         tolerance: Number(data.tolerance),
         totalValue: Number(data.total_value),
+        calculationType: (data.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+        dailyRate: data.status === 'DAILY_FIXED' ? Number(data.value_per_hour) : undefined,
         approvedValue: data.approved_value != null ? Number(data.approved_value) : undefined,
         driverPaidValue: data.driver_paid_value != null ? Number(data.driver_paid_value) : undefined,
         status: data.status ?? undefined,

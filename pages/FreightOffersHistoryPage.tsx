@@ -30,8 +30,37 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
 }) => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterClientId, setFilterClientId] = useState<string>('all');
+  const [filterCnpj, setFilterCnpj] = useState<string>('all');
   const [filterOrigin, setFilterOrigin] = useState<string>('');
   const [filterDestination, setFilterDestination] = useState<string>('');
+
+  const relevantClient = useMemo(() => {
+    if (currentUser?.profile === UserProfile.Cliente && currentUser?.clientId) {
+      return clients.find(c => c.id === currentUser.clientId);
+    }
+    if (filterClientId !== 'all') {
+      return clients.find(c => c.id === filterClientId);
+    }
+    return null;
+  }, [currentUser, filterClientId, clients]);
+
+  const availableCnpjs = useMemo(() => {
+    if (relevantClient) {
+      const list = [{ cnpj: relevantClient.cnpj, label: `Matriz (${relevantClient.cnpj})` }];
+      (relevantClient.secondaryCnpjs || []).forEach(b => {
+        list.push({ cnpj: b.cnpj, label: `${b.nomeFantasia || b.razaoSocial || 'Filial'} (${b.cnpj})` });
+      });
+      return list;
+    }
+    // All CNPJs from freightOffers
+    const set = new Map<string, string>();
+    freightOffers.forEach(o => {
+      if (o.clientCnpj) {
+        set.set(o.clientCnpj.replace(/\D/g, ''), o.clientCnpj);
+      }
+    });
+    return Array.from(set.values()).map(cnpj => ({ cnpj, label: cnpj }));
+  }, [relevantClient, freightOffers]);
 
   const filteredOffers = useMemo(() => {
     return freightOffers.filter(offer => {
@@ -40,16 +69,23 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
       }
       if (filterStatus !== 'all' && offer.status !== filterStatus) return false;
       if (filterClientId !== 'all' && offer.clientId !== filterClientId) return false;
+      if (filterCnpj !== 'all') {
+        const cleanFilter = filterCnpj.replace(/\D/g, '');
+        const client = clients.find(c => c.id === offer.clientId);
+        const offerCnpj = (offer.clientCnpj || client?.cnpj || '').replace(/\D/g, '');
+        if (offerCnpj !== cleanFilter) return false;
+      }
       if (filterOrigin && !offer.origin.toLowerCase().includes(filterOrigin.toLowerCase())) return false;
       if (filterDestination && !offer.destination.toLowerCase().includes(filterDestination.toLowerCase())) return false;
       if (currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Cliente && offer.driverId) return false;
       return true;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [freightOffers, filterStatus, filterClientId, filterOrigin, filterDestination, currentUser]);
+  }, [freightOffers, filterStatus, filterClientId, filterCnpj, filterOrigin, filterDestination, currentUser, clients]);
 
   const clearFilters = () => {
     setFilterStatus('all');
     setFilterClientId('all');
+    setFilterCnpj('all');
     setFilterOrigin('');
     setFilterDestination('');
   };
@@ -80,14 +116,17 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
           </div>
         </div>
 
-        <div className={`grid grid-cols-1 md:grid-cols-2 ${currentUser?.profile === UserProfile.Cliente ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4 mb-6`}>
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6`}>
           {currentUser?.profile !== UserProfile.Cliente && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
               <select
                 value={filterClientId}
-                onChange={(e) => setFilterClientId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+                onChange={(e) => {
+                  setFilterClientId(e.target.value);
+                  setFilterCnpj('all');
+                }}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm"
               >
                 <option value="all">Todos os Clientes</option>
                 {clients.map(client => (
@@ -99,12 +138,30 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
             </div>
           )}
 
+          {availableCnpjs.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CNPJ / Filial</label>
+              <select
+                value={filterCnpj}
+                onChange={(e) => setFilterCnpj(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm"
+              >
+                <option value="all">Todos os CNPJs</option>
+                {availableCnpjs.map(item => (
+                  <option key={item.cnpj} value={item.cnpj}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm"
             >
               <option value="all">Todos os Status</option>
               {Object.values(FreightOfferStatus).map(status => (
@@ -121,7 +178,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
                 value={filterOrigin}
                 onChange={(e) => setFilterOrigin(e.target.value)}
                 placeholder="Buscar por origem..."
-                className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm"
               />
               <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
             </div>
@@ -135,7 +192,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
                 value={filterDestination}
                 onChange={(e) => setFilterDestination(e.target.value)}
                 placeholder="Buscar por destino..."
-                className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm"
               />
               <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
             </div>

@@ -3,20 +3,26 @@ import React from 'react';
 import type { User, Client } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
-import { Building2 } from 'lucide-react';
+import { Building2, Smartphone, PhoneOff } from 'lucide-react';
 
 interface UserTableProps {
   users: User[];
   onEdit?: (user: User) => void;
   onDelete?: (userId: string) => void;
   clients?: Client[];
+  showAppOptionColumn?: boolean;
+  onToggleDriverRequests?: (user: User) => void;
 }
 
-const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients }) => {
+const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
   const getWhatsAppUrl = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     const finalDigits = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
     return `https://wa.me/${finalDigits}`;
+  };
+
+  const isInternal = (profile?: UserProfile | string) => {
+    return profile !== UserProfile.Cliente && profile !== UserProfile.Motorista;
   };
 
   return (
@@ -31,6 +37,11 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients 
               <th scope="col" className="w-36 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Telefone</th>
               <th scope="col" className="w-44 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Perfil</th>
               <th scope="col" className="w-24 px-3 sm:px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Status</th>
+              {showAppOptionColumn && (
+                <th scope="col" className="w-48 px-3 sm:px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
+                  Opção no App (Motoristas)
+                </th>
+              )}
               {(onEdit || onDelete) && (
                 <th scope="col" className="w-28 px-3 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Ações</th>
               )}
@@ -84,6 +95,41 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients 
                     {user.active ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>
+                {showAppOptionColumn && (
+                  <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-center">
+                    {isInternal(user.profile) ? (
+                      <button
+                        type="button"
+                        onClick={() => onToggleDriverRequests && onToggleDriverRequests(user)}
+                        title={
+                          user.availableForDriverRequests !== false 
+                            ? 'Visível: Motoristas podem direcionar ordens a este usuário no App. Clique para desativar.' 
+                            : 'Oculto: Não aparece para seleção de direcionamento no App. Clique para ativar.'
+                        }
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all transform active:scale-95 shadow-sm border ${
+                          user.availableForDriverRequests !== false
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'
+                            : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${user.availableForDriverRequests !== false ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                        {user.availableForDriverRequests !== false ? (
+                          <>
+                            <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>Visível no App</span>
+                          </>
+                        ) : (
+                          <>
+                            <PhoneOff className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+                            <span>Oculto no App</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-600 italic">Externo</span>
+                    )}
+                  </td>
+                )}
                 {(onEdit || onDelete) && (
                   <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                     <div className="inline-flex items-center justify-end gap-3">
@@ -100,7 +146,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients 
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={(onEdit || onDelete) ? 7 : 6} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={((onEdit || onDelete) ? 7 : 6) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nenhum usuário encontrado para os filtros selecionados.
                 </td>
               </tr>

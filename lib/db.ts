@@ -2,7 +2,7 @@ import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import { isCteApplicableForStatus } from '../utils';
 import type {
-  Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
+  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
 } from '../types';
 import { DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 
@@ -19,6 +19,8 @@ const toFreightOffer = (row: any): FreightOffer => {
   let freightType: 'CIF' | 'FOB' | undefined = row.freight_type || undefined;
   let hasIcms: boolean | undefined = row.has_icms !== undefined ? row.has_icms : undefined;
   let icmsPercentage: number | undefined = row.icms_percentage !== undefined ? Number(row.icms_percentage) : undefined;
+  let clientCnpj: string | undefined = row.client_cnpj || undefined;
+  let clientBranchId: string | undefined = row.client_branch_id || undefined;
 
   if (metaLog) {
     try {
@@ -33,6 +35,8 @@ const toFreightOffer = (row: any): FreightOffer => {
       if (parsed.freightType) freightType = parsed.freightType;
       if (parsed.hasIcms !== undefined) hasIcms = parsed.hasIcms;
       if (parsed.icmsPercentage !== undefined) icmsPercentage = parsed.icmsPercentage;
+      if (parsed.clientCnpj) clientCnpj = parsed.clientCnpj;
+      if (parsed.clientBranchId) clientBranchId = parsed.clientBranchId;
     } catch (e) {
       console.error('Error parsing freight offer metadata:', e);
     }
@@ -63,6 +67,8 @@ const toFreightOffer = (row: any): FreightOffer => {
     freightType,
     hasIcms,
     icmsPercentage,
+    clientCnpj,
+    clientBranchId,
   };
 };
 
@@ -103,7 +109,7 @@ export const fetchFreightOffers = async (): Promise<FreightOffer[]> => {
 const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
   const history = [...(o.history || [])].filter(h => h.id !== 'meta_dest_obs');
   
-  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined) {
+  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined || o.clientCnpj || o.clientBranchId) {
     history.push({
       id: 'meta_dest_obs',
       userId: 'system',
@@ -119,6 +125,8 @@ const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
         freightType: o.freightType,
         hasIcms: o.hasIcms,
         icmsPercentage: o.icmsPercentage,
+        clientCnpj: o.clientCnpj,
+        clientBranchId: o.clientBranchId,
       })
     });
   }
@@ -341,6 +349,24 @@ export const toCargo = (row: any): Cargo => ({
     }
     return undefined;
   })(),
+  clientCnpj: (() => {
+    if (row.client_cnpj) return row.client_cnpj;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_client_cnpj') : null;
+    if (metaLog) {
+      return metaLog.description || undefined;
+    }
+    return undefined;
+  })(),
+  clientBranchId: (() => {
+    if (row.client_branch_id) return row.client_branch_id;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_client_branch_id') : null;
+    if (metaLog) {
+      return metaLog.description || undefined;
+    }
+    return undefined;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -371,6 +397,28 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
         userId: 'system',
         timestamp: new Date().toISOString(),
         description: c.tmsLoteNumber
+      });
+    }
+  }
+  if (c.clientCnpj !== undefined) {
+    history = history.filter(h => h.id !== 'meta_client_cnpj');
+    if (c.clientCnpj) {
+      history.push({
+        id: 'meta_client_cnpj',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.clientCnpj
+      });
+    }
+  }
+  if (c.clientBranchId !== undefined) {
+    history = history.filter(h => h.id !== 'meta_client_branch_id');
+    if (c.clientBranchId) {
+      history.push({
+        id: 'meta_client_branch_id',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.clientBranchId
       });
     }
   }
@@ -550,6 +598,7 @@ export const toUser = (row: any): User => {
     commercialCalculationMode: perms.commercialCalculationMode ?? row.commercial_calculation_mode ?? 'bruto',
     commercialIsAgencyMode: perms.commercialIsAgencyMode ?? false,
     commercialAgencySharePercent: perms.commercialAgencySharePercent ?? undefined,
+    availableForDriverRequests: perms.availableForDriverRequests ?? row.available_for_driver_requests ?? true,
   };
 };
 
@@ -567,6 +616,7 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
     commercialCalculationMode: u.commercialCalculationMode || 'bruto',
     commercialIsAgencyMode: u.commercialIsAgencyMode ?? false,
     commercialAgencySharePercent: u.commercialAgencySharePercent,
+    availableForDriverRequests: u.availableForDriverRequests !== undefined ? u.availableForDriverRequests : true,
   };
 
   return {
@@ -722,10 +772,49 @@ async function fetchAllRows(
   return allData;
 }
 
+export const fetchClientBranches = async (): Promise<Record<string, ClientBranchCnpj[]>> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (data?.permissions?.client_branches) {
+      return data.permissions.client_branches;
+    }
+  } catch (err) {
+    console.warn('[DB] Error loading client branches:', err);
+  }
+  try {
+    const local = localStorage.getItem('transcunha_client_branches');
+    if (local) return JSON.parse(local);
+  } catch {}
+  return {};
+};
+
+export const saveClientBranches = async (branchesMap: Record<string, ClientBranchCnpj[]>): Promise<void> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      client_branches: branchesMap
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving client branches:', err);
+  }
+  try {
+    localStorage.setItem('transcunha_client_branches', JSON.stringify(branchesMap));
+  } catch {}
+};
+
 export async function fetchClients(): Promise<Client[]> {
   try {
-    const data = await fetchAllRows('clients', 'nome_fantasia');
-    return data.map(toClient);
+    const [data, branchesMap] = await Promise.all([
+      fetchAllRows('clients', 'nome_fantasia'),
+      fetchClientBranches()
+    ]);
+    return data.map(toClient).map(c => ({
+      ...c,
+      secondaryCnpjs: branchesMap[c.id] || []
+    }));
   } catch (error) {
     return handleAuthError(error, []);
   }
@@ -985,6 +1074,15 @@ export async function saveAllRiskQueryOptions(options: RiskQueryOption[]): Promi
 export async function upsertClient(client: Client): Promise<void> {
   const { error } = await supabase.from('clients').upsert(fromClient(client));
   if (error) throw error;
+  if (client.secondaryCnpjs !== undefined) {
+    try {
+      const branchesMap = await fetchClientBranches();
+      branchesMap[client.id] = client.secondaryCnpjs;
+      await saveClientBranches(branchesMap);
+    } catch (err) {
+      console.warn('[DB] Error persisting client branches in upsertClient:', err);
+    }
+  }
 }
 
 export async function upsertOwner(owner: Owner): Promise<void> {
@@ -1312,6 +1410,155 @@ export async function upsertProduct(product: Product): Promise<void> {
 export async function deleteClient(id: string): Promise<void> {
   const { error } = await supabase.from('clients').delete().eq('id', id);
   if (error) throw error;
+  try {
+    const branchesMap = await fetchClientBranches();
+    if (branchesMap[id]) {
+      delete branchesMap[id];
+      await saveClientBranches(branchesMap);
+    }
+  } catch (err) {
+    console.warn('[DB] Error removing client branches in deleteClient:', err);
+  }
+}
+
+export async function mergeClients(
+  targetClientId: string,
+  sourceClientIds: string[],
+  clients?: Client[],
+  cargos?: Cargo[],
+  freightOffers?: FreightOffer[],
+  users?: User[]
+): Promise<{
+  mergedClient: Client;
+  updatedClients: Client[];
+  updatedCargos: Cargo[];
+  updatedOffers: FreightOffer[];
+  updatedUsers: User[];
+}> {
+  const allClients = (clients && clients.length > 0) ? clients : await fetchClients();
+  const allCargos = (cargos && cargos.length > 0) ? cargos : await fetchCargos();
+  const allOffers = freightOffers ? freightOffers : await fetchFreightOffers();
+  const allUsers = users ? users : await fetchUsers();
+
+  const targetClient = allClients.find(c => c.id === targetClientId);
+  if (!targetClient) throw new Error(`Cliente principal (${targetClientId}) não encontrado`);
+
+  const sourceClients = allClients.filter(c => sourceClientIds.includes(c.id) && c.id !== targetClientId);
+  if (sourceClients.length === 0) throw new Error('Nenhum cliente selecionado para unificação');
+
+  // 1. Gather all secondary CNPJs from source clients and from existing targetClient
+  const currentSecondaries = targetClient.secondaryCnpjs ? [...targetClient.secondaryCnpjs] : [];
+  
+  for (const src of sourceClients) {
+    // Add the source client itself as a secondary CNPJ if its CNPJ is not yet registered
+    const exists = currentSecondaries.some(b => b.cnpj.replace(/\D/g, '') === src.cnpj.replace(/\D/g, '')) ||
+                   targetClient.cnpj.replace(/\D/g, '') === src.cnpj.replace(/\D/g, '');
+    if (!exists && src.cnpj) {
+      currentSecondaries.push({
+        id: `branch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        cnpj: src.cnpj,
+        razaoSocial: src.razaoSocial,
+        nomeFantasia: src.nomeFantasia || `${src.razaoSocial} (${src.city || 'Filial'})`,
+        city: src.city,
+        state: src.state,
+        address: src.address,
+        phone: src.phone,
+        email: src.email,
+        paymentMethod: src.paymentMethod,
+        paymentTerm: src.paymentTerm,
+        requiresExternalOrder: src.requiresExternalOrder,
+        requiresScheduling: src.requiresScheduling,
+      });
+    }
+
+    // Also add any secondary CNPJs that the source client had
+    if (src.secondaryCnpjs && src.secondaryCnpjs.length > 0) {
+      for (const sec of src.secondaryCnpjs) {
+        const secExists = currentSecondaries.some(b => b.cnpj.replace(/\D/g, '') === sec.cnpj.replace(/\D/g, '')) ||
+                          targetClient.cnpj.replace(/\D/g, '') === sec.cnpj.replace(/\D/g, '');
+        if (!secExists && sec.cnpj) {
+          currentSecondaries.push(sec);
+        }
+      }
+    }
+  }
+
+  const updatedTargetClient: Client = {
+    ...targetClient,
+    secondaryCnpjs: currentSecondaries
+  };
+
+  // 2. Re-link Cargos belonging to source clients
+  const updatedCargos: Cargo[] = [];
+  for (const cargo of allCargos) {
+    if (sourceClientIds.includes(cargo.clientId)) {
+      const src = sourceClients.find(c => c.id === cargo.clientId);
+      const updatedCargo: Cargo = {
+        ...cargo,
+        clientId: targetClientId,
+        clientCnpj: cargo.clientCnpj || src?.cnpj || undefined,
+        history: [
+          ...(cargo.history || []),
+          {
+            id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            userId: 'system',
+            timestamp: new Date().toISOString(),
+            description: `Cliente tomador unificado: ${src?.nomeFantasia || cargo.clientId} -> ${targetClient.nomeFantasia} (${targetClientId}).`
+          }
+        ]
+      };
+      await upsertCargo(updatedCargo);
+      updatedCargos.push(updatedCargo);
+    }
+  }
+
+  // 3. Re-link Freight Offers belonging to source clients
+  const updatedOffers: FreightOffer[] = [];
+  for (const offer of allOffers) {
+    if (sourceClientIds.includes(offer.clientId)) {
+      const src = sourceClients.find(c => c.id === offer.clientId);
+      const updatedOffer: FreightOffer = {
+        ...offer,
+        clientId: targetClientId,
+        clientCnpj: offer.clientCnpj || src?.cnpj || undefined,
+      };
+      await upsertFreightOffer(updatedOffer);
+      updatedOffers.push(updatedOffer);
+    }
+  }
+
+  // 4. Re-link Users linked to source clients
+  const updatedUsers: User[] = [];
+  for (const user of allUsers) {
+    if (user.clientId && sourceClientIds.includes(user.clientId)) {
+      const updatedUser: User = {
+        ...user,
+        clientId: targetClientId
+      };
+      await upsertUser(updatedUser);
+      updatedUsers.push(updatedUser);
+    }
+  }
+
+  // 5. Delete source clients
+  for (const src of sourceClients) {
+    await deleteClient(src.id);
+  }
+
+  // 6. Save target client with merged CNPJs
+  await upsertClient(updatedTargetClient);
+
+  const updatedClients = allClients
+    .filter(c => !sourceClientIds.includes(c.id) || c.id === targetClientId)
+    .map(c => c.id === targetClientId ? updatedTargetClient : c);
+
+  return {
+    mergedClient: updatedTargetClient,
+    updatedClients,
+    updatedCargos,
+    updatedOffers,
+    updatedUsers
+  };
 }
 
 export async function deleteProduct(id: string): Promise<void> {

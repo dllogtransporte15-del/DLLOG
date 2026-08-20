@@ -8,6 +8,7 @@ import PermissionsModal from '../components/PermissionsModal';
 import type { User, ProfilePermissions, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { can } from '../auth';
+import { useToast } from '../hooks/useToast';
 import { Building2, Globe, Truck, Users } from 'lucide-react';
 
 export type UserTabType = 'internal' | 'external_clients' | 'external_drivers' | 'all';
@@ -92,6 +93,8 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
     });
   }, [users, filters, activeTab]);
 
+  const { showToast } = useToast();
+
   const handleOpenUserModal = () => {
     setUserToEdit(null);
     setIsUserModalOpen(true);
@@ -107,6 +110,20 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
   const handleSaveUser = (user: User | Omit<User, 'id'>) => {
     onSaveUser(user);
     handleCloseUserModal();
+  };
+
+  const handleToggleDriverRequests = (user: User) => {
+    const newStatus = user.availableForDriverRequests === false ? true : false;
+    onSaveUser({
+      ...user,
+      availableForDriverRequests: newStatus,
+    });
+    showToast(
+      newStatus 
+        ? `${user.name} agora está visível no App para receber direcionamento de cargas!`
+        : `${user.name} foi ocultado do App e não receberá direcionamento direto de motoristas.`,
+      newStatus ? 'success' : 'info'
+    );
   };
 
   const defaultProfileForNewUser = activeTab === 'external_drivers' ? UserProfile.Motorista : (activeTab === 'external_clients' ? UserProfile.Cliente : UserProfile.Comercial);
@@ -225,6 +242,8 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         clients={clients}
+        showAppOptionColumn={activeTab === 'internal' || activeTab === 'all'}
+        onToggleDriverRequests={canUpdateUser ? handleToggleDriverRequests : undefined}
       />
 
       <UserFormModal

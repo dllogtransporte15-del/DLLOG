@@ -1,5 +1,6 @@
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Card from '../components/Card';
 import Header from '../components/Header';
 import DonutChartCard from '../components/DonutChartCard';
@@ -13,6 +14,7 @@ import { WhatsAppIcon } from '../components/icons/WhatsAppIcon';
 import { DashboardIcon } from '../components/icons/DashboardIcon';
 import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
+import { Building2, ChevronRight } from 'lucide-react';
 import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
 import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
@@ -271,6 +273,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   allShipments,
   riskQueryOptions
 }) => {
+  const navigate = useNavigate();
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
   const [isOfferModalOpen, setIsOfferModalOpen] = React.useState(false);
   const [offerFilterStatus, setOfferFilterStatus] = React.useState<string>('all');
@@ -549,30 +552,75 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     let scheduledVehicles = 0;
     let loadedAndFinishedVehicles = 0;
 
-    const scheduledStatuses: ShipmentStatus[] = [
+    const scheduledStatuses: (string | ShipmentStatus)[] = [
+        ShipmentStatus.PreCadastro,
+        'Ag. Cadastro',
         ShipmentStatus.AguardandoSeguradora,
+        'Ag. Seguradora',
         ShipmentStatus.AguardandoCarregamento,
+        'Ag. Carregamento',
         ShipmentStatus.AguardandoNota,
+        'Ag. Nota',
         ShipmentStatus.AguardandoFiscal,
+        'Ag. Fiscal',
         ShipmentStatus.AguardandoAdiantamento,
+        'Ag. Adiantamento',
         ShipmentStatus.AguardandoAgendamento,
+        'Ag. Agendamento',
     ];
 
-    const loadedAndFinishedStatuses: ShipmentStatus[] = [
+    const loadedAndFinishedStatuses: (string | ShipmentStatus)[] = [
         ShipmentStatus.AguardandoDescarga,
+        'Ag. Descarga',
         ShipmentStatus.AguardandoPagamentoSaldo,
+        'Ag. Saldo',
         ShipmentStatus.Finalizado,
+        'Finalizado',
     ];
+
+    const myClient = clients.find(c => c.id === currentUser.clientId);
+    const clientCnpjs = new Set<string>();
+    if (myClient?.cnpj) clientCnpjs.add(myClient.cnpj.replace(/\D/g, ''));
+    (myClient?.secondaryCnpjs || []).forEach(b => {
+      if (b.cnpj) clientCnpjs.add(b.cnpj.replace(/\D/g, ''));
+    });
+
+    const isClientCargo = (c: Cargo) => {
+      if (c.clientId === currentUser.clientId) return true;
+      const cleanCnpj = c.clientCnpj?.replace(/\D/g, '');
+      if (cleanCnpj && clientCnpjs.has(cleanCnpj)) return true;
+      return false;
+    };
+
+    const clientCargos = cargos.filter(isClientCargo);
+    const clientCargoIds = new Set(clientCargos.map(c => c.id));
+    const allShipmentsPool = (allShipments && allShipments.length > 0 ? allShipments : shipments);
+    const myShipments = allShipmentsPool.filter(s => clientCargoIds.has(s.cargoId));
+
+    const getEffectiveDate = (s: Shipment) => {
+      const entry = s.statusHistory?.find(h => 
+        h.status === ShipmentStatus.AguardandoNota || 
+        h.status === 'Ag. Nota' || 
+        h.status === 'Aguardando Nota' ||
+        h.status === 'Aguardando Nota Fiscal' ||
+        h.status === ShipmentStatus.Finalizado ||
+        h.status === 'Finalizado'
+      );
+      if (entry?.timestamp) return new Date(entry.timestamp);
+      if (s.createdAt) return new Date(s.createdAt);
+      return null;
+    };
     
-    shipments.forEach(s => {
+    myShipments.forEach(s => {
+        if (s.status === ShipmentStatus.Cancelado || s.status === 'Cancelado') return;
+
         // Volume calculations
-        const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-        if (effectiveEntry) {
-            const effectiveDate = new Date(effectiveEntry.timestamp);
+        const effectiveDate = getEffectiveDate(s);
+        if (effectiveDate && !isNaN(effectiveDate.getTime())) {
             if (effectiveDate.getFullYear() === currentYear) {
-                volumeLoadedThisYear += s.shipmentTonnage;
+                volumeLoadedThisYear += (s.shipmentTonnage || 0);
                 if (effectiveDate.getMonth() === currentMonth) {
-                    volumeLoadedThisMonth += s.shipmentTonnage;
+                    volumeLoadedThisMonth += (s.shipmentTonnage || 0);
                 }
             }
         }
@@ -587,13 +635,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     });
 
     return {
-        pendingLoads: cargos.filter(c => c.status === CargoStatus.EmAndamento).length,
+        pendingLoads: clientCargos.filter(c => (c.status || '').toLowerCase().includes('andamento')).length,
         volumeLoadedThisMonth,
         volumeLoadedThisYear,
         scheduledVehicles,
         loadedAndFinishedVehicles,
     };
-  }, [cargos, shipments, currentUser]);
+  }, [cargos, shipments, allShipments, currentUser, clients]);
 
   // View mode switcher for Admin / Diretor
   const canSwitchView = useMemo(() => {
@@ -1237,9 +1285,32 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       return true;
     });
 
-    const myCargos = cargos.filter(c => c.clientId === currentUser.clientId);
+    const myClient = clients.find(c => c.id === currentUser.clientId);
+    const clientCnpjs = new Set<string>();
+    if (myClient?.cnpj) clientCnpjs.add(myClient.cnpj.replace(/\D/g, ''));
+    (myClient?.secondaryCnpjs || []).forEach(b => {
+      if (b.cnpj) clientCnpjs.add(b.cnpj.replace(/\D/g, ''));
+    });
+
+    const isClientCargo = (c: Cargo) => {
+      if (c.clientId === currentUser.clientId) return true;
+      const cleanCnpj = c.clientCnpj?.replace(/\D/g, '');
+      if (cleanCnpj && clientCnpjs.has(cleanCnpj)) return true;
+      return false;
+    };
+
+    const myCargos = cargos.filter(isClientCargo);
     const cargoStatusCounts = myCargos.reduce((acc, c) => {
-      acc[c.status] = (acc[c.status] || 0) + 1;
+      const st = (c.status || '').toLowerCase().trim();
+      if (st.includes('andamento')) {
+        acc[CargoStatus.EmAndamento] = (acc[CargoStatus.EmAndamento] || 0) + 1;
+      } else if (st.includes('fechada')) {
+        acc[CargoStatus.Fechada] = (acc[CargoStatus.Fechada] || 0) + 1;
+      } else if (st.includes('suspens')) {
+        acc[CargoStatus.Suspensa] = (acc[CargoStatus.Suspensa] || 0) + 1;
+      } else {
+        acc[c.status] = (acc[c.status] || 0) + 1;
+      }
       return acc;
     }, {} as Record<string, number>);
 
@@ -1250,15 +1321,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     ].filter(d => d.value > 0);
 
     const clientCargoIds = new Set(myCargos.map(c => c.id));
-    const myShipments = shipments.filter(s => clientCargoIds.has(s.cargoId));
+    const allShipmentsPool = (allShipments && allShipments.length > 0 ? allShipments : shipments);
+    const myShipments = allShipmentsPool.filter(s => clientCargoIds.has(s.cargoId));
 
     const funnelData = [
-      { label: ShipmentStatus.PreCadastro, value: myShipments.filter(s => s.status === ShipmentStatus.PreCadastro).length },
-      { label: ShipmentStatus.AguardandoCarregamento, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento).length },
-      { label: ShipmentStatus.AguardandoNota, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota).length },
-      { label: ShipmentStatus.AguardandoFiscal, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal).length },
-      { label: ShipmentStatus.AguardandoDescarga, value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga).length },
-      { label: ShipmentStatus.Finalizado, value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado).length },
+      { label: 'Ag. Cadastro', value: myShipments.filter(s => s.status === ShipmentStatus.PreCadastro || s.status === 'Ag. Cadastro').length },
+      { label: 'Ag. Carregamento', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoCarregamento || s.status === 'Ag. Carregamento').length },
+      { label: 'Ag. Nota', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota || s.status === 'Ag. Nota').length },
+      { label: 'Ag. Fiscal', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal || s.status === 'Ag. Fiscal').length },
+      { label: 'Ag. Descarga', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga || s.status === 'Ag. Descarga').length },
+      { label: 'Finalizado', value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado || s.status === 'Finalizado').length },
     ].filter(d => d.value > 0);
 
     return (
@@ -1276,6 +1348,43 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               Nova Oferta de Frete
             </button>
           </div>
+
+          {myClient && (
+            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-200/80 dark:border-blue-800/60 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 bg-blue-600 text-white rounded-xl shadow-md">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                      {myClient.nomeFantasia || myClient.razaoSocial}
+                    </h3>
+                    {(myClient.secondaryCnpjs || []).length > 0 ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        {(myClient.secondaryCnpjs || []).length + 1} CNPJs Cadastrados (Matriz & Filiais)
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+                        CNPJ: {myClient.cnpj}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                    Acompanhe o relatório detalhado e o histórico individual de cada filial e CNPJ da sua empresa.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/reports')}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer shrink-0"
+              >
+                <Building2 className="w-4 h-4" />
+                Ver Histórico & Relatório por CNPJ
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
             <Card

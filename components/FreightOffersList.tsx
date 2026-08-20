@@ -579,6 +579,24 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
   const displayedOffers = isExpanded ? offers : offers.slice(0, 2);
 
   const getClientName = (id: string) => clients.find(c => c.id === id)?.nomeFantasia || 'Cliente Desconhecido';
+  
+  const getOfferClientDisplayName = (offer: FreightOffer) => {
+    const client = clients.find(c => c.id === offer.clientId);
+    if (!client) return 'Cliente Desconhecido';
+
+    if (offer.clientCnpj) {
+      const cleanOfferCnpj = offer.clientCnpj.replace(/\D/g, '');
+      const cleanMainCnpj = client.cnpj.replace(/\D/g, '');
+      if (cleanOfferCnpj !== cleanMainCnpj && client.secondaryCnpjs) {
+        const branch = client.secondaryCnpjs.find(b => b.cnpj.replace(/\D/g, '') === cleanOfferCnpj || b.id === offer.clientBranchId);
+        if (branch) {
+          return `${client.nomeFantasia || client.razaoSocial} (${branch.nomeFantasia || branch.city || branch.cnpj})`;
+        }
+      }
+    }
+    return client.nomeFantasia || client.razaoSocial;
+  };
+
   const getProductName = (id: string) => products.find(p => p.id === id)?.name || 'Produto Desconhecido';
 
   const renderLocationValue = (text: string | undefined, className: string, prefix?: React.ReactNode) => {
@@ -673,7 +691,14 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                 {!isClientProfile && (
                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
                     <div className="flex items-center gap-1.5">
-                      <span>{getClientName(offer.clientId)}</span>
+                      <div className="flex flex-col">
+                        <span>{getOfferClientDisplayName(offer)}</span>
+                        {offer.clientCnpj && (
+                          <span className="text-[10px] font-mono text-gray-500 dark:text-gray-400">
+                            CNPJ: {offer.clientCnpj}
+                          </span>
+                        )}
+                      </div>
                       {(() => {
                         const clientPhone = getOfferClientPhone(offer);
                         if (!clientPhone) return null;
@@ -682,7 +707,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                             href={getWhatsAppUrl(clientPhone, offer)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center hover:scale-110 transition-transform text-green-600"
+                            className="inline-flex items-center justify-center hover:scale-110 transition-transform text-green-600 ml-1"
                             title={`Conversar no WhatsApp (${clientPhone})`}
                           >
                             <WhatsAppIcon className="w-4 h-4" />
@@ -1171,9 +1196,16 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                 {/* Left Column: Offer Info (6/12) */}
                 <div className="lg:col-span-6 space-y-4">
                   <div>
-                    <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Cliente:</span>
+                    <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Cliente Solicitante:</span>
                     <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-600 flex items-center justify-between">
-                      <span className="font-medium text-gray-900 dark:text-gray-100">{getClientName(detailsModal.clientId)}</span>
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{getOfferClientDisplayName(detailsModal)}</div>
+                        {detailsModal.clientCnpj && (
+                          <div className="text-xs font-mono text-gray-500 dark:text-gray-400 mt-0.5">
+                            CNPJ: {detailsModal.clientCnpj}
+                          </div>
+                        )}
+                      </div>
                       {(() => {
                         const clientPhone = getOfferClientPhone(detailsModal);
                         if (!clientPhone) return null;
