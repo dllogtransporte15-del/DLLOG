@@ -2680,12 +2680,26 @@ const App: React.FC = () => {
                 history: [...cargo.history, createHistoryLog(`Volume carregado estornado devido à reversão do embarque ${shipmentId} (Status revertido para ${previousStatus}).`)]
             };
         }
+    } else if (currentStatus === ShipmentStatus.Cancelado) {
+        const cargo = cargos.find(c => c.id === shipment.cargoId);
+        if (cargo) {
+            const wasLoaded = Object.values(ShipmentStatus).indexOf(previousStatus) >= Object.values(ShipmentStatus).indexOf(ShipmentStatus.AguardandoDescarga);
+            const newScheduledVolume = cargo.scheduledVolume + shipment.shipmentTonnage;
+            const newLoadedVolume = wasLoaded ? cargo.loadedVolume + shipment.shipmentTonnage : cargo.loadedVolume;
+            updatedCargo = {
+                ...cargo,
+                scheduledVolume: newScheduledVolume,
+                loadedVolume: newLoadedVolume,
+                history: [...cargo.history, createHistoryLog(`Volumes restaurados devido à reversão do cancelamento do embarque ${shipmentId} (Status restaurado para "${previousStatus}").`)]
+            };
+        }
     }
 
     const updatedShipment: Shipment = {
         ...shipment,
         status: previousStatus,
         statusHistory: historyCopy,
+        cancellationReason: currentStatus === ShipmentStatus.Cancelado ? undefined : shipment.cancellationReason,
         documents: Object.keys(updatedDocuments).length > 0 ? updatedDocuments : undefined,
         riskReleaseCode: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskReleaseCode')) ? undefined : shipment.riskReleaseCode,
         riskQueryType: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryType')) ? undefined : shipment.riskQueryType,
@@ -2705,6 +2719,9 @@ const App: React.FC = () => {
         history: [...shipment.history, createHistoryLog(`Status revertido de "${currentStatus}" para "${previousStatus}" por ${currentUser.name}. Anexos e dados da etapa removidos para reanexação.`)]
     };
 
+    const prevShipmentsState = shipments;
+    const prevCargosState = cargos;
+
     setShipments((prev: Shipment[]) => prev.map(s => s.id === shipmentId ? updatedShipment : s));
     if (updatedCargo) {
         setCargos(prev => prev.map(c => c.id === updatedShipment.cargoId ? updatedCargo! : c));
@@ -2714,9 +2731,12 @@ const App: React.FC = () => {
         await upsertShipment(updatedShipment);
         if (updatedCargo) await upsertCargo(updatedCargo);
         showToast(`Status revertido para ${previousStatus}. Anexos anteriores removidos para novo envio.`, 'success');
-    } catch (err) {
+    } catch (err: any) {
         console.error('Erro ao salvar reversão:', err);
-        showToast("Erro ao salvar a reversão no banco de dados.", 'error');
+        setShipments(prevShipmentsState);
+        setCargos(prevCargosState);
+        const errMsg = err?.message || 'Erro desconhecido no banco de dados';
+        showToast(`Erro ao salvar a reversão no banco de dados: ${errMsg}`, 'error');
     }
   };
 

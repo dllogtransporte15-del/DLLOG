@@ -554,29 +554,28 @@ const fromShipment = (s: Shipment) => ({
   created_at: s.createdAt,
   created_by_id: s.createdById,
   status_history: s.statusHistory,
-  antt_owner_identifier: s.anttOwnerIdentifier,
-  payment_method: s.paymentMethod,
-  pix_key: s.pixKey,
-  bank_details: s.bankDetails,
+  antt_owner_identifier: s.anttOwnerIdentifier ?? null,
+  payment_method: s.paymentMethod ?? null,
+  pix_key: s.pixKey ?? null,
+  bank_details: s.bankDetails ?? null,
   advance_percentage: s.advancePercentage ?? null,
   advance_value: s.advanceValue ?? null,
   toll_value: s.tollValue ?? null,
-  vehicle_tag: s.vehicleTag,
-  company_freight_rate_snapshot: s.companyFreightRateSnapshot,
-  driver_freight_rate_snapshot: s.driverFreightRateSnapshot,
+  vehicle_tag: s.vehicleTag ?? null,
+  company_freight_rate_snapshot: s.companyFreightRateSnapshot ?? null,
+  driver_freight_rate_snapshot: s.driverFreightRateSnapshot ?? null,
   driver_freight_type: s.driverFreightType || 'PJ',
-  route: s.route,
-  cancellation_reason: s.cancellationReason,
+  route: s.route ?? null,
+  cancellation_reason: s.cancellationReason ?? null,
   driver_references: s.driverReferences ? s.driverReferences.split('\n').filter(Boolean) : [],
-  owner_contact: s.ownerContact,
+  owner_contact: s.ownerContact ?? null,
   balance_to_receive_value: s.balanceToReceiveValue ?? null,
   discount_value: s.discountValue ?? null,
-  is_breakage_waived: s.isBreakageWaived ?? null,
   net_balance_value: s.netBalanceValue ?? null,
   unloaded_tonnage: s.unloadedTonnage ?? null,
   branch_id: s.branchId || null,
-  vehicle_set_type: s.vehicleSetType,
-  vehicle_body_type: s.vehicleBodyType,
+  vehicle_set_type: s.vehicleSetType ?? null,
+  vehicle_body_type: s.vehicleBodyType ?? null,
 });
 
 export const toUser = (row: any): User => {
@@ -1128,19 +1127,56 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
   console.log('[upsertCargo] Success for cargo:', cargo.id);
 }
 
+async function executeShipmentOperationWithFallback(
+  operation: (payload: any) => Promise<{ error: any }>,
+  initialPayload: any
+): Promise<void> {
+  let currentPayload = { ...initialPayload };
+  let attempts = 0;
+  const maxAttempts = 6;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const { error } = await operation(currentPayload);
+    if (!error) return;
+
+    const msg = error?.message || '';
+    // Catch "Could not find the 'xyz' column of 'shipments' in the schema cache"
+    const match = msg.match(/Could not find the '([^']+)' column of 'shipments'/i) ||
+                  msg.match(/column "?([^"'\s]+)"? of relation "shipments" does not exist/i);
+
+    if (match && match[1] && currentPayload[match[1]] !== undefined) {
+      const missingCol = match[1];
+      console.warn(`[upsertShipment fallback] Coluna '${missingCol}' ausente no schema de shipments. Movendo para documents e tentando novamente...`);
+      currentPayload = { ...currentPayload };
+      if (currentPayload.documents && typeof currentPayload.documents === 'object') {
+        currentPayload.documents = {
+          ...currentPayload.documents,
+          [missingCol]: currentPayload[missingCol]
+        };
+      }
+      delete currentPayload[missingCol];
+      continue;
+    }
+
+    // If it's a different error or column not found in payload
+    console.error('[Shipment operation] Error:', error);
+    throw error;
+  }
+}
+
 export async function upsertShipment(shipment: Shipment): Promise<void> {
   const payload = fromShipment(shipment);
-  let error;
   if (shipment.id) {
-    const result = await supabase.from('shipments').update(payload).eq('id', shipment.id);
-    error = result.error;
+    await executeShipmentOperationWithFallback(
+      (p) => supabase.from('shipments').update(p).eq('id', shipment.id),
+      payload
+    );
   } else {
-    const result = await supabase.from('shipments').insert(payload);
-    error = result.error;
-  }
-  if (error) {
-    console.error('[upsertShipment] Error:', error);
-    throw error;
+    await executeShipmentOperationWithFallback(
+      (p) => supabase.from('shipments').insert(p),
+      payload
+    );
   }
 }
 
@@ -1278,11 +1314,10 @@ export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Car
 
 export async function insertShipment(shipment: Shipment): Promise<void> {
   const payload = fromShipment(shipment);
-  const { error } = await supabase.from('shipments').insert(payload);
-  if (error) {
-    console.error('[insertShipment] Error:', error);
-    throw error;
-  }
+  await executeShipmentOperationWithFallback(
+    (p) => supabase.from('shipments').insert(p),
+    payload
+  );
 }
 
 export async function saveProfilePermissions(permissions: ProfilePermissions): Promise<void> {
