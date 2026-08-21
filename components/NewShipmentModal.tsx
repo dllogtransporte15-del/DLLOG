@@ -376,6 +376,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const isPfDisabled = leg1.disablePfFreight || false;
   const ratePf = isPfDisabled ? 0 : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || currentCargo?.driverFreightValuePerTon || 0));
 
+  const hasPjToll = leg1.driverFreightHasToll ?? currentCargo?.driverFreightHasToll ?? false;
+  const hasPfToll = leg1.driverFreightPfHasToll ?? currentCargo?.driverFreightPfHasToll ?? false;
+
   const currentFreightRate = (driverFreightType === 'PF' && !isPfDisabled) ? ratePf : ratePj;
 
   const calculatedFreight = useMemo(() => {
@@ -922,7 +925,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                 <span className="text-xl font-black text-gray-900 dark:text-white">PJ</span>
                                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 mt-0.5">Pessoa Jurídica</span>
                                 <span className="text-base font-black text-gray-900 dark:text-white mt-2">
-                                  {formatCurrency(ratePj)} <span className="text-xs font-normal text-gray-400">/ton</span>
+                                  {formatCurrency(ratePj)}{hasPjToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">/ton</span>
                                 </span>
                             </button>
 
@@ -947,7 +950,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                   {isPfDisabled ? (
                                     <span className="text-xs text-red-500 italic">Desabilitado</span>
                                   ) : (
-                                    <>{formatCurrency(ratePf)} <span className="text-xs font-normal text-gray-400">/ton</span></>
+                                    <>{formatCurrency(ratePf)}{hasPfToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">/ton</span></>
                                   )}
                                 </span>
                             </button>

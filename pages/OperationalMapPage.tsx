@@ -315,12 +315,14 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
         const client = clients.find(cl => cl.id === load.clientId);
         const product = products.find(p => p.id === load.productId);
         const remainingVolume = load.totalVolume - load.loadedVolume;
+        const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+        const tollText = hasToll ? ' + Ped' : '';
         const popupContent = `
             <div class="p-1" style="min-width: 220px;">
                 <h4 class="font-bold text-md text-primary">Carga ${load.sequenceId}</h4>
                 <p class="text-xs text-gray-500 mb-2">${client?.nomeFantasia || 'N/A'} - ${product?.name || 'N/A'}</p>
                 <p class="text-sm"><b>Rota:</b> ${load.origin} &rarr; ${load.destination}</p>
-                <p class="text-sm"><b>Valor:</b> R$ ${load.driverFreightValuePerTon.toFixed(2)}/ton</p>
+                <p class="text-sm"><b>Valor:</b> R$ ${load.driverFreightValuePerTon.toFixed(2)}${tollText}/ton</p>
                 <p class="text-sm"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
                 <button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>
             </div>
@@ -404,7 +406,9 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
       const origin = load.origin.toUpperCase();
       const destination = load.destination.toUpperCase();
-      const price = load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const tollText = hasToll ? ' + Ped' : '';
+      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
       let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
       
@@ -520,7 +524,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
               <button 
                 type="submit" 
                 disabled={loading} 
-                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-500/20"
+                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-500/20" 
               >
                 {loading ? (
                   <>
@@ -573,6 +577,8 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
                 filteredLoads.map(load => {
                   const client = clients.find(c => c.id === load.clientId);
                   const product = products.find(p => p.id === load.productId);
+                  const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+                  const tollText = hasToll ? ' + Ped' : '';
                   return (
                     <div 
                       key={load.id} 
@@ -598,7 +604,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
                       </div>
 
                       <div className="flex justify-between mt-4 pt-3 border-t border-dashed border-gray-200 dark:border-gray-600">
-                        <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}</span>
+                        <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}{tollText}</span>
                         <span className="text-[11px] font-black text-gray-700 dark:text-gray-200">{(load.totalVolume - load.loadedVolume).toFixed(1)} <span className="text-[9px] text-gray-400 font-normal">ton</span></span>
                       </div>
                     </div>

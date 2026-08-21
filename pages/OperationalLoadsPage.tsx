@@ -51,6 +51,7 @@ interface OperationalLoadsPageProps {
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string,
@@ -236,7 +237,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const product = products.find(p => p.id === load.productId)?.name?.toUpperCase() || 'N/A';
       const origin = load.origin.toUpperCase();
       const destination = load.destination.toUpperCase();
-      const price = load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const tollText = hasToll ? ' + Ped' : '';
+      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
       let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
@@ -272,7 +275,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const product = products.find(p => p.id === load.productId)?.name || '';
       const origin = load.origin;
       const destination = load.destination;
-      const price = `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
+      const tollText = hasToll ? ' + Ped' : '';
+      const price = `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
       
       const allowed = load.allowedVehicleTypes || [];
       const vehicleTypes = formatFretebrasVehicleTypes(load.allowedVehicleTypes);

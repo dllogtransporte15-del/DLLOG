@@ -293,7 +293,11 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
             ? load.freightLegs
             : [{
                 companyFreightValuePerTon: load.companyFreightValuePerTon,
+                companyFreightHasToll: load.companyFreightHasToll,
                 driverFreightValuePerTon: load.driverFreightValuePerTon,
+                driverFreightHasToll: load.driverFreightHasToll,
+                driverFreightValuePerTonPf: load.driverFreightValuePerTon,
+                driverFreightPfHasToll: load.driverFreightPfHasToll,
                 hasIcms: load.hasIcms,
                 icmsPercentage: load.icmsPercentage,
               }];
@@ -304,6 +308,10 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
               return sum + (leg.driverFreightValuePerTonPf ?? (leg.driverFreightValuePerTon || 0));
           }, 0);
           const isPfDisabled = freightLegsToDisplay.every(leg => leg.disablePfFreight);
+
+          const hasCompanyToll = freightLegsToDisplay.some(leg => leg.companyFreightHasToll) || load.companyFreightHasToll;
+          const hasDriverPjToll = freightLegsToDisplay.some(leg => leg.driverFreightHasToll) || load.driverFreightHasToll;
+          const hasDriverPfToll = freightLegsToDisplay.some(leg => leg.driverFreightPfHasToll) || load.driverFreightPfHasToll;
 
           const totalNetCompanyValue = freightLegsToDisplay.reduce((sum, leg) => {
               const icmsRate = leg.hasIcms ? (leg.icmsPercentage || 0) / 100 : 0;
@@ -562,7 +570,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                     <div className="text-[9px] text-gray-400 uppercase font-bold tracking-wider">FRETE</div>
                     {currentUser.profile === UserProfile.Cliente ? (
                       <div className="text-sm font-bold text-primary dark:text-blue-400">
-                        {formatCurrency(load.companyFreightValuePerTon)}
+                        {formatCurrency(load.companyFreightValuePerTon)}{hasCompanyToll ? ' + Ped' : ''}
                       </div>
                     ) : (
                       <div className="flex flex-col items-end gap-1">
@@ -570,7 +578,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                         <div className="flex items-center justify-end gap-1">
                           <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">PJ</span>
                           <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
-                            {formatCurrency(totalDriverFreightPj)}
+                            {formatCurrency(totalDriverFreightPj)}{hasDriverPjToll ? ' + Ped' : ''}
                           </span>
                           <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md">
                             {netMarginPercentagePj}
@@ -585,7 +593,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           ) : (
                             <>
                               <span className="text-xs font-extrabold text-orange-700 dark:text-orange-300">
-                                {formatCurrency(totalDriverFreightPf)}
+                                {formatCurrency(totalDriverFreightPf)}{hasDriverPfToll ? ' + Ped' : ''}
                               </span>
                               <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md">
                                 {netMarginPercentagePf}

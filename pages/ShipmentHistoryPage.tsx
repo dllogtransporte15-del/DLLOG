@@ -161,6 +161,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string 

@@ -74,7 +74,10 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   scheduledVolume: 'Volume Agendado',
   loadedVolume: 'Volume Carregado',
   companyFreightValuePerTon: 'Frete Empresa (p/ Ton)',
+  companyFreightHasToll: 'Pedágio Frete Empresa',
   driverFreightValuePerTon: 'Frete Motorista (p/ Ton)',
+  driverFreightHasToll: 'Pedágio Frete Motorista PJ',
+  driverFreightPfHasToll: 'Pedágio Frete Motorista PF',
   hasIcms: 'Incide ICMS',
   icmsPercentage: '% ICMS',
   requiresScheduling: 'Exige Agendamento',
@@ -1421,6 +1424,7 @@ const App: React.FC = () => {
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string,
@@ -1429,7 +1433,7 @@ const App: React.FC = () => {
     riskQueryType?: string,
     riskQueryCost?: number,
   }) => {
-    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost } = data;
+    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, isBreakageWaived, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost } = data;
     const originalShipment = shipments.find(s => s.id === shipmentId);
     
     if (!originalShipment) {
@@ -1658,8 +1662,16 @@ const App: React.FC = () => {
     }
 
     let finalBalanceToReceive = balanceToReceiveValue ?? originalShipment.balanceToReceiveValue;
-    let finalDiscountValue = discountValue ?? originalShipment.discountValue;
+    let finalDiscountValue = isBreakageWaived ? 0 : (discountValue ?? originalShipment.discountValue);
     let finalNetBalanceValue = netBalanceValue ?? originalShipment.netBalanceValue;
+    let finalIsBreakageWaived = isBreakageWaived !== undefined ? isBreakageWaived : originalShipment.isBreakageWaived;
+
+    if (isBreakageWaived) {
+        historyLogs.push(`Quebra de carga abonada (sem aplicação de desconto).`);
+    } else if (discountValue !== undefined && discountValue > 0) {
+        const formattedDiscount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(discountValue);
+        historyLogs.push(`Desconto de quebra aplicado: ${formattedDiscount}.`);
+    }
 
     if (balanceToReceiveValue !== undefined || discountValue !== undefined || netBalanceValue !== undefined) {
         historyLogs.push(`Pagamento de Saldo registrado.`);
@@ -1704,6 +1716,7 @@ const App: React.FC = () => {
         balanceToReceiveValue: finalBalanceToReceive,
         discountValue: finalDiscountValue,
         netBalanceValue: finalNetBalanceValue,
+        isBreakageWaived: finalIsBreakageWaived,
         unloadedTonnage: finalUnloadedTonnage,
         route: route || originalShipment.route,
         riskReleaseCode: riskReleaseCode || originalShipment.riskReleaseCode,
@@ -2404,6 +2417,9 @@ const App: React.FC = () => {
               break;
             case 'hasIcms':
             case 'requiresScheduling':
+            case 'companyFreightHasToll':
+            case 'driverFreightHasToll':
+            case 'driverFreightPfHasToll':
               oldDisplayValue = oldValue ? 'Sim' : 'Não';
               newDisplayValue = newValue ? 'Sim' : 'Não';
               break;
@@ -2619,7 +2635,7 @@ const App: React.FC = () => {
       } else if (status === ShipmentStatus.AguardandoDescarga) {
         keys.push('unloaded_tonnage', 'unloadedTonnage');
       } else if (status === ShipmentStatus.AguardandoPagamentoSaldo) {
-        keys.push('balance_to_receive_value', 'discount_value', 'net_balance_value', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue');
+        keys.push('balance_to_receive_value', 'discount_value', 'net_balance_value', 'is_breakage_waived', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived');
       }
       return keys;
     };
@@ -2684,6 +2700,7 @@ const App: React.FC = () => {
         unloadedTonnage: (previousStatus === ShipmentStatus.AguardandoDescarga || keysToRemove.includes('unloadedTonnage')) ? undefined : shipment.unloadedTonnage,
         balanceToReceiveValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('balanceToReceiveValue')) ? undefined : shipment.balanceToReceiveValue,
         discountValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('discountValue')) ? undefined : shipment.discountValue,
+        isBreakageWaived: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('isBreakageWaived')) ? undefined : shipment.isBreakageWaived,
         netBalanceValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('netBalanceValue')) ? undefined : shipment.netBalanceValue,
         history: [...shipment.history, createHistoryLog(`Status revertido de "${currentStatus}" para "${previousStatus}" por ${currentUser.name}. Anexos e dados da etapa removidos para reanexação.`)]
     };

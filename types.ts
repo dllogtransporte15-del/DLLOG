@@ -220,8 +220,11 @@ export interface HistoryLog {
 
 export interface FreightLeg {
   companyFreightValuePerTon: number;
+  companyFreightHasToll?: boolean;
   driverFreightValuePerTon: number;
+  driverFreightHasToll?: boolean;
   driverFreightValuePerTonPf?: number;
+  driverFreightPfHasToll?: boolean;
   disablePfFreight?: boolean;
   hasIcms: boolean;
   icmsPercentage: number;
@@ -254,7 +257,10 @@ export interface Cargo {
   scheduledVolume: number; 
   loadedVolume: number; 
   companyFreightValuePerTon: number;
+  companyFreightHasToll?: boolean;
   driverFreightValuePerTon: number;
+  driverFreightHasToll?: boolean;
+  driverFreightPfHasToll?: boolean;
   hasIcms: boolean;
   icmsPercentage: number;
   requiresScheduling: boolean;
@@ -410,6 +416,7 @@ export interface Shipment {
   ownerContact?: string;
   balanceToReceiveValue?: number;
   discountValue?: number;
+  isBreakageWaived?: boolean;
   netBalanceValue?: number;
   unloadedTonnage?: number;
   vehicleSetType?: VehicleSetType;

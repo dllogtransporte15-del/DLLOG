@@ -66,7 +66,10 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         scheduledVolume: 0,
         loadedVolume: 0,
         companyFreightValuePerTon: companyVal,
+        companyFreightHasToll: false,
         driverFreightValuePerTon: 0,
+        driverFreightHasToll: false,
+        driverFreightPfHasToll: false,
         hasIcms: offerToConvert.hasIcms ?? false,
         icmsPercentage: offerToConvert.icmsPercentage ?? 0,
         requiresScheduling: false,
@@ -75,8 +78,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         loadingDeadline: '',
         allowedVehicleTypes: DEFAULT_ALLOWED_VEHICLE_TYPES,
         freightLegs: [
-          { companyFreightValuePerTon: companyVal, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: offerToConvert.hasIcms ?? false, icmsPercentage: offerToConvert.icmsPercentage ?? 0 },
-          { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 }
+          { companyFreightValuePerTon: companyVal, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: offerToConvert.hasIcms ?? false, icmsPercentage: offerToConvert.icmsPercentage ?? 0 },
+          { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 }
         ],
         dailySchedule: [],
         observations: offerToConvert.dailySchedule ? `Cadência sugerida pelo cliente: ${offerToConvert.dailySchedule}` : '',
@@ -108,7 +111,10 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       scheduledVolume: 0,
       loadedVolume: 0,
       companyFreightValuePerTon: 0,
+      companyFreightHasToll: false,
       driverFreightValuePerTon: 0,
+      driverFreightHasToll: false,
+      driverFreightPfHasToll: false,
       hasIcms: false,
       icmsPercentage: 0,
       requiresScheduling: false,
@@ -117,8 +123,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       loadingDeadline: '',
       allowedVehicleTypes: [],
       freightLegs: [
-        { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 },
-        { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 }
+        { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 },
+        { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 }
       ],
       dailySchedule: [],
       observations: '',
@@ -204,18 +210,31 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         if (loadToEdit) {
             const { history, createdAt, id, scheduledVolume, loadedVolume, ...editableLoad } = loadToEdit;
             const legs = editableLoad.freightLegs && editableLoad.freightLegs.length > 0
-                ? [...editableLoad.freightLegs]
+                ? editableLoad.freightLegs.map(l => ({
+                    companyFreightValuePerTon: l.companyFreightValuePerTon || 0,
+                    companyFreightHasToll: l.companyFreightHasToll ?? editableLoad.companyFreightHasToll ?? false,
+                    driverFreightValuePerTon: l.driverFreightValuePerTon || 0,
+                    driverFreightHasToll: l.driverFreightHasToll ?? editableLoad.driverFreightHasToll ?? false,
+                    driverFreightValuePerTonPf: l.driverFreightValuePerTonPf ?? l.driverFreightValuePerTon ?? 0,
+                    driverFreightPfHasToll: l.driverFreightPfHasToll ?? editableLoad.driverFreightPfHasToll ?? false,
+                    disablePfFreight: !!l.disablePfFreight,
+                    hasIcms: !!l.hasIcms,
+                    icmsPercentage: l.icmsPercentage || 0,
+                  }))
                 : [{
-                    companyFreightValuePerTon: editableLoad.companyFreightValuePerTon,
-                    driverFreightValuePerTon: editableLoad.driverFreightValuePerTon,
-                    driverFreightValuePerTonPf: editableLoad.driverFreightValuePerTon,
+                    companyFreightValuePerTon: editableLoad.companyFreightValuePerTon || 0,
+                    companyFreightHasToll: editableLoad.companyFreightHasToll || false,
+                    driverFreightValuePerTon: editableLoad.driverFreightValuePerTon || 0,
+                    driverFreightHasToll: editableLoad.driverFreightHasToll || false,
+                    driverFreightValuePerTonPf: editableLoad.driverFreightValuePerTon || 0,
+                    driverFreightPfHasToll: editableLoad.driverFreightPfHasToll || false,
                     disablePfFreight: false,
                     hasIcms: editableLoad.hasIcms,
                     icmsPercentage: editableLoad.icmsPercentage
                   }];
             
             while (legs.length < 2) {
-                legs.push({ companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 });
+                legs.push({ companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 });
             }
             
             setLoad({ 
@@ -252,7 +271,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   }, [isOpen, initialStep, currentUser, internalUsers]);
   
   // Financial & Margin Calculations
-  const { totalCompanyFreight, totalDriverFreightPj, totalDriverFreightPf, marginPjPercentage, marginPfPercentage } = useMemo(() => {
+  const { totalCompanyFreight, totalDriverFreightPj, totalDriverFreightPf, marginPjPercentage, marginPfPercentage, hasCompanyToll, hasDriverPjToll, hasDriverPfToll } = useMemo(() => {
     const legs = load.freightLegs || [];
     const activeLegs = hasMultiLeg ? legs.slice(0, 2) : legs.slice(0, 1);
 
@@ -260,6 +279,10 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     const totalDriverFreightPj = activeLegs.reduce((sum, leg) => sum + (leg.driverFreightValuePerTon || 0), 0);
     const totalDriverFreightPf = activeLegs.reduce((sum, leg) => sum + (leg.disablePfFreight ? 0 : (leg.driverFreightValuePerTonPf ?? (leg.driverFreightValuePerTon || 0))), 0);
     
+    const hasCompanyToll = activeLegs.some(leg => leg.companyFreightHasToll);
+    const hasDriverPjToll = activeLegs.some(leg => leg.driverFreightHasToll);
+    const hasDriverPfToll = activeLegs.some(leg => leg.driverFreightPfHasToll);
+
     const totalNetCompanyValue = activeLegs.reduce((sum, leg) => {
         const icmsRate = leg.hasIcms ? (leg.icmsPercentage || 0) / 100 : 0;
         return sum + ((leg.companyFreightValuePerTon || 0) * (1 - icmsRate));
@@ -277,7 +300,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     const marginPf = (totalNetCompanyValue > 0) ? (netProfitPf / totalNetCompanyValue) * 100 : 0;
     const marginPfPercentage = isNaN(marginPf) || !isFinite(marginPf) ? '0,00%' : `${marginPf.toFixed(2).replace('.', ',')}%`;
 
-    return { totalCompanyFreight, totalDriverFreightPj, totalDriverFreightPf, marginPjPercentage, marginPfPercentage };
+    return { totalCompanyFreight, totalDriverFreightPj, totalDriverFreightPf, marginPjPercentage, marginPfPercentage, hasCompanyToll, hasDriverPjToll, hasDriverPfToll };
   }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -356,7 +379,10 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       const finalLoadData = {
           ...load,
           companyFreightValuePerTon: totalCompanyFreight,
+          companyFreightHasToll: activeLegs.some(leg => leg.companyFreightHasToll),
           driverFreightValuePerTon: totalDriverFreightPj,
+          driverFreightHasToll: activeLegs.some(leg => leg.driverFreightHasToll),
+          driverFreightPfHasToll: activeLegs.some(leg => leg.driverFreightPfHasToll),
           freightLegs: activeLegs,
           hasIcms: activeLegs[0]?.hasIcms || false,
           icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
@@ -495,8 +521,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const leg1 = load.freightLegs?.[0] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
-  const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, driverFreightValuePerTon: 0, driverFreightValuePerTonPf: 0, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
+  const leg1 = load.freightLegs?.[0] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
+  const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
@@ -1068,7 +1094,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                         <div className={`grid grid-cols-1 sm:grid-cols-2 ${leg1.hasIcms ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-2.5`}>
                             {/* Frete Empresa */}
                             <div className="space-y-1">
-                                <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400">Frete Empresa (R$/ton)</label>
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400">Frete Empresa (R$/ton)</label>
+                                    <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do valor da tonelada incide pedágio">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={leg1.companyFreightHasToll || false} 
+                                          onChange={(e) => handleLegChange(0, 'companyFreightHasToll', e.target.checked)} 
+                                          className="h-3 w-3 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                                        />
+                                        <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300">+ Pedágio</span>
+                                    </label>
+                                </div>
                                 <input 
                                   value={leg1.companyFreightValuePerTon || ''} 
                                   onChange={(e) => handleLegChange(0, 'companyFreightValuePerTon', e.target.value)} 
@@ -1096,7 +1133,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
                             {/* Frete Motorista PJ */}
                             <div className="space-y-1">
-                                <label className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Frete Motorista PJ (R$/ton)</label>
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Frete Motorista PJ (R$/ton)</label>
+                                    <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do valor da tonelada incide pedágio">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={leg1.driverFreightHasToll || false} 
+                                          onChange={(e) => handleLegChange(0, 'driverFreightHasToll', e.target.checked)} 
+                                          className="h-3 w-3 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" 
+                                        />
+                                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+ Pedágio</span>
+                                    </label>
+                                </div>
                                 <input 
                                   value={leg1.driverFreightValuePerTon || ''} 
                                   onChange={(e) => handleLegChange(0, 'driverFreightValuePerTon', e.target.value)} 
@@ -1111,15 +1159,27 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             <div className="space-y-1">
                                 <div className="flex justify-between items-center">
                                     <label className="block text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide">Frete Motorista PF (R$/ton)</label>
-                                    <label className="flex items-center space-x-1 cursor-pointer">
-                                        <input 
-                                          type="checkbox" 
-                                          checked={leg1.disablePfFreight || false} 
-                                          onChange={(e) => handleLegChange(0, 'disablePfFreight', e.target.checked)} 
-                                          className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
-                                        />
-                                        <span className="text-[10px] text-gray-500 dark:text-gray-400">Desabilitar</span>
-                                    </label>
+                                    <div className="flex items-center space-x-1.5">
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do valor da tonelada incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              disabled={leg1.disablePfFreight}
+                                              checked={leg1.driverFreightPfHasToll || false} 
+                                              onChange={(e) => handleLegChange(0, 'driverFreightPfHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                            />
+                                            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">+ Ped</span>
+                                        </label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg1.disablePfFreight || false} 
+                                              onChange={(e) => handleLegChange(0, 'disablePfFreight', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                            />
+                                            <span className="text-[10px] text-gray-500 dark:text-gray-400">Off</span>
+                                        </label>
+                                    </div>
                                 </div>
                                 <input 
                                   value={leg1.disablePfFreight ? '' : (leg1.driverFreightValuePerTonPf ?? (leg1.driverFreightValuePerTon || ''))} 
@@ -1152,7 +1212,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             
                             <div className={`grid grid-cols-1 sm:grid-cols-2 ${leg2.hasIcms ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-2.5`}>
                                 <div className="space-y-1">
-                                    <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400">Frete Empresa (R$/ton)</label>
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400">Frete Empresa (R$/ton)</label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do valor da tonelada incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg2.companyFreightHasToll || false} 
+                                              onChange={(e) => handleLegChange(1, 'companyFreightHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600" 
+                                            />
+                                            <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300">+ Pedágio</span>
+                                        </label>
+                                    </div>
                                     <input 
                                       value={leg2.companyFreightValuePerTon || ''} 
                                       onChange={(e) => handleLegChange(1, 'companyFreightValuePerTon', e.target.value)} 
@@ -1178,7 +1249,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                 )}
 
                                 <div className="space-y-1">
-                                    <label className="block text-[11px] font-bold text-emerald-600 uppercase tracking-wide">Frete PJ (R$/ton)</label>
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-[11px] font-bold text-emerald-600 uppercase tracking-wide">Frete PJ (R$/ton)</label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do valor da tonelada incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg2.driverFreightHasToll || false} 
+                                              onChange={(e) => handleLegChange(1, 'driverFreightHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" 
+                                            />
+                                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+ Pedágio</span>
+                                        </label>
+                                    </div>
                                     <input 
                                       value={leg2.driverFreightValuePerTon || ''} 
                                       onChange={(e) => handleLegChange(1, 'driverFreightValuePerTon', e.target.value)} 
@@ -1190,7 +1272,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="block text-[11px] font-bold text-orange-600 uppercase tracking-wide">Frete PF (R$/ton)</label>
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-[11px] font-bold text-orange-600 uppercase tracking-wide">Frete PF (R$/ton)</label>
+                                        <label className="flex items-center space-x-1 cursor-pointer select-none" title="Indica que além do valor da tonelada incide pedágio">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={leg2.driverFreightPfHasToll || false} 
+                                              onChange={(e) => handleLegChange(1, 'driverFreightPfHasToll', e.target.checked)} 
+                                              className="h-3 w-3 rounded border-gray-300 text-orange-600 focus:ring-orange-500" 
+                                            />
+                                            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400">+ Ped</span>
+                                        </label>
+                                    </div>
                                     <input 
                                       value={leg2.driverFreightValuePerTonPf || ''} 
                                       onChange={(e) => handleLegChange(1, 'driverFreightValuePerTonPf', e.target.value)} 
@@ -1213,6 +1306,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">Frete Empresa (Total)</span>
                             <p className="text-base font-black text-gray-900 dark:text-white">
                               {totalCompanyFreight.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {hasCompanyToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
                             </p>
                         </div>
                     </div>
@@ -1223,6 +1317,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">Frete PJ / Margem PJ</span>
                             <p className="text-base font-black text-emerald-900 dark:text-emerald-300">
                               {totalDriverFreightPj.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {hasDriverPjToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
                             </p>
                         </div>
                         <span className="bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 text-xs font-extrabold px-2 py-0.5 rounded-md">
@@ -1236,6 +1331,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             <span className="text-[10px] font-bold text-orange-700 dark:text-orange-400 uppercase tracking-wider block">Frete PF / Margem PF</span>
                             <p className="text-base font-black text-orange-900 dark:text-orange-300">
                               {totalDriverFreightPf.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {hasDriverPfToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
                             </p>
                         </div>
                         <span className="bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 text-xs font-extrabold px-2 py-0.5 rounded-md">

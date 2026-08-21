@@ -35,18 +35,37 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
                 </span>
             )}
         </div>
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
             {!isMotorista && (
                 <div>
                     <p className="text-xs text-gray-500">Frete Empresa</p>
-                    <p className="font-medium text-gray-800 dark:text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.companyFreightValuePerTon)}</p>
+                    <p className="font-medium text-gray-800 dark:text-gray-200">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.companyFreightValuePerTon)}
+                        {leg.companyFreightHasToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                    </p>
                 </div>
             )}
             {!hideSensitiveData && (
-                <div>
-                    <p className="text-xs text-gray-500">{isMotorista ? 'Valor do Frete' : 'Frete Motorista'}</p>
-                    <p className="font-medium text-gray-800 dark:text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)}</p>
-                </div>
+                <>
+                    <div>
+                        <p className="text-xs text-gray-500">{isMotorista ? 'Valor do Frete' : 'Frete Motorista PJ'}</p>
+                        <p className="font-medium text-gray-800 dark:text-gray-200">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)}
+                            {leg.driverFreightHasToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-xs text-gray-500">Frete Motorista PF</p>
+                        {leg.disablePfFreight ? (
+                            <p className="font-medium text-gray-400 dark:text-gray-500 italic">Desabilitado</p>
+                        ) : (
+                            <p className="font-medium text-gray-800 dark:text-gray-200">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon)}
+                                {leg.driverFreightPfHasToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
+                            </p>
+                        )}
+                    </div>
+                </>
             )}
         </div>
     </div>
@@ -73,7 +92,11 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
     ? cargo.freightLegs
     : [{
         companyFreightValuePerTon: Number(cargo.companyFreightValuePerTon) || 0,
+        companyFreightHasToll: cargo.companyFreightHasToll,
         driverFreightValuePerTon: Number(cargo.driverFreightValuePerTon) || 0,
+        driverFreightHasToll: cargo.driverFreightHasToll,
+        driverFreightValuePerTonPf: Number(cargo.driverFreightValuePerTon) || 0,
+        driverFreightPfHasToll: cargo.driverFreightPfHasToll,
         hasIcms: !!cargo.hasIcms,
         icmsPercentage: Number(cargo.icmsPercentage) || 0,
       }];
@@ -231,19 +254,28 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     {currentUser?.profile === 'Motorista' ? (
                         <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md col-span-3">
                             <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Valor do Frete (Final)</label>
-                            <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalDriverFreight)}</p>
+                            <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+                                {formatCurrency(totalDriverFreight)}
+                                {(freightLegsToDisplay.some(leg => leg.driverFreightHasToll) || cargo.driverFreightHasToll) && <span className="ml-1 text-sm font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                            </p>
                         </div>
                     ) : (
                         <>
                             <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
                                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Empresa (Final)</label>
-                                <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalCompanyFreight)}</p>
+                                <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+                                    {formatCurrency(totalCompanyFreight)}
+                                    {(freightLegsToDisplay.some(leg => leg.companyFreightHasToll) || cargo.companyFreightHasToll) && <span className="ml-1 text-sm font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                                </p>
                             </div>
                             {!isClient && (
                                 <>
                                     <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md">
                                         <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Frete Motorista (Final)</label>
-                                        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{formatCurrency(totalDriverFreight)}</p>
+                                        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+                                            {formatCurrency(totalDriverFreight)}
+                                            {(freightLegsToDisplay.some(leg => leg.driverFreightHasToll) || cargo.driverFreightHasToll) && <span className="ml-1 text-sm font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                                        </p>
                                     </div>
                                     <div className="p-3 bg-blue-50 dark:bg-blue-900/50 rounded-md border border-blue-200 dark:border-blue-800">
                                         <label className="text-xs font-medium text-blue-500 dark:text-blue-400">Margem Líquida (%)</label>

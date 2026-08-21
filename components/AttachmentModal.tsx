@@ -20,6 +20,7 @@ interface AttachmentModalProps {
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string,
@@ -117,6 +118,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [tollValue, setTollValue] = useState<number | ''>('');
   const [balanceToReceiveValue, setBalanceToReceiveValue] = useState<number | ''>('');
   const [discountValue, setDiscountValue] = useState<number | ''>('');
+  const [isBreakageWaived, setIsBreakageWaived] = useState<boolean>(false);
   const [netBalanceValue, setNetBalanceValue] = useState<number | ''>('');
   const [unloadedTonnage, setUnloadedTonnage] = useState<number | ''>('');
   const [route, setRoute] = useState('');
@@ -148,6 +150,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       const estimatedBalance = (shipment.driverFreightValue || 0) * 0.2;
       setBalanceToReceiveValue(shipment.balanceToReceiveValue || (estimatedBalance > 0 ? Number(estimatedBalance.toFixed(2)) : ''));
       setDiscountValue(shipment.discountValue || '');
+      const hasQuebra = shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001;
+      const isWaived = shipment.isBreakageWaived ?? (shipment.discountValue === 0 && hasQuebra);
+      setIsBreakageWaived(Boolean(isWaived));
       setNetBalanceValue(shipment.netBalanceValue || '');
       setUnloadedTonnage(shipment.unloadedTonnage || '');
       
@@ -218,14 +223,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   useEffect(() => {
      if (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo) {
          const balance = Number(balanceToReceiveValue || 0);
-         const discount = Number(discountValue || 0);
+         const discount = isBreakageWaived ? 0 : Number(discountValue || 0);
          const calculatedNet = balance - discount;
          
          if (Math.abs(Number(calculatedNet.toFixed(2)) - Number(netBalanceValue)) > 0.001) {
              setNetBalanceValue(calculatedNet > 0 ? Number(calculatedNet.toFixed(2)) : 0);
          }
      }
-  }, [balanceToReceiveValue, discountValue, shipment.status]);
+  }, [balanceToReceiveValue, discountValue, isBreakageWaived, shipment.status]);
 
   const showRouteField = shipment.status === ShipmentStatus.AguardandoCarregamento;
   const isReadOnlyRoute = [
@@ -422,8 +427,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
     if (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo) {
         const hasQuebra = shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001;
-        if (hasQuebra && (!discountValue || Number(discountValue) <= 0)) {
-            showToast('Atenção: Quebra de carga detectada. É obrigatório informar o valor do desconto para prosseguir.', 'warning');
+        if (hasQuebra && !isBreakageWaived && (!discountValue || Number(discountValue) <= 0)) {
+            showToast('Atenção: Quebra de carga detectada. É obrigatório informar o valor do desconto ou marcar a opção de Abonar a Quebra para prosseguir.', 'warning');
             return;
         }
     }
@@ -443,7 +448,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         advanceValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advanceValue) : undefined,
         tollValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(tollValue || 0) : undefined,
         balanceToReceiveValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(balanceToReceiveValue) : undefined,
-        discountValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(discountValue) : undefined,
+        discountValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? (isBreakageWaived ? 0 : (discountValue === '' ? undefined : Number(discountValue))) : undefined,
+        isBreakageWaived: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? isBreakageWaived : undefined,
         netBalanceValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(netBalanceValue) : undefined,
         unloadedTonnage: shipment.status === ShipmentStatus.AguardandoDescarga ? Number(unloadedTonnage) : undefined,
         route: route ? route : undefined,
@@ -941,12 +947,21 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Valor a Descontar</label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-sm font-medium">Valor a Descontar</label>
+                                    {(shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001) && (
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isBreakageWaived ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>
+                                            {isBreakageWaived ? 'Abonado' : 'Quebra'}
+                                        </span>
+                                    )}
+                                </div>
                                 <input 
                                     type="number" 
-                                    value={discountValue} 
+                                    value={isBreakageWaived ? 0 : discountValue} 
+                                    disabled={isBreakageWaived}
+                                    placeholder={isBreakageWaived ? 'R$ 0,00 (Abonado)' : '0,00'}
                                     onChange={(e) => setDiscountValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                    className={`w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 ${(shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && !discountValue) ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : ''}`}
+                                    className={`w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 ${isBreakageWaived ? 'bg-gray-100 dark:bg-gray-800/60 opacity-80 cursor-not-allowed text-emerald-600 dark:text-emerald-400 font-bold' : ((shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && !discountValue) ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : '')}`}
                                 />
                             </div>
                             <div>
@@ -960,20 +975,62 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Alerta de Quebra */}
+                        {/* Alerta / Ação de Quebra */}
                         {shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && (
-                            <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 p-4 rounded-xl flex items-start gap-3">
-                                <div className="text-red-600 dark:text-red-400 mt-0.5">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                            !isBreakageWaived ? (
+                                <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-200 dark:border-red-800/60 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                                    <div className="flex items-start gap-3">
+                                        <div className="text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                        </div>
+                                        <div>
+                                            <h5 className="text-sm font-bold text-red-800 dark:text-red-300">Quebra de Carga Detectada</h5>
+                                            <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+                                                Constatado peso descarregado menor que o peso carregado (Diferença: <strong className="font-mono">{(shipment.unloadedTonnage - shipment.shipmentTonnage).toFixed(2)} ton</strong>).<br/>
+                                                Informe o valor do desconto referente à quebra ou <strong>abone a quebra</strong> para isentar o motorista de desconto.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsBreakageWaived(true);
+                                            setDiscountValue(0);
+                                        }}
+                                        className="flex-shrink-0 inline-flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border-2 border-emerald-500 hover:border-emerald-600 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg text-xs font-bold transition-all shadow-sm"
+                                    >
+                                        <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
+                                        Abonar Quebra (Sem Desconto)
+                                    </button>
                                 </div>
-                                <div>
-                                    <h5 className="text-sm font-bold text-red-800 dark:text-red-300">Quebra de Carga Detectada</h5>
-                                    <p className="text-xs text-red-700 dark:text-red-400 mt-1 lowercase">
-                                        FOI CONSTATADO PESO DESCARREGADO MENOR QUE O PESO CARREGADO. <br/>
-                                        <span className="font-bold uppercase underline">PARA PROSSEGUIR, É OBRIGATÓRIO INFORMAR O VALOR DO DESCONERTO REFERENTE À QUEBRA.</span>
-                                    </p>
+                            ) : (
+                                <div className="bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-200 dark:border-emerald-800/60 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                                    <div className="flex items-start gap-3">
+                                        <div className="text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        </div>
+                                        <div>
+                                            <h5 className="text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                                                Quebra de Carga Abonada
+                                                <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">Desconto Isento</span>
+                                            </h5>
+                                            <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                                A quebra de <strong className="font-mono">{(shipment.unloadedTonnage - shipment.shipmentTonnage).toFixed(2)} ton</strong> foi abonada. O saldo será pago integralmente sem desconto de quebra.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsBreakageWaived(false);
+                                            setDiscountValue('');
+                                        }}
+                                        className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg text-xs font-semibold transition-all shadow-sm"
+                                    >
+                                        Desfazer Abono (Aplicar Desconto)
+                                    </button>
                                 </div>
-                            </div>
+                            )
                         )}
                     </div>
                 ) : (

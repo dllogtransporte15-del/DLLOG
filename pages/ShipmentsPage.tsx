@@ -42,6 +42,7 @@ interface ShipmentsPageProps {
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string,
@@ -181,6 +182,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     tollValue?: number, 
     balanceToReceiveValue?: number,
     discountValue?: number,
+    isBreakageWaived?: boolean,
     netBalanceValue?: number,
     unloadedTonnage?: number,
     route?: string 
