@@ -5,11 +5,12 @@ import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
-import { Users, Search } from 'lucide-react';
+import { Users, Search, Sparkles, History, Zap, Check, Loader2 } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
+import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
 
 interface LoadFormModalProps {
   isOpen: boolean;
@@ -159,6 +160,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { showToast } = useToast();
 
+  // Sugestão de Valores por Histórico de Rotas (raio até 150km)
+  const [routeSuggestion, setRouteSuggestion] = useState<RouteHistorySuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+  const [appliedSuggestion, setAppliedSuggestion] = useState(false);
+
   const commercialUsers = useMemo(() => {
     return users.filter(u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin);
   }, [users]);
@@ -269,6 +275,37 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, initialStep, currentUser, internalUsers]);
+
+  // Busca sugestão de valores com base no histórico de cargas ou cotações no raio de 150km
+  useEffect(() => {
+    if (!isOpen || !load.origin || !load.destination) {
+      setRouteSuggestion(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoadingSuggestion(true);
+      try {
+        const suggestion = await findRouteHistorySuggestion(load.origin, load.destination, loads);
+        setRouteSuggestion(suggestion);
+        setAppliedSuggestion(false);
+      } catch (err) {
+        console.warn('[LoadFormModal] Erro ao buscar sugestão de rota:', err);
+      } finally {
+        setLoadingSuggestion(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, load.origin, load.destination, loads]);
+
+  const handleApplyLoadSuggestion = (sug: RouteHistorySuggestion) => {
+    handleLegChange(0, 'companyFreightValuePerTon', sug.companyFreightRate);
+    handleLegChange(0, 'driverFreightValuePerTon', sug.driverFreightRate);
+    handleLegChange(0, 'driverFreightValuePerTonPf', sug.driverFreightRate);
+    setAppliedSuggestion(true);
+    showToast(`Valores da ${sug.source === 'cargo' ? 'última carga' : 'última cotação'} aplicados com sucesso!`, 'success');
+  };
   
   // Financial & Margin Calculations
   const { totalCompanyFreight, totalDriverFreightPj, totalDriverFreightPf, marginPjPercentage, marginPfPercentage, hasCompanyToll, hasDriverPjToll, hasDriverPfToll } = useMemo(() => {
@@ -728,6 +765,81 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </div>
                 </div>
 
+                {/* Banner de Sugestão Inteligente de Rota */}
+                {loadingSuggestion && (
+                    <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-xl flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Buscando histórico de cargas e cotações na região (raio de 150km)...</span>
+                    </div>
+                )}
+
+                {routeSuggestion && (
+                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-blue-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>
+                                    {routeSuggestion.source === 'cargo'
+                                        ? 'Última Carga Realizada na Região'
+                                        : 'Última Cotação Salva na Região'}
+                                </span>
+                            </div>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                                {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
+                                    ? 'Rota Exata'
+                                    : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
+                            </span>
+                        </div>
+
+                        <div className="text-xs text-gray-700 dark:text-gray-300">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                                <History className="w-3.5 h-3.5" />
+                                <span>
+                                    {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {new Date(routeSuggestion.date).toLocaleDateString('pt-BR')}
+                                    {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Empresa</div>
+                                    <div className="text-sm font-black text-gray-900 dark:text-white">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.companyFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Motorista</div>
+                                    <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.driverFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => handleApplyLoadSuggestion(routeSuggestion)}
+                            className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs ${
+                                appliedSuggestion
+                                    ? 'bg-emerald-700 text-white'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            }`}
+                        >
+                            {appliedSuggestion ? (
+                                <>
+                                    <Check className="w-3.5 h-3.5" /> Valores Aplicados na Perna 1!
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="w-3.5 h-3.5" /> Aplicar Valores Desta {routeSuggestion.source === 'cargo' ? 'Carga' : 'Cotação'}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
+
                 <datalist id="cities-list">
                     {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
                 </datalist>
@@ -1059,6 +1171,79 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           {step === 3 && (
             <div className="space-y-4">
                 
+                {/* Banner de Sugestão Inteligente de Rota */}
+                {loadingSuggestion && (
+                    <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-xl flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Consultando histórico de cargas e cotações na região (raio de 150km)...</span>
+                    </div>
+                )}
+
+                {routeSuggestion && (
+                    <div className="p-3.5 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 via-teal-50/60 to-blue-50/40 dark:from-emerald-950/40 dark:via-gray-800 dark:to-teal-950/30 dark:border-emerald-800/60 shadow-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>
+                                    Sugestão: {routeSuggestion.source === 'cargo' ? 'Última Carga na Região' : 'Última Cotação na Região'}
+                                </span>
+                            </div>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                                {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
+                                    ? 'Rota Exata'
+                                    : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
+                            </span>
+                        </div>
+
+                        <div className="text-xs text-gray-700 dark:text-gray-300">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                                <History className="w-3.5 h-3.5" />
+                                <span>
+                                    {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {new Date(routeSuggestion.date).toLocaleDateString('pt-BR')}
+                                    {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Empresa</div>
+                                    <div className="text-sm font-black text-gray-900 dark:text-white">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.companyFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                                <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-emerald-100 dark:border-gray-700">
+                                    <div className="text-[10px] text-gray-500 uppercase font-semibold">Frete Motorista</div>
+                                    <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(routeSuggestion.driverFreightRate)}
+                                        <span className="text-[10px] font-normal text-gray-400">/ton</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => handleApplyLoadSuggestion(routeSuggestion)}
+                            className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs ${
+                                appliedSuggestion
+                                    ? 'bg-emerald-700 text-white'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            }`}
+                        >
+                            {appliedSuggestion ? (
+                                <>
+                                    <Check className="w-3.5 h-3.5" /> Valores Aplicados na Perna 1!
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="w-3.5 h-3.5" /> Preencher Automaticamente com Estes Valores
+                                </>
+                            )}
+                        </button>
+                    </div>
+                )}
+
                 {/* Header & Legs */}
                 <div>
                     <div className="flex justify-between items-center mb-2">

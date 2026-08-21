@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
@@ -11,12 +10,13 @@ import {
   Percent, Scale, Fuel, Info, Save, Download, 
   FileText, CheckCircle2, AlertCircle, Loader2,
   ArrowRight, Settings2, Building2, Calculator,
-  FileCode, Clock, Search
+  FileCode, Clock, Search, Sparkles, History, Check, Zap
 } from 'lucide-react';
 import Header from '../components/Header';
 import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../utils/toolStorage';
-import type { User as AppUser } from '../types';
+import type { User as AppUser, Cargo } from '../types';
 import { autoFormatInput } from '../utils/formatters';
+import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -62,6 +62,7 @@ interface RouteInfo {
 
 interface FreightQuotePageProps {
   currentUser: AppUser | null;
+  cargos?: Cargo[];
 }
 
 function MapUpdater({ origin, dest, routeCoords }: { origin?: Location | null, dest?: Location | null, routeCoords?: [number, number][] }) {
@@ -88,7 +89,7 @@ function MapUpdater({ origin, dest, routeCoords }: { origin?: Location | null, d
   return null;
 }
 
-export default function FreightQuotePage({ currentUser }: FreightQuotePageProps) {
+export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQuotePageProps) {
   const [clients, setClients] = useState<ToolClient[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -97,6 +98,11 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
   const [destCoords, setDestCoords] = useState<Location | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sugestão Inteligente de Rota (Histórico de Cargas ou Cotações em até 150km)
+  const [routeSuggestion, setRouteSuggestion] = useState<RouteHistorySuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+  const [appliedSuggestion, setAppliedSuggestion] = useState(false);
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
@@ -136,6 +142,7 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     const formattedValue = autoFormatInput(name, value);
     setFormData(prev => ({ ...prev, [name]: formattedValue }));
     setSaveSuccess(false);
+    setAppliedSuggestion(false);
   };
 
   const fetchCoordinates = async (address: string) => {
@@ -157,6 +164,25 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     }
   };
 
+  // Busca sugestão de valores com base no histórico de cargas (1ª prioridade) ou cotações (2ª prioridade)
+  const searchRouteHistory = useCallback(async (originStr: string, destStr: string) => {
+    if (!originStr.trim() || !destStr.trim()) {
+      setRouteSuggestion(null);
+      return;
+    }
+
+    setLoadingSuggestion(true);
+    try {
+      const suggestion = await findRouteHistorySuggestion(originStr, destStr, cargos);
+      setRouteSuggestion(suggestion);
+    } catch (err) {
+      console.error('Erro ao buscar histórico de rota:', err);
+      setRouteSuggestion(null);
+    } finally {
+      setLoadingSuggestion(false);
+    }
+  }, [cargos]);
+
   const calculateRoute = async () => {
     if (!formData.origin || !formData.destination) {
       setError('Informe a origem e o destino para calcular a rota.');
@@ -166,6 +192,9 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     setLoading(true);
     setError(null);
     setRouteInfo(null);
+
+    // Dispara busca no histórico simultaneamente
+    searchRouteHistory(formData.origin, formData.destination);
 
     try {
       const origin = await fetchCoordinates(formData.origin);
@@ -194,7 +223,6 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
         });
 
         // Cálculo Estimado (Mock) dos sites para a distância e número de eixos informados
-        // Em um ambiente de produção sem CORS, deve-se integrar APIs como API Routes, Aptrack, Tarifa de Pedágios.
         const eixos = parseInt(formData.axes) || 6;
         const baseAnttEstimate = distanceKm * eixos * 1.458; // Base aproximada Mínimo ANTT
         const baseTollEstimate = distanceKm * eixos * 0.198; // Base aproximada de pedágio (1/2 centavos por KM/Eixo)
@@ -213,6 +241,17 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplySuggestion = (sug: RouteHistorySuggestion) => {
+    setFormData(prev => ({
+      ...prev,
+      inputMode: 'PER_TON',
+      companyFreightPerTon: sug.companyFreightRate.toFixed(2),
+      driverValue: sug.driverFreightRate.toFixed(2),
+      ...(sug.tollValue ? { tollValue: sug.tollValue.toFixed(2) } : {})
+    }));
+    setAppliedSuggestion(true);
   };
 
   const results = useMemo(() => {
@@ -253,7 +292,6 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
       marginPercent,
       differenceFromBase,
       isValid,
-      // Default zero compat
       dieselCost: 0,
       commissionValue: 0,
       carrierNetProfit: companyTotalFreight - driverTotalValue,
@@ -307,6 +345,14 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+
+  const formatDate = (dateStr: string) => {
+    try {
+      return format(new Date(dateStr), 'dd/MM/yyyy');
+    } catch {
+      return dateStr;
+    }
   };
 
   const exportToPDF = () => {
@@ -387,8 +433,8 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
                 </div>
               </div>
 
-              <button onClick={calculateRoute} disabled={loading} className="w-full flex items-center justify-center px-4 py-2.5 bg-slate-900 dark:bg-gray-700 text-white rounded-xl hover:bg-slate-800 transition-colors font-medium text-sm disabled:opacity-50 mt-4">
-                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} BUSCAR ROTA
+              <button onClick={calculateRoute} disabled={loading} className="w-full flex items-center justify-center px-4 py-2.5 bg-slate-900 dark:bg-gray-700 text-white rounded-xl hover:bg-slate-800 transition-colors font-medium text-sm disabled:opacity-50 mt-4 shadow-sm">
+                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} BUSCAR ROTA E HISTÓRICO
               </button>
 
               {error && (
@@ -397,6 +443,81 @@ export default function FreightQuotePage({ currentUser }: FreightQuotePageProps)
                 </div>
               )}
             </div>
+
+            {/* Banner de Sugestão Inteligente Baseado em Histórico de Cargas ou Cotações */}
+            {loadingSuggestion && (
+              <div className="mt-4 p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 rounded-xl flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Consultando histórico de cargas e cotações na região (raio de 150km)...</span>
+              </div>
+            )}
+
+            {routeSuggestion && (
+              <div className="mt-4 p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 via-blue-50/60 to-purple-50/40 dark:from-indigo-950/40 dark:via-gray-800 dark:to-purple-950/30 dark:border-indigo-800/60 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                    <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>
+                      {routeSuggestion.source === 'cargo'
+                        ? 'Última Carga Realizada na Região'
+                        : 'Última Cotação Salva na Região'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300">
+                    {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
+                      ? 'Rota Exata'
+                      : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
+                  </span>
+                </div>
+
+                <div className="text-xs text-slate-700 dark:text-gray-300 space-y-1">
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-gray-400">
+                    <History className="w-3.5 h-3.5" />
+                    <span>
+                      {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {formatDate(routeSuggestion.date)}
+                      {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-indigo-100 dark:border-gray-700">
+                      <div className="text-[10px] text-slate-500 uppercase font-semibold">Frete Empresa</div>
+                      <div className="text-sm font-black text-slate-900 dark:text-white">
+                        {formatCurrency(routeSuggestion.companyFreightRate)}
+                        <span className="text-[10px] font-normal text-slate-400">/ton</span>
+                      </div>
+                    </div>
+                    <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-indigo-100 dark:border-gray-700">
+                      <div className="text-[10px] text-slate-500 uppercase font-semibold">Frete Motorista</div>
+                      <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(routeSuggestion.driverFreightRate)}
+                        <span className="text-[10px] font-normal text-slate-400">/ton</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleApplySuggestion(routeSuggestion)}
+                  className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                    appliedSuggestion
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  }`}
+                >
+                  {appliedSuggestion ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" /> Valores Aplicados!
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5" /> Aplicar Valores Desta {routeSuggestion.source === 'cargo' ? 'Carga' : 'Cotação'}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-gray-700 space-y-4">
               <div className="space-y-1.5">
