@@ -2474,25 +2474,28 @@ const App: React.FC = () => {
     } else { 
       if (!currentUser) return;
       
-      // Gerar um ID temporário para atualização otimista na UI
+      const validCargos = cargos.filter(c => c.sequenceId && c.sequenceId > 0 && c.sequenceId < 1000000);
+      const localMaxSeq = validCargos.reduce((max, c) => Math.max(max, c.sequenceId || 0), 0);
+      const safeNextCargo = (nextIds.cargo && nextIds.cargo < 1000000) ? nextIds.cargo : (localMaxSeq + 1);
+      const nextSeq = Math.max(localMaxSeq + 1, safeNextCargo, 101);
       const tempId = `TEMP-${Date.now()}`;
+
       const newLoad: Cargo = {
         ...loadData,
         id: tempId,
+        sequenceId: nextSeq,
         createdAt: new Date().toISOString(),
         createdById: (loadData as any).createdById || currentUser.id,
-        history: [createHistoryLog(`Carga iniciada (Aguardando ID do servidor)`)],
+        history: [createHistoryLog(`Carga criada (#${nextSeq})`)],
       } as Cargo;
 
-      
       // Atualização otimista
       setCargos(prev => [newLoad, ...prev]);
       
       try {
-        // O servidor irá ignorar o tempId e gerar o real CRG-XXX via Trigger
         const savedCargo = await insertCargo(newLoad);
         
-        // Atualiza o estado local com o ID real retornado pelo banco
+        // Atualiza o estado local com o ID e registro real retornado pelo banco
         setCargos(prev => prev.map(c => c.id === tempId ? savedCargo : c));
         
         if (offerToConvert) {
@@ -2515,11 +2518,13 @@ const App: React.FC = () => {
           setOfferToConvert(null);
         }
         
-        // Sincroniza o contador local de IDs para evitar saltos desnecessários (opcional)
-        const newNum = parseInt(savedCargo.id.split('-')[1], 10);
-        if (!isNaN(newNum) && newNum < 1000000) {
-          setNextIds((prev: any) => ({ ...prev, cargo: Math.max(prev.cargo < 1000000 ? prev.cargo : 0, newNum + 1) }));
+        // Sincroniza o contador local de IDs
+        const finalSeq = savedCargo.sequenceId || parseInt(savedCargo.id.split('-')[1], 10);
+        if (!isNaN(finalSeq) && finalSeq < 1000000) {
+          setNextIds((prev: any) => ({ ...prev, cargo: Math.max(prev.cargo < 1000000 ? prev.cargo : 0, finalSeq + 1) }));
         }
+
+        showToast('Carga criada com sucesso!', 'success');
         
       } catch (err: any) {
         console.error('Erro ao salvar carga no Supabase:', err);

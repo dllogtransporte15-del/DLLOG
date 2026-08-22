@@ -1116,23 +1116,16 @@ export async function upsertVehicle(vehicle: Vehicle): Promise<void> {
 }
 
 export async function upsertCargo(cargo: Cargo): Promise<void> {
+  if (!cargo.id || cargo.id.startsWith('TEMP-')) {
+    await insertCargo(cargo);
+    return;
+  }
   const payload = fromCargo(cargo);
   console.log('[upsertCargo] Saving cargo:', cargo.id, payload);
-  let error;
-  if (cargo.id) {
-    // Existing record: use update to guarantee the row is written
-    const result = await supabase.from('cargos').update(payload).eq('id', cargo.id);
-    error = result.error;
-  } else {
-    const result = await supabase.from('cargos').insert(payload).select().single();
-    error = result.error;
-    if (!error && result.data) {
-      (cargo as any).id = result.data.id;
-    }
-  }
-  if (error) {
-    console.error('[upsertCargo] Error:', error);
-    throw error;
+  const result = await supabase.from('cargos').update(payload).eq('id', cargo.id);
+  if (result.error) {
+    console.error('[upsertCargo] Error:', result.error);
+    throw result.error;
   }
   console.log('[upsertCargo] Success for cargo:', cargo.id);
 }
@@ -1311,14 +1304,40 @@ export async function deleteTicket(id: string): Promise<void> {
 }
 
 export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Cargo> {
-  const payload = fromCargo(cargo);
-  if (payload.id && typeof payload.id === 'string' && payload.id.startsWith('TEMP-')) {
-    delete payload.id;
+  let sequenceId = (cargo as any).sequenceId;
+  let id = (cargo as any).id;
+
+  if (!sequenceId || typeof sequenceId !== 'number' || sequenceId <= 0 || sequenceId >= 1000000) {
+    try {
+      const { data } = await supabase
+        .from('cargos')
+        .select('sequence_id')
+        .lt('sequence_id', 1000000)
+        .order('sequence_id', { ascending: false })
+        .limit(1);
+      const dbMaxSeq = data?.[0]?.sequence_id ? Number(data[0].sequence_id) : 100;
+      sequenceId = Math.max(dbMaxSeq + 1, 101);
+    } catch (err) {
+      console.warn('[insertCargo] Error querying max sequence_id:', err);
+      sequenceId = 101;
+    }
   }
-  if (payload.sequence_id && (payload.sequence_id > 1000000 || payload.sequence_id <= 0)) {
-    delete payload.sequence_id;
+
+  if (!id || (typeof id === 'string' && id.startsWith('TEMP-'))) {
+    id = `CRG-${sequenceId}`;
   }
-  console.log('[insertCargo] Inserting new cargo:', payload.id || 'AUTO_GENERATED');
+
+  const cargoWithId = {
+    ...cargo,
+    id,
+    sequenceId
+  } as Cargo;
+
+  const payload = fromCargo(cargoWithId);
+  payload.id = id;
+  payload.sequence_id = sequenceId;
+
+  console.log('[insertCargo] Inserting new cargo:', payload.id, 'sequence_id:', payload.sequence_id);
   const { data, error } = await supabase.from('cargos').insert(payload).select().single();
   if (error) {
     console.error('[insertCargo] Error:', error);
