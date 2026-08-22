@@ -5,6 +5,8 @@ import VolumeBar from './VolumeBar';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { StayRecord } from '../utils/toolStorage';
 import { ShipmentStatus } from '../types';
+import { DocumentAttachmentCard } from './ImageLightboxModal';
+import FormattedObservations from './FormattedObservations';
 
 interface CargoDetailsModalProps {
   isOpen: boolean;
@@ -301,24 +303,24 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
             {cargo.observations && (
                 <div className="border-t dark:border-gray-700 pt-4">
                     <DetailItem label="Observações">
-                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">{cargo.observations}</p>
+                        <FormattedObservations text={cargo.observations} className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md" />
                     </DetailItem>
                 </div>
             )}
 
             {cargo.attachments && cargo.attachments.length > 0 && (
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <DetailItem label="Anexos">
-                        <ul className="mt-1 space-y-2">
+                    <DetailItem label="Anexos e Documentos">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                             {cargo.attachments.map((fileName, index) => (
-                                <li key={index}>
-                                    <a href="#" onClick={(e) => e.preventDefault()} className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                                        <PaperclipIcon className="w-4 h-4 mr-2" />
-                                        {fileName}
-                                    </a>
-                                </li>
+                                <DocumentAttachmentCard
+                                    key={index}
+                                    attachment={fileName}
+                                    index={index}
+                                    label="Roteiro / Imagem da Carga"
+                                />
                             ))}
-                        </ul>
+                        </div>
                     </DetailItem>
                 </div>
             )}

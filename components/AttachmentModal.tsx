@@ -863,7 +863,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         )}
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
                         <div>
                             <label className="block text-sm font-medium mb-1">Valor pago no tag</label>
@@ -893,6 +893,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                 onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
                                 className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
                                 disabled={!canSave}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Valor total de adiantamento</label>
+                            <input 
+                                type="text" 
+                                readOnly
+                                value={((Number(tollValue) || 0) + (Number(advanceValue) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                                className="w-full p-2 border rounded bg-gray-100 dark:bg-gray-700/60 dark:border-gray-600 font-bold text-gray-700 dark:text-gray-200 cursor-not-allowed"
                             />
                         </div>
                     </div>

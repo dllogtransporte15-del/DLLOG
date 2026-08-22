@@ -26,11 +26,23 @@ function getMaxId(items: any[], startOffset: number): number {
   let maxNum = startOffset - 1;
   for (const item of items) {
     if (item?.id && typeof item.id === 'string') {
+      // Ignora IDs temporários, logs, anexos, etc.
+      if (item.id.startsWith('TEMP') || item.id.startsWith('log_') || item.id.startsWith('branch_') || item.id.startsWith('img_')) {
+        continue;
+      }
       const match = item.id.match(/-(\d+)$/);
       if (match) {
         const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
+        // IDs sequenciais normais são < 1.000.000 (valores maiores são timestamps Date.now())
+        if (!isNaN(num) && num < 1000000 && num > maxNum) maxNum = num;
       }
+    }
+    // Também valida sequence_id / sequenceId numérico
+    if (item?.sequence_id && typeof item.sequence_id === 'number' && item.sequence_id < 1000000 && item.sequence_id > maxNum) {
+      maxNum = item.sequence_id;
+    }
+    if (item?.sequenceId && typeof item.sequenceId === 'number' && item.sequenceId < 1000000 && item.sequenceId > maxNum) {
+      maxNum = item.sequenceId;
     }
   }
   const nextId = maxNum + 1;
@@ -102,7 +114,12 @@ export function useDatabase(currentUser: User | null) {
   const [nextIds, setNextIds] = useState(() => {
     try {
       const saved = localStorage.getItem('transcunha_nextIds') || localStorage.getItem('trancunha_nextIds');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.cargo && parsed.cargo > 1000000) parsed.cargo = 100;
+        if (parsed.shipment && parsed.shipment > 1000000) parsed.shipment = 100;
+        return parsed;
+      }
     } catch {}
     return { client: 100, owner: 100, driver: 100, vehicle: 100, product: 100, shipment: 100, cargo: 100, user: 100, ticket: 1, branch: 10, freightOffer: 1, history: 1000 };
   });

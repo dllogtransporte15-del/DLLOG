@@ -9,6 +9,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
 import RecommendedDriversModal from '../components/RecommendedDriversModal';
 import AttachmentModal from '../components/AttachmentModal';
+import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import { REQUIRED_DOCUMENT_MAP } from '../types';
 import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption } from '../types';
 import { can } from '../auth';
@@ -29,6 +30,7 @@ interface OperationalLoadsPageProps {
   allShipments: Shipment[];
   onCreateShipment: (data: any) => void;
   onSaveLoad: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
+  onBulkSaveLoads?: (cargos: Omit<Cargo, 'id'>[]) => Promise<void>;
   currentUser: User;
   profilePermissions: ProfilePermissions;
   users: User[];
@@ -89,6 +91,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   allShipments,
   onCreateShipment,
   onSaveLoad,
+  onBulkSaveLoads,
   currentUser,
   profilePermissions,
   users,
@@ -108,6 +111,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   riskQueryOptions,
 }) => {
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
+  const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
   const [selectedCargo, setSelectedCargo] = useState<Cargo | null>(null);
   const [copyButtonText, setCopyButtonText] = useState('Divulgar Cargas');
   const [fretebrasButtonText, setFretebrasButtonText] = useState('Prompt Fretebras');
@@ -171,9 +175,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   };
 
   React.useEffect(() => {
-    const isAnyOpen = isShipmentModalOpen || isLoadFormModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isRecommendedDriversModalOpen || isAttachmentModalOpen;
+    const isAnyOpen = isShipmentModalOpen || isBulkImportModalOpen || isLoadFormModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isRecommendedDriversModalOpen || isAttachmentModalOpen;
     onModalStateChange(isAnyOpen);
-  }, [isShipmentModalOpen, isLoadFormModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isRecommendedDriversModalOpen, isAttachmentModalOpen, onModalStateChange]);
+  }, [isShipmentModalOpen, isBulkImportModalOpen, isLoadFormModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isRecommendedDriversModalOpen, isAttachmentModalOpen, onModalStateChange]);
 
   const handleShowCargoDetails = (cargo: Cargo) => {
     setDetailsModalCargo(cargo);
@@ -325,6 +329,14 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       <Header title="Cargas em Operação">
         {currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
           <div className="flex items-center gap-2">
+            {can('create', currentUser, 'loads', profilePermissions) && (
+              <button
+                onClick={() => setIsBulkImportModalOpen(true)}
+                className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shadow-sm transition-all text-sm"
+              >
+                📦 Importar em Lote
+              </button>
+            )}
             <button
               onClick={handleShareLoads}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200"
@@ -481,6 +493,19 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           riskQueryOptions={riskQueryOptions}
         />
       )}
+
+      <BulkCargoImportModal
+        isOpen={isBulkImportModalOpen}
+        onClose={() => setIsBulkImportModalOpen(false)}
+        clients={clients}
+        products={products}
+        currentUserId={currentUser?.id || ''}
+        onBulkSave={onBulkSaveLoads || (async (cargosList) => {
+          for (const c of cargosList) {
+            onSaveLoad(c);
+          }
+        })}
+      />
 
     </>
   );

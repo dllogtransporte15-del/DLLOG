@@ -426,9 +426,10 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     }
   }
 
-  return {
-    id: (c as Cargo).id,
-    sequence_id: c.sequenceId,
+  const cargoId = (c as Cargo).id;
+  const isTempId = !cargoId || (typeof cargoId === 'string' && cargoId.startsWith('TEMP-'));
+
+  const payload: any = {
     client_id: c.clientId,
     product_id: c.productId,
     origin: c.origin,
@@ -462,6 +463,15 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     salesperson_commission_per_ton: c.salespersonCommissionPerTon,
     branch_id: c.branchId || null,
   };
+
+  if (!isTempId) {
+    payload.id = cargoId;
+  }
+  if (c.sequenceId && typeof c.sequenceId === 'number' && c.sequenceId > 0 && c.sequenceId < 1000000) {
+    payload.sequence_id = c.sequenceId;
+  }
+
+  return payload;
 };
 
 const toShipment = (row: any): Shipment => ({
@@ -1128,7 +1138,7 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
 }
 
 async function executeShipmentOperationWithFallback(
-  operation: (payload: any) => Promise<{ error: any }>,
+  operation: (payload: any) => PromiseLike<{ error: any }>,
   initialPayload: any
 ): Promise<void> {
   let currentPayload = { ...initialPayload };
@@ -1302,7 +1312,13 @@ export async function deleteTicket(id: string): Promise<void> {
 
 export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Cargo> {
   const payload = fromCargo(cargo);
-  console.log('[insertCargo] Inserting new cargo:', (cargo as Cargo).id || 'NEW');
+  if (payload.id && typeof payload.id === 'string' && payload.id.startsWith('TEMP-')) {
+    delete payload.id;
+  }
+  if (payload.sequence_id && (payload.sequence_id > 1000000 || payload.sequence_id <= 0)) {
+    delete payload.sequence_id;
+  }
+  console.log('[insertCargo] Inserting new cargo:', payload.id || 'AUTO_GENERATED');
   const { data, error } = await supabase.from('cargos').insert(payload).select().single();
   if (error) {
     console.error('[insertCargo] Error:', error);

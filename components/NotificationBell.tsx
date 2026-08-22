@@ -3,12 +3,12 @@ import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page, Client,
 import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus } from '../types';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
-import { AlertTriangle, Flame, Truck, ShieldAlert, FileCheck2, Volume2, VolumeX, ChevronRight, X, CheckCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, Flame, Truck, ShieldAlert, FileCheck2, Volume2, VolumeX, ChevronRight, X, CheckCircle, XCircle, Wallet } from 'lucide-react';
 import OrderRequestDecisionModal from './OrderRequestDecisionModal';
 
 export interface SystemAlert {
   id: string;
-  type: 'order_request' | 'fiscal_sla' | 'insurance_sla' | 'ticket';
+  type: 'order_request' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket';
   title: string;
   message: string;
   timestamp: string;
@@ -101,6 +101,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isEmbarcador = user.profile === UserProfile.Embarcador;
     const isFiscal = user.profile === UserProfile.Fiscal;
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
+    const isFinanceiro = user.profile === UserProfile.Financeiro;
     const isAdminOrDiretor = user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor;
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
@@ -195,7 +196,41 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       });
     }
 
-    // 4. TICKETS (Chamados Abertos Atribuídos ao Usuário)
+    // 4. REGRA FINANCEIRO: Embarques "Ag. Adiantamento" e "Ag. Saldo"
+    // Time nos status de adiantamento e saldo: 2:30h (150 min) alerta - 2:45h (165 min) crítico
+    if (isFinanceiro || isAdminOrDiretor) {
+      shipments.forEach(s => {
+        if (s.status !== ShipmentStatus.AguardandoAdiantamento && s.status !== ShipmentStatus.AguardandoPagamentoSaldo) return;
+
+        const currentEntry = s.statusHistory?.[s.statusHistory.length - 1];
+        const startTime = new Date(currentEntry?.timestamp || s.createdAt).getTime();
+        const elapsedMinutes = Math.max(0, Math.floor((now - startTime) / (1000 * 60)));
+
+        // SLA Financeiro: Alerta >= 150 min (2:30h), Crítico >= 165 min (2:45h)
+        if (elapsedMinutes >= 150) {
+          const urgency: 'warning' | 'critical' = elapsedMinutes >= 165 ? 'critical' : 'warning';
+          const driverName = s.driverName || 'Motorista';
+          const labelId = s.cteNumber ? `CT-e ${s.cteNumber}` : `Embarque #${s.id.slice(-6)}`;
+          const isAdiantamento = s.status === ShipmentStatus.AguardandoAdiantamento;
+          const statusTitle = isAdiantamento ? 'Ag. Adiantamento' : 'Ag. Saldo';
+          const statusDesc = isAdiantamento ? 'adiantamento' : 'saldo';
+
+          alerts.push({
+            id: `financial_${s.id}`,
+            type: 'financial_sla',
+            title: `${statusTitle} - ${urgency === 'critical' ? 'CRÍTICO' : 'ALERTA'}`,
+            message: `${labelId} (${driverName}) aguardando pagamento de ${statusDesc} há ${formatElapsedTime(elapsedMinutes)}.`,
+            timestamp: currentEntry?.timestamp || s.createdAt,
+            elapsedMinutes,
+            urgency,
+            targetPage: 'shipments',
+            relatedId: s.id
+          });
+        }
+      });
+    }
+
+    // 5. TICKETS (Chamados Abertos Atribuídos ao Usuário)
     tickets.forEach(t => {
       if (t.assignedToId === user.id && t.status !== TicketStatus.Resolvido && t.status !== TicketStatus.Fechado) {
         alerts.push({
@@ -387,6 +422,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                         {alert.type === 'insurance_sla' && (
                           <div className={`p-2 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400'}`}>
                             <ShieldAlert className="w-4 h-4" />
+                          </div>
+                        )}
+                        {alert.type === 'financial_sla' && (
+                          <div className={`p-2 rounded-xl ${isCritical ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400'}`}>
+                            {isCritical ? <Flame className="w-4 h-4" /> : <Wallet className="w-4 h-4" />}
                           </div>
                         )}
                         {alert.type === 'ticket' && (

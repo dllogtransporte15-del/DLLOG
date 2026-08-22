@@ -8,6 +8,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
 import RecommendedDriversModal from '../components/RecommendedDriversModal';
 import NewShipmentModal from '../components/NewShipmentModal';
+import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch } from '../types';
 import { CargoStatus, UserProfile } from '../types';
 import { can } from '../auth';
@@ -23,8 +24,8 @@ interface LoadsPageProps {
   shipments: Shipment[];
   allShipments: Shipment[];
   vehicles: Vehicle[];
-  // FIX: Changed Omit to use a union type for the keys to be omitted.
   onSaveLoad: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
+  onBulkSaveLoads?: (cargos: Omit<Cargo, 'id'>[]) => Promise<void>;
   currentUser: User;
   profilePermissions: ProfilePermissions;
   users: User[];
@@ -43,9 +44,10 @@ interface LoadsPageProps {
   onCreateShipment?: (data: any) => Promise<void>;
 }
 
-const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment }) => {
+const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
   const [loadToEdit, setLoadToEdit] = useState<Cargo | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [selectedLoadForHistory, setSelectedLoadForHistory] = useState<Cargo | null>(null);
@@ -60,9 +62,9 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   const [selectedCargoForShipment, setSelectedCargoForShipment] = useState<Cargo | null>(null);
 
   React.useEffect(() => {
-    const isAnyOpen = isModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isRecommendedDriversModalOpen || isNewShipmentModalOpen;
+    const isAnyOpen = isModalOpen || isBulkImportModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isRecommendedDriversModalOpen || isNewShipmentModalOpen;
     onModalStateChange(isAnyOpen);
-  }, [isModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isRecommendedDriversModalOpen, isNewShipmentModalOpen, onModalStateChange]);
+  }, [isModalOpen, isBulkImportModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isRecommendedDriversModalOpen, isNewShipmentModalOpen, onModalStateChange]);
 
   React.useEffect(() => {
     if (offerToConvert) {
@@ -160,12 +162,20 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
     <>
       <Header title="Cadastro de Cargas">
         {canCreate && (
-          <button
-            onClick={handleOpenModal}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-          >
-            Adicionar Carga
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsBulkImportModalOpen(true)}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all flex items-center gap-2 text-sm"
+            >
+              📦 Importar em Lote
+            </button>
+            <button
+              onClick={handleOpenModal}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary text-sm font-medium"
+            >
+              Adicionar Carga
+            </button>
+          </div>
         )}
       </Header>
       
@@ -208,6 +218,19 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         branches={branches}
         initialStep={initialModalStep}
         offerToConvert={offerToConvert}
+      />
+
+      <BulkCargoImportModal
+        isOpen={isBulkImportModalOpen}
+        onClose={() => setIsBulkImportModalOpen(false)}
+        clients={clients}
+        products={products}
+        currentUserId={currentUser?.id || ''}
+        onBulkSave={onBulkSaveLoads || (async (cargosList) => {
+          for (const c of cargosList) {
+            onSaveLoad(c);
+          }
+        })}
       />
 
       {selectedLoadForHistory && (
