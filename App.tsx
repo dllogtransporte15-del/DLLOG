@@ -2534,8 +2534,11 @@ const App: React.FC = () => {
       try {
         const savedCargo = await insertCargo(newLoad);
         
-        // Atualiza o estado local com o ID e registro real retornado pelo banco
-        setCargos(prev => prev.map(c => c.id === tempId ? savedCargo : c));
+        // Atualiza o estado local garantindo que o tempId seja removido e não haja duplicação com o Realtime
+        setCargos(prev => {
+          const filtered = prev.filter(c => c.id !== tempId && c.id !== savedCargo.id);
+          return [savedCargo, ...filtered];
+        });
         
         if (offerToConvert) {
           const updatedOffer = {
