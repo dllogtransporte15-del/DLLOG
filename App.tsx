@@ -577,6 +577,7 @@ const App: React.FC = () => {
   // --- AUTH HANDLERS ---
   const handleLogin = (user: User) => {
     localStorage.setItem('trancunha_user_email', user.email);
+    localStorage.setItem('trancunha_currentUser', JSON.stringify(user));
     setCurrentUser(user);
     if (user.profile === UserProfile.Motorista) {
       setCurrentPage('operational-loads');
