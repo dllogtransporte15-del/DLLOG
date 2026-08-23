@@ -266,9 +266,13 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
     return map;
   }, [products]);
 
-  // Available open cargos
+  // Available open cargos: todas as cargas que não estiverem Suspensas/Fechadas e tiverem Programação lançada
   const availableCargos = useMemo(() => {
-    return cargos.filter(c => c.status === CargoStatus.EmAndamento && (c.totalVolume - c.scheduledVolume > 0));
+    return cargos.filter(c => {
+      const isNotSuspended = c.status !== CargoStatus.Suspensa && c.status !== CargoStatus.Fechada;
+      const hasSchedule = Array.isArray(c.dailySchedule) && c.dailySchedule.length > 0;
+      return isNotSuspended && hasSchedule;
+    });
   }, [cargos]);
 
   // Filtered cargos by search query

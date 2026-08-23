@@ -764,7 +764,12 @@ const App: React.FC = () => {
       // 1. Admin always sees all loads
       if (currentUser.profile === UserProfile.Admin) return true;
 
-      // 2. Client profile specific filtering (must match clientId or secondary CNPJs)
+      // 2. Motorista profile: sees all non-suspended loads
+      if (currentUser.profile === UserProfile.Motorista) {
+        return c.status !== CargoStatus.Suspensa && c.status !== CargoStatus.Fechada;
+      }
+
+      // 3. Client profile specific filtering (must match clientId or secondary CNPJs)
       if (currentUser.profile === UserProfile.Cliente) {
         if (!currentUser.clientId) return false;
         if (c.clientId === currentUser.clientId) return true;
@@ -778,7 +783,7 @@ const App: React.FC = () => {
         return false;
       }
 
-      // 3. Filter by allowed user IDs if defined on cargo
+      // 4. Filter by allowed user IDs if defined on cargo
       if (c.allowedUserIds && c.allowedUserIds.length > 0) {
         if (!c.allowedUserIds.includes(currentUser.id)) {
           return false;
@@ -789,8 +794,8 @@ const App: React.FC = () => {
         }
       }
 
-      // 4. Embarcador & Motorista profiles
-      if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Motorista) {
+      // 5. Embarcador profile
+      if (currentUser.profile === UserProfile.Embarcador) {
         return true;
       }
 
@@ -1094,6 +1099,11 @@ const App: React.FC = () => {
     const driverCpfClean = (data.driverCpf || driverToUse?.cpf || '').replace(/\D/g, '');
     const driverNameClean = (data.driverName || driverToUse?.name || '').trim().toLowerCase();
 
+    // Check if the product linked to this cargo requires Risk Management (GR)
+    const targetCargo = cargos.find(c => c.id === data.cargoId);
+    const targetProduct = products.find(p => p.id === targetCargo?.productId);
+    const requiresGR = targetProduct?.requiresRiskManagement !== false;
+
     const hasPreviousApprovedGrShipment = isAlreadyRegisteredDriver && shipments.some(s => {
       const sCpfClean = (s.driverCpf || '').replace(/\D/g, '');
       const sNameClean = (s.driverName || '').trim().toLowerCase();
@@ -1124,9 +1134,18 @@ const App: React.FC = () => {
       return false;
     });
 
-    const initialStatus = hasPreviousApprovedGrShipment
-      ? ShipmentStatus.AguardandoSeguradora
-      : ShipmentStatus.PreCadastro;
+    let initialStatus: ShipmentStatus;
+    if (!requiresGR) {
+      // Produto não exige GR: se já tem cadastro, vai direto para Ag. Carregamento; senão vai para Ag. Cadastro
+      initialStatus = isAlreadyRegisteredDriver
+        ? ShipmentStatus.AguardandoCarregamento
+        : ShipmentStatus.PreCadastro;
+    } else {
+      // Produto exige GR: se tem histórico de aprovação no GR, vai para Ag. Seguradora; senão vai para Ag. Cadastro
+      initialStatus = hasPreviousApprovedGrShipment
+        ? ShipmentStatus.AguardandoSeguradora
+        : ShipmentStatus.PreCadastro;
+    }
 
     if (!driverToUse) {
       const newDriverId = formatId(currentNextIds.driver, 'DRV');
@@ -1210,7 +1229,11 @@ const App: React.FC = () => {
     }
     
     let historyMsg = `Embarque ${newShipmentId} criado.`;
-    if (hasPreviousApprovedGrShipment) {
+    if (!requiresGR) {
+      if (isAlreadyRegisteredDriver) {
+        historyMsg += ` Carga com produto sem exigência de GR e motorista já cadastrado — direcionado diretamente para Ag. Carregamento.`;
+      }
+    } else if (hasPreviousApprovedGrShipment) {
       historyMsg += ` Motorista já cadastrado com aprovação prévia no GR — direcionado diretamente para Ag. Seguradora.`;
     }
     if (attachedFileNames.length > 0) historyMsg += ` Anexo(s): ${attachedFileNames.join(', ')}.`;
@@ -1296,9 +1319,14 @@ const App: React.FC = () => {
     }
 
     setCurrentPage('shipments');
-    const toastMessage = hasPreviousApprovedGrShipment
-      ? `Embarque ${newShipmentId} criado! Por possuir histórico prévio de aprovação na GR, o embarque foi direcionado direto para "Ag. Seguradora".`
-      : `Novo embarque ${newShipmentId} criado com sucesso! Motoristas/Veículos não cadastrados foram adicionados automaticamente.`;
+    let toastMessage = `Novo embarque ${newShipmentId} criado com sucesso!`;
+    if (!requiresGR && isAlreadyRegisteredDriver) {
+      toastMessage = `Embarque ${newShipmentId} criado! Produto não exige GR e motorista já possui cadastro — direcionado direto para "Ag. Carregamento".`;
+    } else if (hasPreviousApprovedGrShipment) {
+      toastMessage = `Embarque ${newShipmentId} criado! Por possuir histórico prévio de aprovação na GR, o embarque foi direcionado direto para "Ag. Seguradora".`;
+    } else if (!isAlreadyRegisteredDriver) {
+      toastMessage = `Novo embarque ${newShipmentId} criado com sucesso! Motoristas/Veículos não cadastrados foram adicionados automaticamente.`;
+    }
     showToast(toastMessage, 'success');
   };
 
@@ -1491,6 +1519,16 @@ const App: React.FC = () => {
 
     if (originalShipment.status === ShipmentStatus.AguardandoSeguradora && (grStatus === 'reprovado' || grStatus === 'reprovado_restrito')) {
         nextStatus = ShipmentStatus.Cancelado;
+    } else if (originalShipment.status === ShipmentStatus.PreCadastro) {
+        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
+        const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
+        const requiresGR = relatedProduct?.requiresRiskManagement !== false;
+
+        if (!requiresGR) {
+            nextStatus = ShipmentStatus.AguardandoCarregamento;
+        } else {
+            nextStatus = ShipmentStatus.AguardandoSeguradora;
+        }
     } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
         nextStatus = ShipmentStatus.AguardandoDescarga;
     } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
