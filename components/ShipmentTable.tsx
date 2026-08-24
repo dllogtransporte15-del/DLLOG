@@ -12,16 +12,58 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building, Pencil, Check } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building, Pencil, Check, Loader2, ExternalLink, Paperclip } from 'lucide-react';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
-import { backfillShipmentFiscalNumbers } from '../lib/db';
+import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
+import { openDocumentInNewTab } from '../utils/documentViewer';
+import { useToast } from '../hooks/useToast';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
 import { TicketStatus } from '../types';
-import { useDriverLocations } from '../hooks/useDriverLocations';
+import { useDriverLocations, normalizeDriverKey } from '../hooks/useDriverLocations';
 
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
+
+export const getShipmentTmsOrderUrl = (shipment: Shipment): string | null => {
+  if (!shipment.documents || typeof shipment.documents !== 'object') return null;
+
+  const possibleKeys = [
+    'Ordem de Carregamento TMS',
+    'Ordem de Carregamento',
+    'Ordem de Carregamento (TMS)',
+    'Ordem Carregamento',
+    'Ordem TMS',
+    'ordem_carregamento_tms',
+    'ordem_carregamento',
+    'OC TMS',
+    'OC'
+  ];
+
+  for (const k of possibleKeys) {
+    const val = shipment.documents[k];
+    if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].trim()) {
+      return val[0];
+    }
+    if (typeof val === 'string' && val.trim()) {
+      return val;
+    }
+  }
+
+  for (const [k, val] of Object.entries(shipment.documents)) {
+    const kLower = k.toLowerCase();
+    if (kLower.includes('ordem') && (kLower.includes('carregamento') || kLower.includes('tms') || kLower.includes('oc'))) {
+      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].trim()) {
+        return val[0];
+      }
+      if (typeof val === 'string' && val.trim()) {
+        return val;
+      }
+    }
+  }
+
+  return null;
+};
 
 interface ShipmentTableProps {
   shipments: Shipment[];
@@ -61,6 +103,7 @@ interface ShipmentTableProps {
 const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
 
 
+  const { showToast } = useToast();
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number, left: number, isUp: boolean } | null>(null);
   const [detailsModalShipment, setDetailsModalShipment] = useState<Shipment | null>(null);
@@ -73,6 +116,70 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   } | null>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // TMS Loading Order upload state & handler
+  const [uploadingTmsOrderId, setUploadingTmsOrderId] = useState<string | null>(null);
+  const tmsFileInputRef = useRef<HTMLInputElement>(null);
+  const [targetShipmentForTmsUpload, setTargetShipmentForTmsUpload] = useState<Shipment | null>(null);
+
+  const handleTriggerUploadTmsOrder = (shipment: Shipment, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setTargetShipmentForTmsUpload(shipment);
+    if (tmsFileInputRef.current) {
+      tmsFileInputRef.current.value = '';
+      tmsFileInputRef.current.click();
+    }
+  };
+
+  const handleTmsFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetShipmentForTmsUpload) return;
+
+    const shipmentId = targetShipmentForTmsUpload.id;
+    setUploadingTmsOrderId(shipmentId);
+    try {
+      const path = await uploadShipmentAttachment(shipmentId, 'Ordem de Carregamento TMS', file);
+      const publicUrl = getShipmentAttachmentUrl(path);
+
+      const currentDocs = targetShipmentForTmsUpload.documents || {};
+      const updatedDocuments = {
+        ...currentDocs,
+        'Ordem de Carregamento TMS': [publicUrl]
+      };
+
+      const newLog = {
+        id: `log_${Date.now()}`,
+        userId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        description: `Ordem de carregamento TMS anexada: ${file.name}`
+      };
+
+      const updatedHistory = [...(targetShipmentForTmsUpload.history || []), newLog];
+
+      const updatedShipment: Shipment = {
+        ...targetShipmentForTmsUpload,
+        documents: updatedDocuments,
+        history: updatedHistory
+      };
+
+      await upsertShipment(updatedShipment);
+
+      if (onUpdateShipmentData) {
+        onUpdateShipmentData(shipmentId, {
+          documents: updatedDocuments,
+          history: updatedHistory
+        });
+      }
+
+      showToast('Ordem de Carregamento TMS anexada com sucesso!', 'success');
+    } catch (err) {
+      console.error('Erro ao anexar ordem de carregamento TMS:', err);
+      showToast('Erro ao enviar o arquivo da ordem de carregamento.', 'error');
+    } finally {
+      setUploadingTmsOrderId(null);
+      setTargetShipmentForTmsUpload(null);
+    }
+  };
 
   const formatLocationTimestamp = useCallback((ts?: string): string => {
     if (!ts) return 'Data/hora não registrada';
@@ -476,8 +583,72 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       )}
                     </div>
                     {cargo && (
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        Carga: <button onClick={() => onShowCargoDetails?.(cargo)} className="font-semibold text-primary/80">#{cargo.sequenceId}</button>
+                      <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        <span>
+                          Carga: <button onClick={() => onShowCargoDetails?.(cargo)} className="font-semibold text-primary/80">#{cargo.sequenceId}</button>
+                        </span>
+
+                        {(() => {
+                          const tmsOrderUrl = getShipmentTmsOrderUrl(shipment);
+                          const isAgCarregamento = shipment.status === ShipmentStatus.AguardandoCarregamento;
+                          const isUploadingThis = uploadingTmsOrderId === shipment.id;
+
+                          if (tmsOrderUrl) {
+                            return (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openDocumentInNewTab(tmsOrderUrl, `Ordem de Carregamento TMS - Carga ${cargo.sequenceId} - ${shipment.id}`);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 shadow-xs transition-colors cursor-pointer"
+                                  title="Ordem de Carregamento TMS Anexada. Clique para abrir em nova aba com opções de imprimir e baixar."
+                                >
+                                  <FileText className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span>OC TMS</span>
+                                  <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                                </button>
+                                {!isClient && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleTriggerUploadTmsOrder(shipment, e)}
+                                    className="p-0.5 text-gray-400 hover:text-emerald-700 dark:hover:text-emerald-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                    title="Substituir Ordem de Carregamento TMS"
+                                  >
+                                    <Pencil className="w-2.5 h-2.5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          if (isAgCarregamento && !isClient) {
+                            return (
+                              <button
+                                type="button"
+                                disabled={isUploadingThis}
+                                onClick={(e) => handleTriggerUploadTmsOrder(shipment, e)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                                title="Anexar Ordem de Carregamento do TMS"
+                              >
+                                {isUploadingThis ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin text-amber-600 dark:text-amber-400" />
+                                    <span>Enviando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Paperclip className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <span>+ OC TMS</span>
+                                  </>
+                                )}
+                              </button>
+                            );
+                          }
+
+                          return null;
+                        })()}
                       </div>
                     )}
                   </div>
@@ -508,15 +679,33 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <div className="flex items-center gap-1.5">
                       <div className="font-medium dark:text-gray-200">{shipment.driverName}</div>
                       {(() => {
-                          const driver = drivers?.find(d => d.name === shipment.driverName || (d.cpf && d.cpf === shipment.driverCpf));
-                          const locationInfo = Array.from(driverLocations.values()).find((loc: any) => {
-                            if (!loc) return false;
-                            const locName = (loc.driverName || '').trim().toLowerCase();
-                            const shipName = (shipment.driverName || '').trim().toLowerCase();
-                            const matchName = locName && shipName && (locName.includes(shipName) || shipName.includes(locName));
-                            const matchId = driver && (loc.driverId === driver.id || loc.driverId === driver.cpf);
-                            return matchName || matchId;
-                          }) as any;
+                          const driver = drivers?.find(d => 
+                            d.name === shipment.driverName || 
+                            normalizeDriverKey(d.name) === normalizeDriverKey(shipment.driverName) || 
+                            (d.cpf && shipment.driverCpf && d.cpf.replace(/\D/g, '') === shipment.driverCpf.replace(/\D/g, ''))
+                          );
+
+                          const normShipName = normalizeDriverKey(shipment.driverName);
+                          const rawShipName = (shipment.driverName || '').trim().toLowerCase();
+                          const rawCpf = (shipment.driverCpf || driver?.cpf || '').replace(/\D/g, '');
+
+                          const locationInfo = (() => {
+                            if (driver?.id && driverLocations.has(driver.id)) return driverLocations.get(driver.id);
+                            if (rawCpf && driverLocations.has(rawCpf)) return driverLocations.get(rawCpf);
+                            if (normShipName && driverLocations.has(normShipName)) return driverLocations.get(normShipName);
+                            if (rawShipName && driverLocations.has(rawShipName)) return driverLocations.get(rawShipName);
+
+                            return Array.from(driverLocations.values()).find((loc: any) => {
+                              if (!loc) return false;
+                              const locNormName = normalizeDriverKey(loc.driverName || '');
+                              const locRawName = (loc.driverName || '').trim().toLowerCase();
+                              const locDriverId = (loc.driverId || '').toString();
+                              const matchName = (locNormName && normShipName && (locNormName === normShipName || locNormName.includes(normShipName) || normShipName.includes(locNormName))) ||
+                                                (locRawName && rawShipName && (locRawName === rawShipName || locRawName.includes(rawShipName) || rawShipName.includes(locRawName)));
+                              const matchId = (driver && (locDriverId === driver.id || locDriverId === driver.cpf)) || (rawCpf && locDriverId.replace(/\D/g, '') === rawCpf);
+                              return matchName || matchId;
+                            });
+                          })();
 
                           if (locationInfo && locationInfo.isAppActive) {
                               if (locationInfo.lat === 0 && locationInfo.lng === 0) {
@@ -536,7 +725,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                         timestamp: locationInfo.timestamp,
                                         isOffline: false,
                                       })}
-                                      title="App conectado. Ver localização em tempo real."
+                                      title="App conectado. Clique para ver localização em tempo real."
                                       className="text-blue-500 hover:text-blue-600 transition-colors focus:outline-none"
                                   >
                                       <Smartphone className="w-4 h-4 animate-pulse" />
@@ -548,17 +737,11 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                               const hasCoords = locationInfo && typeof locationInfo.lat === 'number' && typeof locationInfo.lng === 'number' && (locationInfo.lat !== 0 || locationInfo.lng !== 0);
                               const formattedTime = hasCoords ? formatLocationTimestamp(locationInfo.timestamp) : null;
                               const titleText = hasCoords 
-                                ? `Motorista possui o aplicativo (Localização inativa - Última visualização: ${formattedTime})`
-                                : "Motorista possui o aplicativo (Localização inativa)";
+                                ? `Motorista off-line. Clique para ver última localização registrada (${formattedTime})`
+                                : "Motorista possui o aplicativo (Transmissão de GPS inativa)";
 
                               const handleOfflineClick = () => {
                                 if (hasCoords) {
-                                  alert(
-                                    `Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n` +
-                                    `Última visualização das coordenadas:\n` +
-                                    `• Data/Hora: ${formattedTime}\n` +
-                                    `• Coordenadas: ${locationInfo.lat.toFixed(6)}, ${locationInfo.lng.toFixed(6)}`
-                                  );
                                   setActiveDriverMap({
                                     driverName: shipment.driverName,
                                     lat: locationInfo.lat,
@@ -567,10 +750,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                     isOffline: true,
                                   });
                                 } else {
-                                  alert(
-                                    'Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n' +
-                                    'Nenhuma coordenada foi registrada anteriormente para este motorista.'
-                                  );
+                                  showToast(`O motorista ${shipment.driverName} possui cadastro no aplicativo, mas ainda não registrou coordenadas GPS anteriores.`, 'info');
                                 }
                               };
 
@@ -579,7 +759,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                     type="button"
                                     onClick={handleOfflineClick}
                                     title={titleText}
-                                    className="text-gray-400 hover:text-amber-600 transition-colors focus:outline-none"
+                                    className={`${hasCoords ? 'text-amber-500 hover:text-amber-600' : 'text-gray-400 hover:text-gray-600 opacity-60'} transition-colors focus:outline-none`}
                                 >
                                     <Smartphone className="w-4 h-4" />
                                 </button>
@@ -858,15 +1038,79 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                         )}
                       </div>
                       {cargo && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          Carga: 
-                          {onShowCargoDetails ? (
-                            <button onClick={() => onShowCargoDetails(cargo)} className="ml-1 font-semibold text-primary dark:text-blue-400 hover:underline">
-                              {cargo.sequenceId}
-                            </button>
-                          ) : (
-                            <span className="ml-1 font-semibold">{cargo.sequenceId}</span>
-                          )}
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span>
+                            Carga: 
+                            {onShowCargoDetails ? (
+                              <button onClick={() => onShowCargoDetails(cargo)} className="ml-1 font-semibold text-primary dark:text-blue-400 hover:underline">
+                                {cargo.sequenceId}
+                              </button>
+                            ) : (
+                              <span className="ml-1 font-semibold">{cargo.sequenceId}</span>
+                            )}
+                          </span>
+
+                          {(() => {
+                            const tmsOrderUrl = getShipmentTmsOrderUrl(shipment);
+                            const isAgCarregamento = shipment.status === ShipmentStatus.AguardandoCarregamento;
+                            const isUploadingThis = uploadingTmsOrderId === shipment.id;
+
+                            if (tmsOrderUrl) {
+                              return (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openDocumentInNewTab(tmsOrderUrl, `Ordem de Carregamento TMS - Carga ${cargo.sequenceId} - ${shipment.id}`);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 shadow-xs transition-colors cursor-pointer"
+                                    title="Ordem de Carregamento TMS Anexada. Clique para abrir em nova aba com opções de imprimir e baixar."
+                                  >
+                                    <FileText className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <span>OC TMS</span>
+                                    <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                                  </button>
+                                  {!isClient && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleTriggerUploadTmsOrder(shipment, e)}
+                                      className="p-0.5 text-gray-400 hover:text-emerald-700 dark:hover:text-emerald-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                      title="Substituir Ordem de Carregamento TMS"
+                                    >
+                                      <Pencil className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            if (isAgCarregamento && !isClient) {
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={isUploadingThis}
+                                  onClick={(e) => handleTriggerUploadTmsOrder(shipment, e)}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                                  title="Anexar Ordem de Carregamento do TMS"
+                                >
+                                  {isUploadingThis ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin text-amber-600 dark:text-amber-400" />
+                                      <span>Enviando...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Paperclip className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                      <span>+ OC TMS</span>
+                                    </>
+                                  )}
+                                </button>
+                              );
+                            }
+
+                            return null;
+                          })()}
                         </div>
                       )}
                     </td>
@@ -874,23 +1118,41 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       <div className="flex items-center gap-1.5">
                         <div className="text-sm text-gray-900 dark:text-white">{shipment.driverName}</div>
                         {(() => {
-                            const driver = drivers?.find(d => d.name === shipment.driverName || (d.cpf && d.cpf === shipment.driverCpf));
-                            const locationInfo = Array.from(driverLocations.values()).find((loc: any) => {
-                              if (!loc) return false;
-                              const locName = (loc.driverName || '').trim().toLowerCase();
-                              const shipName = (shipment.driverName || '').trim().toLowerCase();
-                              const matchName = locName && shipName && (locName.includes(shipName) || shipName.includes(locName));
-                              const matchId = driver && (loc.driverId === driver.id || loc.driverId === driver.cpf);
-                              return matchName || matchId;
-                            }) as any;
+                            const driver = drivers?.find(d => 
+                              d.name === shipment.driverName || 
+                              normalizeDriverKey(d.name) === normalizeDriverKey(shipment.driverName) || 
+                              (d.cpf && shipment.driverCpf && d.cpf.replace(/\D/g, '') === shipment.driverCpf.replace(/\D/g, ''))
+                            );
+
+                            const normShipName = normalizeDriverKey(shipment.driverName);
+                            const rawShipName = (shipment.driverName || '').trim().toLowerCase();
+                            const rawCpf = (shipment.driverCpf || driver?.cpf || '').replace(/\D/g, '');
+
+                            const locationInfo = (() => {
+                              if (driver?.id && driverLocations.has(driver.id)) return driverLocations.get(driver.id);
+                              if (rawCpf && driverLocations.has(rawCpf)) return driverLocations.get(rawCpf);
+                              if (normShipName && driverLocations.has(normShipName)) return driverLocations.get(normShipName);
+                              if (rawShipName && driverLocations.has(rawShipName)) return driverLocations.get(rawShipName);
+
+                              return Array.from(driverLocations.values()).find((loc: any) => {
+                                if (!loc) return false;
+                                const locNormName = normalizeDriverKey(loc.driverName || '');
+                                const locRawName = (loc.driverName || '').trim().toLowerCase();
+                                const locDriverId = (loc.driverId || '').toString();
+                                const matchName = (locNormName && normShipName && (locNormName === normShipName || locNormName.includes(normShipName) || normShipName.includes(locNormName))) ||
+                                                  (locRawName && rawShipName && (locRawName === rawShipName || locRawName.includes(rawShipName) || rawShipName.includes(locRawName)));
+                                const matchId = (driver && (locDriverId === driver.id || locDriverId === driver.cpf)) || (rawCpf && locDriverId.replace(/\D/g, '') === rawCpf);
+                                return matchName || matchId;
+                              });
+                            })();
 
                             if (locationInfo && locationInfo.isAppActive) {
                                 if (locationInfo.lat === 0 && locationInfo.lng === 0) {
                                   return (
                                     <span title="Motorista ativo no aplicativo, buscando GPS..." className="text-blue-500 cursor-help">
                                         <Smartphone className="w-4 h-4 animate-pulse" />
-                                    </span>
-                                  );
+                                  </span>
+                                );
                                 }
                                 return (
                                     <button
@@ -902,7 +1164,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                           timestamp: locationInfo.timestamp,
                                           isOffline: false,
                                         })}
-                                        title="App conectado. Ver localização em tempo real."
+                                        title="App conectado. Clique para ver localização em tempo real."
                                         className="text-blue-500 hover:text-blue-600 transition-colors focus:outline-none"
                                     >
                                         <Smartphone className="w-4 h-4 animate-pulse" />
@@ -914,17 +1176,11 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                 const hasCoords = locationInfo && typeof locationInfo.lat === 'number' && typeof locationInfo.lng === 'number' && (locationInfo.lat !== 0 || locationInfo.lng !== 0);
                                 const formattedTime = hasCoords ? formatLocationTimestamp(locationInfo.timestamp) : null;
                                 const titleText = hasCoords 
-                                  ? `Motorista possui o aplicativo (Localização inativa - Última visualização: ${formattedTime})`
-                                  : "Motorista possui o aplicativo (Localização inativa)";
+                                  ? `Motorista off-line. Clique para ver última localização registrada (${formattedTime})`
+                                  : "Motorista possui o aplicativo (Transmissão de GPS inativa)";
 
                                 const handleOfflineClick = () => {
                                   if (hasCoords) {
-                                    alert(
-                                      `Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n` +
-                                      `Última visualização das coordenadas:\n` +
-                                      `• Data/Hora: ${formattedTime}\n` +
-                                      `• Coordenadas: ${locationInfo.lat.toFixed(6)}, ${locationInfo.lng.toFixed(6)}`
-                                    );
                                     setActiveDriverMap({
                                       driverName: shipment.driverName,
                                       lat: locationInfo.lat,
@@ -933,10 +1189,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                       isOffline: true,
                                     });
                                   } else {
-                                    alert(
-                                      'Motorista possui o aplicativo, mas a localização não está sendo transmitida no momento.\n\n' +
-                                      'Nenhuma coordenada foi registrada anteriormente para este motorista.'
-                                    );
+                                    showToast(`O motorista ${shipment.driverName} possui cadastro no aplicativo, mas ainda não registrou coordenadas GPS anteriores.`, 'info');
                                   }
                                 };
 
@@ -945,7 +1198,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                       type="button"
                                       onClick={handleOfflineClick}
                                       title={titleText}
-                                      className="text-gray-400 hover:text-amber-600 transition-colors focus:outline-none"
+                                      className={`${hasCoords ? 'text-amber-500 hover:text-amber-600' : 'text-gray-400 hover:text-gray-600 opacity-60'} transition-colors focus:outline-none`}
                                   >
                                       <Smartphone className="w-4 h-4" />
                                   </button>
@@ -1455,6 +1708,15 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
         </div>
       </div>
     )}
+
+    {/* Input invisível para upload da Ordem de Carregamento TMS */}
+    <input 
+      ref={tmsFileInputRef}
+      type="file" 
+      className="hidden" 
+      accept=".pdf,.png,.jpg,.jpeg,.webp" 
+      onChange={handleTmsFileSelected} 
+    />
 
   </div>
 );

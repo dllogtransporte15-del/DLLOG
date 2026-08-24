@@ -3,6 +3,7 @@ import type { User, Cargo, Shipment, Product, Driver, Vehicle } from '../types';
 import { CargoStatus, ShipmentStatus } from '../types';
 import { supabase } from '../supabase';
 import { upsertDriver } from '../lib/db';
+import { saveDriverLastLocationToDb } from '../hooks/useDriverLocations';
 import { 
   Package, 
   FileText, 
@@ -184,6 +185,7 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
 
       console.log('[DriverPortal] Transmitindo localização GPS:', lat, lng);
       await channel.track({ location: locationPayload, ...locationPayload });
+      saveDriverLastLocationToDb(locationPayload);
     };
 
     channel.subscribe(async (status) => {

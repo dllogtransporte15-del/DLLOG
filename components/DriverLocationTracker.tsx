@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, MapPinOff } from 'lucide-react';
 import { supabase } from '../supabase';
 import type { User, DriverLocation } from '../types';
+import { saveDriverLastLocationToDb } from '../hooks/useDriverLocations';
 
 interface DriverLocationTrackerProps {
   user: User;
@@ -79,6 +80,7 @@ const DriverLocationTracker: React.FC<DriverLocationTrackerProps> = ({ user }) =
 
             // Rastrear com a chave sendo o ID do usuário (correto para Presence)
             await channel.track({ location });
+            saveDriverLastLocationToDb(location);
           },
           (err) => {
             console.error('[DriverLocationTracker] Erro no GPS:', err);
