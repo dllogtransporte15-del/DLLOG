@@ -463,81 +463,6 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
               )}
             </div>
 
-            {/* Banner de Sugestão Inteligente Baseado em Histórico de Cargas ou Cotações */}
-            {loadingSuggestion && (
-              <div className="mt-4 p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 rounded-xl flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
-                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                <span>Consultando histórico de cargas e cotações na região (raio de 150km)...</span>
-              </div>
-            )}
-
-            {routeSuggestion && (
-              <div className="mt-4 p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 via-blue-50/60 to-purple-50/40 dark:from-indigo-950/40 dark:via-gray-800 dark:to-purple-950/30 dark:border-indigo-800/60 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                    <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>
-                      {routeSuggestion.source === 'cargo'
-                        ? 'Última Carga Realizada na Região'
-                        : 'Última Cotação Salva na Região'}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300">
-                    {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
-                      ? 'Rota Exata'
-                      : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
-                  </span>
-                </div>
-
-                <div className="text-xs text-slate-700 dark:text-gray-300 space-y-1">
-                  <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-gray-400">
-                    <History className="w-3.5 h-3.5" />
-                    <span>
-                      {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {formatDate(routeSuggestion.date)}
-                      {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-indigo-100 dark:border-gray-700">
-                      <div className="text-[10px] text-slate-500 uppercase font-semibold">Frete Empresa</div>
-                      <div className="text-sm font-black text-slate-900 dark:text-white">
-                        {formatCurrency(routeSuggestion.companyFreightRate)}
-                        <span className="text-[10px] font-normal text-slate-400">/ton</span>
-                      </div>
-                    </div>
-                    <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-indigo-100 dark:border-gray-700">
-                      <div className="text-[10px] text-slate-500 uppercase font-semibold">Frete Motorista</div>
-                      <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(routeSuggestion.driverFreightRate)}
-                        <span className="text-[10px] font-normal text-slate-400">/ton</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleApplySuggestion(routeSuggestion)}
-                  className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm ${
-                    appliedSuggestion
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                  }`}
-                >
-                  {appliedSuggestion ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" /> Valores Aplicados!
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-3.5 h-3.5" /> Aplicar Valores Desta {routeSuggestion.source === 'cargo' ? 'Carga' : 'Cotação'}
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-gray-700 space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tonelada Estimada (Ton)</label>
@@ -620,6 +545,81 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
               </div>
             )}
           </div>
+
+          {/* Banner de Sugestão Inteligente Baseado em Histórico de Cargas ou Cotações */}
+          {loadingSuggestion && (
+            <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 rounded-xl flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>Consultando histórico de cargas e cotações na região (raio de 150km)...</span>
+            </div>
+          )}
+
+          {routeSuggestion && (
+            <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 via-blue-50/60 to-purple-50/40 dark:from-indigo-950/40 dark:via-gray-800 dark:to-purple-950/30 dark:border-indigo-800/60 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                  <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>
+                    {routeSuggestion.source === 'cargo'
+                      ? 'Última Carga Realizada na Região'
+                      : 'Última Cotação Salva na Região'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300">
+                  {routeSuggestion.originDistanceKm === 0 && routeSuggestion.destinationDistanceKm === 0
+                    ? 'Rota Exata'
+                    : `Raio até ${Math.max(routeSuggestion.originDistanceKm, routeSuggestion.destinationDistanceKm)}km`}
+                </span>
+              </div>
+
+              <div className="text-xs text-slate-700 dark:text-gray-300 space-y-1">
+                <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-gray-400">
+                  <History className="w-3.5 h-3.5" />
+                  <span>
+                    {routeSuggestion.matchedOrigin} → {routeSuggestion.matchedDestination} • {formatDate(routeSuggestion.date)}
+                    {routeSuggestion.clientName ? ` • ${routeSuggestion.clientName}` : ''}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-indigo-100 dark:border-gray-700">
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Frete Empresa</div>
+                    <div className="text-sm font-black text-slate-900 dark:text-white">
+                      {formatCurrency(routeSuggestion.companyFreightRate)}
+                      <span className="text-[10px] font-normal text-slate-400">/ton</span>
+                    </div>
+                  </div>
+                  <div className="bg-white/80 dark:bg-gray-800/80 p-2 rounded-lg border border-indigo-100 dark:border-gray-700">
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Frete Motorista</div>
+                    <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(routeSuggestion.driverFreightRate)}
+                      <span className="text-[10px] font-normal text-slate-400">/ton</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleApplySuggestion(routeSuggestion)}
+                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                  appliedSuggestion
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                }`}
+              >
+                {appliedSuggestion ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" /> Valores Aplicados!
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5" /> Aplicar Valores Desta {routeSuggestion.source === 'cargo' ? 'Carga' : 'Cotação'}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-6">
             <h2 className="text-lg font-medium flex items-center text-slate-800 dark:text-white mb-6">
