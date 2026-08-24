@@ -433,8 +433,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         }
     }
 
-    const matchedOption = riskQueryOptions.find(o => o.name === riskQueryType);
-    const calculatedRiskCost = matchedOption ? matchedOption.cost : (riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0) : undefined);
+    const matchedOption = riskQueryOptions.find(o => o.name === riskQueryType || o.name.toLowerCase().trim() === riskQueryType?.toLowerCase().trim());
+    const calculatedRiskCost = matchedOption ? matchedOption.cost : (riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType] ?? RISK_QUERY_COST_MAP[riskQueryType.toLowerCase().trim()] ?? 0) : undefined);
     const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
 
     setError('');
@@ -837,7 +837,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                     <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center justify-between">
                                         <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">Custo Registrado de Gerenciamento de Risco:</span>
                                         <span className="text-sm font-black text-emerald-950 dark:text-emerald-100 bg-white dark:bg-emerald-900 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-700 shadow-sm">
-                                            R$ {(riskQueryOptions.find(o => o.name === riskQueryType)?.cost ?? (RISK_QUERY_COST_MAP[riskQueryType as RiskQueryType] || 0)).toFixed(2).replace('.', ',')}
+                                            R$ {(riskQueryOptions.find(o => o.name === riskQueryType || o.name.toLowerCase().trim() === riskQueryType?.toLowerCase().trim())?.cost ?? (RISK_QUERY_COST_MAP[riskQueryType] ?? RISK_QUERY_COST_MAP[riskQueryType.toLowerCase().trim()] ?? 0)).toFixed(2).replace('.', ',')}
                                         </span>
                                     </div>
                                 )}

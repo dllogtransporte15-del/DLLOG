@@ -71,7 +71,7 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
   };
 
   const handleResetToDefaults = async () => {
-    if (window.confirm('Deseja restaurar as modalidades padrão do sistema (SIGA, Biometria, Geral, Vitimologia, Simplificada)?')) {
+    if (window.confirm('Deseja restaurar as modalidades padrão do sistema (Consulta, Consulta + Biometria, Cadastro Geral + Biometria, Vitimologia, Liberação Simplificada)?')) {
       if (onRestoreDefaults) {
         await onRestoreDefaults();
       } else {

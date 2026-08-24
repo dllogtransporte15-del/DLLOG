@@ -202,18 +202,22 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         const vehicle = vehicleMap.get(cleanPlate);
 
         // Query type and cost
-        let queryType = s.riskQueryType || (s.status === ShipmentStatus.AguardandoSeguradora ? 'Pendente de Definição' : 'SIGA');
+        let queryType = s.riskQueryType || (s.status === ShipmentStatus.AguardandoSeguradora ? 'Pendente de Definição' : 'Consulta');
         let queryCost = 0;
         if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
           queryCost = Number(s.riskQueryCost);
         } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType)) {
           queryCost = costMapFromOptions.get(s.riskQueryType)!;
-        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType as RiskQueryType] !== undefined) {
-          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType as RiskQueryType];
+        } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType.toLowerCase().trim())) {
+          queryCost = costMapFromOptions.get(s.riskQueryType.toLowerCase().trim())!;
+        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType] !== undefined) {
+          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType];
+        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()] !== undefined) {
+          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()];
         } else if (s.status === ShipmentStatus.AguardandoSeguradora) {
           queryCost = 0;
         } else {
-          queryCost = 7.00;
+          queryCost = 6.50;
         }
 
         // Release status

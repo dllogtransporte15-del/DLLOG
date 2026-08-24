@@ -324,8 +324,10 @@ export enum ShipmentStatus {
 }
 
 export enum RiskQueryType {
+  Consulta = 'Consulta',
   Siga = 'SIGA',
   ConsultaBiometria = 'Consulta + Biometria',
+  CadastroGeralBiometria = 'Cadastro Geral + Biometria',
   CadastroConsultaGeral = 'Cadastro + Consulta Geral',
   Vitimologia = 'Vitimologia',
   LiberacaoSimplificada = 'Liberação Simplificada',
@@ -342,18 +344,42 @@ export interface RiskQueryOption {
 }
 
 export const DEFAULT_RISK_QUERY_OPTIONS: RiskQueryOption[] = [
-  { id: 'siga', name: 'SIGA', cost: 7.00, active: true, orderIndex: 1, description: 'Consulta padrão SIGA' },
-  { id: 'consulta_biometria', name: 'Consulta + Biometria', cost: 15.00, active: true, orderIndex: 2, description: 'Consulta com validação biométrica' },
-  { id: 'cadastro_consulta_geral', name: 'Cadastro + Consulta Geral', cost: 33.00, active: true, orderIndex: 3, description: 'Cadastro completo e consulta geral' },
+  { id: 'consulta', name: 'Consulta', cost: 6.50, active: true, orderIndex: 1, description: 'Consulta padrão SIGA / Consulta' },
+  { id: 'consulta_biometria', name: 'Consulta + Biometria', cost: 14.00, active: true, orderIndex: 2, description: 'Consulta com validação biométrica' },
+  { id: 'cadastro_geral_biometria', name: 'Cadastro Geral + Biometria', cost: 32.50, active: true, orderIndex: 3, description: 'Cadastro completo e consulta geral com biometria' },
   { id: 'vitimologia', name: 'Vitimologia', cost: 70.00, active: true, orderIndex: 4, description: 'Análise aprofundada de vitimologia' },
   { id: 'liberacao_simplificada', name: 'Liberação Simplificada', cost: 0.00, active: true, orderIndex: 5, description: 'Liberação sem custo / simplificada' },
 ];
 
-export const RISK_QUERY_COST_MAP: Record<RiskQueryType, number> = {
-  [RiskQueryType.Siga]: 7.00,
-  [RiskQueryType.ConsultaBiometria]: 15.00,
-  [RiskQueryType.CadastroConsultaGeral]: 33.00,
+export const RISK_QUERY_COST_MAP: Record<string, number> = {
+  'Consulta': 6.50,
+  'SIGA': 6.50,
+  'siga': 6.50,
+  'consulta': 6.50,
+  [RiskQueryType.Consulta]: 6.50,
+  [RiskQueryType.Siga]: 6.50,
+  'Consulta + Biometria': 14.00,
+  'CONSULTA + BIOMETRIA': 14.00,
+  'consulta + biometria': 14.00,
+  [RiskQueryType.ConsultaBiometria]: 14.00,
+  'Cadastro Geral + Biometria': 32.50,
+  'CADASTRO GERAL + BIOMETRIA': 32.50,
+  'CADASTRO GERAL + BIOMETRIA FACIAL': 32.50,
+  'Cadastro + Consulta Geral': 32.50,
+  'CADASTRO + CONSULTA GERAL': 32.50,
+  'Cadastro Geral': 32.50,
+  'CADASTRO GERAL': 32.50,
+  [RiskQueryType.CadastroGeralBiometria]: 32.50,
+  [RiskQueryType.CadastroConsultaGeral]: 32.50,
+  'Vitimologia': 70.00,
+  'VITIMOLOGIA': 70.00,
+  'vitimologia': 70.00,
   [RiskQueryType.Vitimologia]: 70.00,
+  'Liberação Simplificada': 0.00,
+  'Liberacao Simplificada': 0.00,
+  'LIBERAÇÃO SIMPLIFICADA': 0.00,
+  'liberação simplificada': 0.00,
+  'liberacao simplificada': 0.00,
   [RiskQueryType.LiberacaoSimplificada]: 0.00,
 };
 

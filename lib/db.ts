@@ -1011,6 +1011,7 @@ export async function fetchAppSettings(): Promise<{ company_logo: string | null;
 }
 
 export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
+  // 1. Try querying dedicated risk_query_options table
   try {
     const { data, error } = await supabase.from('risk_query_options').select('*').order('order_index', { ascending: true });
     if (!error && data && data.length > 0) {
@@ -1021,10 +1022,32 @@ export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
       return options;
     }
   } catch (err) {
-    console.warn('[DB] Could not query risk_query_options table, checking storage fallback:', err);
+    console.warn('[DB] Could not query risk_query_options table:', err);
   }
 
-  // Fallback to localStorage or DEFAULT_RISK_QUERY_OPTIONS
+  // 2. Try fetching from profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.risk_query_options && Array.isArray(data.permissions.risk_query_options) && data.permissions.risk_query_options.length > 0) {
+      const options: RiskQueryOption[] = data.permissions.risk_query_options.map((opt: any, idx: number) => ({
+        id: opt.id || `opt_${idx}`,
+        name: opt.name || '',
+        cost: Number(opt.cost ?? 0),
+        active: opt.active !== false,
+        orderIndex: opt.orderIndex !== undefined ? Number(opt.orderIndex) : idx + 1,
+        description: opt.description || '',
+        createdAt: opt.createdAt || '',
+      }));
+      try {
+        localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
+      } catch {}
+      return options;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not query risk_query_options from profile_permissions:', err);
+  }
+
+  // 3. Fallback to localStorage
   try {
     const saved = localStorage.getItem('transcunha_risk_query_options');
     if (saved) {
@@ -1035,7 +1058,36 @@ export async function fetchRiskQueryOptions(): Promise<RiskQueryOption[]> {
     }
   } catch {}
 
+  // 4. Ultimate fallback to DEFAULT_RISK_QUERY_OPTIONS
   return DEFAULT_RISK_QUERY_OPTIONS;
+}
+
+export async function saveAllRiskQueryOptions(options: RiskQueryOption[]): Promise<void> {
+  // 1. Try dedicated table
+  try {
+    const payload = options.map(fromRiskQueryOption);
+    await supabase.from('risk_query_options').upsert(payload);
+  } catch (err) {
+    console.warn('[DB] Exception saving to risk_query_options table (may not exist):', err);
+  }
+
+  // 2. Save to profile_permissions (id: 1)
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      risk_query_options: options
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Exception saving risk_query_options to profile_permissions:', err);
+  }
+
+  // 3. Save to localStorage
+  try {
+    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
+  } catch {}
 }
 
 export async function upsertRiskQueryOption(option: RiskQueryOption | Omit<RiskQueryOption, 'id'>): Promise<RiskQueryOption> {
@@ -1052,63 +1104,24 @@ export async function upsertRiskQueryOption(option: RiskQueryOption | Omit<RiskQ
     createdAt: ('createdAt' in option && option.createdAt) ? (option as RiskQueryOption).createdAt : new Date().toISOString(),
   };
 
-  try {
-    const { error } = await supabase.from('risk_query_options').upsert(fromRiskQueryOption(finalOption));
-    if (error) {
-      console.warn('[DB] Error upserting to risk_query_options table:', error.message);
-    }
-  } catch (err) {
-    console.warn('[DB] Exception upserting risk_query_option:', err);
+  const current = await fetchRiskQueryOptions();
+  const existingIdx = current.findIndex(o => o.id === finalOption.id || o.name.toLowerCase().trim() === finalOption.name.toLowerCase().trim());
+  let nextList: RiskQueryOption[];
+  if (existingIdx >= 0) {
+    nextList = [...current];
+    nextList[existingIdx] = finalOption;
+  } else {
+    nextList = [...current, finalOption];
   }
 
-  // Also update local storage
-  try {
-    const current = await fetchRiskQueryOptions();
-    const existingIdx = current.findIndex(o => o.id === finalOption.id || o.name.toLowerCase() === finalOption.name.toLowerCase());
-    let nextList: RiskQueryOption[];
-    if (existingIdx >= 0) {
-      nextList = [...current];
-      nextList[existingIdx] = finalOption;
-    } else {
-      nextList = [...current, finalOption];
-    }
-    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(nextList));
-  } catch {}
-
+  await saveAllRiskQueryOptions(nextList);
   return finalOption;
 }
 
 export async function deleteRiskQueryOption(id: string): Promise<void> {
-  try {
-    const { error } = await supabase.from('risk_query_options').delete().eq('id', id);
-    if (error) {
-      console.warn('[DB] Error deleting from risk_query_options table:', error.message);
-    }
-  } catch (err) {
-    console.warn('[DB] Exception deleting risk_query_option:', err);
-  }
-
-  try {
-    const current = await fetchRiskQueryOptions();
-    const nextList = current.filter(o => o.id !== id);
-    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(nextList));
-  } catch {}
-}
-
-export async function saveAllRiskQueryOptions(options: RiskQueryOption[]): Promise<void> {
-  try {
-    const payload = options.map(fromRiskQueryOption);
-    const { error } = await supabase.from('risk_query_options').upsert(payload);
-    if (error) {
-      console.warn('[DB] Error saving all risk_query_options:', error.message);
-    }
-  } catch (err) {
-    console.warn('[DB] Exception in saveAllRiskQueryOptions:', err);
-  }
-
-  try {
-    localStorage.setItem('transcunha_risk_query_options', JSON.stringify(options));
-  } catch {}
+  const current = await fetchRiskQueryOptions();
+  const nextList = current.filter(o => o.id !== id);
+  await saveAllRiskQueryOptions(nextList);
 }
 
 // ─────────────────────────────────────────────

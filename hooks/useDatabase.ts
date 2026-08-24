@@ -351,6 +351,10 @@ export function useDatabase(currentUser: User | null) {
           case 'profile_permissions': {
             const dbPermissions = await fetchProfilePermissions();
             if (dbPermissions) setProfilePermissions(dbPermissions);
+            const dbRiskOptions = await fetchRiskQueryOptions();
+            if (dbRiskOptions && dbRiskOptions.length > 0) {
+              setRiskQueryOptions(dbRiskOptions);
+            }
             break;
           }
           case 'app_settings': {
