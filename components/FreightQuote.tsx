@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, MapPin, Calculator, Download, Save, Trash2, ShieldCheck, CheckCircle2, ChevronDown, Truck, Building2, Navigation, Layers, DollarSign, Percent, FileText } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, MapPin, Calculator, Download, Save, Trash2, CheckCircle2, Truck, Building2, Navigation, Layers, DollarSign, Percent, FileText } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
@@ -9,6 +9,8 @@ import { format } from 'date-fns';
 import { saveQuote, getClients, saveClient, Client } from '../utils/storage';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
+import { geocodeCity } from '../utils/geocoding';
+import { BRAZILIAN_CITIES } from '../brazilianCities';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -100,7 +102,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
   const [routeError, setRouteError] = useState<string | null>(null);
 
   const calculateRoute = async () => {
-    if (!formData.origin || !formData.destination) {
+    if (!formData.origin.trim() || !formData.destination.trim()) {
       setRouteError("Por favor, preencha origem e destino para calcular a rota.");
       return;
     }
@@ -109,34 +111,53 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
     setRouteError(null);
 
     try {
-      const getCoordinates = async (address: string) => {
-        // Limpar endereço e forçar busca no Brasil para maior precisão
-        const cleanAddress = address.trim().replace(/\s+-\s+Brasil$/i, '').replace(/,\s*Brasil$/i, '');
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanAddress + ', Brasil')}&limit=1&accept-language=pt-br&countrycodes=br`);
-        const data = await response.json();
-        if (data && data.length > 0) {
-          return [parseFloat(data[0].lat), parseFloat(data[0].lon)] as [number, number];
+      const [originCoords, destCoords] = await Promise.all([
+        geocodeCity(formData.origin),
+        geocodeCity(formData.destination)
+      ]);
+
+      if (!originCoords || !destCoords) {
+        if (!originCoords && !destCoords) {
+          throw new Error(`Não foi possível localizar a origem ("${formData.origin}") nem o destino ("${formData.destination}").`);
+        } else if (!originCoords) {
+          throw new Error(`Não foi possível localizar a cidade de origem: "${formData.origin}".`);
+        } else {
+          throw new Error(`Não foi possível localizar a cidade de destino: "${formData.destination}".`);
         }
-        throw new Error(`Não foi possível encontrar as coordenadas para: ${address}. Tente especificar bairro ou cidade mais precisamente.`);
-      };
+      }
 
-      const originCoords = await getCoordinates(formData.origin);
-      const destCoords = await getCoordinates(formData.destination);
+      let distanceKm = 0;
+      let durationMin = 0;
+      let coordinates: [number, number][] = [];
 
-      const routeResponse = await fetch(`https://router.project-osrm.org/route/v1/driving/${originCoords[1]},${originCoords[0]};${destCoords[1]},${destCoords[0]}?overview=simplified&geometries=geojson`);
-      const routeJson = await routeResponse.json();
+      try {
+        const routeResponse = await fetch(`https://router.project-osrm.org/route/v1/driving/${originCoords.lng},${originCoords.lat};${destCoords.lng},${destCoords.lat}?overview=simplified&geometries=geojson`);
+        const routeJson = await routeResponse.json();
 
-      if (routeJson.code !== 'Ok') throw new Error("Erro ao calcular a rota com OSRM.");
+        if (routeJson.code === 'Ok' && routeJson.routes?.length > 0) {
+          const route = routeJson.routes[0];
+          distanceKm = route.distance / 1000;
+          durationMin = route.duration / 60;
+          coordinates = route.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
+        } else {
+          throw new Error("Erro na rota OSRM");
+        }
+      } catch (e) {
+        const R = 6371;
+        const dLat = ((destCoords.lat - originCoords.lat) * Math.PI) / 180;
+        const dLon = ((destCoords.lng - originCoords.lng) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos((originCoords.lat * Math.PI) / 180) * Math.cos((destCoords.lat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        distanceKm = Math.round(R * c * 1.25);
+        durationMin = (distanceKm / 70) * 60;
+        coordinates = [[originCoords.lat, originCoords.lng], [destCoords.lat, destCoords.lng]];
+      }
 
-      const route = routeJson.routes[0];
-      const distanceKm = route.distance / 1000;
-      
-      const coordinates: [number, number][] = route.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
       const bounds = L.latLngBounds(coordinates);
 
       setRouteData({
         distance: distanceKm,
-        duration: route.duration,
+        duration: durationMin,
         coordinates,
         bounds
       });
@@ -160,7 +181,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
         ...prev,
         distance: distanceKm.toFixed(1),
         tollValue: mockToll.toFixed(2),
-        anttMinimum: mockAntt.toFixed(2)
+        anttValue: mockAntt.toFixed(2)
       }));
 
     } catch (error: any) {
@@ -450,7 +471,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
             <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700 flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-emerald-500" /> Origem *</label>
-                <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Cidade, Estado" />
+                <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} list="city-suggestions-fq" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Uberaba, MG" />
               </div>
 
               <div className="flex items-center justify-center -my-2 relative z-10">
@@ -459,8 +480,14 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-700 flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-indigo-500" /> Destino *</label>
-                <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Cidade, Estado" />
+                <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} list="city-suggestions-fq" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Sacramento, MG" />
               </div>
+
+              <datalist id="city-suggestions-fq">
+                {BRAZILIAN_CITIES.map((city, idx) => (
+                  <option key={idx} value={city} />
+                ))}
+              </datalist>
 
               <button 
                 onClick={calculateRoute}

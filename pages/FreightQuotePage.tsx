@@ -17,6 +17,8 @@ import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../ut
 import type { User as AppUser, Cargo } from '../types';
 import { autoFormatInput } from '../utils/formatters';
 import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
+import { geocodeCity } from '../utils/geocoding';
+import { BRAZILIAN_CITIES } from '../brazilianCities';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -145,25 +147,6 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     setAppliedSuggestion(false);
   };
 
-  const fetchCoordinates = async (address: string) => {
-    try {
-      const cleanAddress = address.trim().replace(/\s+-\s+Brasil$/i, '').replace(/,\s*Brasil$/i, '');
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanAddress + ', Brasil')}&limit=1&accept-language=pt-br&countrycodes=br`);
-      const data = await response.json();
-      if (data && data.length > 0) {
-        return {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-          label: data[0].display_name
-        };
-      }
-      return null;
-    } catch (err) {
-      console.error('Geocoding error:', err);
-      return null;
-    }
-  };
-
   // Busca sugestão de valores com base no histórico de cargas (1ª prioridade) ou cotações (2ª prioridade)
   const searchRouteHistory = useCallback(async (originStr: string, destStr: string) => {
     if (!originStr.trim() || !destStr.trim()) {
@@ -184,7 +167,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
   }, [cargos]);
 
   const calculateRoute = async () => {
-    if (!formData.origin || !formData.destination) {
+    if (!formData.origin.trim() || !formData.destination.trim()) {
       setError('Informe a origem e o destino para calcular a rota.');
       return;
     }
@@ -197,47 +180,78 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     searchRouteHistory(formData.origin, formData.destination);
 
     try {
-      const origin = await fetchCoordinates(formData.origin);
-      const dest = await fetchCoordinates(formData.destination);
+      const [origin, dest] = await Promise.all([
+        geocodeCity(formData.origin),
+        geocodeCity(formData.destination)
+      ]);
 
       if (!origin || !dest) {
-        setError('Não foi possível localizar um dos endereços.');
+        if (!origin && !dest) {
+          setError(`Não foi possível localizar a origem ("${formData.origin}") nem o destino ("${formData.destination}").`);
+        } else if (!origin) {
+          setError(`Não foi possível localizar a cidade de origem: "${formData.origin}". Verifique o nome ou selecione da lista.`);
+        } else {
+          setError(`Não foi possível localizar a cidade de destino: "${formData.destination}". Verifique o nome ou selecione da lista.`);
+        }
         setLoading(false);
         return;
       }
 
-      setOriginCoords(origin);
-      setDestCoords(dest);
+      setOriginCoords({ lat: origin.lat, lng: origin.lng, label: origin.label || formData.origin });
+      setDestCoords({ lat: dest.lat, lng: dest.lng, label: dest.label || formData.destination });
 
-      const routeResponse = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=simplified&geometries=geojson`);
-      const routeData = await routeResponse.json();
+      try {
+        const routeResponse = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=simplified&geometries=geojson`);
+        const routeData = await routeResponse.json();
 
-      if (routeData.code === 'Ok' && routeData.routes.length > 0) {
-        const route = routeData.routes[0];
-        const distanceKm = route.distance / 1000;
-        
+        if (routeData.code === 'Ok' && routeData.routes.length > 0) {
+          const route = routeData.routes[0];
+          const distanceKm = route.distance / 1000;
+          
+          setRouteInfo({
+            distance: distanceKm,
+            duration: route.duration / 60,
+            coordinates: route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])
+          });
+
+          const eixos = parseInt(formData.axes) || 6;
+          const baseAnttEstimate = distanceKm * eixos * 1.458; // Base aproximada Mínimo ANTT
+          const baseTollEstimate = distanceKm * eixos * 0.198; // Base aproximada de pedágio
+
+          setFormData(prev => ({
+            ...prev,
+            anttValue: baseAnttEstimate.toFixed(2),
+            tollValue: baseTollEstimate.toFixed(2)
+          }));
+        } else {
+          throw new Error('OSRM retornou sem rotas');
+        }
+      } catch (osrmErr) {
+        // Fallback de cálculo de distância caso o serviço OSRM esteja temporariamente instável
+        const R = 6371;
+        const dLat = ((dest.lat - origin.lat) * Math.PI) / 180;
+        const dLon = ((dest.lng - origin.lng) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos((origin.lat * Math.PI) / 180) * Math.cos((dest.lat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const directKm = R * c;
+        const estimatedRoadKm = Math.round(directKm * 1.25); // Fator de sinuosidade rodoviária estimada
+
         setRouteInfo({
-          distance: distanceKm,
-          duration: route.duration / 60,
-          coordinates: route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])
+          distance: estimatedRoadKm,
+          duration: (estimatedRoadKm / 70) * 60,
+          coordinates: [[origin.lat, origin.lng], [dest.lat, dest.lng]]
         });
 
-        // Cálculo Estimado (Mock) dos sites para a distância e número de eixos informados
         const eixos = parseInt(formData.axes) || 6;
-        const baseAnttEstimate = distanceKm * eixos * 1.458; // Base aproximada Mínimo ANTT
-        const baseTollEstimate = distanceKm * eixos * 0.198; // Base aproximada de pedágio (1/2 centavos por KM/Eixo)
-
         setFormData(prev => ({
           ...prev,
-          anttValue: baseAnttEstimate.toFixed(2),
-          tollValue: baseTollEstimate.toFixed(2)
+          anttValue: (estimatedRoadKm * eixos * 1.458).toFixed(2),
+          tollValue: (estimatedRoadKm * eixos * 0.198).toFixed(2)
         }));
-
-      } else {
-        setError('Não foi possível calcular a rota.');
       }
-    } catch (err) {
-      setError('Erro ao conectar com o serviço de mapas.');
+    } catch (err: any) {
+      console.error('Erro ao calcular rota:', err);
+      setError('Erro ao conectar com o serviço de mapas ou calcular rota.');
     } finally {
       setLoading(false);
     }
@@ -408,14 +422,19 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                   <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                     <MapPin className="w-4 h-4 mr-1.5 text-emerald-500" /> Origem
                   </label>
-                  <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" placeholder="Ex: Cuiabá, MT" />
+                  <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} list="city-suggestions-quote" className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" placeholder="Ex: Uberaba, MG" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-700 dark:text-gray-300 flex items-center">
                     <MapPin className="w-4 h-4 mr-1.5 text-red-500" /> Destino
                   </label>
-                  <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" placeholder="Ex: Santos, SP" />
+                  <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} list="city-suggestions-quote" className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm" placeholder="Ex: Sacramento, MG" />
                 </div>
+                <datalist id="city-suggestions-quote">
+                  {BRAZILIAN_CITIES.map((city, idx) => (
+                    <option key={idx} value={city} />
+                  ))}
+                </datalist>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
