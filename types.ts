@@ -418,6 +418,7 @@ export interface Shipment {
   discountValue?: number;
   isBreakageWaived?: boolean;
   netBalanceValue?: number;
+  loadedTonnage?: number;
   unloadedTonnage?: number;
   vehicleSetType?: VehicleSetType;
   vehicleBodyType?: VehicleBodyType;
