@@ -65,6 +65,7 @@ interface OperationalLoadsPageProps {
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
   riskQueryOptions?: RiskQueryOption[];
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
 const formatAllowedVehicleTypes = (allowed?: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[]): string => {
@@ -109,6 +110,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   onUpdateAttachment,
   onAddAttachments,
   riskQueryOptions,
+  onSwapCargo
 }) => {
   const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
@@ -461,6 +463,8 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         products={products}
         vehicles={vehicles}
         onDeleteAttachment={onDeleteAttachment}
+        onSwapCargo={onSwapCargo}
+        cargos={loads}
       />
 
       <RecommendedDriversModal

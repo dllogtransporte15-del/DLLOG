@@ -333,6 +333,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         companyLogo={companyLogo}
         onDeleteAttachment={onDeleteAttachment}
         onSwapCargo={handleOpenSwapCargoModal}
+        onPerformSwapCargo={onSwapCargo}
         tickets={tickets}
       />
 

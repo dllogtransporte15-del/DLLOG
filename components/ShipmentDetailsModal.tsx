@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod } from '../types';
 import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
-import { FileTextIcon, Trash2 } from 'lucide-react';
+import { FileTextIcon, Trash2, ArrowRightLeft } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import SwapCargoModal from './SwapCargoModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
 
@@ -21,6 +22,8 @@ interface ShipmentDetailsModalProps {
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void | Promise<void>;
+  cargos?: Cargo[];
   clients: Client[];
   products: Product[];
   vehicles: Vehicle[];
@@ -46,6 +49,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   onUpdateShipmentData, 
   onAddAttachments, 
   onDeleteAttachment, 
+  onSwapCargo,
+  cargos = [],
   clients = [], 
   products = [], 
   vehicles = [], 
@@ -62,6 +67,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [shipmentStays, setShipmentStays] = useState<StayRecord[]>([]);
   const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
+  const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -200,6 +206,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
             <div>
                 <div className="flex items-center gap-3">
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Detalhes do Embarque</h2>
+                    {onSwapCargo && shipment && shipment.status !== ShipmentStatus.Cancelado && (
+                        <button
+                            type="button"
+                            onClick={() => setIsSwapModalOpen(true)}
+                            title="Trocar Carga do Embarque"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-md text-xs font-bold transition-all shadow-sm border border-blue-200 dark:border-blue-800/60 cursor-pointer"
+                        >
+                            <ArrowRightLeft size={14} />
+                            <span>Trocar Carga</span>
+                        </button>
+                    )}
                     {shipment && ![ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro, ShipmentStatus.Cancelado].includes(shipment.status) && (
                         <button
                             onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo)}
@@ -223,7 +240,24 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                 <DetailItem label="Origem da Carga" value={cargo?.origin} />
                 <DetailItem label="Destino da Carga" value={cargo?.destination} />
                 <DetailItem label="Produto" value={product?.name} />
-                <DetailItem label="Carga Vinculada" value={cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.tmsLoteNumber ? ` (Lote TMS: ${cargo.tmsLoteNumber})` : ''}` : cargo?.id} />
+                <DetailItem label="Carga Vinculada">
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                            {cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.tmsLoteNumber ? ` (Lote TMS: ${cargo.tmsLoteNumber})` : ''}` : (cargo?.id || 'N/A')}
+                        </span>
+                        {onSwapCargo && shipment.status !== ShipmentStatus.Cancelado && (
+                            <button
+                                type="button"
+                                onClick={() => setIsSwapModalOpen(true)}
+                                className="text-[11px] font-bold text-primary dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded"
+                                title="Trocar carga vinculada"
+                            >
+                                <ArrowRightLeft size={12} />
+                                <span>Trocar</span>
+                            </button>
+                        )}
+                    </div>
+                </DetailItem>
                 <DetailItem label="Status Atual" value={shipment.status} />
                 <DetailItem label="Comercial (Embarcador)" value={embarcador?.name || 'N/A'} />
                 {shipment.status === 'Cancelado' && shipment.cancellationReason && (
@@ -894,6 +928,21 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
         fileName={previewDocument?.name}
         category={previewDocument?.category}
       />
+
+      {onSwapCargo && (
+        <SwapCargoModal
+          isOpen={isSwapModalOpen}
+          onClose={() => setIsSwapModalOpen(false)}
+          onConfirm={(shipmentId, newCargoId) => {
+            onSwapCargo(shipmentId, newCargoId);
+            setIsSwapModalOpen(false);
+          }}
+          shipment={shipment}
+          cargos={cargos || []}
+          clients={clients}
+          products={products}
+        />
+      )}
     </>
   );
 };

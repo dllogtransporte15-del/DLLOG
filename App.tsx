@@ -2156,7 +2156,17 @@ const App: React.FC = () => {
       return;
     }
 
-    const tonnage = shipment.shipmentTonnage;
+    const tonnage = Number(shipment.shipmentTonnage) || 0;
+    const isLoaded = [
+      ShipmentStatus.AguardandoNota,
+      ShipmentStatus.AguardandoFiscal,
+      ShipmentStatus.AguardandoAdiantamento,
+      ShipmentStatus.AguardandoAgendamento,
+      ShipmentStatus.AguardandoDescarga,
+      ShipmentStatus.AguardandoPagamentoSaldo,
+      ShipmentStatus.Finalizado
+    ].includes(shipment.status);
+    const loadedTon = Number(shipment.loadedTonnage) || tonnage;
 
     // 1. Prepare updated Shipment
     const newDriverRate = newCargo.driverFreightValuePerTon;
@@ -2166,12 +2176,13 @@ const App: React.FC = () => {
     const updatedShipment: Shipment = {
       ...shipment,
       cargoId: newCargoId,
+      branchId: newCargo.branchId || shipment.branchId,
       driverFreightRateSnapshot: newDriverRate,
       companyFreightRateSnapshot: newCompanyRate,
       driverFreightValue: newTotalDriverFreight,
       history: [
         ...shipment.history,
-        createHistoryLog(`Carga trocada de #${oldCargo?.sequenceId || oldCargoId} para #${newCargo.sequenceId}. Taxas e valores de frete atualizados.`)
+        createHistoryLog(`Carga trocada de #${oldCargo?.sequenceId || oldCargoId} para #${newCargo.sequenceId}. Taxas e valores de frete atualizados para o fluxo da nova carga.`)
       ]
     };
 
@@ -2180,10 +2191,11 @@ const App: React.FC = () => {
     if (oldCargo) {
       updatedOldCargo = {
         ...oldCargo,
-        scheduledVolume: Math.max(0, oldCargo.scheduledVolume - tonnage),
+        scheduledVolume: Math.max(0, Number((oldCargo.scheduledVolume - tonnage).toFixed(2))),
+        loadedVolume: isLoaded ? Math.max(0, Number(((oldCargo.loadedVolume || 0) - loadedTon).toFixed(2))) : oldCargo.loadedVolume,
         history: [
           ...oldCargo.history,
-          createHistoryLog(`Volume agendado reduzido em ${tonnage} ton devido à troca de carga do embarque ${shipmentId} para a carga #${newCargo.sequenceId}.`)
+          createHistoryLog(`Volume reduzido devido à troca de carga do embarque ${shipmentId} para a carga #${newCargo.sequenceId}.`)
         ]
       };
     }
@@ -2191,10 +2203,11 @@ const App: React.FC = () => {
     // 3. Prepare updated New Cargo
     const updatedNewCargo: Cargo = {
       ...newCargo,
-      scheduledVolume: newCargo.scheduledVolume + tonnage,
+      scheduledVolume: Number(((newCargo.scheduledVolume || 0) + tonnage).toFixed(2)),
+      loadedVolume: isLoaded ? Number(((newCargo.loadedVolume || 0) + loadedTon).toFixed(2)) : newCargo.loadedVolume,
       history: [
         ...newCargo.history,
-        createHistoryLog(`Volume agendado aumentado em ${tonnage} ton devido à troca de carga do embarque ${shipmentId} da carga #${oldCargo?.sequenceId || oldCargoId}.`)
+        createHistoryLog(`Volume aumentado devido à troca de carga do embarque ${shipmentId} da carga #${oldCargo?.sequenceId || oldCargoId}.`)
       ]
     };
 
@@ -2517,11 +2530,11 @@ const App: React.FC = () => {
       const localMaxSeq = validCargos.reduce((max, c) => Math.max(max, c.sequenceId || 0), 0);
       const safeNextCargo = (nextIds.cargo && nextIds.cargo < 1000000) ? nextIds.cargo : (localMaxSeq + 1);
       const nextSeq = Math.max(localMaxSeq + 1, safeNextCargo, 101);
-      const tempId = `TEMP-${Date.now()}`;
+      const newCargoId = `CRG-${nextSeq}`;
 
       const newLoad: Cargo = {
         ...loadData,
-        id: tempId,
+        id: newCargoId,
         sequenceId: nextSeq,
         createdAt: new Date().toISOString(),
         createdById: (loadData as any).createdById || currentUser.id,
@@ -2529,14 +2542,14 @@ const App: React.FC = () => {
       } as Cargo;
 
       // Atualização otimista
-      setCargos(prev => [newLoad, ...prev]);
+      setCargos(prev => [newLoad, ...prev.filter(c => c.id !== newCargoId && c.sequenceId !== nextSeq)]);
       
       try {
         const savedCargo = await insertCargo(newLoad);
         
-        // Atualiza o estado local garantindo que o tempId seja removido e não haja duplicação com o Realtime
+        // Atualiza o estado local garantindo que não haja duplicação com o Realtime
         setCargos(prev => {
-          const filtered = prev.filter(c => c.id !== tempId && c.id !== savedCargo.id);
+          const filtered = prev.filter(c => c.id !== newCargoId && c.id !== savedCargo.id && c.sequenceId !== nextSeq);
           return [savedCargo, ...filtered];
         });
         
@@ -2570,8 +2583,8 @@ const App: React.FC = () => {
         
       } catch (err: any) {
         console.error('Erro ao salvar carga no Supabase:', err);
-        // Remove a carga temporária em caso de erro (rollback)
-        setCargos(prev => prev.filter(c => c.id !== tempId));
+        // Remove a carga em caso de erro (rollback)
+        setCargos(prev => prev.filter(c => c.id !== newCargoId));
         
         const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
         showToast(`[ERRO CRÍTICO] A carga não pôde ser salva no banco de dados: ${errorMessage}. Verifique as informações preenchidas.`, 'error');
@@ -2901,16 +2914,16 @@ const App: React.FC = () => {
 
     return (
       <Routes>
-        <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
+        <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
         <Route path="/dashboard" element={<Navigate to="/" replace />} />
         <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} onMergeClients={handleMergeClients} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/drivers" element={<DriversPage drivers={drivers} setDrivers={setDrivers} onSaveDriver={handleSaveDriver} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
         <Route path="/vehicles" element={<VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
-        <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} />} />
+        <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} onSwapCargo={handleSwapCargo} />} />
         <Route path="/products" element={<ProductsPage products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} />} />
-        <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} />} />
+        <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
         <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
         <Route path="/financial" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
         <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} />} />
@@ -2923,10 +2936,10 @@ const App: React.FC = () => {
         <Route path="/freight-quote" element={<FreightQuotePage currentUser={currentUser} cargos={cargos} />} />
         <Route path="/tools-history" element={<ToolsHistoryPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />} />
         <Route path="/branches" element={<BranchesPage branches={branches} onSaveBranch={handleSaveBranch} onDeleteBranch={handleDeleteBranch} currentUser={currentUser} profilePermissions={profilePermissions} />} />
-        <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} />} />
+        <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} onSwapCargo={handleSwapCargo} />} />
         <Route path="/risk-query-types" element={!can('read', currentUser, 'risk-query-types', profilePermissions) ? <Navigate to="/" replace /> : <RiskQueryTypesPage riskQueryOptions={riskQueryOptions} onSaveOption={handleSaveRiskQueryOption} onDeleteOption={handleDeleteRiskQueryOption} onRestoreDefaults={handleRestoreRiskQueryDefaults} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
-        <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
+        <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
       </Routes>
     );
   };

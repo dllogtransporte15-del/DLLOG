@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions } from '../types';
+import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions, Product } from '../types';
 import { ShipmentStatus, RiskQueryType, RISK_QUERY_COST_MAP, DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { 
   ShieldCheck, 
@@ -54,6 +54,8 @@ interface RiskManagementPageProps {
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onModalStateChange?: (isOpen: boolean) => void;
+  products?: Product[];
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
 export type RiskReleaseStatus = 'Aprovado' | 'Reprovado' | 'Pendente';
@@ -135,7 +137,9 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   onUpdateShipmentData,
   onAddAttachments,
   onDeleteAttachment,
-  onModalStateChange
+  onModalStateChange,
+  products = [],
+  onSwapCargo
 }) => {
   // Tabs: 'operational' | 'analytics' | 'query_types'
   const [activeTab, setActiveTab] = useState<'operational' | 'analytics' | 'query_types'>('operational');
@@ -1828,7 +1832,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           cargo={cargos.find(c => c.id === selectedShipmentForDetails.cargoId)}
           currentUser={currentUser}
           clients={clients}
-          products={[]}
+          products={products}
           vehicles={vehicles}
           users={users}
           companyLogo={companyLogo}
@@ -1836,6 +1840,8 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           onUpdateShipmentData={onUpdateShipmentData}
           onAddAttachments={onAddAttachments}
           onDeleteAttachment={onDeleteAttachment}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
       )}
 

@@ -114,6 +114,7 @@ interface DashboardPageProps {
   onCreateShipment?: (data: any) => Promise<void>;
   allShipments?: Shipment[];
   riskQueryOptions?: RiskQueryOption[];
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
 
@@ -272,7 +273,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onConvertToCargo, 
   onCreateShipment, 
   allShipments,
-  riskQueryOptions
+  riskQueryOptions,
+  onSwapCargo
 }) => {
   const navigate = useNavigate();
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
@@ -945,6 +947,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           onUpdatePrice={onUpdatePrice}
           onUpdateShipmentData={onUpdateShipmentData}
           onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
         {offerForNewShipment && onCreateShipment && (
           <NewShipmentModal
@@ -1152,6 +1156,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           onUpdatePrice={onUpdatePrice}
           onUpdateShipmentData={onUpdateShipmentData}
           onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
         {selectedShipmentForAttachment && currentUser && (
           <AttachmentModal
@@ -1225,6 +1231,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           onUpdatePrice={onUpdatePrice}
           onUpdateShipmentData={onUpdateShipmentData}
           onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
         {selectedShipmentForAttachment && currentUser && (
           <AttachmentModal
@@ -1298,6 +1306,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           onUpdatePrice={onUpdatePrice}
           onUpdateShipmentData={onUpdateShipmentData}
           onAddAttachments={onAddAttachments}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
         {selectedShipmentForAttachment && currentUser && (
           <AttachmentModal
@@ -1886,6 +1896,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         onUpdatePrice={onUpdatePrice}
         onUpdateShipmentData={onUpdateShipmentData}
         onAddAttachments={onAddAttachments}
+        onSwapCargo={onSwapCargo}
+        cargos={cargos}
       />
 
       <ShipmentHistoryModal

@@ -42,9 +42,10 @@ interface LoadsPageProps {
   offerToConvert?: FreightOffer | null;
   setOfferToConvert?: (offer: FreightOffer | null) => void;
   onCreateShipment?: (data: any) => Promise<void>;
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
-const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment }) => {
+const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
@@ -268,6 +269,8 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         companyLogo={companyLogo}
         vehicles={vehicles}
         onDeleteAttachment={onDeleteAttachment}
+        onSwapCargo={onSwapCargo}
+        cargos={loads}
       />
 
       {isRecommendedDriversModalOpen && selectedCargoForRecommendations && (

@@ -871,10 +871,39 @@ export async function fetchProducts(): Promise<Product[]> {
   }
 }
 
+export function deduplicateCargos(cargosList: Cargo[]): Cargo[] {
+  if (!Array.isArray(cargosList)) return [];
+  const seenIds = new Set<string>();
+  const seenSeqs = new Set<number>();
+  const result: Cargo[] = [];
+
+  // Sort so non-TEMP CRG cargos take priority over any legacy TEMP cargos
+  const sorted = [...cargosList].sort((a, b) => {
+    const aIsTemp = String(a.id).startsWith('TEMP-') ? 1 : 0;
+    const bIsTemp = String(b.id).startsWith('TEMP-') ? 1 : 0;
+    return aIsTemp - bIsTemp;
+  });
+
+  for (const c of sorted) {
+    const id = String(c.id);
+    if (seenIds.has(id)) continue;
+
+    if (typeof c.sequenceId === 'number' && c.sequenceId > 0 && c.sequenceId < 1000000) {
+      if (seenSeqs.has(c.sequenceId)) continue;
+      seenSeqs.add(c.sequenceId);
+    }
+
+    seenIds.add(id);
+    result.push(c);
+  }
+
+  return result;
+}
+
 export async function fetchCargos(): Promise<Cargo[]> {
   try {
     const data = await fetchAllRows('cargos', 'created_at', { ascending: false });
-    return data.map(toCargo);
+    return deduplicateCargos(data.map(toCargo));
   } catch (error) {
     return handleAuthError(error, []);
   }
@@ -897,7 +926,7 @@ export async function fetchPaginatedCargos(page: number, limit: number, filters?
     console.error('Error fetching paginated cargos:', error);
     return { data: [], count: 0 };
   }
-  return { data: (data || []).map(toCargo), count: count || 0 };
+  return { data: deduplicateCargos((data || []).map(toCargo)), count: count || 0 };
 }
 
 export async function fetchShipments(): Promise<Shipment[]> {
@@ -1337,8 +1366,8 @@ export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Car
   payload.id = id;
   payload.sequence_id = sequenceId;
 
-  console.log('[insertCargo] Inserting new cargo:', payload.id, 'sequence_id:', payload.sequence_id);
-  const { data, error } = await supabase.from('cargos').insert(payload).select().single();
+  console.log('[insertCargo] Upserting new cargo:', payload.id, 'sequence_id:', payload.sequence_id);
+  const { data, error } = await supabase.from('cargos').upsert(payload, { onConflict: 'id' }).select().single();
   if (error) {
     console.error('[insertCargo] Error:', error);
     throw error;

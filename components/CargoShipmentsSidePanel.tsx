@@ -16,6 +16,8 @@ interface CargoShipmentsSidePanelProps {
   companyLogo?: string | null;
   vehicles: Vehicle[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
+  onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
+  cargos?: Cargo[];
 }
 
 
@@ -32,7 +34,9 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
   products,
   companyLogo,
   vehicles,
-  onDeleteAttachment
+  onDeleteAttachment,
+  onSwapCargo,
+  cargos = []
 }) => {
 
 
@@ -158,7 +162,7 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
           isOpen={!!selectedShipment}
           onClose={() => setSelectedShipment(null)}
           shipment={selectedShipment}
-          cargo={cargo}
+          cargo={cargo || (selectedShipment ? cargos.find(c => c.id === selectedShipment.cargoId) : undefined)}
           currentUser={currentUser}
           onUpdatePrice={onUpdatePrice}
           clients={clients}
@@ -167,6 +171,8 @@ const CargoShipmentsSidePanel: React.FC<CargoShipmentsSidePanelProps> = ({
           vehicles={vehicles}
           users={users}
           onDeleteAttachment={onDeleteAttachment}
+          onSwapCargo={onSwapCargo}
+          cargos={cargos}
         />
 
 

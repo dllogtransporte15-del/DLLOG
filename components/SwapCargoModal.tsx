@@ -29,15 +29,12 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
   const [selectedCargoId, setSelectedCargoId] = useState<string>('');
 
   const availableCargos = useMemo(() => {
-    return cargos.filter(c => {
-      // Must be in progress
-      if (c.status !== CargoStatus.EmAndamento) return false;
+    return (cargos || []).filter(c => {
+      // Must not be closed
+      if (c.status === CargoStatus.Fechada) return false;
       
-      // Must have available volume
-      if (c.scheduledVolume >= c.totalVolume) return false;
-      
-      // Current cargo should be excluded or at least handled
-      if (shipment && c.id === shipment.cargoId) return false;
+      // Current cargo should be excluded
+      if (shipment && (c.id === shipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipment.cargoId))) return false;
 
       // Search filter
       if (searchTerm) {
@@ -45,11 +42,12 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
         const client = clients.find(cl => cl.id === c.clientId)?.nomeFantasia?.toLowerCase() || '';
         const product = products.find(p => p.id === c.productId)?.name?.toLowerCase() || '';
         return (
-          c.origin.toLowerCase().includes(searchLower) ||
-          c.destination.toLowerCase().includes(searchLower) ||
+          (c.origin && c.origin.toLowerCase().includes(searchLower)) ||
+          (c.destination && c.destination.toLowerCase().includes(searchLower)) ||
           client.includes(searchLower) ||
           product.includes(searchLower) ||
-          c.sequenceId.toString().includes(searchLower)
+          (c.sequenceId && c.sequenceId.toString().includes(searchLower)) ||
+          (c.id && c.id.toLowerCase().includes(searchLower))
         );
       }
       return true;

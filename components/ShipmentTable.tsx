@@ -95,12 +95,13 @@ interface ShipmentTableProps {
   companyLogo?: string | null;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo?: (shipment: Shipment) => void;
+  onPerformSwapCargo?: (shipmentId: string, newCargoId: string) => void;
   tickets?: Ticket[];
   filterCte?: string;
   onFilterCteChange?: (val: string) => void;
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
 
 
   const { showToast } = useToast();
@@ -1647,6 +1648,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       onUpdatePrice={onUpdatePrice}
       onUpdateShipmentData={onUpdateShipmentData}
       onAddAttachments={onAddAttachments}
+      onSwapCargo={onPerformSwapCargo}
+      cargos={cargos}
       clients={clients}
       products={products}
       companyLogo={companyLogo}
