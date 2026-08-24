@@ -218,6 +218,23 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     setIsShipmentDropdownOpen(false);
   };
 
+  const parseFlexibleNumber = (val: string | number | undefined | null): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return val;
+    const str = String(val).trim();
+    if (str.includes('.') && str.includes(',')) {
+      if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+        return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+      } else {
+        return parseFloat(str.replace(/,/g, '')) || 0;
+      }
+    }
+    if (str.includes(',')) {
+      return parseFloat(str.replace(',', '.')) || 0;
+    }
+    return parseFloat(str) || 0;
+  };
+
   const handleSaveStayFinancials = async () => {
     if (!editValues || isSavingEdit) return;
     setIsSavingEdit(true);
@@ -232,13 +249,17 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         paymentProofUrl = (await uploadStayAttachment(editValues.id, 'comprovante_pagamento', editValues.paymentFile)) || undefined;
       }
 
+      const approvedVal = editValues.approved !== '' ? parseFlexibleNumber(editValues.approved) : undefined;
+      const paidVal = editValues.paid !== '' ? parseFlexibleNumber(editValues.paid) : undefined;
+      const weightVal = editValues.weight !== '' ? parseFlexibleNumber(editValues.weight) : 0;
+
       const updates: Partial<StayRecord> = {
-        approvedValue: editValues.approved ? parseFloat(editValues.approved) : undefined,
-        driverPaidValue: editValues.paid ? parseFloat(editValues.paid) : undefined,
+        approvedValue: approvedVal,
+        driverPaidValue: paidVal,
         clientName: editValues.clientName || undefined,
         driver: editValues.driver || undefined,
         plate: editValues.plate || undefined,
-        weight: parseFloat(editValues.weight) || 0,
+        weight: weightVal,
         origin: editValues.origin || undefined,
         destination: editValues.destination || undefined,
         shipmentId: editValues.shipmentId || undefined,
@@ -246,11 +267,17 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         ...(cteUrl && { cteUrl }),
         ...(paymentProofUrl && { paymentProofUrl })
       };
-      await updateToolStay(editValues.id, updates);
+      
+      const result = await updateToolStay(editValues.id, updates);
+      if (result) {
+        setStays(prev => prev.map(s => s.id === editValues.id ? { ...s, ...updates, ...result } : s));
+      }
       await loadData();
       setExpandedId(null);
+      setEditValues(null);
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao salvar alterações da estadia:', err);
+      alert('Erro ao salvar alterações. Por favor, tente novamente.');
     } finally {
       setIsSavingEdit(false);
     }
@@ -557,7 +584,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                       <div>
                                         <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Peso (Ton)</label>
                                         <input 
-                                          type="number" 
+                                          type="text" 
+                                          inputMode="decimal"
                                           value={editValues?.id === item.id ? editValues?.weight : ''} 
                                           onChange={e => setEditValues(prev => prev ? {...prev, weight: e.target.value} : null)}
                                           className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
@@ -579,7 +607,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Aprovado (Receita)</label>
                                    <div className="flex gap-2 items-center">
                                      <input 
-                                       type="number" 
+                                       type="text" 
+                                       inputMode="decimal"
                                        value={editValues?.id === item.id ? editValues?.approved : ''} 
                                        onChange={e => setEditValues(prev => prev ? {...prev, approved: e.target.value} : null)}
                                        placeholder="R$ 0,00"
@@ -608,7 +637,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Pago Motorista (Custo)</label>
                                    <div className="flex gap-2 items-center">
                                      <input 
-                                       type="number" 
+                                       type="text" 
+                                       inputMode="decimal"
                                        value={editValues?.id === item.id ? editValues?.paid : ''} 
                                        onChange={e => setEditValues(prev => prev ? {...prev, paid: e.target.value} : null)}
                                        placeholder="R$ 0,00"
@@ -636,12 +666,12 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                  <div className="flex items-center justify-between pt-2">
                                    <div>
                                       <div className="text-[10px] text-slate-400 font-bold uppercase">
-                                        {((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0)) >= 0 
+                                        {(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid)) >= 0 
                                           ? 'Lucro da Estadia' 
                                           : 'Déficit da Estadia'}
                                       </div>
-                                      <div className={`text-lg font-bold ${((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                                        {formatCurrency((parseFloat(editValues?.approved || '0') || 0) - (parseFloat(editValues?.paid || '0') || 0))}
+                                      <div className={`text-lg font-bold ${(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                        {formatCurrency(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid))}
                                       </div>
                                    </div>
                                    <button 

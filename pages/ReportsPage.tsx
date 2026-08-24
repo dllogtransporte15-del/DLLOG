@@ -168,18 +168,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         totalProgramado += s.shipmentTonnage || 0;
       }
 
-      // Total Efetivado: Based on having CT-e or reaching 'Ag. Nota' WITHIN FILTER RANGE
+      // Total Efetivado: Based STRICTLY on having CT-e WITHIN FILTER RANGE
       const hasCte = Boolean(
         s.cteNumber || 
         s.documents?.cte_number || 
         s.documents?.['CT-e'] || 
         s.documents?.['CTE']
       );
-      const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-      if (hasCte || effectiveEntry) {
+      if (hasCte && s.status !== ShipmentStatus.Cancelado) {
+        const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
         const effDateStr = effectiveEntry ? effectiveEntry.timestamp.substring(0, 10) : s.scheduledDate;
         if (effDateStr >= startDate && effDateStr <= endDate) {
-          totalEfetivado += s.shipmentTonnage || 0;
+          totalEfetivado += s.loadedTonnage || s.shipmentTonnage || 0;
         }
       }
     });
@@ -408,14 +408,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
                <div className="min-w-0 flex-1">
                   <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Programado</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{Math.round(filteredStats.totalProgramado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                     {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                  </p>
                </div>
            </div>
            <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
                <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
                <div className="min-w-0 flex-1">
                   <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetivado</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{Math.round(filteredStats.totalEfetivado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                     {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                  </p>
                </div>
            </div>
            <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
@@ -441,14 +445,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
                <div className="min-w-0 flex-1">
                   <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Prog.</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{Math.round(filteredStats.totalProgramado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                     {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                  </p>
                </div>
            </div>
            <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
                <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
                <div className="min-w-0 flex-1">
                   <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetiv.</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{Math.round(filteredStats.totalEfetivado).toLocaleString('pt-BR')} <span className="text-[10px] font-medium text-gray-400">ton</span></p>
+                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                     {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                  </p>
                </div>
            </div>
            <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
