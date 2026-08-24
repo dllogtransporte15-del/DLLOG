@@ -105,14 +105,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        if (filterStatus.length > 0 && !filterStatus.includes(s.status)) return false;
 
        const cargo = cargoMap.get(s.cargoId);
-       if (!cargo) return false;
 
        if (filterClient.length > 0) {
+           if (!cargo) return false;
            const clientName = clients.find(cl => cl.id === cargo.clientId)?.nomeFantasia || 'N/A';
            if (!filterClient.includes(clientName)) return false;
        }
 
        if (filterClientCnpj.length > 0) {
+         if (!cargo) return false;
          const cl = clients.find(item => item.id === cargo.clientId);
          const cnpj = cargo.clientCnpj || cl?.cnpj;
          const cleanCnpj = cnpj?.replace(/\D/g, '') || '';
@@ -127,8 +128,12 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
          if (!filterClientCnpj.includes(label)) return false;
        }
 
-       if (filterOrigin.length > 0 && !filterOrigin.includes(cargo.origin)) return false;
-       if (filterDest.length > 0 && !filterDest.includes(cargo.destination)) return false;
+       if (filterOrigin.length > 0) {
+         if (!cargo || !filterOrigin.includes(cargo.origin)) return false;
+       }
+       if (filterDest.length > 0) {
+         if (!cargo || !filterDest.includes(cargo.destination)) return false;
+       }
 
        if (filterBranch.length > 0) {
          const branchName = branches.find(b => b.id === s.branchId)?.name || 'N/A';
@@ -163,10 +168,16 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         totalProgramado += s.shipmentTonnage || 0;
       }
 
-      // Total Efetivado: Based on reaching 'Ag. Nota' WITHIN FILTER RANGE
+      // Total Efetivado: Based on having CT-e or reaching 'Ag. Nota' WITHIN FILTER RANGE
+      const hasCte = Boolean(
+        s.cteNumber || 
+        s.documents?.cte_number || 
+        s.documents?.['CT-e'] || 
+        s.documents?.['CTE']
+      );
       const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-      if (effectiveEntry) {
-        const effDateStr = effectiveEntry.timestamp.substring(0, 10);
+      if (hasCte || effectiveEntry) {
+        const effDateStr = effectiveEntry ? effectiveEntry.timestamp.substring(0, 10) : s.scheduledDate;
         if (effDateStr >= startDate && effDateStr <= endDate) {
           totalEfetivado += s.shipmentTonnage || 0;
         }
@@ -207,12 +218,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
     filteredShipments.forEach(s => {
        const cargo = cargoMap.get(s.cargoId);
-       if (!cargo) return;
+       const hasCte = Boolean(
+         s.cteNumber || 
+         s.documents?.cte_number || 
+         s.documents?.['CT-e'] || 
+         s.documents?.['CTE']
+       );
 
        if (profitMarginStatuses.includes(s.status)) {
-           const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
-           const driverRate = s.driverFreightRateSnapshot || cargo.driverFreightValuePerTon;
-           const commissionRate = cargo.salespersonCommissionPerTon || 0;
+           const grossRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+           const driverRate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+           const commissionRate = cargo?.salespersonCommissionPerTon || 0;
+           const ton = s.loadedTonnage || s.shipmentTonnage || 0;
            
            const demurrageRevenue = stays
                .filter(stay => stay.shipmentId === s.id)
@@ -222,13 +239,17 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                .filter(stay => stay.shipmentId === s.id)
                .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
                
-           const profit = ((grossRate - driverRate - commissionRate) * s.shipmentTonnage) + demurrageProfit;
-           const revenue = (grossRate * s.shipmentTonnage) + demurrageRevenue;
+           const profit = ((grossRate - driverRate - commissionRate) * ton) + demurrageProfit;
+           const revenue = (grossRate * ton) + demurrageRevenue;
            
-           grossBilled += revenue;
+           // Faturamento Bruto: soma apenas os embarques que possuem CT-e emitido
+           if (hasCte) {
+             grossBilled += revenue;
+           }
+           
            profitMargin += profit;
 
-           if (totalProfitMarginStatuses.includes(s.status)) {
+           if (totalProfitMarginStatuses.includes(s.status) || hasCte) {
                totalProfitMargin += profit;
                effectiveGrossBilled += revenue;
            }

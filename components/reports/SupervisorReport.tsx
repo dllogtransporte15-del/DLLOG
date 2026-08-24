@@ -119,11 +119,11 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       if (!countableStatuses.includes(s.status)) return;
       
       const cargo = cargoMap.get(s.cargoId);
-      if (!cargo) return;
 
-      const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon || 0;
-      const driverRate = s.driverFreightRateSnapshot || cargo.driverFreightValuePerTon || 0;
-      const commissionRate = cargo.salespersonCommissionPerTon || 0;
+      const grossRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+      const driverRate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+      const commissionRate = cargo?.salespersonCommissionPerTon || 0;
+      const ton = s.loadedTonnage || s.shipmentTonnage || 0;
 
       const demurrageRevenue = stays
         .filter(stay => stay.shipmentId === s.id)
@@ -133,11 +133,11 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         .filter(stay => stay.shipmentId === s.id)
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
         
-      const shipmentGrossRevenue = (grossRate * s.shipmentTonnage) + demurrageRevenue;
-      const shipmentNetRevenue = ((grossRate - driverRate - commissionRate) * s.shipmentTonnage) + demurrageProfit;
+      const shipmentGrossRevenue = (grossRate * ton) + demurrageRevenue;
+      const shipmentNetRevenue = ((grossRate - driverRate - commissionRate) * ton) + demurrageProfit;
 
       // Resolução de Filial em cascata
-      const effectiveBranchId = s.branchId || (s.createdById ? userBranchMap.get(s.createdById) : undefined) || cargo.branchId || (cargo.createdById ? userBranchMap.get(cargo.createdById) : undefined);
+      const effectiveBranchId = s.branchId || (s.createdById ? userBranchMap.get(s.createdById) : undefined) || cargo?.branchId || (cargo?.createdById ? userBranchMap.get(cargo.createdById) : undefined);
 
       const branchObj = effectiveBranchId ? branchMap.get(effectiveBranchId) : null;
       const isMatriz = branchObj 
