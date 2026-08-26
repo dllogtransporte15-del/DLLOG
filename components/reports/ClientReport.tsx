@@ -162,8 +162,14 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       });
     });
 
-    const effectiveStatuses = [
+    // Mesma regra do Fat. Bruto global: apenas embarques com CT-e emitido
+    // Inclui também estadias com CT-e complementar (approvedValue > 0)
+    const countableStatuses = [
+      ShipmentStatus.AguardandoSeguradora,
+      ShipmentStatus.PreCadastro,
+      ShipmentStatus.AguardandoCarregamento,
       ShipmentStatus.AguardandoNota,
+      ShipmentStatus.AguardandoFiscal,
       ShipmentStatus.AguardandoAdiantamento,
       ShipmentStatus.AguardandoAgendamento,
       ShipmentStatus.AguardandoDescarga,
@@ -171,35 +177,60 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ShipmentStatus.Finalizado
     ];
 
-    const effectiveShipments = shipments.filter(s => effectiveStatuses.includes(s.status));
-
-    effectiveShipments.forEach(shipment => {
+    shipments.filter(s => countableStatuses.includes(s.status)).forEach(shipment => {
       const cargo = cargoMap.get(shipment.cargoId);
       if (!cargo) return;
 
       const clientEntry = statsMap.get(cargo.clientId);
       if (!clientEntry) return;
 
+      // Verificar se possui CT-e (embarque principal) OU CT-e de estadia (complementar)
+      const hasShipmentCte = Boolean(
+        shipment.cteNumber ||
+        shipment.documents?.cte_number ||
+        shipment.documents?.['CT-e'] ||
+        shipment.documents?.['CTE']
+      );
+
+      // CT-e de estadia: estadias aprovadas vinculadas a este embarque
+      const shipmentStays = stays.filter(stay => stay.shipmentId === shipment.id && (stay.approvedValue || 0) > 0);
+      const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
+
+      // Contar apenas se tiver CT-e do embarque ou CT-e complementar de estadia
+      if (!hasShipmentCte && !hasStayCte) return;
+
       const client = clients.find(c => c.id === cargo.clientId);
       const grossRate = shipment.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
-      const grossValue = grossRate * shipment.shipmentTonnage;
-      const icmsValue = cargo.hasIcms ? grossValue * (cargo.icmsPercentage / 100) : 0;
-      const netValue = grossValue - icmsValue;
-      const commissionRate = cargo.salespersonCommissionPerTon || 0;
+      const ton = shipment.loadedTonnage || shipment.shipmentTonnage || 0;
+      const grossValue = grossRate * ton;
 
-      const demurrageProfit = stays
-        .filter(stay => stay.shipmentId === shipment.id)
+      // Estadia aprovada: faturamento bruto inclui o valor cobrado ao cliente (approvedValue)
+      const demurrageRevenue = shipmentStays
+        .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+
+      const demurrageProfit = shipmentStays
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
 
-      const profit = netValue - shipment.driverFreightValue - (commissionRate * shipment.shipmentTonnage) + demurrageProfit;
+      // Faturamento bruto = frete + estadias aprovadas
+      const totalGrossValue = hasShipmentCte ? grossValue + demurrageRevenue : demurrageRevenue;
+
+      const icmsValue = cargo.hasIcms ? grossValue * (cargo.icmsPercentage / 100) : 0;
+      const netFreightValue = grossValue - icmsValue;
+      const commissionRate = cargo.salespersonCommissionPerTon || 0;
+
+      const profit = hasShipmentCte
+        ? (netFreightValue - shipment.driverFreightValue - (commissionRate * ton) + demurrageProfit)
+        : demurrageProfit;
 
       const isCompleted = shipment.status === ShipmentStatus.Finalizado;
 
       // Add to overall client
-      clientEntry.totalTonnage += shipment.shipmentTonnage;
-      clientEntry.totalShipments += 1;
-      if (isCompleted) clientEntry.completedShipments += 1;
-      clientEntry.grossBilled += grossValue;
+      if (hasShipmentCte) {
+        clientEntry.totalTonnage += ton;
+        clientEntry.totalShipments += 1;
+        if (isCompleted) clientEntry.completedShipments += 1;
+      }
+      clientEntry.grossBilled += totalGrossValue;
       clientEntry.profitMargin += profit;
 
       // Add to specific Branch/CNPJ
@@ -225,10 +256,12 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
         }
       }
 
-      branchStat.totalTonnage += shipment.shipmentTonnage;
-      branchStat.totalShipments += 1;
-      if (isCompleted) branchStat.completedShipments += 1;
-      branchStat.grossBilled += grossValue;
+      if (hasShipmentCte) {
+        branchStat.totalTonnage += ton;
+        branchStat.totalShipments += 1;
+        if (isCompleted) branchStat.completedShipments += 1;
+      }
+      branchStat.grossBilled += totalGrossValue;
       branchStat.profitMargin += profit;
     });
 
