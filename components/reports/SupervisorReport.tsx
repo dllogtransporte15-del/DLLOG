@@ -108,6 +108,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       ShipmentStatus.PreCadastro,
       ShipmentStatus.AguardandoCarregamento,
       ShipmentStatus.AguardandoNota,
+      ShipmentStatus.AguardandoFiscal,
       ShipmentStatus.AguardandoAdiantamento,
       ShipmentStatus.AguardandoAgendamento,
       ShipmentStatus.AguardandoDescarga,
@@ -117,6 +118,15 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
     shipments.forEach(s => {
       if (!countableStatuses.includes(s.status)) return;
+
+      const hasCte = Boolean(
+        s.cteNumber || 
+        s.documents?.cte_number || 
+        s.documents?.['CT-e'] || 
+        s.documents?.['CTE']
+      );
+
+      if (!hasCte) return;
       
       const cargo = cargoMap.get(s.cargoId);
 
