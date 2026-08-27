@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
-import type { Shipment, User, Cargo, Client, Branch } from '../types';
+import type { Shipment, User, Cargo, Client, Branch, Driver, Vehicle, Product } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
 import { BriefcaseIcon } from '../components/icons/BriefcaseIcon';
 import { ShipIcon } from '../components/icons/ShipIcon';
 import { UsersIcon } from '../components/icons/UsersIcon';
 import { ClockIcon } from '../components/icons/ClockIcon';
-import { Filter, X, Calendar, DollarSign, Package, CheckCircle, Building2, TrendingUp } from 'lucide-react';
+import { Filter, X, Calendar, DollarSign, Package, CheckCircle, Building2, TrendingUp, Receipt } from 'lucide-react';
 import SalespersonReport from '../components/reports/SalespersonReport';
 import SupervisorReport from '../components/reports/SupervisorReport';
 import ShipperReport from '../components/reports/ShipperReport';
@@ -16,6 +16,7 @@ import ExternalSalespersonReport from '../components/reports/ExternalSalesperson
 import BranchReport from '../components/reports/BranchReport';
 import StayFinancialReport from '../components/reports/StayFinancialReport';
 import DemandForecastReport from '../components/reports/DemandForecastReport';
+import RealProfitReport from '../components/reports/RealProfitReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
 
@@ -28,13 +29,17 @@ interface ReportsPageProps {
   clients: Client[];
   branches: Branch[];
   stays?: StayRecord[];
+  drivers?: Driver[];
+  vehicles?: Vehicle[];
+  products?: Product[];
   companyLogo?: string | null;
   onSaveUser?: (userData: User | Omit<User, 'id'>) => void;
+  onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
 }
 
-type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas';
+type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real';
 
-const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], companyLogo, onSaveUser }) => {
+const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], drivers = [], vehicles = [], products = [], companyLogo, onSaveUser, onUpdateAttachment }) => {
   const [activeReport, setActiveReport] = useState<ActiveReport>('comercial');
   const [loadingStays, setLoadingStays] = useState(false);
   
@@ -94,6 +99,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     return effectiveEntry ? effectiveEntry.timestamp.substring(0, 10) : s.scheduledDate;
   };
 
+  const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
+
   const filteredShipments = useMemo(() => {
     return shipments.filter(s => {
        // Filter by effective date (the moment it was loaded/became effective)
@@ -136,13 +143,18 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        }
 
        if (filterBranch.length > 0) {
-         const branchName = branches.find(b => b.id === s.branchId)?.name || 'N/A';
+         const effectiveBranchId = s.branchId || 
+                                   userBranchMap.get(s.embarcadorId) || 
+                                   userBranchMap.get(s.createdById) || 
+                                   cargo?.branchId || 
+                                   (cargo ? userBranchMap.get(cargo.createdById) : undefined);
+         const branchName = branches.find(b => b.id === effectiveBranchId)?.name || 'Matriz';
          if (!filterBranch.includes(branchName)) return false;
        }
 
        return true;
     });
-  }, [shipments, startDate, endDate, filterStatus, filterClient, filterClientCnpj, filterOrigin, filterDest, filterBranch, cargoMap, clients, branches]);
+  }, [shipments, startDate, endDate, filterStatus, filterClient, filterClientCnpj, filterOrigin, filterDest, filterBranch, cargoMap, clients, branches, userBranchMap]);
 
   const filteredStays = useMemo(() => {
     return stays.filter(s => {
@@ -300,6 +312,23 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         return <StayFinancialReport stays={filteredStays} />;
       case 'previsao-demandas':
         return <DemandForecastReport cargos={cargos} clients={clients} shipments={shipments} companyLogo={companyLogo} />;
+      case 'lucro-real':
+        return (
+          <RealProfitReport
+            shipments={filteredShipments}
+            cargos={cargos}
+            clients={clients}
+            users={users}
+            currentUser={currentUser}
+            drivers={drivers}
+            vehicles={vehicles}
+            branches={branches}
+            companyLogo={companyLogo}
+            startDate={startDate}
+            endDate={endDate}
+            onUpdateAttachment={onUpdateAttachment}
+          />
+        );
       default:
         return null;
     }
@@ -310,7 +339,10 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
   const navItems = [
       ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Comercial', icon: BriefcaseIcon }] : []),
-      ...(!isCliente ? [{ id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }] : []),
+      ...(!isCliente ? [
+        { id: 'lucro-real', label: 'Lucro Real da Operação', icon: Receipt },
+        { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }
+      ] : []),
       ...(!isEmbarcador ? [
         { id: 'clientes', label: isCliente ? 'Histórico & Desempenho por CNPJ' : 'Clientes', icon: UsersIcon },
         ...(!isCliente ? [{ id: 'vendedores', label: 'Vendedores', icon: UsersIcon }] : []),

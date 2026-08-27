@@ -526,6 +526,7 @@ const toShipment = (row: any): Shipment => ({
   cteEmissionDate: row.cte_emission_date || row.documents?.cte_emission_date,
   nfeNumber: row.nfe_number || row.documents?.nfe_number,
   mdfeNumber: row.mdfe_number || row.documents?.mdfe_number,
+  realProfitData: row.real_profit_data || row.documents?.real_profit_data,
 });
 
 const fromShipment = (s: Shipment) => ({
@@ -559,6 +560,7 @@ const fromShipment = (s: Shipment) => ({
     ...(s.cteEmissionDate !== undefined ? { cte_emission_date: s.cteEmissionDate } : {}),
     ...(s.nfeNumber !== undefined ? { nfe_number: s.nfeNumber } : {}),
     ...(s.mdfeNumber !== undefined ? { mdfe_number: s.mdfeNumber } : {}),
+    ...(s.realProfitData !== undefined ? { real_profit_data: s.realProfitData } : {}),
   },
   history: s.history,
   created_at: s.createdAt,

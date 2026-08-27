@@ -173,20 +173,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     setSelectedShipment(null);
   };
 
-  const handleSaveAttachment = async (data: { 
-    filesToAttach: { [key: string]: File[] }, 
-    bankDetails?: string, 
-    loadedTonnage?: number, 
-    advancePercentage?: number, 
-    advanceValue?: number,
-    tollValue?: number, 
-    balanceToReceiveValue?: number,
-    discountValue?: number,
-    isBreakageWaived?: boolean,
-    netBalanceValue?: number,
-    unloadedTonnage?: number,
-    route?: string 
-  }) => {
+  const handleSaveAttachment = async (data: any) => {
     if (!selectedShipment) return;
     
     try {

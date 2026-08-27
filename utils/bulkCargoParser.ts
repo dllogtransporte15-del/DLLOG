@@ -488,29 +488,44 @@ Extraia com precisão os dados para o seguinte formato JSON rigoroso:
 }
 Retorne APENAS o JSON válido sem blocos de markdown adicionais.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: cleanBase64
-                }
-              },
-              { text: prompt }
-            ]
-          }
-        ]
-      });
+      const modelsToTry = [
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'gemini-3.7-flash',
+        'gemini-flash-latest'
+      ];
 
-      const textResponse = response.text || '';
-      const cleanJsonStr = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
-      ocrData = JSON.parse(cleanJsonStr);
+      for (const model of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: 'image/jpeg',
+                      data: cleanBase64
+                    }
+                  },
+                  { text: prompt }
+                ]
+              }
+            ]
+          });
+
+          const textResponse = response.text || '';
+          const cleanJsonStr = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
+          ocrData = JSON.parse(cleanJsonStr);
+          if (ocrData) break;
+        } catch (err) {
+          console.warn(`[bulkCargoParser] Erro na chamada Gemini com modelo ${model}:`, err);
+        }
+      }
     } catch (err) {
-      console.warn('[bulkCargoParser] Erro na chamada Gemini para roteiro COMIGO:', err);
+      console.error('[bulkCargoParser] Erro geral:', err);
     }
   }
 

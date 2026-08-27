@@ -388,6 +388,39 @@ export const REQUIRED_DOCUMENT_MAP: Partial<Record<ShipmentStatus, string>> = {
     [ShipmentStatus.AguardandoPagamentoSaldo]: 'Comprovante de Pagamento de Saldo',
 };
 
+export interface OperationalExpenseItem {
+  name: string;
+  value: number;
+  type?: 'positive' | 'negative' | 'neutral'; // (+) or (-)
+}
+
+export interface RealProfitData {
+  companyFreight: number;
+  driverFreight: number;
+  freightDifference: number;
+  freightDifferenceMarginPercent: number;
+  totalExpenses: number;
+  netProfit: number;
+  profitMarginPercent: number;
+  expenseItems: OperationalExpenseItem[];
+  complementCharged?: number;
+  complementPaid?: number;
+  driverSurcharge?: number;
+  toll?: number;
+  icmsDifference?: number;
+  federalTax?: number;
+  inssPatronal?: number;
+  insuranceDifference?: number;
+  commission?: number;
+  brokerFee?: number;
+  otherCosts?: number;
+  dailyRateDifference?: number;
+  generatedCredit?: number;
+  processedAt?: string;
+  attachmentUrl?: string;
+  rawOcrText?: string;
+}
+
 export interface Shipment {
   id: string;
   orderId: string;
@@ -446,6 +479,7 @@ export interface Shipment {
   cteEmissionDate?: string; // Data e Hora da Emissão do CT-e (ex: 13/08/2026 11:40)
   nfeNumber?: string;   // Número da Nota Fiscal (NF-e) extraído automaticamente
   mdfeNumber?: string;  // Número do MDF-e extraído automaticamente
+  realProfitData?: RealProfitData; // Resumo e detalhamento de despesas extraídos via OCR/IA
 }
 
 

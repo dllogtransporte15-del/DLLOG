@@ -26,11 +26,12 @@ interface ShipmentHistoryPageProps {
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   stays?: StayRecord[];
   riskQueryOptions?: RiskQueryOption[];
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, stays = [], riskQueryOptions }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, onUpdateAttachment, stays = [], riskQueryOptions }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -152,22 +153,13 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
     setAttachmentModalOpen(true);
   };
   
-  const handleDummySave = async (data: { 
-    filesToAttach: { [key: string]: File[] }, 
-    bankDetails?: string, 
-    loadedTonnage?: number, 
-    advancePercentage?: number, 
-    advanceValue?: number,
-    tollValue?: number, 
-    balanceToReceiveValue?: number,
-    discountValue?: number,
-    isBreakageWaived?: boolean,
-    netBalanceValue?: number,
-    unloadedTonnage?: number,
-    route?: string 
-  }) => {
-    // This is a read-only page, but the modal needs a function
+  const handleSaveAttachment = async (data: any) => {
+    if (!selectedShipment) return;
+    if (onUpdateAttachment) {
+      await onUpdateAttachment(selectedShipment.id, data);
+    }
     setAttachmentModalOpen(false);
+    setSelectedShipment(null);
   };
 
   const handleShowCargoDetails = (cargo: Cargo) => {
@@ -233,7 +225,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         <AttachmentModal
             isOpen={isAttachmentModalOpen}
             onClose={() => setAttachmentModalOpen(false)}
-            onSave={handleDummySave} // No saving on this page
+            onSave={handleSaveAttachment}
             shipment={selectedShipment}
             cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
             documentName="Documento"

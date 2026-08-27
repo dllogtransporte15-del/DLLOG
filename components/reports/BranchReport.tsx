@@ -31,7 +31,11 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       const cargo = cargoMap.get(s.cargoId);
       if (!cargo) return;
 
-      const effectiveBranchId = s.branchId || userBranchMap.get(s.createdById) || cargo.branchId || userBranchMap.get(cargo.createdById);
+      const effectiveBranchId = s.branchId || 
+                                userBranchMap.get(s.embarcadorId) || 
+                                userBranchMap.get(s.createdById) || 
+                                cargo.branchId || 
+                                userBranchMap.get(cargo.createdById);
       if (!effectiveBranchId) return;
 
       const stats = statsMap.get(effectiveBranchId);
