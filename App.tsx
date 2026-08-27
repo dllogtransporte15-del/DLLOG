@@ -1104,7 +1104,8 @@ const App: React.FC = () => {
     const targetProduct = products.find(p => p.id === targetCargo?.productId);
     const requiresGR = targetProduct?.requiresRiskManagement !== false;
 
-    const hasPreviousApprovedGrShipment = isAlreadyRegisteredDriver && shipments.some(s => {
+    // Check if the driver has at least one completed shipment (viagem concluída - status Finalizado)
+    const hasCompletedTrip = shipments.some(s => {
       const sCpfClean = (s.driverCpf || '').replace(/\D/g, '');
       const sNameClean = (s.driverName || '').trim().toLowerCase();
       
@@ -1112,39 +1113,19 @@ const App: React.FC = () => {
                             (driverNameClean !== '' && sNameClean === driverNameClean);
       if (!isDriverMatch) return false;
 
-      // 1. Explicit riskReleaseCode
-      if (s.riskReleaseCode && s.riskReleaseCode.trim().length > 0) return true;
-
-      // 2. Risk management release document attached
-      if (s.documents && s.documents['Comprovação da Liberação da Seguradora']) return true;
-
-      // 3. Or advanced past AguardandoSeguradora
-      const postRiskStatuses = [
-        ShipmentStatus.AguardandoCarregamento,
-        ShipmentStatus.AguardandoNota,
-        ShipmentStatus.AguardandoFiscal,
-        ShipmentStatus.AguardandoAdiantamento,
-        ShipmentStatus.AguardandoAgendamento,
-        ShipmentStatus.AguardandoDescarga,
-        ShipmentStatus.AguardandoPagamentoSaldo,
-        ShipmentStatus.Finalizado
-      ];
-      if (postRiskStatuses.includes(s.status)) return true;
-
-      return false;
+      return s.status === ShipmentStatus.Finalizado;
     });
 
     let initialStatus: ShipmentStatus;
-    if (!requiresGR) {
-      // Produto não exige GR: se já tem cadastro, vai direto para Ag. Carregamento; senão vai para Ag. Cadastro
-      initialStatus = isAlreadyRegisteredDriver
-        ? ShipmentStatus.AguardandoCarregamento
-        : ShipmentStatus.PreCadastro;
+    if (!hasCompletedTrip) {
+      // Primeira viagem / sem histórico de viagem concluída: obrigatoriamente passa por Ag. Cadastro
+      initialStatus = ShipmentStatus.PreCadastro;
+    } else if (!requiresGR) {
+      // Motorista com histórico de viagem concluída e carga sem exigência de GR: vai direto para Ag. Carregamento
+      initialStatus = ShipmentStatus.AguardandoCarregamento;
     } else {
-      // Produto exige GR: se tem histórico de aprovação no GR, vai para Ag. Seguradora; senão vai para Ag. Cadastro
-      initialStatus = hasPreviousApprovedGrShipment
-        ? ShipmentStatus.AguardandoSeguradora
-        : ShipmentStatus.PreCadastro;
+      // Motorista com histórico de viagem concluída e carga com exigência de GR: vai para Ag. Seguradora
+      initialStatus = ShipmentStatus.AguardandoSeguradora;
     }
 
     if (!driverToUse) {
@@ -1229,12 +1210,12 @@ const App: React.FC = () => {
     }
     
     let historyMsg = `Embarque ${newShipmentId} criado.`;
-    if (!requiresGR) {
-      if (isAlreadyRegisteredDriver) {
-        historyMsg += ` Carga com produto sem exigência de GR e motorista já cadastrado — direcionado diretamente para Ag. Carregamento.`;
-      }
-    } else if (hasPreviousApprovedGrShipment) {
-      historyMsg += ` Motorista já cadastrado com aprovação prévia no GR — direcionado diretamente para Ag. Seguradora.`;
+    if (!hasCompletedTrip) {
+      historyMsg += ` Primeiro embarque do motorista (sem histórico de viagem concluída) — direcionado para Ag. Cadastro.`;
+    } else if (!requiresGR) {
+      historyMsg += ` Carga com produto sem exigência de GR e motorista com histórico de viagem concluída — direcionado diretamente para Ag. Carregamento.`;
+    } else {
+      historyMsg += ` Motorista com histórico de viagem concluída — direcionado diretamente para Ag. Seguradora.`;
     }
     if (attachedFileNames.length > 0) historyMsg += ` Anexo(s): ${attachedFileNames.join(', ')}.`;
     if (data.bankDetails) historyMsg += ` Dados bancários preenchidos.`;
@@ -1320,12 +1301,12 @@ const App: React.FC = () => {
 
     setCurrentPage('shipments');
     let toastMessage = `Novo embarque ${newShipmentId} criado com sucesso!`;
-    if (!requiresGR && isAlreadyRegisteredDriver) {
-      toastMessage = `Embarque ${newShipmentId} criado! Produto não exige GR e motorista já possui cadastro — direcionado direto para "Ag. Carregamento".`;
-    } else if (hasPreviousApprovedGrShipment) {
-      toastMessage = `Embarque ${newShipmentId} criado! Por possuir histórico prévio de aprovação na GR, o embarque foi direcionado direto para "Ag. Seguradora".`;
-    } else if (!isAlreadyRegisteredDriver) {
-      toastMessage = `Novo embarque ${newShipmentId} criado com sucesso! Motoristas/Veículos não cadastrados foram adicionados automaticamente.`;
+    if (!hasCompletedTrip) {
+      toastMessage = `Embarque ${newShipmentId} criado! Primeiro embarque do motorista (sem histórico de viagem concluída) — direcionado para "Ag. Cadastro".`;
+    } else if (!requiresGR) {
+      toastMessage = `Embarque ${newShipmentId} criado! Produto não exige GR e motorista possui viagem concluída — direcionado direto para "Ag. Carregamento".`;
+    } else {
+      toastMessage = `Embarque ${newShipmentId} criado! Motorista com histórico de viagem concluída — direcionado direto para "Ag. Seguradora".`;
     }
     showToast(toastMessage, 'success');
   };
