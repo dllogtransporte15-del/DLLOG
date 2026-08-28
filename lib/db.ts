@@ -480,7 +480,6 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     salesperson_name: c.salespersonName,
     salesperson_commission_per_ton: c.salespersonCommissionPerTon,
     branch_id: c.branchId || null,
-    is_export: c.isExport !== undefined ? Boolean(c.isExport) : false,
   };
 
   if (!isTempId) {
