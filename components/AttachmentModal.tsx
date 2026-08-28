@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData, OperationalExpenseItem } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData } from '../types';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers } from '../utils/fiscalDocParser';
-import { parseCostSummaryDocument } from '../utils/costSummaryParser';
 import { useToast } from '../hooks/useToast';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Sparkles, TrendingUp, AlertCircle, Plus, Trash2, CheckCircle, RefreshCw } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 
 interface AttachmentModalProps {
@@ -249,13 +248,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>('');
 
-  // Estados de OCR / Resumo de Custos e Fretes (Aguardando Saldo)
-  const [costSummaryData, setCostSummaryData] = useState<RealProfitData | null>(null);
-  const [isScanningCostSummary, setIsScanningCostSummary] = useState(false);
-  const [costSummaryScanError, setCostSummaryScanError] = useState<string>('');
-  const [newExpenseName, setNewExpenseName] = useState('');
-  const [newExpenseValue, setNewExpenseValue] = useState<number | ''>('');
-
   const { showToast } = useToast();
   
   const mapRef = useRef<any>(null);
@@ -287,13 +279,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setRiskReleaseCode(shipment.riskReleaseCode || '');
       setRiskQueryType((shipment.riskQueryType as RiskQueryType) || '');
       setGrStatus('aprovado');
-
-      // Inicializa dados de lucro real se já existirem
-      setCostSummaryData(shipment.realProfitData || null);
-      setIsScanningCostSummary(false);
-      setCostSummaryScanError('');
-      setNewExpenseName('');
-      setNewExpenseValue('');
     }
   }, [isOpen, shipment]);
 
@@ -327,9 +312,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         e.preventDefault();
         setSingleFiles(pastedFiles);
         showToast('Imagem colada da área de transferência com sucesso!', 'success');
-        if (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo || shipment.status === ShipmentStatus.Finalizado) {
-          handleScanCostSummary(pastedFiles);
-        }
       }
     };
 
@@ -337,109 +319,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return () => {
       window.removeEventListener('paste', handleGlobalPaste);
     };
-  }, [isOpen, shipment.status]);
-
-  const handleScanCostSummary = async (filesToScan: File[]) => {
-    if (!filesToScan || filesToScan.length === 0) return;
-    setIsScanningCostSummary(true);
-    setCostSummaryScanError('');
-    try {
-      const file = filesToScan[0];
-      const parsed = await parseCostSummaryDocument(file);
-      setCostSummaryData(parsed);
-      showToast('Resumo de custos e fretes extraído com sucesso pela IA!', 'success');
-    } catch (err: any) {
-      console.error('Erro ao ler resumo financeiro:', err);
-      const msg = err?.message || 'Erro ao processar imagem';
-      setCostSummaryScanError(msg);
-      showToast(`Erro na leitura do comprovante: ${msg}`, 'error');
-    } finally {
-      setIsScanningCostSummary(false);
-    }
-  };
-
-  const handleUpdateCostSummary = (updates: Partial<RealProfitData>) => {
-    setCostSummaryData((prev) => {
-      const base: RealProfitData = prev || {
-        companyFreight: 0,
-        driverFreight: 0,
-        freightDifference: 0,
-        freightDifferenceMarginPercent: 0,
-        totalExpenses: 0,
-        netProfit: 0,
-        profitMarginPercent: 0,
-        expenseItems: [],
-      };
-      const next = { ...base, ...updates };
-      
-      const compFreight = Number(next.companyFreight || 0);
-      const dvrFreight = Number(next.driverFreight || 0);
-      const compCharged = Number(next.complementCharged || 0);
-      const compPaid = Number(next.complementPaid || 0);
-      const dvrSurcharge = Number(next.driverSurcharge || 0);
-      
-      const expTotal = (next.expenseItems || []).reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
-      const freightDiff = compFreight - dvrFreight;
-      const freightDiffMargin = compFreight > 0 ? (freightDiff / compFreight) * 100 : 0;
-      const netProfit = freightDiff;
-      const profitMargin = freightDiffMargin;
-      
-      return {
-        ...next,
-        companyFreight: compFreight,
-        driverFreight: dvrFreight,
-        totalExpenses: Number(expTotal.toFixed(2)),
-        freightDifference: Number(freightDiff.toFixed(2)),
-        freightDifferenceMarginPercent: Number(freightDiffMargin.toFixed(2)),
-        netProfit: Number(netProfit.toFixed(2)),
-        profitMarginPercent: Number(profitMargin.toFixed(2)),
-      };
-    });
-  };
-
-  const handleAddExpenseItem = () => {
-    if (!newExpenseName.trim() || !newExpenseValue || Number(newExpenseValue) <= 0) {
-      showToast('Informe o nome e um valor válido para a despesa.', 'warning');
-      return;
-    }
-    const currentItems = costSummaryData?.expenseItems || [];
-    const newItems: OperationalExpenseItem[] = [
-      ...currentItems,
-      { name: newExpenseName.trim(), value: Number(Number(newExpenseValue).toFixed(2)), type: 'negative' }
-    ];
-    handleUpdateCostSummary({ expenseItems: newItems });
-    setNewExpenseName('');
-    setNewExpenseValue('');
-    showToast('Despesa operacional adicionada!', 'success');
-  };
-
-  const handleRemoveExpenseItem = (index: number) => {
-    const currentItems = costSummaryData?.expenseItems || [];
-    const newItems = currentItems.filter((_, idx) => idx !== index);
-    handleUpdateCostSummary({ expenseItems: newItems });
-  };
-
-  const handleInitializeCostSummaryManual = () => {
-    const compRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-    const ton = shipment.shipmentTonnage || 0;
-    const compFreight = compRate * ton;
-    const dvrFreight = shipment.driverFreightValue || 0;
-    const diff = compFreight - dvrFreight;
-    const diffPct = compFreight > 0 ? (diff / compFreight) * 100 : 0;
-    
-    const initialData: RealProfitData = {
-      companyFreight: Number(compFreight.toFixed(2)),
-      driverFreight: Number(dvrFreight.toFixed(2)),
-      freightDifference: Number(diff.toFixed(2)),
-      freightDifferenceMarginPercent: Number(diffPct.toFixed(2)),
-      totalExpenses: 0,
-      netProfit: Number(diff.toFixed(2)),
-      profitMarginPercent: Number(diffPct.toFixed(2)),
-      expenseItems: [],
-      processedAt: new Date().toISOString()
-    };
-    setCostSummaryData(initialData);
-  };
+  }, [isOpen]);
 
   // AUTO-PARSING: Extração de informações do Contrato de Frete (Pedágio, Adiantamento, % Adiantamento)
   useEffect(() => {
@@ -708,14 +588,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
 
     if (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo) {
-        const existingDoc = shipment.documents?.[documentName] || shipment.documents?.['Comprovante de Pagamento de Saldo'] || shipment.documents?.['Comprovante de Saldo'] || shipment.documents?.['Resumo de Custos'];
-        const hasFiles = singleFiles.length > 0 || (Array.isArray(existingDoc) ? existingDoc.length > 0 : Boolean(existingDoc));
-        if (!hasFiles) {
-            showToast('Atenção: É obrigatório anexar a imagem do comprovante/resumo de custos e fretes para prosseguir e finalizar o embarque.', 'warning');
-            setError('O anexo do comprovante de despesas/custos é obrigatório no status Aguardando Saldo.');
-            return;
-        }
-
         const hasQuebra = shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001;
         if (hasQuebra && !isBreakageWaived && (!discountValue || Number(discountValue) <= 0)) {
             showToast('Atenção: Quebra de carga detectada. É obrigatório informar o valor do desconto ou marcar a opção de Abonar a Quebra para prosseguir.', 'warning');
@@ -747,7 +619,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         riskReleaseCode: (isRiskModal && grStatus === 'aprovado') ? riskReleaseCode : undefined,
         riskQueryType: (isRiskModal && grStatus === 'aprovado') ? riskQueryType : undefined,
         riskQueryCost: (isRiskModal && grStatus === 'aprovado') ? calculatedRiskCost : undefined,
-        realProfitData: ((shipment.status === ShipmentStatus.AguardandoPagamentoSaldo || shipment.status === ShipmentStatus.Finalizado) && costSummaryData) ? costSummaryData : undefined,
       });
     } catch (err: any) {
       console.error('Error in handleSave:', err);
@@ -1213,7 +1084,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             />
                         </div>
                     </div>
-                ) : (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo || shipment.status === ShipmentStatus.Finalizado) ? (
+                ) : shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? (
                     <div className="space-y-6">
                         {/* Resumo de Pesos para conferência */}
                         {(shipment.unloadedTonnage !== undefined || shipment.shipmentTonnage !== undefined) && (
@@ -1237,251 +1108,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             </div>
                         )}
 
-                        {/* SEÇÃO 1: Anexo Obrigatório do Comprovante de Custos / Saldo */}
-                        <div className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/20 dark:to-indigo-950/20 p-4 rounded-xl border-2 border-blue-200 dark:border-blue-800/60 shadow-sm">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-pulse" />
-                                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                                            Comprovante de Despesas / Resumo Financeiro
-                                        </h4>
-                                        <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">
-                                            Obrigatório
-                                        </span>
-                                    </div>
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                        Anexe a imagem do resumo de custos/fretes. A Inteligência Artificial fará a leitura automática do Frete Empresa, Frete Motorista e todas as despesas operacionais.
-                                    </p>
-                                </div>
-                                {singleFiles.length > 0 && (
-                                    <button
-                                        type="button"
-                                        disabled={isScanningCostSummary}
-                                        onClick={() => handleScanCostSummary(singleFiles)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow transition-all disabled:opacity-50"
-                                    >
-                                        {isScanningCostSummary ? <LoaderIcon className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                                        {isScanningCostSummary ? 'Processando IA...' : 'Reescanear com IA'}
-                                    </button>
-                                )}
-                            </div>
-
-                            <FileInput 
-                                label={documentName || 'Comprovante / Resumo de Custos e Fretes'} 
-                                files={singleFiles} 
-                                onFileChange={(f) => {
-                                    const files = f ? Array.from(f) : [];
-                                    setSingleFiles(files);
-                                    if (files.length > 0) {
-                                        handleScanCostSummary(files);
-                                    }
-                                }} 
-                            />
-
-                            {/* Loading state do OCR */}
-                            {isScanningCostSummary && (
-                                <div className="mt-3 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center gap-3 animate-pulse">
-                                    <LoaderIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400 animate-spin" />
-                                    <div>
-                                        <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-                                            Lendo e estruturando comprovante com Inteligência Artificial...
-                                        </p>
-                                        <p className="text-[11px] text-indigo-700 dark:text-indigo-400">
-                                            Extraindo Frete Empresa, Frete Motorista, impostos federais, CPRB, comissões, seguros e calculando o lucro real.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {costSummaryScanError && !isScanningCostSummary && (
-                                <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 flex items-start gap-2">
-                                    <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                                    <div className="text-xs text-amber-800 dark:text-amber-300">
-                                        <span className="font-bold">Aviso na leitura automática:</span> {costSummaryScanError}.
-                                        <p className="mt-0.5">Você pode preencher ou ajustar os valores manualmente abaixo.</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* SEÇÃO 2: Painel Estruturado de Lucro Real e Detalhamento de Despesas */}
-                        <div className="bg-white dark:bg-gray-800/80 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-4">
-                            <div className="flex items-center justify-between border-b pb-3 dark:border-gray-700">
-                                <div className="flex items-center gap-2">
-                                    <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                                        Detalhamento Financeiro e Lucro Real da Operação
-                                    </h4>
-                                </div>
-                                {!costSummaryData && (
-                                    <button
-                                        type="button"
-                                        onClick={handleInitializeCostSummaryManual}
-                                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
-                                    >
-                                        + Preencher Manualmente
-                                    </button>
-                                )}
-                            </div>
-
-                            {costSummaryData ? (
-                                <div className="space-y-4">
-                                    {/* Fretes Principais */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        <div className="bg-blue-50/60 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800/40">
-                                            <label className="block text-[11px] font-bold text-blue-800 dark:text-blue-300 mb-1">
-                                                (+) Frete Empresa (R$)
-                                            </label>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={costSummaryData.companyFreight || ''}
-                                                onChange={(e) => handleUpdateCostSummary({ companyFreight: e.target.value === '' ? 0 : Number(e.target.value) })}
-                                                className="w-full p-1.5 text-sm font-mono font-bold text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-800 border rounded"
-                                            />
-                                        </div>
-
-                                        <div className="bg-amber-50/60 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-100 dark:border-amber-800/40">
-                                            <label className="block text-[11px] font-bold text-amber-800 dark:text-amber-300 mb-1">
-                                                (-) Frete Motorista (R$)
-                                            </label>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={costSummaryData.driverFreight || ''}
-                                                onChange={(e) => handleUpdateCostSummary({ driverFreight: e.target.value === '' ? 0 : Number(e.target.value) })}
-                                                className="w-full p-1.5 text-sm font-mono font-bold text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-800 border rounded"
-                                            />
-                                        </div>
-
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border dark:border-gray-700">
-                                            <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
-                                                (=) Dif. Frete & Margem
-                                            </label>
-                                            <div className="flex items-center justify-between mt-1">
-                                                <span className="text-sm font-mono font-bold text-gray-900 dark:text-white">
-                                                    R$ {costSummaryData.freightDifference?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </span>
-                                                <span className="text-xs font-mono font-extrabold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
-                                                    {costSummaryData.freightDifferenceMarginPercent?.toFixed(2)}%
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Lista de Despesas Operacionais */}
-                                    <div className="bg-gray-50/80 dark:bg-gray-900/40 p-3.5 rounded-xl border dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                                                Despesas Operacionais Extraídas ({costSummaryData.expenseItems?.length || 0})
-                                            </span>
-                                            <span className="text-xs font-mono font-bold text-red-600 dark:text-red-400">
-                                                Total Despesas: - R$ {costSummaryData.totalExpenses?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-
-                                        {costSummaryData.expenseItems && costSummaryData.expenseItems.length > 0 ? (
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 max-h-48 overflow-y-auto pr-1">
-                                                {costSummaryData.expenseItems.map((item, idx) => (
-                                                    <div key={idx} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 text-xs shadow-sm">
-                                                        <div className="truncate mr-2">
-                                                            <span className="font-semibold text-gray-800 dark:text-gray-200">{item.name}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                                            <span className="font-mono font-bold text-red-600 dark:text-red-400">
-                                                                - R$ {Number(item.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRemoveExpenseItem(idx)}
-                                                                className="text-gray-400 hover:text-red-600 transition-colors p-0.5"
-                                                                title="Remover despesa"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-gray-500 italic py-2">
-                                                Nenhuma despesa operacional deduzida ou detectada na imagem.
-                                            </p>
-                                        )}
-
-                                        {/* Adicionar nova despesa manual */}
-                                        <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t dark:border-gray-700">
-                                            <input
-                                                type="text"
-                                                placeholder="Nome da despesa (ex: Imposto, Seguro, CPRB)"
-                                                value={newExpenseName}
-                                                onChange={(e) => setNewExpenseName(e.target.value)}
-                                                className="flex-1 p-1.5 text-xs border rounded dark:bg-gray-800 dark:border-gray-600"
-                                            />
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                placeholder="Valor (R$)"
-                                                value={newExpenseValue}
-                                                onChange={(e) => setNewExpenseValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                                className="w-full sm:w-28 p-1.5 text-xs font-mono border rounded dark:bg-gray-800 dark:border-gray-600"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={handleAddExpenseItem}
-                                                className="inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded text-xs font-semibold transition-colors"
-                                            >
-                                                <Plus className="w-3.5 h-3.5" />
-                                                Adicionar
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Card de Resultado Final / Lucro Real */}
-                                    <div className={`p-4 rounded-xl border-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                                        (costSummaryData.netProfit || 0) >= 0 
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700/60' 
-                                            : 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-700/60'
-                                    }`}>
-                                        <div>
-                                            <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                                                Resultado Final (Lucro Real da Operação)
-                                            </p>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                                Fórmula: Frete Empresa - Frete Motorista
-                                            </p>
-                                        </div>
-                                        <div className="text-right flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto">
-                                            <span className={`text-xl font-mono font-black ${
-                                                (costSummaryData.netProfit || 0) >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'
-                                            }`}>
-                                                R$ {costSummaryData.netProfit?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                            </span>
-                                            <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full mt-1 ${
-                                                (costSummaryData.netProfit || 0) >= 0 
-                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200' 
-                                                    : 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200'
-                                            }`}>
-                                                Margem Real: {costSummaryData.profitMarginPercent?.toFixed(2)}%
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="text-center py-6 border-2 border-dashed rounded-xl dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20">
-                                    <Sparkles className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                                    <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">
-                                        Selecione o arquivo da imagem do demonstrativo para extrair os dados automaticamente via IA.
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* SEÇÃO 3: Fechamento de Saldo do Motorista */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
                             <div>
-                                <label className="block text-sm font-medium mb-1">Saldo estimado a Pagar</label>
+                                <label className="block text-sm font-medium mb-1">Saldo estimado</label>
                                 <input 
                                     type="number" 
                                     value={balanceToReceiveValue} 
@@ -1723,7 +1353,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                 <>
                                     <LoaderIcon className="w-4 h-4 animate-spin" /> Salvando...
                                 </>
-                            ) : shipment.status === ShipmentStatus.Finalizado ? 'Salvar Lucro Real / Comprovante' : 'Salvar e Avançar'}
+                            ) : 'Salvar e Avançar'}
                         </button>
                     </div>
                 </div>
