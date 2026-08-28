@@ -5,7 +5,7 @@ import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
-import { Users, Search, Sparkles, History, Zap, Check, Loader2 } from 'lucide-react';
+import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2 } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
@@ -29,24 +29,42 @@ interface LoadFormModalProps {
 
 const STEPS = ['Informações da Carga', 'Programação Diária', 'Valores e Regras'];
 
-const DEFAULT_ALLOWED_VEHICLE_TYPES = Object.values(VehicleSetType).map(setType => ({
-    setType,
-    bodyTypes: Object.values(VehicleBodyType)
-}));
+const DEFAULT_ALLOWED_VEHICLE_TYPES: { setType: VehicleSetType; bodyTypes: VehicleBodyType[] }[] = [
+  {
+    setType: VehicleSetType.LSSimples,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.LSTrucado,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.Vanderleia,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.Bitrem,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  },
+  {
+    setType: VehicleSetType.Rodotrem,
+    bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
+  }
+];
 
-const LoadFormModal: React.FC<LoadFormModalProps> = ({
-  isOpen,
-  onClose,
-  onSave,
-  loadToEdit,
-  clients,
-  products,
+const LoadFormModal: React.FC<LoadFormModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  loadToEdit, 
+  clients, 
+  products, 
   currentUser,
   users,
   loads,
   branches,
-  initialStep = 1,
-  offerToConvert
+  initialStep = 0,
+  offerToConvert = null
 }) => {
   const getInitialState = (): Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'> => {
     const newSequenceId = loads.length > 0 ? Math.max(...loads.map(c => c.sequenceId)) + 1 : 101;
@@ -93,7 +111,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         allowedProfiles: [...INTERNAL_PROFILES],
         tmsLoteNumber: '',
         clientCnpj: offerToConvert.clientCnpj || '',
-        clientBranchId: offerToConvert.clientBranchId || ''
+        clientBranchId: offerToConvert.clientBranchId || '',
+        isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined
       };
     }
 
@@ -138,7 +157,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       allowedProfiles: [...INTERNAL_PROFILES],
       tmsLoteNumber: '',
       clientCnpj: firstClient?.cnpj || '',
-      clientBranchId: ''
+      clientBranchId: '',
+      isExport: undefined
     };
   };
   
@@ -262,7 +282,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
                 tmsLoteNumber: editableLoad.tmsLoteNumber || '',
                 clientCnpj: editableLoad.clientCnpj || '',
-                clientBranchId: editableLoad.clientBranchId || ''
+                clientBranchId: editableLoad.clientBranchId || '',
+                isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
@@ -402,6 +423,12 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+
+    if (load.isExport === undefined) {
+      showToast('Por favor, informe obrigatoriamente se a carga é de exportação ou mercado interno.', 'warning');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -1243,6 +1270,60 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                         </button>
                     </div>
                 )}
+
+                {/* Campo Obrigatório: Carga de Exportação */}
+                <div className={`p-3.5 rounded-xl border transition-all ${
+                    load.isExport === undefined 
+                        ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 shadow-sm' 
+                        : load.isExport 
+                            ? 'bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800' 
+                            : 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                            <label className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                <Globe2 className={`h-4 w-4 ${load.isExport ? 'text-blue-600' : 'text-emerald-600'}`} />
+                                <span>Operação: A carga é destinada à exportação?</span>
+                                <span className="text-red-500 font-bold">*</span>
+                            </label>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {load.isExport === undefined ? (
+                                    <span className="text-amber-700 dark:text-amber-400 font-semibold">⚠️ Seleção obrigatória: informe se a carga é Exportação ou Mercado Interno.</span>
+                                ) : load.isExport ? (
+                                    <span className="text-blue-700 dark:text-blue-300 font-medium">✓ Carga classificada como <strong>Exportação</strong>.</span>
+                                ) : (
+                                    <span className="text-emerald-700 dark:text-emerald-300 font-medium">✓ Carga classificada como <strong>Mercado Interno (Nacional)</strong>.</span>
+                                )}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, isExport: false }))}
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                                    load.isExport === false
+                                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/20 ring-2 ring-emerald-400/40'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                            >
+                                <Check className={`w-3.5 h-3.5 ${load.isExport === false ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>Não (Mercado Interno)</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLoad(prev => ({ ...prev, isExport: true }))}
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                                    load.isExport === true
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20 ring-2 ring-blue-400/40'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                            >
+                                <Check className={`w-3.5 h-3.5 ${load.isExport === true ? 'opacity-100' : 'opacity-0'}`} />
+                                <span>Sim (Exportação)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 {/* Header & Legs */}
                 <div>

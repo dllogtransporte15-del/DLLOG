@@ -633,43 +633,96 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   if (!isOpen) return null;
 
   const isClientUser = currentUser.profile === UserProfile.Cliente;
+  
+  const ignoredDocKeys = new Set([
+    'pix_key',
+    'cte_number',
+    'payment_method',
+    'risk_query_cost',
+    'risk_query_type',
+    'cte_emission_date',
+    'risk_release_code',
+    'advance_percentage',
+    'toll_value',
+    'advance_value',
+    'balance_value',
+    'balance_to_receive_value',
+    'discount_value',
+    'net_balance_value',
+    'unloaded_tonnage',
+    'loaded_tonnage',
+  ]);
+
+  const isValidDocumentEntry = (key: string, value: any): boolean => {
+    if (!key || ignoredDocKeys.has(key.toLowerCase().trim())) return false;
+    if (key.startsWith('_')) return false;
+    if (Array.isArray(value)) {
+      return value.length > 0 && value.some(v => typeof v === 'string' && v.trim() !== '' && (v.startsWith('http') || v.startsWith('/') || v.includes('.')));
+    }
+    if (typeof value === 'string') {
+      return value.trim() !== '' && (value.startsWith('http') || value.startsWith('/') || (value.includes('.') && value.length > 4));
+    }
+    return false;
+  };
+
+  const rawDocEntries = Object.entries(shipment.documents || {}).filter(([key, val]) => isValidDocumentEntry(key, val));
+
   const documentsToShow = isClientUser
-    ? Object.entries(shipment.documents || {}).filter(([docType]) => allowedDocsForClient.includes(docType))
-    : Object.entries(shipment.documents || {});
+    ? rawDocEntries.filter(([docType]) => allowedDocsForClient.includes(docType))
+    : rawDocEntries;
 
   const requiresBankDetails = shipment.status === ShipmentStatus.AguardandoNota && !shipment.bankDetails;
   const creationDocuments = documentsToShow.filter(([docType]) => docType === 'Arquivos Iniciais');
   const statusDocuments = documentsToShow.filter(([docType]) => docType !== 'Arquivos Iniciais');
 
-  const renderDocumentList = (docs: [string, any][]) => (
-    <ul className="space-y-4">
-      {docs.map(([docType, files]) => (
-        <li key={docType}>
-          <p className="font-medium text-sm text-gray-800 dark:text-gray-200 mb-1">{docType}:</p>
-          <div className="flex flex-wrap gap-2">
-            {Array.isArray(files) && files.map((file, index) => {
-              const fileName = typeof file === 'string' ? (file.split('/').pop()?.split('?')[0] || '') : '';
-              const rawDecoded = decodeURIComponent(fileName);
-              const cleanFileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') || rawDecoded : (rawDecoded || `Anexo ${index + 1}`);
-              
-              return (
-                <button
-                  key={index}
-                  type="button"
-                  onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg text-xs font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800/50"
-                  title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
-                >
-                  <PaperclipIcon className="w-3.5 h-3.5" />
-                  <span className="truncate max-w-[200px]">{cleanFileName || 'Visualizar Anexo'}</span>
-                </button>
-              );
-            })}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
+  const renderDocumentList = (docs: [string, any][]) => {
+    const validDocs = docs.filter(([key, files]) => {
+      if (!isValidDocumentEntry(key, files)) return false;
+      const fileList = Array.isArray(files) ? files : (typeof files === 'string' ? [files] : []);
+      return fileList.length > 0;
+    });
+
+    if (validDocs.length === 0) {
+      return (
+        <p className="text-xs text-gray-400 dark:text-gray-500 italic py-1">Nenhum documento anexado nesta seção.</p>
+      );
+    }
+
+    return (
+      <ul className="space-y-4">
+        {validDocs.map(([docType, files]) => {
+          const fileList = (Array.isArray(files) ? files : (typeof files === 'string' ? [files] : [])).filter(f => typeof f === 'string' && f.trim() !== '');
+          if (fileList.length === 0) return null;
+
+          return (
+            <li key={docType}>
+              <p className="font-medium text-sm text-gray-800 dark:text-gray-200 mb-1">{docType}:</p>
+              <div className="flex flex-wrap gap-2">
+                {fileList.map((file, index) => {
+                  const fileName = typeof file === 'string' ? (file.split('/').pop()?.split('?')[0] || '') : '';
+                  const rawDecoded = decodeURIComponent(fileName);
+                  const cleanFileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') || rawDecoded : (rawDecoded || `Anexo ${index + 1}`);
+                  
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg text-xs font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800/50"
+                      title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
+                    >
+                      <PaperclipIcon className="w-3.5 h-3.5" />
+                      <span className="truncate max-w-[200px]">{cleanFileName || 'Visualizar Anexo'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   const formatCurrency = (val: number) => 
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -1027,46 +1080,89 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         )}
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="space-y-4">
+                        {/* File upload input */}
                         <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Valor pago no tag</label>
-                            <input 
-                                type="number" 
-                                value={tollValue} 
-                                onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`}
-                                disabled={!canSave}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">(%) do adiantamento</label>
-                            <input 
-                                type="number" 
-                                value={advancePercentage} 
-                                onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
-                                disabled={!canSave}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Valor pago na conta</label>
-                            <input 
-                                type="number" 
-                                value={advanceValue} 
-                                onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
-                                className={`w-full p-2 border rounded dark:bg-gray-700 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`} 
-                                disabled={!canSave}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Valor total de adiantamento</label>
-                            <input 
-                                type="text" 
-                                readOnly
-                                value={((Number(tollValue) || 0) + (Number(advanceValue) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
-                                className="w-full p-2 border rounded bg-gray-100 dark:bg-gray-700/60 dark:border-gray-600 font-bold text-gray-700 dark:text-gray-200 cursor-not-allowed"
-                            />
+
+                        {/* Financial calculation & summary box */}
+                        <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
+                            <div className="flex items-center justify-between text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                                <span>Detalhamento de Pagamento do Frete</span>
+                                <span className="text-gray-500 dark:text-gray-400 font-medium normal-case">
+                                    Frete Total: <strong className="text-gray-900 dark:text-white font-bold">{formatCurrency(totalDriverFreight)}</strong>
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                                        Valor pago no Tag
+                                    </label>
+                                    <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
+                                        <input 
+                                            type="number" 
+                                            value={tollValue} 
+                                            onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))} 
+                                            className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
+                                            disabled={!canSave}
+                                            placeholder="0,00"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                                        % Adiantamento
+                                    </label>
+                                    <div className="relative">
+                                        <input 
+                                            type="number" 
+                                            value={advancePercentage} 
+                                            onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))} 
+                                            className={`w-full px-3 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`} 
+                                            disabled={!canSave}
+                                            placeholder="Ex: 80"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">%</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                                        Valor pago na Conta
+                                    </label>
+                                    <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
+                                        <input 
+                                            type="number" 
+                                            value={advanceValue} 
+                                            onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))} 
+                                            className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`} 
+                                            disabled={!canSave}
+                                            placeholder="0,00"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50/80 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800 flex flex-col justify-between shadow-2xs">
+                                    <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-tight">
+                                        Total Adiantamento
+                                    </span>
+                                    <span className="text-base font-black text-blue-900 dark:text-blue-100 mt-1">
+                                        {formatCurrency((Number(tollValue) || 0) + (Number(advanceValue) || 0))}
+                                    </span>
+                                </div>
+
+                                <div className="bg-emerald-50/80 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between shadow-2xs">
+                                    <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
+                                        Valor do Saldo
+                                    </span>
+                                    <span className="text-base font-black text-emerald-900 dark:text-emerald-100 mt-1">
+                                        {formatCurrency(Math.max(0, totalDriverFreight - ((Number(tollValue) || 0) + (Number(advanceValue) || 0))))}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoDescarga ? (

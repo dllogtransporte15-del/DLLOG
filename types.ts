@@ -290,6 +290,7 @@ export interface Cargo {
   tmsLoteNumber?: string;
   clientCnpj?: string;
   clientBranchId?: string;
+  isExport?: boolean;
 }
 
 
@@ -594,5 +595,6 @@ export interface FreightOffer {
   icmsPercentage?: number;
   clientCnpj?: string;
   clientBranchId?: string;
+  isExport?: boolean;
 }
 

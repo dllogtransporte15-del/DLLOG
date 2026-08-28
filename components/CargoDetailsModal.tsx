@@ -7,6 +7,7 @@ import { StayRecord } from '../utils/toolStorage';
 import { ShipmentStatus } from '../types';
 import { DocumentAttachmentCard } from './ImageLightboxModal';
 import FormattedObservations from './FormattedObservations';
+import { Globe2 } from 'lucide-react';
 
 interface CargoDetailsModalProps {
   isOpen: boolean;
@@ -209,6 +210,22 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                         <div className="flex items-center gap-1.5 mt-0.5">
                             <span className="text-amber-500 font-bold">⚠️</span>
                             <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">Pendente (Não informado)</span>
+                        </div>
+                    )}
+                </DetailItem>
+                <DetailItem label="Tipo de Operação">
+                    {cargo.isExport ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                <Globe2 className="w-3.5 h-3.5" />
+                                <span>Exportação</span>
+                            </span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                <span>Mercado Interno</span>
+                            </span>
                         </div>
                     )}
                 </DetailItem>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod } from '../types';
 import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
-import { FileTextIcon, Trash2, ArrowRightLeft } from 'lucide-react';
+import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
@@ -68,6 +68,29 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [shipmentStays, setShipmentStays] = useState<StayRecord[]>([]);
   const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
+  const [isEditingAdvance, setIsEditingAdvance] = useState(false);
+  const [inlineAdvancePercentage, setInlineAdvancePercentage] = useState<number>(70);
+  const [isSavingAdvance, setIsSavingAdvance] = useState(false);
+
+  React.useEffect(() => {
+    if (shipment) {
+      setInlineAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
+      setIsEditingAdvance(false);
+    }
+  }, [shipment?.id, shipment?.advancePercentage]);
+
+  const handleSaveInlineAdvance = async () => {
+    if (!onUpdateShipmentData || !shipment) return;
+    setIsSavingAdvance(true);
+    try {
+      await onUpdateShipmentData(shipment.id, { advancePercentage: inlineAdvancePercentage });
+      setIsEditingAdvance(false);
+    } catch (err) {
+      console.error('Erro ao atualizar porcentagem de adiantamento:', err);
+    } finally {
+      setIsSavingAdvance(false);
+    }
+  };
 
   React.useEffect(() => {
     let isMounted = true;
@@ -668,18 +691,92 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
 
                             <DetailItem label="Adiantamento (%)">
                                 {isEditingData ? (
-                                    <input 
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold"
-                                        value={editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70}
-                                        onChange={e => setEditedData({...editedData, advancePercentage: Number(e.target.value)})}
-                                    />
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <div className="relative flex-1">
+                                            <input 
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                className="w-full p-2 pr-7 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold"
+                                                value={editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70}
+                                                onChange={e => setEditedData({...editedData, advancePercentage: Number(e.target.value)})}
+                                            />
+                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">%</span>
+                                        </div>
+                                        <div className="flex gap-1 shrink-0">
+                                            {[70, 80, 90, 100].map(pct => (
+                                                <button
+                                                    key={pct}
+                                                    type="button"
+                                                    onClick={() => setEditedData({...editedData, advancePercentage: pct})}
+                                                    className={`px-1.5 py-1 text-[10px] font-bold rounded border transition-colors cursor-pointer ${
+                                                        (editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70) === pct
+                                                            ? 'bg-emerald-600 text-white border-emerald-600'
+                                                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100'
+                                                    }`}
+                                                >
+                                                    {pct}%
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : isEditingAdvance ? (
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <div className="relative w-24">
+                                            <input 
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                className="w-full p-1.5 pr-6 text-sm font-bold border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                value={inlineAdvancePercentage}
+                                                onChange={e => setInlineAdvancePercentage(Number(e.target.value))}
+                                                autoFocus
+                                                disabled={isSavingAdvance}
+                                            />
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">%</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveInlineAdvance}
+                                            disabled={isSavingAdvance}
+                                            className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                                            title="Salvar porcentagem"
+                                        >
+                                            <Check size={14} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setInlineAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
+                                                setIsEditingAdvance(false);
+                                            }}
+                                            disabled={isSavingAdvance}
+                                            className="p-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 rounded-md text-xs transition-colors cursor-pointer"
+                                            title="Cancelar"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
                                 ) : (
-                                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                                        {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                                            {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
+                                        </p>
+                                        {onUpdateShipmentData && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setInlineAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
+                                                    setIsEditingAdvance(true);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800 cursor-pointer transition-colors"
+                                                title="Editar Porcentagem de Adiantamento"
+                                            >
+                                                <Edit2 size={11} />
+                                                <span>Editar</span>
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                             </DetailItem>
 
@@ -797,56 +894,86 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             </DetailItem>
                         </div>
 
-                        {shipment.documents && typeof shipment.documents === 'object' && Object.keys(shipment.documents).length > 0 && (
-                            <div className="md:col-span-2 mt-4">
-                                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Arquivos do Embarque</h3>
-                                <div className="space-y-4">
-                                    {Object.entries(shipment.documents).map(([category, urls]) => {
-                                        const urlList = Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []);
-                                        if (urlList.length === 0) return null;
-                                        return (
-                                            <div key={category}>
-                                                <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">{category}</p>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                    {urlList.map((url, idx) => {
-                                                        if (!url || typeof url !== 'string') return null;
-                                                        const urlParts = url.split('/');
-                                                        const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1] || '');
-                                                        const fileName = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : (rawFileName || `Anexo ${idx + 1}`);
-                                                        
-                                                        return (
-                                                            <div key={idx} className="flex items-center gap-1 group">
-                                                                <button 
-                                                                    type="button"
-                                                                    onClick={() => openDocumentInNewTab(url, fileName)}
-                                                                    className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
-                                                                >
-                                                                    <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
-                                                                    <span className="truncate">{fileName}</span>
-                                                                </button>
-                                                                {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
-                                                                                onDeleteAttachment(shipment.id, url);
-                                                                            }
-                                                                        }}
-                                                                        className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                                                                        title="Excluir Anexo"
+                        {shipment.documents && typeof shipment.documents === 'object' && Object.keys(shipment.documents).length > 0 && (() => {
+                            const ignoredDocKeys = new Set([
+                                'pix_key',
+                                'cte_number',
+                                'payment_method',
+                                'risk_query_cost',
+                                'risk_query_type',
+                                'cte_emission_date',
+                                'risk_release_code',
+                                'advance_percentage',
+                                'toll_value',
+                                'advance_value',
+                                'balance_value',
+                                'balance_to_receive_value',
+                                'discount_value',
+                                'net_balance_value',
+                                'unloaded_tonnage',
+                                'loaded_tonnage',
+                            ]);
+
+                            const validEntries = Object.entries(shipment.documents).filter(([category, urls]) => {
+                                if (!category || ignoredDocKeys.has(category.toLowerCase().trim()) || category.startsWith('_')) return false;
+                                const urlList = Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []);
+                                return urlList.some(url => typeof url === 'string' && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/') || url.includes('.')));
+                            });
+
+                            if (validEntries.length === 0) return null;
+
+                            return (
+                                <div className="md:col-span-2 mt-4">
+                                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Arquivos do Embarque</h3>
+                                    <div className="space-y-4">
+                                        {validEntries.map(([category, urls]) => {
+                                            const urlList = (Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []))
+                                                .filter(url => typeof url === 'string' && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/') || url.includes('.')));
+                                            if (urlList.length === 0) return null;
+
+                                            return (
+                                                <div key={category}>
+                                                    <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">{category}</p>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {urlList.map((url, idx) => {
+                                                            const urlParts = url.split('/');
+                                                            const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1] || '');
+                                                            const fileName = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : (rawFileName || `Anexo ${idx + 1}`);
+                                                            
+                                                            return (
+                                                                <div key={idx} className="flex items-center gap-1 group">
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={() => openDocumentInNewTab(url, fileName)}
+                                                                        className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
                                                                     >
-                                                                        <Trash2 size={16} />
+                                                                        <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
+                                                                        <span className="truncate">{fileName}</span>
                                                                     </button>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
+                                                                    {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
+                                                                                    onDeleteAttachment(shipment.id, url);
+                                                                                }
+                                                                            }}
+                                                                            className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                                                                            title="Excluir Anexo"
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {onAddAttachments && (
                             <div className="md:col-span-2 mt-6 pt-6 border-t dark:border-gray-700">

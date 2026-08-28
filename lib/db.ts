@@ -370,6 +370,15 @@ export const toCargo = (row: any): Cargo => ({
     }
     return undefined;
   })(),
+  isExport: (() => {
+    if (row.is_export !== null && row.is_export !== undefined) return Boolean(row.is_export);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_is_export') : null;
+    if (metaLog) {
+      return metaLog.description === 'true';
+    }
+    return undefined;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -425,6 +434,15 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
       });
     }
   }
+  if (c.isExport !== undefined) {
+    history = history.filter(h => h.id !== 'meta_is_export');
+    history.push({
+      id: 'meta_is_export',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: c.isExport ? 'true' : 'false'
+    });
+  }
 
   const cargoId = (c as Cargo).id;
   const isTempId = !cargoId || (typeof cargoId === 'string' && cargoId.startsWith('TEMP-'));
@@ -462,6 +480,7 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
     salesperson_name: c.salespersonName,
     salesperson_commission_per_ton: c.salespersonCommissionPerTon,
     branch_id: c.branchId || null,
+    is_export: c.isExport !== undefined ? Boolean(c.isExport) : false,
   };
 
   if (!isTempId) {

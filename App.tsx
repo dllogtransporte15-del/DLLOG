@@ -89,6 +89,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   originCoords: 'Coordenadas de Origem',
   destinationCoords: 'Coordenadas de Destino',
   tmsLoteNumber: 'Lote TMS',
+  isExport: 'Operação de Exportação',
 
   // Shipment fields
   driverId: 'Motorista',
@@ -112,6 +113,9 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   riskQueryType: 'Tipo de Consulta de Risco (Modalidade)',
   riskQueryCost: 'Custo da Consulta de Risco',
   riskReleaseCode: 'Código de Liberação da Seguradora',
+  advancePercentage: 'Adiantamento (%)',
+  paymentMethod: 'Forma de Pagamento',
+  pixKey: 'Chave Pix',
 };
 
 interface NewShipmentRequestData extends Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'> {
@@ -1919,7 +1923,8 @@ const App: React.FC = () => {
       'vehicleTag', 'vehicleSetType', 'vehicleBodyType',
       'shipmentTonnage', 'bankDetails', 'driverReferences', 'ownerContact', 'anttOwnerIdentifier',
       'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber',
-      'riskQueryType', 'riskQueryCost', 'riskReleaseCode'
+      'riskQueryType', 'riskQueryCost', 'riskReleaseCode',
+      'advancePercentage', 'paymentMethod', 'pixKey'
     ];
 
     fieldsToTrack.forEach(field => {
