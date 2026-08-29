@@ -3,10 +3,11 @@ import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
-import { extractFiscalDocNumbers } from '../utils/fiscalDocParser';
+import { extractFiscalDocNumbers, DetailedDocumentData } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
+import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 
 interface AttachmentModalProps {
   isOpen: boolean;
@@ -59,7 +60,8 @@ const FileInput: React.FC<{
   onFileChange: (files: FileList | File[] | null) => void; 
   files: File[];
   allowPaste?: boolean;
-}> = ({ label, onFileChange, files, allowPaste = true }) => {
+  onInspectFile?: (file: File, docType: string) => void;
+}> = ({ label, onFileChange, files, allowPaste = true, onInspectFile }) => {
   const id = `file-upload-${label.replace(/\s/g, '-')}`;
   const [isDragging, setIsDragging] = useState(false);
   const [pasteSuccess, setPasteSuccess] = useState(false);
@@ -171,7 +173,7 @@ const FileInput: React.FC<{
           className="hidden" 
           multiple 
           onChange={(e) => onFileChange(e.target.files)} 
-          accept=".pdf,.png,.jpg,.jpeg,.gif" 
+          accept=".pdf,.png,.jpg,.jpeg,.gif,.xml" 
         />
       </div>
 
@@ -182,11 +184,24 @@ const FileInput: React.FC<{
       )}
 
       {files.length > 0 && (
-        <ul className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+        <ul className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1.5">
           {files.map((file, idx) => (
-            <li key={idx} className="flex items-center gap-1.5 truncate">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span className="truncate">{file.name}</span>
+            <li key={idx} className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 gap-2">
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span className="truncate max-w-[220px] font-medium text-gray-700 dark:text-gray-200">{file.name}</span>
+              </div>
+              {onInspectFile && (
+                <button
+                  type="button"
+                  onClick={() => onInspectFile(file, label)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold cursor-pointer shrink-0"
+                  title="Ver todos os dados e campos lidos deste arquivo"
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>Ver Dados</span>
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -247,8 +262,33 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>('');
+  const [selectedDocForDetails, setSelectedDocForDetails] = useState<{
+    fileOrUrl: File | string;
+    docType: string;
+    docName: string;
+  } | null>(null);
 
   const { showToast } = useToast();
+
+  const handleApplyExtractedData = (extracted: DetailedDocumentData) => {
+    if (extracted.financeiro?.valorPedagio !== undefined) {
+      setTollValue(extracted.financeiro.valorPedagio);
+    }
+    if (extracted.financeiro?.valorAdiantamento !== undefined) {
+      setAdvanceValue(extracted.financeiro.valorAdiantamento);
+    }
+    if (extracted.financeiro?.porcentagemAdiantamento !== undefined) {
+      setAdvancePercentage(extracted.financeiro.porcentagemAdiantamento);
+    }
+    if (extracted.financeiro?.chavePix) {
+      setBankDetails(prev => prev ? `${prev} | PIX: ${extracted.financeiro?.chavePix}` : (extracted.financeiro?.chavePix || ''));
+    }
+    if (extracted.carga?.pesoBrutoKg && shipment.status === ShipmentStatus.AguardandoCarregamento) {
+      const ton = extracted.carga.pesoBrutoKg >= 1000 ? Number((extracted.carga.pesoBrutoKg / 1000).toFixed(3)) : extracted.carga.pesoBrutoKg;
+      setLoadedTonnage(ton);
+    }
+    showToast('Dados lidos do documento aplicados no formulário!', 'success');
+  };
   
   const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -697,23 +737,41 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           return (
             <li key={docType}>
               <p className="font-medium text-sm text-gray-800 dark:text-gray-200 mb-1">{docType}:</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2.5 items-center">
                 {fileList.map((file, index) => {
                   const fileName = typeof file === 'string' ? (file.split('/').pop()?.split('?')[0] || '') : '';
                   const rawDecoded = decodeURIComponent(fileName);
                   const cleanFileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') || rawDecoded : (rawDecoded || `Anexo ${index + 1}`);
                   
                   return (
-                    <button
+                    <div 
                       key={index}
-                      type="button"
-                      onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg text-xs font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800/50"
-                      title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
+                      className="inline-flex items-center gap-1 bg-indigo-50/80 dark:bg-indigo-900/30 p-1 rounded-xl border border-indigo-200 dark:border-indigo-800/50 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-700 transition-all"
                     >
-                      <PaperclipIcon className="w-3.5 h-3.5" />
-                      <span className="truncate max-w-[200px]">{cleanFileName || 'Visualizar Anexo'}</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                        title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
+                      >
+                        <PaperclipIcon className="w-3.5 h-3.5" />
+                        <span className="truncate max-w-[180px]">{cleanFileName || 'Visualizar Anexo'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDocForDetails({
+                          fileOrUrl: file,
+                          docType,
+                          docName: cleanFileName
+                        })}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs cursor-pointer"
+                        title="Ver todos os campos e dados extraídos deste documento"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>Ver Dados</span>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -968,7 +1026,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
                             {notaFiscalDocTypes.map(docType => (
-                                <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} />
+                                <FileInput 
+                                  key={docType} 
+                                  label={docType} 
+                                  files={multiFiles[docType] || []} 
+                                  onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} 
+                                  onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                                />
                             ))}
                         </div>
                     </div>
@@ -976,14 +1040,25 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
                             {travelDocTypes.map(docType => (
-                                <FileInput key={docType} label={docType} files={multiFiles[docType] || []} onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} />
+                                <FileInput 
+                                  key={docType} 
+                                  label={docType} 
+                                  files={multiFiles[docType] || []} 
+                                  onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({...prev, [docType]: f ? Array.from(f) : []}))} 
+                                  onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                                />
                             ))}
                         </div>
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoCarregamento ? (
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                            <FileInput 
+                              label={documentName} 
+                              files={singleFiles} 
+                              onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} 
+                              onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                            />
                             <div>
                                 <label className="block text-sm font-medium mb-1">Toneladas Carregadas</label>
                                 <input type="number" step="0.01" value={loadedTonnage} onChange={(e) => setLoadedTonnage(e.target.value === '' ? '' : Number(e.target.value))} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
@@ -1010,7 +1085,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         {grStatus === 'aprovado' ? (
                             <>
-                                <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                                <FileInput 
+                                  label={documentName} 
+                                  files={singleFiles} 
+                                  onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} 
+                                  onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                                />
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
                                     <div>
@@ -1081,8 +1161,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (
                     <div className="space-y-4">
-                        {/* File upload input */}
-                        <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                        <FileInput 
+                          label={documentName} 
+                          files={singleFiles} 
+                          onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} 
+                          onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                        />
 
                         {/* Financial calculation & summary box */}
                         <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
@@ -1167,7 +1251,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     </div>
                 ) : shipment.status === ShipmentStatus.AguardandoDescarga ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                        <FileInput 
+                          label={documentName} 
+                          files={singleFiles} 
+                          onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} 
+                          onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                        />
                         <div>
                             <label className="block text-sm font-medium mb-1">Peso Descarregado (Ton)</label>
                             <input 
@@ -1205,7 +1294,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         )}
 
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
+                            <FileInput 
+                              label={documentName} 
+                              files={singleFiles} 
+                              onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} 
+                              onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                            />
                             <div>
                                 <label className="block text-sm font-medium mb-1">Saldo estimado</label>
                                 <input 
@@ -1268,150 +1362,134 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                         }}
                                         className="flex-shrink-0 inline-flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border-2 border-emerald-500 hover:border-emerald-600 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg text-xs font-bold transition-all shadow-sm"
                                     >
-                                        <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" /></svg>
-                                        Abonar Quebra (Sem Desconto)
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                        Abonar Quebra de Carga
                                     </button>
                                 </div>
                             ) : (
-                                <div className="bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-200 dark:border-emerald-800/60 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-                                    <div className="flex items-start gap-3">
-                                        <div className="text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        </div>
-                                        <div>
-                                            <h5 className="text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                                                Quebra de Carga Abonada
-                                                <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">Desconto Isento</span>
-                                            </h5>
-                                            <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                                A quebra de <strong className="font-mono">{(shipment.unloadedTonnage - shipment.shipmentTonnage).toFixed(2)} ton</strong> foi abonada. O saldo será pago integralmente sem desconto de quebra.
-                                            </p>
-                                        </div>
+                                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-3.5 rounded-xl flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                        <span>✓ Quebra de carga abonada com sucesso (Sem desconto ao motorista).</span>
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setIsBreakageWaived(false);
-                                            setDiscountValue('');
-                                        }}
-                                        className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg text-xs font-semibold transition-all shadow-sm"
+                                        onClick={() => setIsBreakageWaived(false)}
+                                        className="text-xs text-emerald-700 dark:text-emerald-400 underline font-semibold hover:text-emerald-900"
                                     >
-                                        Desfazer Abono (Aplicar Desconto)
+                                        Desfazer abono
                                     </button>
                                 </div>
                             )
                         )}
                     </div>
-                ) : (
-                    <FileInput label={documentName} files={singleFiles} onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} />
-                )}
+                ) : null}
 
-
-
-
-                {(showRouteField || isReadOnlyRoute) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6 border-t dark:border-gray-700 pt-8">
-                        {/* Coluna Esquerda: Texto e Sugestões */}
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                                    {isReadOnlyRoute ? 'Rota do Motorista' : 'Informar Rota do Motorista'}
-                                </label>
-                                {!isReadOnlyRoute && (
-                                    <button 
-                                        type="button"
-                                        onClick={handleFetchSuggestions}
-                                        disabled={isLoadingSuggestions}
-                                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-100 dark:border-blue-800 text-xs font-bold transition-all hover:bg-blue-100 active:scale-95 disabled:opacity-50"
-                                    >
-                                        {isLoadingSuggestions ? (
-                                            <LoaderIcon className="w-3.5 h-3.5 animate-spin" />
-                                        ) : (
-                                            <ExternalLinkIcon className="w-3.5 h-3.5" />
-                                        )}
-                                        Sugerir Rotas
-                                    </button>
-                                )}
-                            </div>
-
-                            <textarea 
-                                value={route}
-                                onChange={(e) => setRoute(e.target.value)}
-                                readOnly={isReadOnlyRoute}
-                                placeholder={isReadOnlyRoute ? "" : "Ex: Seguir pela BR-050 até Uberlândia, depois BR-365 sentido Patos de Minas..."}
-                                className={`w-full p-4 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary dark:bg-gray-800 transition-all font-mono text-sm min-h-[120px] shadow-sm ${isReadOnlyRoute ? 'bg-gray-50/50 dark:bg-gray-900/50 cursor-default shadow-none' : ''}`}
-                            />
-
-                            <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-                                <div className={`w-2 h-2 ${isReadOnlyRoute ? 'bg-emerald-500' : 'bg-blue-600'} rounded-full`} />
-                                {isReadOnlyRoute ? (
-                                    <span>Trajeto validado via <span className="font-bold">OSRM Engine</span></span>
-                                ) : (
-                                    <span>Baseado na rota: <span className="font-bold text-gray-700 dark:text-gray-300">{cargo?.origin} → {cargo?.destination}</span></span>
-                                )}
-                            </div>
-
-                            {/* Box de Sugestões Encontradas - Somente modo edição */}
-                            {!isReadOnlyRoute && (
-                                <div className="bg-blue-50/30 dark:bg-blue-900/5 rounded-2xl border border-blue-100 dark:border-blue-800/50 overflow-hidden">
-                                    <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-800">
-                                        <h4 className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-widest">
-                                            Sugestões Encontradas (Clique para usar)
-                                        </h4>
-                                    </div>
-                                    <div className="p-4 space-y-2">
-                                        {isLoadingSuggestions ? (
-                                            <div className="flex items-center justify-center py-4 text-blue-500">
-                                                <LoaderIcon className="w-5 h-5 animate-spin" />
-                                                <span className="ml-2 text-xs font-semibold animate-pulse">Buscando...</span>
-                                            </div>
-                                        ) : suggestions.length > 0 ? (
-                                            suggestions.map((s: RouteSuggestion, idx: number) => (
-                                                <button
-                                                    key={idx}
-                                                    type="button"
-                                                    onClick={() => setRoute(s.formatted)}
-                                                    className="w-full text-left p-3 bg-white dark:bg-gray-800 border border-blue-50 dark:border-blue-900 rounded-xl text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all"
-                                                >
-                                                    {s.formatted}
-                                                </button>
-                                            ))
-                                        ) : (
-                                            <p className="text-center py-2 text-[11px] text-gray-400 italic">Clique em Sugerir Rotas para ver sugestões</p>
-                                        )}
-                                    </div>
+                {showRouteField && (
+                    <div className="mt-6 border-t dark:border-gray-700 pt-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Coluna Esquerda: Inputs */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-sm font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <span>Rota Obrigatória</span>
+                                        <span className="text-[10px] text-amber-700 dark:text-amber-300 font-extrabold bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700">
+                                            Passo Obrigatório
+                                        </span>
+                                    </label>
+                                    
+                                    {!isReadOnlyRoute && (
+                                        <button 
+                                            type="button" 
+                                            onClick={handleFetchSuggestions}
+                                            disabled={isLoadingSuggestions}
+                                            className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-dark transition-colors"
+                                        >
+                                            <MapPinIcon className="w-3.5 h-3.5" />
+                                            {isLoadingSuggestions ? 'Sugerindo...' : 'Sugerir Rotas'}
+                                        </button>
+                                    )}
                                 </div>
-                            )}
-                        </div>
 
-                        {/* Coluna Direita: Mapa */}
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                                    Visualização do Trajeto
-                                </label>
-                                <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                                    Rodovias Ativas
-                                </span>
-                            </div>
-                            
-                            <div className="relative group flex-grow">
-                                <div 
-                                    ref={mapContainerRef} 
-                                    className="w-full h-[320px] bg-gray-100 dark:bg-gray-900 rounded-3xl border-2 border-gray-100 dark:border-gray-800 overflow-hidden shadow-xl" 
-                                    id="route-map-modal" 
+                                <textarea 
+                                    rows={4} 
+                                    value={route} 
+                                    onChange={(e) => setRoute(e.target.value)} 
+                                    readOnly={isReadOnlyRoute}
+                                    placeholder="Ex: Saindo pela BR-163 até Rondonópolis, seguindo pela BR-364..."
+                                    className={`w-full p-4 border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary dark:bg-gray-800 transition-all font-mono text-sm min-h-[120px] shadow-sm ${isReadOnlyRoute ? 'bg-gray-50/50 dark:bg-gray-900/50 cursor-default shadow-none' : ''}`}
                                 />
-                                
+
+                                <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                                    <div className={`w-2 h-2 ${isReadOnlyRoute ? 'bg-emerald-500' : 'bg-blue-600'} rounded-full`} />
+                                    {isReadOnlyRoute ? (
+                                        <span>Trajeto validado via <span className="font-bold">OSRM Engine</span></span>
+                                    ) : (
+                                        <span>Baseado na rota: <span className="font-bold text-gray-700 dark:text-gray-300">{cargo?.origin} → {cargo?.destination}</span></span>
+                                    )}
+                                </div>
+
+                                {/* Box de Sugestões Encontradas - Somente modo edição */}
                                 {!isReadOnlyRoute && (
-                                    <button 
-                                        type="button"
-                                        onClick={handleTraceRoute}
-                                        className="absolute bottom-4 right-4 z-[1000] p-3 bg-primary text-white rounded-xl shadow-lg hover:bg-primary-dark transition-all transform hover:scale-105 active:scale-95"
-                                        title="Atualizar Mapa"
-                                    >
-                                        <MapPinIcon className="w-5 h-5" />
-                                    </button>
+                                    <div className="bg-blue-50/30 dark:bg-blue-900/5 rounded-2xl border border-blue-100 dark:border-blue-800/50 overflow-hidden">
+                                        <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-800">
+                                            <h4 className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-widest">
+                                                Sugestões Encontradas (Clique para usar)
+                                            </h4>
+                                        </div>
+                                        <div className="p-4 space-y-2">
+                                            {isLoadingSuggestions ? (
+                                                <div className="flex items-center justify-center py-4 text-blue-500">
+                                                    <LoaderIcon className="w-5 h-5 animate-spin" />
+                                                    <span className="ml-2 text-xs font-semibold animate-pulse">Buscando...</span>
+                                                </div>
+                                            ) : suggestions.length > 0 ? (
+                                                suggestions.map((s: RouteSuggestion, idx: number) => (
+                                                    <button
+                                                        key={idx}
+                                                        type="button"
+                                                        onClick={() => setRoute(s.formatted)}
+                                                        className="w-full text-left p-3 bg-white dark:bg-gray-800 border border-blue-50 dark:border-blue-900 rounded-xl text-[11px] font-medium text-gray-600 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all"
+                                                    >
+                                                        {s.formatted}
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <p className="text-center py-2 text-[11px] text-gray-400 italic">Clique em Sugerir Rotas para ver sugestões</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
+                            </div>
+
+                            {/* Coluna Direita: Mapa */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                                        Visualização do Trajeto
+                                    </label>
+                                    <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                                        Rodovias Ativas
+                                    </span>
+                                </div>
+                                
+                                <div className="relative group flex-grow">
+                                    <div 
+                                        ref={mapContainerRef} 
+                                        className="w-full h-[320px] bg-gray-100 dark:bg-gray-900 rounded-3xl border-2 border-gray-100 dark:border-gray-800 overflow-hidden shadow-xl" 
+                                        id="route-map-modal" 
+                                    />
+                                    
+                                    {!isReadOnlyRoute && (
+                                        <button 
+                                            type="button"
+                                            onClick={handleTraceRoute}
+                                            className="absolute bottom-4 right-4 z-[1000] p-3 bg-primary text-white rounded-xl shadow-lg hover:bg-primary-dark transition-all transform hover:scale-105 active:scale-95"
+                                            title="Atualizar Mapa"
+                                        >
+                                            <MapPinIcon className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1460,6 +1538,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     Fechar
                 </button>
             </div>
+        )}
+
+        {/* Modal de Detalhes da Leitura do Documento */}
+        {selectedDocForDetails && (
+          <DocumentExtractedDataModal
+            isOpen={Boolean(selectedDocForDetails)}
+            onClose={() => setSelectedDocForDetails(null)}
+            fileOrUrl={selectedDocForDetails.fileOrUrl}
+            docType={selectedDocForDetails.docType}
+            docName={selectedDocForDetails.docName}
+            driverFreightType={shipment.driverFreightType}
+            onApplyData={handleApplyExtractedData}
+          />
         )}
       </div>
     </div>

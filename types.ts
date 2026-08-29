@@ -412,6 +412,10 @@ export interface RealProfitData {
   federalTax?: number;
   inssPatronal?: number;
   insuranceDifference?: number;
+  insuranceAcidente?: number; // 0,0125% do valor da NF
+  insuranceRoubo?: number;    // 0,0125% do valor da NF
+  insuranceRcv?: number;      // R$ 5,00 por carga
+  invoiceValue?: number;      // Valor da NF averbada
   commission?: number;
   brokerFee?: number;
   otherCosts?: number;
@@ -479,6 +483,7 @@ export interface Shipment {
   cteNumber?: string;   // Número do CT-e extraído automaticamente do XML/PDF
   cteEmissionDate?: string; // Data e Hora da Emissão do CT-e (ex: 13/08/2026 11:40)
   nfeNumber?: string;   // Número da Nota Fiscal (NF-e) extraído automaticamente
+  nfeValue?: number;    // Valor da Nota Fiscal / Mercadoria averbada
   mdfeNumber?: string;  // Número do MDF-e extraído automaticamente
   realProfitData?: RealProfitData; // Resumo e detalhamento de despesas extraídos via OCR/IA
 }

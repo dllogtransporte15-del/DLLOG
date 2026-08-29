@@ -4,12 +4,16 @@
  * automatically trigger a download, allowing the user to view the file 
  * first and decide whether to download or print it.
  */
-export async function openDocumentInNewTab(url: string, rawFileName?: string) {
-  if (!url) return;
+export async function openDocumentInNewTab(urlOrFile: string | File, rawFileName?: string) {
+  if (!urlOrFile) return;
+
+  const isFile = typeof urlOrFile !== 'string';
+  const url = isFile ? URL.createObjectURL(urlOrFile) : urlOrFile;
+  const originalFileName = isFile ? urlOrFile.name : rawFileName;
 
   // Clean filename display
   const cleanName = (() => {
-    if (rawFileName) return rawFileName;
+    if (originalFileName) return originalFileName;
     try {
       const urlObj = new URL(url);
       const nameParam = urlObj.searchParams.get('name');

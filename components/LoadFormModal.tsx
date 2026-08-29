@@ -35,7 +35,7 @@ const DEFAULT_ALLOWED_VEHICLE_TYPES: { setType: VehicleSetType; bodyTypes: Vehic
     bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
   },
   {
-    setType: VehicleSetType.LSTrucado,
+    setType: VehicleSetType.LSTrucada,
     bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
   },
   {
@@ -43,7 +43,7 @@ const DEFAULT_ALLOWED_VEHICLE_TYPES: { setType: VehicleSetType; bodyTypes: Vehic
     bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
   },
   {
-    setType: VehicleSetType.Bitrem,
+    setType: VehicleSetType.Bitrem7e,
     bodyTypes: [VehicleBodyType.Basculante, VehicleBodyType.Graneleiro]
   },
   {

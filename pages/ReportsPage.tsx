@@ -35,11 +35,12 @@ interface ReportsPageProps {
   companyLogo?: string | null;
   onSaveUser?: (userData: User | Omit<User, 'id'>) => void;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
+  onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
 }
 
 type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real';
 
-const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], drivers = [], vehicles = [], products = [], companyLogo, onSaveUser, onUpdateAttachment }) => {
+const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], drivers = [], vehicles = [], products = [], companyLogo, onSaveUser, onUpdateAttachment, onBatchUpdateShipments }) => {
   const [activeReport, setActiveReport] = useState<ActiveReport>('comercial');
   const [loadingStays, setLoadingStays] = useState(false);
   
@@ -327,6 +328,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
             startDate={startDate}
             endDate={endDate}
             onUpdateAttachment={onUpdateAttachment}
+            onBatchUpdateShipments={onBatchUpdateShipments}
           />
         );
       default:

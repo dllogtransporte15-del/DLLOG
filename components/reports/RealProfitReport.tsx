@@ -33,6 +33,10 @@ import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import { getShipmentCte } from '../../utils';
 
+import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import { SyncDocumentsModal } from '../SyncDocumentsModal';
+import { RefreshCw } from 'lucide-react';
+
 interface RealProfitReportProps {
   shipments: Shipment[];
   cargos: Cargo[];
@@ -47,6 +51,7 @@ interface RealProfitReportProps {
   startDate?: string;
   endDate?: string;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
+  onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
 }
 
 export const RealProfitReport: React.FC<RealProfitReportProps> = ({
@@ -62,7 +67,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   companyLogo,
   startDate: propStartDate,
   endDate: propEndDate,
-  onUpdateAttachment
+  onUpdateAttachment,
+  onBatchUpdateShipments
 }) => {
   // Filtros internos
   const [searchTerm, setSearchTerm] = useState('');
@@ -72,6 +78,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [onlyWithOcr, setOnlyWithOcr] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
   // Modal de Detalhes de Despesas
   const [selectedShipmentForDetail, setSelectedShipmentForDetail] = useState<Shipment | null>(null);
@@ -198,32 +205,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         ? s.realProfitData.driverFreight 
         : (s.driverFreightValue || 0);
 
-      // Custo de Gerenciadora de Risco (GR)
-      const riskCost = s.riskQueryCost !== undefined && s.riskQueryCost > 0
-        ? s.riskQueryCost
-        : (s.riskQueryType ? (RISK_QUERY_COST_MAP[s.riskQueryType] ?? RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()] ?? 0) : 0);
-
-      // Despesas Operacionais (Discriminação detalhada + Custo de GR se não estiver já discriminado)
-      const rawExpenseItems = [...(s.realProfitData?.expenseItems || [])];
-      const hasGrInExpenses = rawExpenseItems.some(e => 
-        e.name.toLowerCase().includes('gerenciadora') || 
-        e.name.toLowerCase().includes('gr') || 
-        e.name.toLowerCase().includes('seguradora') ||
-        e.name.toLowerCase().includes('consulta de risco')
-      );
-
-      if (riskCost > 0 && !hasGrInExpenses) {
-        rawExpenseItems.push({
-          name: `Gerenciadora de Risco (GR${s.riskQueryType ? ` - ${s.riskQueryType}` : ''})`,
-          value: riskCost,
-          type: 'negative'
-        });
-      }
-
-      // Despesas Operacionais Totais
-      const totalExpenses = rawExpenseItems.length > 0
-        ? rawExpenseItems.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0)
-        : (s.realProfitData?.totalExpenses !== undefined ? s.realProfitData.totalExpenses : 0);
+      // Despesas Operacionais Calculadas (Seguro Acidente 0,0125%, Roubo 0,0125%, RCV R$ 5,00, INSS Patronal 4% PF, GR e OCR)
+      const calculatedExpenses = calculateShipmentExpenses(s, cargo);
+      const rawExpenseItems = calculatedExpenses.expenseItems;
+      const totalExpenses = calculatedExpenses.totalExpenses;
+      const riskCost = calculatedExpenses.riskCost;
 
       // Diferença de Frete
       const freightDifference = s.realProfitData?.freightDifference !== undefined 
@@ -234,14 +220,12 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         ? s.realProfitData.freightDifferenceMarginPercent 
         : (companyFreight > 0 ? (freightDifference / companyFreight) * 100 : 0);
 
-      // Lucro Líquido Real da Operação (Diferença Direta de Frete: Frete Empresa - Frete Motorista)
-      const netProfit = s.realProfitData?.netProfit !== undefined 
-        ? s.realProfitData.netProfit 
-        : freightDifference;
+      // Lucro Líquido Real da Operação (Diferença de Frete - Despesas Operacionais Totais)
+      const netProfit = Number((freightDifference - totalExpenses).toFixed(2));
 
-      const profitMarginPercent = s.realProfitData?.profitMarginPercent !== undefined 
-        ? s.realProfitData.profitMarginPercent 
-        : freightDifferenceMarginPercent;
+      const profitMarginPercent = companyFreight > 0 
+        ? (netProfit / companyFreight) * 100 
+        : 0;
 
       // Comprovante / Anexo de saldo ou despesas
       const saldoDoc = s.documents?.['Comprovante de Pagamento de Saldo'] || 
@@ -269,6 +253,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         expenseItems: rawExpenseItems,
         attachmentUrl,
         riskCost,
+        calculatedExpenses,
       };
     });
   }, [filteredData, cargoMap, clientMap]);
@@ -474,6 +459,18 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             )}
           </button>
 
+          {onBatchUpdateShipments && (
+            <button
+              type="button"
+              onClick={() => setIsSyncModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs cursor-pointer"
+              title="Lê e atualiza dados de CT-e, Nota Fiscal, MDF-e e Carta Frete em lote"
+            >
+              <RefreshCw className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              Sincronizar Documentos
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleExportCSV}
@@ -588,6 +585,37 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-1 font-semibold">
             {totals.countOcr} com demonstrativo OCR lido
           </p>
+        </div>
+      </div>
+
+      {/* BANNER DE REGRAS DE DESPESAS OPERACIONAIS E TRIBUTÁRIAS */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-3.5 rounded-2xl border border-indigo-800/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/20 shrink-0">
+            <ShieldCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="font-bold text-slate-100">
+              Despesas & Encargos Operacionais Configurados para Apuração do Lucro Real
+            </p>
+            <p className="text-indigo-200/80 text-[11px] mt-0.5">
+              Aplicados automaticamente na apuração contábil de cada viagem e discriminados nos detalhes da operação.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-indigo-200 border border-white/10 font-medium">
+            🛡️ Seguro Acidente: <strong className="text-white">0,0125% NF</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-indigo-200 border border-white/10 font-medium">
+            🔒 Seguro Roubo: <strong className="text-white">0,0125% NF</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-indigo-200 border border-white/10 font-medium">
+            🚛 Seguro RCV: <strong className="text-white">R$ 5,00 / carga</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-amber-300 border border-amber-400/20 font-medium">
+            🏛️ INSS Patronal: <strong className="text-amber-200">4% Frete PF</strong>
+          </span>
         </div>
       </div>
 
@@ -1038,6 +1066,16 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           products={products}
           clients={clients}
           users={users}
+        />
+      )}
+
+      {/* MODAL DE SINCRONIZAÇÃO EM LOTE DE DOCUMENTOS */}
+      {isSyncModalOpen && onBatchUpdateShipments && (
+        <SyncDocumentsModal
+          isOpen={isSyncModalOpen}
+          onClose={() => setIsSyncModalOpen(false)}
+          shipments={shipments}
+          onBatchUpdateShipments={onBatchUpdateShipments}
         />
       )}
     </div>
