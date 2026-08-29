@@ -1382,7 +1382,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             )
                         )}
                     </div>
-                ) : null}
+                ) : (
+                    <FileInput 
+                      label={documentName} 
+                      files={singleFiles} 
+                      onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])} 
+                      onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                    />
+                )}
 
                 {showRouteField && (
                     <div className="mt-6 border-t dark:border-gray-700 pt-6">
