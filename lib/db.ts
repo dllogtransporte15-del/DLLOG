@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import { isCteApplicableForStatus } from '../utils';
+import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
 } from '../types';
@@ -1335,6 +1336,77 @@ export async function backfillShipmentFiscalNumbers(
 
   console.log(`[backfill] Concluído: ${updated} atualizados, ${skipped} ignorados.`);
   return { updated, skipped };
+}
+
+/**
+ * Aplica e persiste o cálculo padronizado de adiantamento e saldo de frete
+ * para todos os embarques que estão em 'Ag. Adiantamento' ou status anteriores.
+ */
+export async function backfillAdvanceAndBalanceCalculations(): Promise<{ updated: number; skipped: number }> {
+  try {
+    const [shipmentsData, cargosData] = await Promise.all([
+      fetchAllRows('shipments', 'created_at', { ascending: false }),
+      fetchAllRows('cargos', 'created_at', { ascending: false }),
+    ]);
+
+    const shipments = (shipmentsData || []).map(toShipment);
+    const cargoMap = new Map((cargosData || []).map(toCargo).map(c => [c.id, c]));
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const s of shipments) {
+      if (!ADVANCE_ELIGIBLE_STATUSES.includes(s.status)) {
+        continue;
+      }
+
+      const cargo = cargoMap.get(s.cargoId);
+      const rate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+      const tonnage = s.shipmentTonnage || cargo?.totalVolume || 0;
+      const totalFreight = s.driverFreightValue || (rate * tonnage);
+      const toll = s.tollValue || 0;
+      const advPct = s.advancePercentage !== undefined ? s.advancePercentage : 70;
+
+      const calc = calculateAdvanceAndBalance({
+        driverFreightValue: totalFreight,
+        driverFreightRate: rate,
+        tonnage,
+        tollValue: toll,
+        advancePercentage: advPct,
+      });
+
+      const needsUpdate = 
+        s.advancePercentage !== calc.advancePercentage ||
+        Math.abs((s.advanceValue || 0) - calc.advanceInAccountValue) > 0.01 ||
+        Math.abs((s.balanceToReceiveValue || 0) - calc.balanceToReceiveValue) > 0.01;
+
+      if (needsUpdate) {
+        const updatedShipment: Shipment = {
+          ...s,
+          advancePercentage: calc.advancePercentage,
+          advanceValue: calc.advanceInAccountValue,
+          tollValue: toll,
+          balanceToReceiveValue: calc.balanceToReceiveValue,
+        };
+
+        try {
+          await upsertShipment(updatedShipment);
+          updated++;
+        } catch (err) {
+          console.warn(`[advanceBackfill] Falha ao atualizar embarque ${s.id}:`, err);
+          skipped++;
+        }
+      } else {
+        skipped++;
+      }
+    }
+
+    console.log(`[advanceBackfill] Concluído: ${updated} embarques atualizados com novo cálculo de adiantamento/saldo.`);
+    return { updated, skipped };
+  } catch (err) {
+    console.error('[advanceBackfill] Erro geral ao executar backfill de adiantamento:', err);
+    return { updated: 0, skipped: 0 };
+  }
 }
 
 

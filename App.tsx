@@ -7,6 +7,7 @@ import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Pa
 import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus, DEFAULT_RISK_QUERY_OPTIONS } from './types';
 import { formatId, isCteApplicableForStatus } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
+import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
 import { INITIAL_PERMISSIONS, can } from './auth';
 import { useToast } from './hooks/useToast';
 
@@ -1672,23 +1673,31 @@ const App: React.FC = () => {
     
     let calculatedAdvanceValue = originalShipment.advanceValue;
     let finalAdvancePercentage = originalShipment.advancePercentage;
-    
-    const effectiveAdvanceValue = advanceValue !== undefined ? advanceValue : extractedAdvanceValue;
-    const effectiveAdvancePercentage = advancePercentage !== undefined ? advancePercentage : extractedAdvancePercentage;
     const effectiveTollValue = tollValue !== undefined ? tollValue : (extractedTollValue !== undefined ? extractedTollValue : originalShipment.tollValue);
+    const effectiveAdvancePercentage = advancePercentage !== undefined ? advancePercentage : (extractedAdvancePercentage !== undefined ? extractedAdvancePercentage : (originalShipment.advancePercentage !== undefined ? originalShipment.advancePercentage : 70));
 
-    if (effectiveAdvanceValue !== undefined) {
-        calculatedAdvanceValue = effectiveAdvanceValue;
-        finalAdvancePercentage = effectiveAdvancePercentage || originalShipment.advancePercentage;
+    const calcResult = calculateAdvanceAndBalance({
+      driverFreightValue: updatedDriverFreight,
+      tollValue: effectiveTollValue || 0,
+      advancePercentage: effectiveAdvancePercentage,
+    });
+
+    if (advanceValue !== undefined) {
+        calculatedAdvanceValue = advanceValue;
+        finalAdvancePercentage = effectiveAdvancePercentage;
         historyLogs.push(`Valor pago na conta de R$ ${calculatedAdvanceValue.toLocaleString('pt-BR')} registrado.`);
+    } else if (extractedAdvanceValue !== undefined) {
+        calculatedAdvanceValue = extractedAdvanceValue;
+        finalAdvancePercentage = effectiveAdvancePercentage;
+        historyLogs.push(`Valor pago na conta de R$ ${calculatedAdvanceValue.toLocaleString('pt-BR')} extraído do documento.`);
     } else if (effectiveAdvancePercentage !== undefined && effectiveAdvancePercentage > 0) {
         finalAdvancePercentage = effectiveAdvancePercentage;
-        calculatedAdvanceValue = ((updatedDriverFreight * effectiveAdvancePercentage) / 100) - (effectiveTollValue || 0);
+        calculatedAdvanceValue = calcResult.advanceInAccountValue;
         const formattedAdv = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(calculatedAdvanceValue);
-        historyLogs.push(`Pagamento de Adiantamento: ${effectiveAdvancePercentage}% registrado (${formattedAdv}).`);
+        historyLogs.push(`Pagamento de Adiantamento: ${effectiveAdvancePercentage}% registrado (Conta: ${formattedAdv} + Tag: R$ ${(effectiveTollValue || 0).toLocaleString('pt-BR')}).`);
     }
 
-    let finalBalanceToReceive = balanceToReceiveValue ?? originalShipment.balanceToReceiveValue;
+    let finalBalanceToReceive = balanceToReceiveValue ?? (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue > 0 ? originalShipment.balanceToReceiveValue : calcResult.balanceToReceiveValue);
     let finalDiscountValue = isBreakageWaived ? 0 : (discountValue ?? originalShipment.discountValue);
     let finalNetBalanceValue = netBalanceValue ?? originalShipment.netBalanceValue;
     let finalIsBreakageWaived = isBreakageWaived !== undefined ? isBreakageWaived : originalShipment.isBreakageWaived;
@@ -1975,9 +1984,30 @@ const App: React.FC = () => {
       ...(data.riskReleaseCode !== undefined ? { risk_release_code: data.riskReleaseCode } : {}),
     };
 
+    let calculatedAdvanceVal = data.advanceValue !== undefined ? data.advanceValue : shipmentToUpdate.advanceValue;
+    let calculatedBalanceVal = data.balanceToReceiveValue !== undefined ? data.balanceToReceiveValue : shipmentToUpdate.balanceToReceiveValue;
+    let calculatedAdvancePct = data.advancePercentage !== undefined ? data.advancePercentage : (shipmentToUpdate.advancePercentage !== undefined ? shipmentToUpdate.advancePercentage : 70);
+
+    if (ADVANCE_ELIGIBLE_STATUSES.includes(shipmentToUpdate.status)) {
+      const toll = data.tollValue !== undefined ? data.tollValue : (shipmentToUpdate.tollValue || 0);
+      const calc = calculateAdvanceAndBalance({
+        driverFreightValue: updatedDriverFreight,
+        driverFreightRate: rateToUse,
+        tonnage: targetTonnage,
+        tollValue: toll,
+        advancePercentage: calculatedAdvancePct,
+      });
+      calculatedAdvanceVal = calc.advanceInAccountValue;
+      calculatedBalanceVal = calc.balanceToReceiveValue;
+      calculatedAdvancePct = calc.advancePercentage;
+    }
+
     const updatedShipment: Shipment = { 
       ...shipmentToUpdate, 
       ...data, 
+      advancePercentage: calculatedAdvancePct,
+      advanceValue: calculatedAdvanceVal,
+      balanceToReceiveValue: calculatedBalanceVal,
       documents: updatedDocs,
       driverFreightRateSnapshot: rateToUse,
       driverFreightValue: updatedDriverFreight,
@@ -2039,6 +2069,19 @@ const App: React.FC = () => {
       const newCompanyRateFormatted = data.newCompanyRate.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       updateObj.companyFreightRateSnapshot = data.newCompanyRate;
       historyMsgParts.push(`Frete Empresa alterado de "${oldCompanyRateFormatted}" para "${newCompanyRateFormatted}".`);
+    }
+
+    if (ADVANCE_ELIGIBLE_STATUSES.includes(shipmentToUpdate.status)) {
+      const calc = calculateAdvanceAndBalance({
+        driverFreightValue: data.newTotal,
+        driverFreightRate: data.newRate ?? shipmentToUpdate.driverFreightRateSnapshot,
+        tonnage: shipmentToUpdate.shipmentTonnage,
+        tollValue: shipmentToUpdate.tollValue || 0,
+        advancePercentage: shipmentToUpdate.advancePercentage !== undefined ? shipmentToUpdate.advancePercentage : 70,
+      });
+      updateObj.advancePercentage = calc.advancePercentage;
+      updateObj.advanceValue = calc.advanceInAccountValue;
+      updateObj.balanceToReceiveValue = calc.balanceToReceiveValue;
     }
 
     const updatedShipment: Shipment = { 

@@ -104,6 +104,12 @@ export interface DetailedDocumentData {
     baseCalculoIcms?: number;
     valorIcms?: number;
     aliquotaIcms?: number;
+    valorPis?: number;
+    aliquotaPis?: number;
+    valorCofins?: number;
+    aliquotaCofins?: number;
+    valorPisCofinsFederal?: number;
+    valorTributosFederais?: number;
     formaPagamento?: string;
     dadosBancarios?: string;
     chavePix?: string;
@@ -116,6 +122,10 @@ export interface DetailedDocumentData {
     numeroAverbacao?: string;
     responsavelSeguro?: string;
   };
+
+  // Observações e Informações Fiscais Adicionais (ex: infAdFisco, infCpl)
+  observacoesFiscais?: string;
+  suspensaoPercentual?: number;
 
   // Documentos vinculados
   documentosVinculados?: Array<{
@@ -405,11 +415,14 @@ export function extractFreightContractValues(text: string): {
 
   if (!text) return res;
 
-  // 1. Vale-Pedágio / Pedágio
+  // 1. Vale-Pedágio / Pedágio (Prefixo e Sufixo, ex: 'R$ 358,20 pedágio')
   const tollPatterns = [
     /VALE[- ]?PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
     /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
     /PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /R?\$\s*([\d.,]+)\s*(?:referente\s+(?:a[o]?\s+)?)?ped[áa]gio/i,
+    /(?:[\d.]+\s+)?R?\$\s*([\d.,]+)\s*ped[áa]gio/i,
+    /R?\$\s*([\d.,]+)[^\n]*?(?:tag|vale[- ]?ped[áa]gio)/i,
   ];
   for (const re of tollPatterns) {
     const m = text.match(re);
@@ -422,12 +435,14 @@ export function extractFreightContractValues(text: string): {
     }
   }
 
-  // 2. Adiantamento
+  // 2. Adiantamento (Prefixo e Sufixo, ex: 'R$ 4.326,84 referente Adiantamento')
   const advancePatterns = [
     /(?:efete:|efrete:|e-frete:)?\s*Adiantamento[^\d\n]*R?\$\s*([\d.,]+)/i,
     /Valor\s+(?:do\s+)?Adiantamento[^\d\n]*R?\$\s*([\d.,]+)/i,
     /1[ªa]\s*Parcela[^\d\n]*R?\$\s*([\d.,]+)/i,
     /ADIANTAMENTO[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /R?\$\s*([\d.,]+)\s*(?:referente\s+(?:a[o]?\s+)?)?adiantamento/i,
+    /(?:[\d.]+\s+)?R?\$\s*([\d.,]+)\s*(?:referente\s+(?:a[o]?\s+)?)?adiantamento/i,
   ];
   for (const re of advancePatterns) {
     const m = text.match(re);
@@ -869,16 +884,37 @@ function parseDetailedXml(xmlText: string): DetailedDocumentData | null {
           valorTotalFrete: parseCurrencyPtBr(getXmlTagValue(doc, 'vTPrest', 'vRec')),
           valorReceber: parseCurrencyPtBr(getXmlTagValue(doc, 'vRec')),
           baseCalculoIcms: parseCurrencyPtBr(getXmlTagValue(doc, 'vBC')),
-          valorIcms: parseCurrencyPtBr(getXmlTagValue(doc, 'vICMS')),
-          aliquotaIcms: parseCurrencyPtBr(getXmlTagValue(doc, 'pICMS')),
+          valorIcms: parseCurrencyPtBr(getXmlTagValue(doc, 'vICMS', 'vIcms')),
+          aliquotaIcms: parseCurrencyPtBr(getXmlTagValue(doc, 'pICMS', 'pIcms')),
+          valorPis: parseCurrencyPtBr(getXmlTagValue(doc, 'vPIS', 'vPis')),
+          aliquotaPis: parseCurrencyPtBr(getXmlTagValue(doc, 'pPIS', 'pPis')),
+          valorCofins: parseCurrencyPtBr(getXmlTagValue(doc, 'vCOFINS', 'vCofins')),
+          aliquotaCofins: parseCurrencyPtBr(getXmlTagValue(doc, 'pCOFINS', 'pCofins')),
+          valorPisCofinsFederal: (
+            (parseCurrencyPtBr(getXmlTagValue(doc, 'vPIS', 'vPis')) || 0) +
+            (parseCurrencyPtBr(getXmlTagValue(doc, 'vCOFINS', 'vCofins')) || 0)
+          ) || undefined,
+          valorTributosFederais: parseCurrencyPtBr(getXmlTagValue(doc, 'vTotTrib', 'vTribFed')),
+          valorPedagio: parseCurrencyPtBr(getXmlTagValue(doc, 'vPed', 'vValePed')),
         },
         seguro: {
           nomeSeguradora: getXmlTagValue(doc, 'xSeg'),
           numeroApolice: getXmlTagValue(doc, 'nApol'),
           numeroAverbacao: getXmlTagValue(doc, 'nAver'),
           responsavelSeguro: getXmlTagValue(doc, 'respSeg'),
-        }
+        },
+        observacoesFiscais: [
+          getXmlTagValue(doc, 'infAdFisco'),
+          getXmlTagValue(doc, 'infCpl'),
+          getXmlTagValue(doc, 'xObs')
+        ].filter(Boolean).join(' | ') || undefined,
       };
+
+      const allObsText = res.observacoesFiscais || '';
+      const matchSusp = allObsText.match(/(?:impostos?\s+suspensos?|suspens[aã]o(?:\s+tribut[aá]ria)?)\s*:\s*(\d+(?:[.,]\d+)?)\s*%/i);
+      if (matchSusp) {
+        res.suspensaoPercentual = parseFloat(matchSusp[1].replace(',', '.'));
+      }
 
       // Documentos vinculados (ex: NFe vinculada ao CTe)
       const chNFeEls = doc.getElementsByTagName('chNFe');
@@ -1083,6 +1119,7 @@ export interface FiscalDocNumbers {
   cteNumber?: string;
   cteEmissionDate?: string;
   nfeNumber?: string;
+  nfeValue?: number;
   mdfeNumber?: string;
   advancePercentage?: number;
   advanceValue?: number;
@@ -1113,6 +1150,9 @@ export async function extractFiscalDocNumbers(
         }
         if (detailed.documentType === 'MDF-e' || isMdfeDocType(docType)) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
+        }
+        if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
+          result.nfeValue = detailed.carga.valorMercadoria;
         }
         if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
           result.tollValue = detailed.financeiro.valorPedagio;
@@ -1145,7 +1185,6 @@ export async function extractFiscalDocNumbersFromUrls(
     if (!Array.isArray(urls) || urls.length === 0) continue;
 
     for (const url of urls) {
-      if (result.cteNumber && result.cteEmissionDate && result.nfeNumber && result.mdfeNumber) break;
       try {
         const detailed = await extractDetailedDocData(url, docType);
         if (detailed.documentType === 'CT-e' || isCteDocType(docType)) {
@@ -1157,6 +1196,21 @@ export async function extractFiscalDocNumbersFromUrls(
         }
         if (detailed.documentType === 'MDF-e' || isMdfeDocType(docType)) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
+        }
+        if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
+          result.nfeValue = detailed.carga.valorMercadoria;
+        }
+        if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
+          result.tollValue = detailed.financeiro.valorPedagio;
+        }
+        if (detailed.financeiro?.valorAdiantamento !== undefined && result.advanceValue === undefined) {
+          result.advanceValue = detailed.financeiro.valorAdiantamento;
+        }
+        if (detailed.financeiro?.valorTotalFrete !== undefined && result.totalFreightValue === undefined) {
+          result.totalFreightValue = detailed.financeiro.valorTotalFrete;
+        }
+        if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
+          result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
         }
       } catch (e) {
         console.warn(`[fiscalDocParser] Could not fetch URL "${url}":`, e);

@@ -12,7 +12,8 @@ import {
   fetchCargos, fetchShipments, fetchUsers, fetchTickets, fetchProfilePermissions,
   fetchAppSettings, fetchShipmentLocks, fetchBranches, fetchFreightOffers,
   fetchRiskQueryOptions,
-  backfillShipmentFiscalNumbers
+  backfillShipmentFiscalNumbers,
+  backfillAdvanceAndBalanceCalculations
 } from '../lib/db';
 import { getAllToolStays, StayRecord } from '../utils/toolStorage';
 
@@ -213,12 +214,19 @@ export function useDatabase(currentUser: User | null) {
           dbProducts, dbShipments, dbCargos, dbUsers, dbTickets, dbBranches, dbFreightOffers
         ));
 
-        // Backfill silencioso: extrai CT-e/NF-e/MDF-e de embarques antigos (roda 1x por sessão)
+        // Backfill silencioso: extrai CT-e/NF-e/MDF-e e aplica cálculos de adiantamento/saldo (roda 1x por sessão)
         if (!backfillRanRef.current) {
           backfillRanRef.current = true;
           backfillShipmentFiscalNumbers().then(({ updated }) => {
             if (updated > 0) {
               console.log(`[backfill] ${updated} embarque(s) atualizados — recarregando embarques.`);
+              fetchShipments().then(setShipments).catch(() => {});
+            }
+          }).catch(() => {});
+
+          backfillAdvanceAndBalanceCalculations().then(({ updated }) => {
+            if (updated > 0) {
+              console.log(`[advanceBackfill] ${updated} embarque(s) atualizados com regra de adiantamento/saldo.`);
               fetchShipments().then(setShipments).catch(() => {});
             }
           }).catch(() => {});

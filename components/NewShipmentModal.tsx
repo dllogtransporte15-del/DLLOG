@@ -4,6 +4,7 @@ import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, Driver
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
 import { toCargo } from '../lib/db';
+import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
 import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
 
 
@@ -492,6 +493,14 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         return;
     }
 
+    const calc = calculateAdvanceAndBalance({
+      driverFreightValue: calculatedFreight,
+      driverFreightRate: currentFreightRate,
+      tonnage: shipmentTonnage,
+      tollValue: 0,
+      advancePercentage: advancePercentage !== undefined ? advancePercentage : 70,
+    });
+
     const shipmentData = {
       cargoId: currentCargo.id,
       driverName,
@@ -514,7 +523,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       paymentMethod,
       pixKey: paymentMethod === DriverPaymentMethod.PixEFrete ? pixKey : undefined,
       bankDetails: (paymentMethod === DriverPaymentMethod.DepositoConta || bankDetails) ? bankDetails : undefined,
-      advancePercentage,
+      advancePercentage: calc.advancePercentage,
+      advanceValue: calc.advanceInAccountValue,
+      tollValue: 0,
+      balanceToReceiveValue: calc.balanceToReceiveValue,
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
       driverReferences: driverReferences || undefined,
