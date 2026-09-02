@@ -503,11 +503,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       const creditRateLabel = isPjDriver ? 'PJ (100% - 9,25%)' : 'PF (75% - 6,9375%)';
 
       // Exportação
-      const isExportSuspended = Boolean(
-        cargo?.isExport ||
-        (cargo?.observations && /export/i.test(cargo.observations)) ||
-        (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination))
-      );
+      const isExportCargo = cargo?.isExport !== undefined
+        ? cargo.isExport
+        : ((shipment as any)?.isExport !== undefined
+            ? (shipment as any).isExport
+            : Boolean(
+                (cargo?.observations && /export/i.test(cargo.observations)) ||
+                (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+                ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
+                ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
+              ));
 
       if (parsedToll !== undefined && parsedToll > 0) setTollValue(parsedToll);
 
@@ -528,10 +533,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       );
 
       const suspMatch = String(cargo?.observations || (shipment as any)?.observations || (shipment as any)?.cargoObservations || (shipment as any)?.cteFiscalInfo || '').match(/(?:impostos?\s+suspensos?|suspens[aã]o(?:\s+tribut[aá]ria)?)\s*:\s*(\d+(?:[.,]\d+)?)\s*%/i);
-      const suspensionPercentage = isExportSuspended ? 100 : (parsedSuspensionPercent || (suspMatch ? parseFloat(suspMatch[1].replace(',', '.')) : (isSuspendedRoute ? 30 : 0)));
-      const tributavelRatio = isExportSuspended ? 0 : Math.max(0, (100 - suspensionPercentage) / 100);
+      const suspensionPercentage = isExportCargo ? 100 : (parsedSuspensionPercent || (suspMatch ? parseFloat(suspMatch[1].replace(',', '.')) : (isSuspendedRoute ? 30 : 0)));
+      const tributavelRatio = isExportCargo ? 0 : Math.max(0, (100 - suspensionPercentage) / 100);
 
-      const effectiveDebito = isExportSuspended
+      const effectiveDebito = isExportCargo
         ? 0
         : ((parsedFederalTax && parsedFederalTax > 0)
           ? parsedFederalTax
@@ -539,14 +544,25 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ? ((parsedPis || 0) + (parsedCofins || 0))
             : Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2))));
 
-      const effectiveCredit = Number((baseFreteMotoristaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * creditRate).toFixed(2));
-      const effectiveFederalTax = isExportSuspended
-        ? 0
-        : (suspensionPercentage > 0
-          ? Number((spreadLiquidoIcms * 0.070065).toFixed(2))
-          : Number(Math.max(0, effectiveDebito - effectiveCredit).toFixed(2)));
+      // Crédito PIS/COFINS gerado apenas em operações de exportação
+      const effectiveCredit = isExportCargo
+        ? Number((baseFreteMotoristaLiqIcms * creditRate).toFixed(2))
+        : 0;
 
-      showToast(`Impostos Federais sincronizados! Imposto Federal Líquido: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveFederalTax)} ${suspensionPercentage > 0 ? `(${suspensionPercentage}% Suspensão)` : `(Débito: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveDebito)} - Crédito ${creditRateLabel}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveCredit)})`}`, 'success');
+      // Passo 1 & 2: Frete Líquido e Imposto Federal para Mercado Interno (PF e PJ)
+      const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
+        ? Number((cteGrossFreight * (icmsPercentage / 100)).toFixed(2))
+        : 0;
+      const freteLiquidoIcms = Math.max(0, cteGrossFreight - icmsBruto);
+      const impostoFederalMercadoInterno = Number((freteLiquidoIcms * 0.03655).toFixed(2));
+
+      const effectiveFederalTax = isExportCargo
+        ? 0
+        : ((parsedFederalTax && parsedFederalTax > 0)
+            ? parsedFederalTax
+            : impostoFederalMercadoInterno);
+
+      showToast(`Impostos Federais sincronizados! Imposto Federal Líquido: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveFederalTax)} ${isExportCargo ? `(Exportação - Crédito ${creditRateLabel}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveCredit)})` : '(3,655% s/ Frete Líquido)'}`, 'success');
     } catch (err: any) {
       showToast('Erro ao sincronizar impostos federais.', 'error');
     } finally {

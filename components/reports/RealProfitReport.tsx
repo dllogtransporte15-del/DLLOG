@@ -211,14 +211,19 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const totalExpenses = calculatedExpenses.totalExpenses;
       const riskCost = calculatedExpenses.riskCost;
 
-      // Diferença de Frete
+      // Diferença de Frete (Para PF em Mercado Interno: Frete_Liquido - Frete_Motorista)
+      const icmsPct = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
+      const icmsDestacado = (cargo?.hasIcms && icmsPct > 0) ? Number((companyFreight * (icmsPct / 100)).toFixed(2)) : 0;
+      const freteLiquido = Math.max(0, companyFreight - icmsDestacado);
+      const baseFreteDiferenca = (s.driverFreightType === 'PF' && !cargo?.isExport) ? freteLiquido : companyFreight;
+
       const freightDifference = s.realProfitData?.freightDifference !== undefined 
         ? s.realProfitData.freightDifference 
-        : (companyFreight - driverFreight);
+        : (baseFreteDiferenca - driverFreight);
 
       const freightDifferenceMarginPercent = s.realProfitData?.freightDifferenceMarginPercent !== undefined 
         ? s.realProfitData.freightDifferenceMarginPercent 
-        : (companyFreight > 0 ? (freightDifference / companyFreight) * 100 : 0);
+        : (baseFreteDiferenca > 0 ? (freightDifference / baseFreteDiferenca) * 100 : 0);
 
       // Lucro Líquido Real da Operação (Diferença de Frete - Despesas Operacionais Totais)
       const netProfit = Number((freightDifference - totalExpenses).toFixed(2));
