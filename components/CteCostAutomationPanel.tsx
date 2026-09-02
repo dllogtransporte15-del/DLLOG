@@ -140,17 +140,18 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const baseFreteEmpresa = Math.max(0, cteGrossFreight - toll);
   const baseFreteMotorista = Math.max(0, driverFreight - toll);
 
-  // 7. ICMS (Alíquota interestadual com Crédito Presumido de 20% - Convênio ICMS 106/96 / Anexo VIII RICMS/MG)
+  // 7. ICMS (Valor integral do ICMS destacado no CT-e / vICMS)
   const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
   const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
     ? Number((cteGrossFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
-  const creditoPresumidoIcms = Number((icmsBruto * 0.20).toFixed(2));
-  const icmsLiquidoCalculado = Number((icmsBruto - creditoPresumidoIcms).toFixed(2));
 
-  const icms = shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
-    ? shipment.realProfitData.icmsDifference
-    : icmsLiquidoCalculado;
+  // Valor ICMS Completo (Destacado no CT-e)
+  const icms = icmsBruto > 0
+    ? icmsBruto
+    : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
+        ? shipment.realProfitData.icmsDifference
+        : 0);
 
   // 6. Imposto Federal PIS COFINS (Leitura do XML, Suspensão Tributária ou Apuração Lucro Real Não Cumulativo)
   const isExportCargo = cargo?.isExport !== undefined
@@ -206,6 +207,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   // Frete_Liquido = Frete_Bruto - ICMS_Destacado
   const freteLiquidoIcms = Math.max(0, cteGrossFreight - icmsBruto);
 
+  // Passo 2: Apurar o Spread Comercial (Diferença de Frete)
+  // Diferenca_Frete_RS = Frete_Empresa_Liquido - Frete_Motorista
+  const diferencaFreteReais = Number((freteLiquidoIcms - driverFreight).toFixed(2));
+  const margemFretePercent = freteLiquidoIcms > 0
+    ? Number(((diferencaFreteReais / freteLiquidoIcms) * 100).toFixed(2))
+    : 0;
+
   // 5. Crédito PIS COFINS (Gerado EXCLUSIVAMENTE quando a carga for de exportação)
   const autoOrRealCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
   const calculatedExportCredit = (isExportCargo && baseFreteMotoristaLiqIcms > 0)
@@ -223,9 +231,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         ? autoOrRealFederalTax
         : (baseFreteEmpresaLiqIcms > 0 ? Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2)) : 0));
 
-  // Passo 2: Imposto Federal (PIS/COFINS / Contribuições Federais)
-  // Regra Unificada para Mercado Interno (PF e PJ): Imposto Federal = Frete_Empresa_Liquido * 0,03655 (3,655%)
-  const impostoFederalMercadoInterno = Number((freteLiquidoIcms * 0.03655).toFixed(2));
+  // Passo 3: Imposto Federal (PIS/COFINS)
+  // PF (CPF): 3,655% sobre o Frete Empresa Líquido de ICMS
+  // PJ (CNPJ): 9,25% sobre o Spread Comercial / Diferença de Frete Líquido
+  const impostoFederalPf = Number((freteLiquidoIcms * 0.03655).toFixed(2));
+  const impostoFederalPjSpread = Number((Math.max(0, diferencaFreteReais) * 0.0925).toFixed(2));
+  const impostoFederalMercadoInterno = isShipmentPf ? impostoFederalPf : impostoFederalPjSpread;
 
   // Imposto Federal Líquido Efetivo a Recolher
   const impostoFederalLiquido = isExportCargo
@@ -286,17 +297,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? shipment.realProfitData.otherCosts
     : (cteGrossFreight > 0 ? Number((cteGrossFreight * custoFixoTaxa).toFixed(2)) : 0);
 
-  // 12. INSS Patronal / CPRB (Passo 2: Aplica-se a alíquota de 3,00% da CPRB sobre o Frete Bruto total se PF)
+  // 12. INSS Patronal / CPRB (Passo 2: Aplica-se a alíquota de 3,00% da CPRB sobre o Frete Bruto total se PF, Isento se PJ)
   const cprbPfRate = 0.03; // 3,00%
   const inssPatronalMotorista = isShipmentPf ? Number((cteGrossFreight * cprbPfRate).toFixed(2)) : 0;
-
-  // Passo 3: Apurar a Margem de Frete (Diferença de Frete)
-  // Diferença R$ = Frete_Liquido - Frete_Motorista
-  // Margem Frete % = ((Frete_Liquido - Frete_Motorista) / Frete_Liquido) * 100
-  const diferencaFreteReais = Number((freteLiquidoIcms - driverFreight).toFixed(2));
-  const margemFretePercent = freteLiquidoIcms > 0
-    ? Number(((diferencaFreteReais / freteLiquidoIcms) * 100).toFixed(2))
-    : 0;
 
   // 13. Comissão de Vendedor Externo (Caso informada na carga)
   const salespersonRate = Number(cargo?.salespersonCommissionPerTon) || 0;
@@ -305,7 +308,16 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number((salespersonRate * tonnage).toFixed(2))
     : 0;
 
-  // 14. Lucro Líquido Real Calculado (Deduções operacionais efetivas da transportadora)
+  // 14. Comissão do Comercial (Alíquota de 0,20% sobre o Frete Bruto da Empresa)
+  const comissaoComercialRate = 0.0020; // 0,20%
+  const comissaoComercialCalculada = Number((cteGrossFreight * comissaoComercialRate).toFixed(2));
+  const comissaoComercial = shipment.commercialCommission !== undefined && shipment.commercialCommission > 0
+    ? shipment.commercialCommission
+    : (shipment.realProfitData?.commission !== undefined && shipment.realProfitData.commission > 0
+        ? shipment.realProfitData.commission
+        : comissaoComercialCalculada);
+
+  // 15. Lucro Líquido Real Calculado (Deduções operacionais efetivas da transportadora)
   const totalDeducoes = Number((
     impostoFederalLiquido +
     icms +
@@ -316,6 +328,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     custoFixoValue +
     inssPatronalMotorista +
     salespersonCommission +
+    comissaoComercial +
     driverFreight
   ).toFixed(2));
 
@@ -497,32 +510,34 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
             <div className="flex items-center justify-between gap-1 mb-1">
               <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${isExportCargo ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'} shrink-0 max-w-[140px] truncate`} title={isExportCargo ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' : `Mercado Interno (${isShipmentPf ? 'CPF' : 'CNPJ'}): 3,655% sobre Frete Empresa Líquido (${formatBrl(freteLiquidoIcms)})`}>
-                {isExportCargo ? 'Exportação (Isento)' : '3,655% Frete Líq.'}
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${isExportCargo ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'} shrink-0 max-w-[140px] truncate`} title={isExportCargo ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)}>
+                {isExportCargo ? 'Exportação (Isento)' : (isShipmentPf ? '3,655% Frete Líq.' : '9,25% s/ Spread')}
               </span>
             </div>
             <div className={`text-xs sm:text-sm font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
             </div>
-            <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={isExportCargo ? 'Exportação: Receita desonerada de PIS/COFINS' : `Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%`}>
-              {isExportCargo ? 'Exportação: R$ 0,00' : `Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%`}
+            <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={isExportCargo ? 'Exportação: Receita desonerada de PIS/COFINS' : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)}>
+              {isExportCargo ? 'Exportação: R$ 0,00' : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)}
             </div>
           </div>
 
-          {/* Diferença de ICMS (Com Crédito Presumido de 20% / Custo Efetivo 80%) */}
+          {/* ICMS Destacado Completo */}
           <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
             <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Diferença de ICMS</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0" title="ICMS Destacado com 20% de Crédito Presumido (80% efetivo a recolher)">
-                {icmsPercentage > 0 ? `${icmsPercentage}% (80% efetivo)` : 'Isento'}
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate" title="Valor integral do ICMS destacado no CT-e">
+                ICMS Destacado
+              </span>
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0" title={`Alíquota de ${icmsPercentage}% destacada no CT-e`}>
+                {icmsPercentage > 0 ? `${icmsPercentage}% CT-e` : 'Isento'}
               </span>
             </div>
             <div className={`text-xs sm:text-sm font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {icms > 0 ? `- ${formatBrl(icms)}` : 'R$ 0,00'}
             </div>
             {icmsBruto > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`ICMS Destacado: ${formatBrl(icmsBruto)} (-) Créd. Presumido (20%): ${formatBrl(creditoPresumidoIcms)}`}>
-                Destacado {formatBrl(icmsBruto)} x 80% = {formatBrl(icms)}
+              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
+                Integral CT-e ({formatBrl(icmsBruto)})
               </div>
             )}
           </div>
@@ -688,6 +703,26 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             </div>
           </div>
 
+          {/* Comissão do Comercial (0,20% sobre o Frete Bruto da Empresa) */}
+          <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${comissaoComercial === 0 ? 'opacity-90' : ''}`}>
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+                Comissão Comercial
+              </span>
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
+                0,20%
+              </span>
+            </div>
+            <div className={`text-xs sm:text-sm font-bold font-mono ${comissaoComercial > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+              {comissaoComercial > 0 ? `- ${formatBrl(comissaoComercial)}` : 'R$ 0,00'}
+            </div>
+            {cteGrossFreight > 0 && (
+              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre Frete Bruto da Empresa (${formatBrl(cteGrossFreight)})`}>
+                0,20% s/ Bruto ({formatBrl(cteGrossFreight)})
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
@@ -745,3 +780,5 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     </div>
   );
 };
+
+export default CteCostAutomationPanel;

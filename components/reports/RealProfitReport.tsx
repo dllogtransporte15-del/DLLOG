@@ -32,6 +32,7 @@ import MultiSelectDropdown from '../MultiSelectDropdown';
 import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import { getShipmentCte } from '../../utils';
+import CteCostAutomationPanel from '../CteCostAutomationPanel';
 
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { SyncDocumentsModal } from '../SyncDocumentsModal';
@@ -185,52 +186,26 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     });
   }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, selectedStatus, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
 
-  // Cálculos consolidados para cada embarque
+  // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e)
   const enrichedRows = useMemo(() => {
     return filteredData.map(s => {
       const cargo = cargoMap.get(s.cargoId);
       const client = cargo ? clientMap.get(cargo.clientId) : undefined;
       const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente N/A';
       
-      const companyFreightRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-      const tonnage = s.shipmentTonnage || 0;
-      
-      // Frete Empresa
-      const companyFreight = s.realProfitData?.companyFreight !== undefined 
-        ? s.realProfitData.companyFreight 
-        : (companyFreightRate * tonnage);
-        
-      // Frete Motorista
-      const driverFreight = s.realProfitData?.driverFreight !== undefined 
-        ? s.realProfitData.driverFreight 
-        : (s.driverFreightValue || 0);
-
-      // Despesas Operacionais Calculadas (Seguro Acidente 0,0125%, Roubo 0,0125%, RCV R$ 5,00, INSS Patronal 4% PF, GR e OCR)
+      // Apuração Completa e Parametrizada idêntica à "Automatização do CT-e"
       const calculatedExpenses = calculateShipmentExpenses(s, cargo);
-      const rawExpenseItems = calculatedExpenses.expenseItems;
-      const totalExpenses = calculatedExpenses.totalExpenses;
-      const riskCost = calculatedExpenses.riskCost;
-
-      // Diferença de Frete (Para PF em Mercado Interno: Frete_Liquido - Frete_Motorista)
-      const icmsPct = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
-      const icmsDestacado = (cargo?.hasIcms && icmsPct > 0) ? Number((companyFreight * (icmsPct / 100)).toFixed(2)) : 0;
-      const freteLiquido = Math.max(0, companyFreight - icmsDestacado);
-      const baseFreteDiferenca = (s.driverFreightType === 'PF' && !cargo?.isExport) ? freteLiquido : companyFreight;
-
-      const freightDifference = s.realProfitData?.freightDifference !== undefined 
-        ? s.realProfitData.freightDifference 
-        : (baseFreteDiferenca - driverFreight);
-
-      const freightDifferenceMarginPercent = s.realProfitData?.freightDifferenceMarginPercent !== undefined 
-        ? s.realProfitData.freightDifferenceMarginPercent 
-        : (baseFreteDiferenca > 0 ? (freightDifference / baseFreteDiferenca) * 100 : 0);
-
-      // Lucro Líquido Real da Operação (Diferença de Frete - Despesas Operacionais Totais)
-      const netProfit = Number((freightDifference - totalExpenses).toFixed(2));
-
-      const profitMarginPercent = companyFreight > 0 
-        ? (netProfit / companyFreight) * 100 
-        : 0;
+      const {
+        companyFreight,
+        driverFreight,
+        freightDifference,
+        freightDifferenceMarginPercent,
+        totalExpenses,
+        netProfit,
+        profitMarginPercent,
+        expenseItems: rawExpenseItems,
+        riskCost,
+      } = calculatedExpenses;
 
       // Comprovante / Anexo de saldo ou despesas
       const saldoDoc = s.documents?.['Comprovante de Pagamento de Saldo'] || 
@@ -942,15 +917,15 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         </div>
       </div>
 
-      {/* MODAL DE DETALHAMENTO DE DESPESAS DA OPERAÇÃO */}
+      {/* MODAL DE DETALHAMENTO DE DESPESAS DA OPERAÇÃO - AUTOMATIZAÇÃO DO CT-E */}
       {selectedShipmentForDetail && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/60">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/60 shrink-0">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                  Despesas Detalhadas - Embarque {selectedShipmentForDetail.id}
+                  Automatização do CT-e & Lucro Real - Embarque {selectedShipmentForDetail.id}
                 </h3>
               </div>
               <button
@@ -964,83 +939,21 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
             {(() => {
               const detailRow = enrichedRows.find(r => r.shipment.id === selectedShipmentForDetail.id);
-              const compFreight = detailRow?.companyFreight || selectedShipmentForDetail.realProfitData?.companyFreight || 0;
-              const dvrFreight = detailRow?.driverFreight || selectedShipmentForDetail.realProfitData?.driverFreight || selectedShipmentForDetail.driverFreightValue || 0;
-              const items = detailRow?.expenseItems || selectedShipmentForDetail.realProfitData?.expenseItems || [];
-              const totExp = detailRow?.totalExpenses || 0;
-              const netProf = detailRow?.netProfit || 0;
-              const profMargin = detailRow?.profitMarginPercent || 0;
+              const cargo = detailRow?.cargo;
+              const tonnage = selectedShipmentForDetail.shipmentTonnage || cargo?.totalVolume || 0;
 
               return (
-                <div className="p-5 space-y-4">
-                  {/* Resumo de Fretes do Embarque */}
-                  <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-gray-500">Frete Empresa</p>
-                      <p className="text-sm font-mono font-bold text-blue-600 dark:text-blue-400">
-                        R$ {compFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-gray-500">Frete Motorista</p>
-                      <p className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">
-                        R$ {dvrFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Lista Detalhada de Despesas */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                        Itens e Custos Operacionais Deduções
-                      </h4>
-                      {totExp > 0 && (
-                        <span className="text-[11px] font-mono font-bold text-red-600 dark:text-red-400">
-                          Total: - R$ {totExp.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                      )}
-                    </div>
-                    {items.length > 0 ? (
-                      <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                        {items.map((exp, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 border dark:border-gray-600 text-xs">
-                            <div className="flex items-center gap-1.5">
-                              {exp.name.toLowerCase().includes('gr') || exp.name.toLowerCase().includes('gerenciadora') || exp.name.toLowerCase().includes('seguradora') ? (
-                                <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                              ) : (
-                                <Receipt className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                              )}
-                              <span className="font-medium text-gray-800 dark:text-gray-200">{exp.name}</span>
-                            </div>
-                            <span className="font-mono font-bold text-red-600 dark:text-red-400">
-                              - R$ {Number(exp.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-500 italic py-2">
-                        Nenhuma despesa individual discriminada para este embarque.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Totalizador do Modal */}
-                  <div className="pt-3 border-t dark:border-gray-700 flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] font-bold text-gray-500 uppercase">Lucro Real da Operação</p>
-                      <p className="text-xs text-gray-400">Margem: {profMargin.toFixed(2)}%</p>
-                    </div>
-                    <p className="text-lg font-mono font-black text-emerald-600 dark:text-emerald-400">
-                      R$ {netProf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
+                <div className="p-4 sm:p-5 overflow-y-auto">
+                  <CteCostAutomationPanel
+                    shipment={selectedShipmentForDetail}
+                    cargo={cargo}
+                    loadedTonnage={tonnage}
+                  />
                 </div>
               );
             })()}
 
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/60 border-t dark:border-gray-700 flex justify-end">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/60 border-t dark:border-gray-700 flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedShipmentForDetail(null)}

@@ -469,6 +469,7 @@ export interface Shipment {
   driverFreightType?: 'PJ' | 'PF';
   route?: string;
   isExport?: boolean;
+  commercialCommission?: number;
   cancellationReason?: string;
   driverReferences?: string;
   ownerContact?: string;

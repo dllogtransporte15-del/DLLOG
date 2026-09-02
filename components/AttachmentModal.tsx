@@ -549,12 +549,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         ? Number((baseFreteMotoristaLiqIcms * creditRate).toFixed(2))
         : 0;
 
-      // Passo 1 & 2: Frete Líquido e Imposto Federal para Mercado Interno (PF e PJ)
+      // Passo 1, 2 & 3: Frete Líquido e Imposto Federal para Mercado Interno
       const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
         ? Number((cteGrossFreight * (icmsPercentage / 100)).toFixed(2))
         : 0;
       const freteLiquidoIcms = Math.max(0, cteGrossFreight - icmsBruto);
-      const impostoFederalMercadoInterno = Number((freteLiquidoIcms * 0.03655).toFixed(2));
+      const diferencaFreteReais = Math.max(0, freteLiquidoIcms - (shipment.realProfitData?.driverFreight || shipment.driverFreightValue || baseFreteMotorista));
+
+      // PF: 3,655% s/ Frete Líquido | PJ: 9,25% s/ Spread Comercial (Diferença de Frete)
+      const impostoFederalPf = Number((freteLiquidoIcms * 0.03655).toFixed(2));
+      const impostoFederalPjSpread = Number((diferencaFreteReais * 0.0925).toFixed(2));
+      const impostoFederalMercadoInterno = isShipmentPf ? impostoFederalPf : impostoFederalPjSpread;
 
       const effectiveFederalTax = isExportCargo
         ? 0
@@ -562,7 +567,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ? parsedFederalTax
             : impostoFederalMercadoInterno);
 
-      showToast(`Impostos Federais sincronizados! Imposto Federal Líquido: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveFederalTax)} ${isExportCargo ? `(Exportação - Crédito ${creditRateLabel}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveCredit)})` : '(3,655% s/ Frete Líquido)'}`, 'success');
+      showToast(`Impostos Federais sincronizados! Imposto Federal Líquido: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveFederalTax)} ${isExportCargo ? `(Exportação - Crédito ${creditRateLabel}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveCredit)})` : (isShipmentPf ? '(PF: 3,655% s/ Frete Líquido)' : `(PJ: 9,25% s/ Spread ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(diferencaFreteReais)})`)}`, 'success');
     } catch (err: any) {
       showToast('Erro ao sincronizar impostos federais.', 'error');
     } finally {
