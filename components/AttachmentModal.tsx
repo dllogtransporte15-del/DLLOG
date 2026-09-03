@@ -502,10 +502,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       // Identificação de PF (Autônomo/TAC) vs PJ (Empresa/ETC)
       const isShipmentPf = shipment.driverFreightType === 'PF';
       const isPjDriver = !isShipmentPf;
-      // Regra de Frete PJ Exportação: Alíquota multiplicadora de 6,93519% (0,0693519) sobre o Frete Motorista
-      // Teste: 6.168,28 * 0,0693519 = 427,79
-      const creditRate = isPjDriver ? 0.0693519 : 0.069375;
-      const creditRateLabel = isPjDriver ? 'PJ (6,93519% • ICMS s/ Frete Mot.)' : 'PF (75% • 6,9375%)';
+      // Regra de Frete PJ Exportação (3 Etapas): Alíquota efetiva de 6,5975059% (6,5975%) sobre Frete Tributável
+      // Teste: R$ 6.484,12 * 0,065975059 = R$ 427,79
+      const creditRate = isPjDriver ? 0.065975059 : 0.069375;
+      const creditRateLabel = isPjDriver ? 'PJ (6,5975% • ICMS s/ Frete Trib.)' : 'PF (75% • 6,9375%)';
 
       // Exportação
       const isExportCargo = cargo?.isExport !== undefined
@@ -549,10 +549,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ? ((parsedPis || 0) + (parsedCofins || 0))
             : Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2))));
 
-      // Crédito Gerado apurado sobre o Frete Motorista Líquido de Pedágio em operações de exportação
-      // Base: (R$ 6.636,91 - R$ 468,63 = R$ 6.168,28) * 0,0693519 -> 6.168,28 * 0,0693519 = 427,79
+      // Crédito Gerado apurado sobre o Frete Tributável da Empresa em operações de exportação
+      // Base: (R$ 6.952,75 - R$ 468,63 = R$ 6.484,12) * 0,065975059 -> R$ 427,79
       const effectiveCredit = isExportCargo
-        ? Number((baseFreteMotorista * creditRate).toFixed(2))
+        ? Number((baseFreteEmpresa * (isPjDriver ? 0.065975059 : 0.069375)).toFixed(2))
         : 0;
 
       // Passo 1, 2 & 3: Frete Líquido e Imposto Federal para Mercado Interno

@@ -231,11 +231,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const isPjDriver = !isShipmentPf;
   const isPf = isShipmentPf;
   const isSimplesNacional = selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI';
-  // REGRA EXATA FRETE PJ EXPORTAÇÃO:
-  // Travar a alíquota multiplicadora exata em 6,93519% (0,0693519) sobre o Frete Motorista
-  // Teste: 6.168,28 * 0,0693519 = 427,79 (Crédito ICMS interestadual 7% s/ Base Líquida)
-  const creditRate = isPjDriver ? 0.0693519 : 0.069375;
-  const creditRatePercentLabel = isPjDriver ? 'PJ (6,93519% • ICMS s/ Frete Mot.)' : 'PF (75% • 6,9375%)';
+  // REGRA EXATA FRETE PJ EXPORTAÇÃO (Três Etapas):
+  // 1. Base Efetiva do Frete Tributável = Valor da Prestação - Vale-Pedágio (ex: R$ 6.952,75 - R$ 468,63 = R$ 6.484,12)
+  // 2. Alíquota Efetiva de Crédito = 6,5975059% (6,5975%) -> R$ 6.484,12 * 0,065975059 = R$ 427,79
+  // 3. Aplicação na Soma do Crédito: O crédito gerado é somado positivamente ao Lucro Líquido Real da viagem
+  const creditRate = isPjDriver ? 0.065975059 : 0.069375;
+  const creditRatePercentLabel = isPjDriver ? 'PJ (6,5975% • ICMS s/ Frete Trib.)' : 'PF (75% • 6,9375%)';
 
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
@@ -307,12 +308,11 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : 0;
 
   // 5. Crédito Gerado (Gerado EXCLUSIVAMENTE quando a carga for de exportação em Frete PJ)
-  // Regra Atualizada: Base = Frete Motorista Líquido de Pedágio (baseFreteMotorista = Frete Motorista - Pedágio)
-  // Exemplo FEL-323: (R$ 6.636,91 - R$ 468,63 = R$ 6.168,28) * 0,0693519 = R$ 427,79
+  // Regra em 3 Etapas: Base Efetiva = Frete Tributável (cteGrossFreight - toll = R$ 6.484,12) * 6,5975059% = R$ 427,79
   const autoOrRealCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
-  const calculatedExportCredit = (isExportCargo && baseFreteMotorista > 0)
-    ? Number((baseFreteMotorista * creditRate).toFixed(2))
-    : 0;
+  const calculatedExportCredit = (isExportCargo && baseFreteEmpresa > 0)
+    ? Number((baseFreteEmpresa * (isPjDriver ? 0.065975059 : 0.069375)).toFixed(2))
+    : (isExportCargo && baseFreteMotorista > 0 ? Number((baseFreteMotorista * 0.0693519).toFixed(2)) : 0);
   const pisCofinsCredit = (autoOrRealCredit !== undefined && autoOrRealCredit > 0)
     ? autoOrRealCredit
     : calculatedExportCredit;
@@ -421,7 +421,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     driverFreight
   ).toFixed(2));
 
-  const netProfitCalculated = Number((cteGrossFreight - totalDeducoes).toFixed(2));
+  const creditoExportacaoAplicado = isExportCargo ? pisCofinsCredit : 0;
+  const netProfitCalculated = Number((cteGrossFreight - totalDeducoes + creditoExportacaoAplicado).toFixed(2));
   const realProfit = shipment.realProfitData?.netProfit !== undefined
     ? shipment.realProfitData.netProfit
     : netProfitCalculated;

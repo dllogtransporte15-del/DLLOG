@@ -205,13 +205,14 @@ export function calculateShipmentExpenses(
         ? (RISK_QUERY_COST_MAP[shipment.riskQueryType] ?? RISK_QUERY_COST_MAP[shipment.riskQueryType.toLowerCase().trim()] ?? 0) 
         : 0);
 
-  // 14.1 Crédito Gerado (Exportação PJ: 6,93519% s/ Frete Motorista Líquido de Pedágio | PF: 6,9375%)
-  // REGRA EXATA: Base = Frete Motorista - Pedágio (ex: R$ 6.636,91 - R$ 468,63 = R$ 6.168,28) * 0,0693519 -> 6.168,28 * 0,0693519 = 427,79
+  // 14.1 Crédito Gerado (Exportação PJ: 6,5975% s/ Frete Tributável da Empresa | PF: 6,9375%)
+  // REGRA EXATA: Base Tributável = Frete Empresa - Pedágio (ex: R$ 6.952,75 - R$ 468,63 = R$ 6.484,12) * 0,065975059 -> R$ 427,79
+  const baseCompanyFreightNoToll = Math.max(0, companyFreight - toll);
   const baseDriverFreightNoToll = Math.max(0, driverFreight - toll);
   const autoCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
-  const calculatedCredit = (isExportCargo && baseDriverFreightNoToll > 0)
-    ? Number((baseDriverFreightNoToll * (isShipmentPf ? 0.069375 : 0.0693519)).toFixed(2))
-    : 0;
+  const calculatedCredit = (isExportCargo && baseCompanyFreightNoToll > 0)
+    ? Number((baseCompanyFreightNoToll * (isShipmentPf ? 0.069375 : 0.065975059)).toFixed(2))
+    : (isExportCargo && baseDriverFreightNoToll > 0 ? Number((baseDriverFreightNoToll * 0.0693519).toFixed(2)) : 0);
   const generatedCredit = (autoCredit !== undefined && autoCredit > 0) ? autoCredit : calculatedCredit;
 
   // 15. Montagem discriminada dos itens de despesa operacionais
@@ -343,8 +344,8 @@ export function calculateShipmentExpenses(
   // Total com frete motorista
   const totalDeducoesComFrete = Number((totalExpenses + driverFreight).toFixed(2));
 
-  // Resultado / Lucro Líquido Real da Operação
-  const netProfitCalculated = Number((companyFreight - totalDeducoesComFrete).toFixed(2));
+  // Resultado / Lucro Líquido Real da Operação (incluindo Crédito Fiscal Gerado em Exportação)
+  const netProfitCalculated = Number((companyFreight - totalDeducoesComFrete + (isExportCargo ? generatedCredit : 0)).toFixed(2));
   const netProfit = shipment.realProfitData?.netProfit !== undefined
     ? shipment.realProfitData.netProfit
     : netProfitCalculated;
