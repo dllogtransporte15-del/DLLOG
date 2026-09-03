@@ -31,7 +31,7 @@ import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { getShipmentCte } from '../../utils';
+import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
@@ -170,9 +170,17 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         }
       }
 
-      // REGRA OBRIGATÓRIA: Contabilizar apenas embarques efetivados que possuem CT-e
+      // REGRA OBRIGATÓRIA: Contabilizar apenas embarques efetivados que possuem CT-e emitido
+      if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado') {
+        return false;
+      }
+
+      if (!isCteApplicableForStatus(s.status)) {
+        return false;
+      }
+
       const cte = getShipmentCte(s);
-      const hasCte = (s.cteNumber && s.cteNumber.trim() !== '') || (cte !== '-' && cte.trim() !== '');
+      const hasCte = Boolean(cte && cte !== '-' && cte.trim() !== '');
       if (!hasCte) {
         return false;
       }
@@ -221,7 +229,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         shipment: s,
         cargo,
         clientName,
-        cte: cte !== '-' ? cte : (s.cteNumber || ''),
+        cte: (cte && cte !== '-') ? cte : '',
         companyFreight,
         driverFreight,
         freightDifference,

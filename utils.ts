@@ -149,7 +149,8 @@ export function isCteApplicableForStatus(status?: string | null): boolean {
     'PreCadastro',
     'AguardandoSeguradora',
     'AguardandoCarregamento',
-    'AguardandoNota'
+    'AguardandoNota',
+    'Cancelado'
   ];
   return !nonCteStatuses.includes(status);
 }
@@ -158,8 +159,12 @@ export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; do
   if (!shipment) return '-';
   if (shipment.status && !isCteApplicableForStatus(shipment.status)) return '-';
 
-  if (shipment.cteNumber) return shipment.cteNumber;
-  if (shipment.documents?.cte_number) return String(shipment.documents.cte_number);
+  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '') {
+    return shipment.cteNumber.trim();
+  }
+  if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '') {
+    return String(shipment.documents.cte_number).trim();
+  }
 
   const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
   if (Array.isArray(cteDocs) && cteDocs.length > 0) {
@@ -175,6 +180,11 @@ export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; do
       }
     }
     if (extractedList.length > 0) return extractedList.join(', ');
+  } else if (typeof cteDocs === 'string' && cteDocs.trim() !== '') {
+    const match = cteDocs.match(/DACTE_(\d+)/i) || 
+                  cteDocs.match(/CT[-_]?e[^\d]*(\d{3,8})/i) || 
+                  cteDocs.match(/_(\d{3,8})\.(?:pdf|xml)/i);
+    if (match && match[1]) return match[1];
   }
 
   return '-';

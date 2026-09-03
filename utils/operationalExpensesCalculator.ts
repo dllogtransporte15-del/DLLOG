@@ -95,7 +95,7 @@ export function calculateShipmentExpenses(
         : Boolean(
             (cargo?.observations && /export/i.test(cargo.observations)) ||
             (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
-            (shipment.observations && /export/i.test(shipment.observations)) ||
+            ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
             ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
           ));
 

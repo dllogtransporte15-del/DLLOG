@@ -19,6 +19,7 @@ import DemandForecastReport from '../components/reports/DemandForecastReport';
 import RealProfitReport from '../components/reports/RealProfitReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
+import { getShipmentCte, isCteApplicableForStatus } from '../utils';
 
 interface ReportsPageProps {
   shipments: Shipment[];
@@ -182,12 +183,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       }
 
       // Total Efetivado: Based STRICTLY on having CT-e WITHIN FILTER RANGE
-      const hasCte = Boolean(
-        s.cteNumber || 
-        s.documents?.cte_number || 
-        s.documents?.['CT-e'] || 
-        s.documents?.['CTE']
-      );
+      const cteVal = getShipmentCte(s);
+      const hasCte = isCteApplicableForStatus(s.status) && cteVal !== '-' && cteVal.trim() !== '';
       if (hasCte && s.status !== ShipmentStatus.Cancelado) {
         const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
         const effDateStr = effectiveEntry ? effectiveEntry.timestamp.substring(0, 10) : s.scheduledDate;
@@ -231,12 +228,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
     filteredShipments.forEach(s => {
        const cargo = cargoMap.get(s.cargoId);
-       const hasCte = Boolean(
-         s.cteNumber || 
-         s.documents?.cte_number || 
-         s.documents?.['CT-e'] || 
-         s.documents?.['CTE']
-       );
+       const cteVal = getShipmentCte(s);
+       const hasCte = isCteApplicableForStatus(s.status) && cteVal !== '-' && cteVal.trim() !== '' && s.status !== ShipmentStatus.Cancelado;
 
        if (profitMarginStatuses.includes(s.status)) {
            const grossRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;

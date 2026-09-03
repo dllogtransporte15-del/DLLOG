@@ -4,6 +4,7 @@ import { ShipmentStatus, UserProfile } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
+import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
 import { Building2, CheckCircle2, XCircle, TrendingUp, ShieldCheck, Briefcase, Settings, Edit3, X, Save, CheckSquare, Square, Percent, Users } from 'lucide-react';
 
 interface CommercialReportProps {
@@ -117,14 +118,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     ];
 
     shipments.forEach(s => {
-      if (!countableStatuses.includes(s.status)) return;
+      if (!countableStatuses.includes(s.status) || s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
 
-      const hasCte = Boolean(
-        s.cteNumber || 
-        s.documents?.cte_number || 
-        s.documents?.['CT-e'] || 
-        s.documents?.['CTE']
-      );
+      const cteVal = getShipmentCte(s);
+      const hasCte = cteVal !== '-' && cteVal.trim() !== '';
 
       if (!hasCte) return;
       
