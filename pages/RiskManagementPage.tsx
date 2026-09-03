@@ -265,7 +265,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           scheduledDate: s.scheduledDate || ''
         };
       });
-  }, [shipments, cargoMap, clientMap, driverMap, vehicleMap]);
+  }, [shipments, cargoMap, clientMap, driverMap, vehicleMap, costMapFromOptions, riskQueryOptions]);
 
   // Handle Sort Toggle
   const handleSort = (field: SortField) => {

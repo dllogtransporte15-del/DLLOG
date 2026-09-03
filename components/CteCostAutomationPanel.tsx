@@ -1,6 +1,8 @@
 import React from 'react';
-import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP } from '../types';
+import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog } from '../types';
 import { extractDetailedDocData } from '../utils/fiscalDocParser';
+import { upsertShipment } from '../lib/db';
+import { useToast } from '../hooks/useToast';
 import { 
   Calculator, 
   ShieldCheck, 
@@ -11,7 +13,10 @@ import {
   Info,
   Layers,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Building2,
+  Save,
+  CheckCircle2
 } from 'lucide-react';
 
 interface CteCostAutomationPanelProps {
@@ -21,6 +26,7 @@ interface CteCostAutomationPanelProps {
   loadedTonnage?: number | string;
   riskQueryType?: string;
   riskReleaseCode?: string;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
 }
 
 export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
@@ -30,9 +36,90 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   loadedTonnage,
   riskQueryType,
   riskReleaseCode,
+  onUpdateShipmentData,
 }) => {
+  const { showToast } = useToast();
   const formatBrl = (val: number | undefined | null) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
+  // Determinação inicial do enquadramento tributário
+  const defaultInitialRegime = shipment.etcTaxRegime || 
+    (shipment.documents as any)?.etc_tax_regime || 
+    (shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC' ? 'PF' : 'Lucro Real / Presumido');
+
+  const [selectedRegime, setSelectedRegime] = React.useState<string>(defaultInitialRegime);
+  const [savedRegime, setSavedRegime] = React.useState<string>(defaultInitialRegime);
+  const [isSavingRegime, setIsSavingRegime] = React.useState(false);
+  const [justSaved, setJustSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    const reg = shipment.etcTaxRegime || 
+      (shipment.documents as any)?.etc_tax_regime || 
+      (shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC' ? 'PF' : 'Lucro Real / Presumido');
+    setSelectedRegime(reg);
+    setSavedRegime(reg);
+  }, [shipment.etcTaxRegime, shipment.documents, shipment.driverFreightType, shipment.anttModality]);
+
+  const handleSaveRegime = async () => {
+    setIsSavingRegime(true);
+    try {
+      const isPf = selectedRegime === 'PF' || selectedRegime === 'TAC';
+      const modality = isPf ? 'TAC' : 'ETC';
+      const freightType = isPf ? 'PF' : 'PJ';
+      const etcRegime = isPf ? undefined : selectedRegime;
+
+      const oldRegimeLabel = savedRegime || shipment.etcTaxRegime || (shipment.driverFreightType === 'PF' ? 'Pessoa Física / TAC' : 'Lucro Real / Presumido');
+      const newRegimeLabel = selectedRegime;
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Enquadramento fiscal alterado de "${oldRegimeLabel}" para "${newRegimeLabel}". Imposto Federal e custos operacionais recalculados.`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        etcTaxRegime: etcRegime,
+        driverFreightType: freightType,
+        anttModality: modality as any,
+        history: updatedHistory,
+        documents: {
+          ...(shipment.documents || {}),
+          etc_tax_regime: etcRegime,
+          antt_modality: modality,
+        }
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          etcTaxRegime: etcRegime,
+          driverFreightType: freightType,
+          anttModality: modality as any,
+          history: updatedHistory,
+          documents: {
+            ...(shipment.documents || {}),
+            etc_tax_regime: etcRegime,
+            antt_modality: modality,
+          }
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      setSavedRegime(selectedRegime);
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 3000);
+      showToast(`Enquadramento tributário salvo como "${selectedRegime}" e registrado no histórico!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar regime tributário:', err);
+      showToast('Erro ao persistir enquadramento tributário.', 'error');
+    } finally {
+      setIsSavingRegime(false);
+    }
+  };
 
   // 1. CTe Frete Bruto / Frete Empresa
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
@@ -99,19 +186,35 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     setTimeout(() => setIsSyncing(false), 500);
   };
 
-  // 2. Valor NF (Valor da Mercadoria / Carga informado no CT-e / NF-e)
-  const invoiceValue = autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0;
-  // Base de Seguro: Valor da Nota + 18%
-  const insuranceBaseValue = invoiceValue > 0 ? Number((invoiceValue * 1.18).toFixed(2)) : 0;
+  // 2. Verificação de Carga de Exportação (Define suspensão tributária e acréscimo de seguro de 18%)
+  const isExportCargo = cargo?.isExport !== undefined
+    ? cargo.isExport
+    : ((shipment as any)?.isExport !== undefined
+        ? (shipment as any).isExport
+        : Boolean(
+            (cargo?.observations && /export/i.test(cargo.observations)) ||
+            (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+            ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
+            ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
+          ));
 
-  // 3. Seguro Acidente (0,0125%) + Roubo (0,0125%) = 0,025% sobre a Base de Seguro (NF + 18%)
+  const isExportSuspended = isExportCargo;
+
+  // 3. Valor NF (Valor da Mercadoria / Carga informado no CT-e / NF-e)
+  const invoiceValue = autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0;
+  // Base de Seguro: Acréscimo de +18% somente em carga de exportação (NF * 1.18); Mercado Interno: Base = Valor da NF
+  const insuranceBaseValue = invoiceValue > 0 
+    ? Number((invoiceValue * (isExportCargo ? 1.18 : 1.00)).toFixed(2)) 
+    : 0;
+
+  // 4. Seguro Acidente (0,0125%) + Roubo (0,0125%) = 0,025% sobre a Base de Seguro
   const taxaSeguroAcidente = 0.000125; // 0,0125%
   const taxaSeguroRoubo = 0.000125;    // 0,0125%
   const taxaSeguroTotal = taxaSeguroAcidente + taxaSeguroRoubo; // 0,025%
   const insuranceTaxes = insuranceBaseValue > 0 ? Number((insuranceBaseValue * taxaSeguroTotal).toFixed(2)) : 0;
   const totalSeguroAcidenteRoubo = insuranceTaxes;
 
-  // 4. Seguro RCV (R$ 5,00 por veículo / viagem)
+  // 5. Seguro RCV (R$ 5,00 por veículo / viagem)
   const seguroRcv = 5.00;
 
   // 8. Vale-Pedágio (Informativo da Carta Frete / TAG / Formulário / Embarque)
@@ -124,12 +227,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             ? shipment.tollValue
             : (shipment.realProfitData?.toll || 0)));
 
-  // 12. Frete Motorista & Identificação PF (Autônomo/TAC) vs PJ (Empresa/ETC)
-  const isShipmentPf = shipment.driverFreightType === 'PF';
+  const isShipmentPf = selectedRegime === 'PF' || selectedRegime === 'TAC' || (!selectedRegime && shipment.driverFreightType === 'PF');
   const isPjDriver = !isShipmentPf;
   const isPf = isShipmentPf;
-  const creditRate = isPjDriver ? 0.0925 : 0.069375; // PJ: 100% (9,25%) | PF: 75% (6,9375%)
-  const creditRatePercentLabel = isPjDriver ? 'PJ (100% • 9,25%)' : 'PF (75% • 6,9375%)';
+  const isSimplesNacional = selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI';
+  // REGRA EXATA FRETE PJ EXPORTAÇÃO:
+  // Travar a alíquota multiplicadora exata em 6,93519% (0,0693519) sobre o Frete Motorista
+  // Teste: 6.168,28 * 0,0693519 = 427,79 (Crédito ICMS interestadual 7% s/ Base Líquida)
+  const creditRate = isPjDriver ? 0.0693519 : 0.069375;
+  const creditRatePercentLabel = isPjDriver ? 'PJ (6,93519% • ICMS s/ Frete Mot.)' : 'PF (75% • 6,9375%)';
 
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
@@ -152,20 +258,6 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
         ? shipment.realProfitData.icmsDifference
         : 0);
-
-  // 6. Imposto Federal PIS COFINS (Leitura do XML, Suspensão Tributária ou Apuração Lucro Real Não Cumulativo)
-  const isExportCargo = cargo?.isExport !== undefined
-    ? cargo.isExport
-    : ((shipment as any)?.isExport !== undefined
-        ? (shipment as any).isExport
-        : Boolean(
-            (cargo?.observations && /export/i.test(cargo.observations)) ||
-            (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
-            ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
-            ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
-          ));
-
-  const isExportSuspended = isExportCargo;
 
   const allDocText = [
     cargo?.observations,
@@ -214,10 +306,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number(((diferencaFreteReais / freteLiquidoIcms) * 100).toFixed(2))
     : 0;
 
-  // 5. Crédito PIS COFINS (Gerado EXCLUSIVAMENTE quando a carga for de exportação)
+  // 5. Crédito Gerado (Gerado EXCLUSIVAMENTE quando a carga for de exportação em Frete PJ)
+  // Regra Atualizada: Base = Frete Motorista Líquido de Pedágio (baseFreteMotorista = Frete Motorista - Pedágio)
+  // Exemplo FEL-323: (R$ 6.636,91 - R$ 468,63 = R$ 6.168,28) * 0,0693519 = R$ 427,79
   const autoOrRealCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
-  const calculatedExportCredit = (isExportCargo && baseFreteMotoristaLiqIcms > 0)
-    ? Number((baseFreteMotoristaLiqIcms * creditRate).toFixed(2))
+  const calculatedExportCredit = (isExportCargo && baseFreteMotorista > 0)
+    ? Number((baseFreteMotorista * creditRate).toFixed(2))
     : 0;
   const pisCofinsCredit = (autoOrRealCredit !== undefined && autoOrRealCredit > 0)
     ? autoOrRealCredit
@@ -231,12 +325,20 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         ? autoOrRealFederalTax
         : (baseFreteEmpresaLiqIcms > 0 ? Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2)) : 0));
 
-  // Passo 3: Imposto Federal (PIS/COFINS)
-  // PF (CPF): 3,655% sobre o Frete Empresa Líquido de ICMS
-  // PJ (CNPJ): 9,25% sobre o Spread Comercial / Diferença de Frete Líquido
+  // Passo 3: Imposto Federal (Simples Nacional 3,40% s/ Frete Bruto | PF: 3,655% s/ Líquido | PJ: 9,25% s/ Spread)
+  const simplesFederalRate = 0.0340; // 3,40% (Anexo III - Tributos Federais)
+  const impostoFederalSimples = Number((cteGrossFreight * simplesFederalRate).toFixed(2));
   const impostoFederalPf = Number((freteLiquidoIcms * 0.03655).toFixed(2));
   const impostoFederalPjSpread = Number((Math.max(0, diferencaFreteReais) * 0.0925).toFixed(2));
-  const impostoFederalMercadoInterno = isShipmentPf ? impostoFederalPf : impostoFederalPjSpread;
+
+  let impostoFederalMercadoInterno = 0;
+  if (isSimplesNacional) {
+    impostoFederalMercadoInterno = impostoFederalSimples;
+  } else if (isShipmentPf) {
+    impostoFederalMercadoInterno = impostoFederalPf;
+  } else {
+    impostoFederalMercadoInterno = impostoFederalPjSpread;
+  }
 
   // Imposto Federal Líquido Efetivo a Recolher
   const impostoFederalLiquido = isExportCargo
@@ -265,52 +367,39 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     }
   }
 
-  const effectiveRiskType = (riskQueryType && riskQueryType.trim() !== '')
-    ? riskQueryType.trim()
-    : (shipment.riskQueryType && String(shipment.riskQueryType).trim() !== ''
-        ? String(shipment.riskQueryType).trim()
-        : (shipment.documents?.risk_query_type && String(shipment.documents.risk_query_type).trim() !== ''
-            ? String(shipment.documents.risk_query_type).trim()
-            : (historyRiskType || (shipment.status === ShipmentStatus.AguardandoSeguradora ? 'Pendente' : 'Consulta'))));
-
-  const effectiveReleaseCode = (riskReleaseCode && riskReleaseCode.trim() !== '')
-    ? riskReleaseCode.trim()
-    : (shipment.riskReleaseCode || (shipment.documents as any)?.risk_release_code || historyReleaseCode || '');
-
-  const matchedCost = effectiveRiskType && effectiveRiskType !== 'Pendente'
-    ? (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50)
-    : undefined;
-
-  const riskCost = shipment.riskQueryCost !== undefined && shipment.riskQueryCost > 0
-    ? shipment.riskQueryCost
-    : (historyRiskCost !== undefined && historyRiskCost > 0
+  const effectiveRiskType = riskQueryType || shipment.riskQueryType || historyRiskType;
+  const effectiveReleaseCode = riskReleaseCode || shipment.riskReleaseCode || historyReleaseCode;
+  
+  const riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null)
+    ? Number(shipment.riskQueryCost)
+    : (historyRiskCost !== undefined && historyRiskCost !== null
         ? historyRiskCost
-        : (matchedCost !== undefined ? matchedCost : (effectiveRiskType === 'Pendente' ? 0 : 6.50)));
+        : (effectiveRiskType 
+            ? (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50)
+            : (shipment.status === ShipmentStatus.AguardandoSeguradora ? 0 : 6.50)));
 
-  // 10. CIOT (0,20% sobre o Frete Total do Motorista)
-  const ciotTaxa = 0.0020; // 0,20%
-  const ciotValue = Number((driverFreight * ciotTaxa).toFixed(2));
+  // 10. INSS Patronal / CPRB: PF = 4% sobre (Frete Motorista - Pedágio); PJ = R$ 0,00 (Isento)
+  const cprbPfRate = 0.04; // 4%
+  const baseInssPatronal = Math.max(0, driverFreight - toll);
+  const inssPatronalMotorista = isShipmentPf
+    ? Number((baseInssPatronal * cprbPfRate).toFixed(2))
+    : 0;
 
-  // 11. Custo Fixo (0,35% sobre o valor bruto da empresa = CT-e Frete Bruto)
-  const custoFixoTaxa = 0.0035; // 0,35%
-  const custoFixoValue = shipment.realProfitData?.otherCosts !== undefined && shipment.realProfitData.otherCosts > 0
-    ? shipment.realProfitData.otherCosts
-    : (cteGrossFreight > 0 ? Number((cteGrossFreight * custoFixoTaxa).toFixed(2)) : 0);
+  // 11. CIOT (0,20% s/ Frete do Motorista)
+  const ciotValue = Number((driverFreight * 0.0020).toFixed(2));
 
-  // 12. INSS Patronal / CPRB (Passo 2: Aplica-se a alíquota de 3,00% da CPRB sobre o Frete Bruto total se PF, Isento se PJ)
-  const cprbPfRate = 0.03; // 3,00%
-  const inssPatronalMotorista = isShipmentPf ? Number((cteGrossFreight * cprbPfRate).toFixed(2)) : 0;
+  // 13. Custo Fixo (0,35% s/ Frete Bruto)
+  const custoFixoValue = Number((cteGrossFreight * 0.0035).toFixed(2));
 
-  // 13. Comissão de Vendedor Externo (Caso informada na carga)
+  // 14. Comissão Vendedor Externo (R$/ton cadastrado na carga)
   const salespersonRate = Number(cargo?.salespersonCommissionPerTon) || 0;
   const salespersonName = cargo?.salespersonName || '';
   const salespersonCommission = (salespersonRate > 0 && tonnage > 0)
     ? Number((salespersonRate * tonnage).toFixed(2))
     : 0;
 
-  // 14. Comissão do Comercial (Alíquota de 0,20% sobre o Frete Bruto da Empresa)
-  const comissaoComercialRate = 0.0020; // 0,20%
-  const comissaoComercialCalculada = Number((cteGrossFreight * comissaoComercialRate).toFixed(2));
+  // 14.1 Comissão Comercial (0,20% s/ Frete Bruto)
+  const comissaoComercialCalculada = Number((cteGrossFreight * 0.0020).toFixed(2));
   const comissaoComercial = shipment.commercialCommission !== undefined && shipment.commercialCommission > 0
     ? shipment.commercialCommission
     : (shipment.realProfitData?.commission !== undefined && shipment.realProfitData.commission > 0
@@ -342,14 +431,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   return (
     <div className="w-full bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 shadow-xs text-slate-800 dark:text-slate-100 font-sans space-y-3.5">
       
-      {/* Cabeçalho */}
+      {/* Cabeçalho Principal */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg">
             <Calculator className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 flex-wrap">
               <span>Automatização do CT-e</span>
               <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
                 Custos & Margem
@@ -373,6 +462,73 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             Visualização
           </span>
         </div>
+      </div>
+
+      {/* Barra Compacta de Enquadramento Fiscal */}
+      <div className="bg-white dark:bg-slate-800/95 rounded-xl border border-slate-200/90 dark:border-slate-700/80 p-2.5 shadow-2xs space-y-1.5">
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Building2 className={`w-3.5 h-3.5 shrink-0 ${
+              isSimplesNacional ? 'text-purple-600' : isShipmentPf ? 'text-orange-500' : 'text-blue-600'
+            }`} />
+            <span className="text-[11px] font-bold text-slate-800 dark:text-slate-100 uppercase tracking-tight truncate">
+              Regime Tributário
+            </span>
+          </div>
+          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0 ${
+            isSimplesNacional
+              ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+              : isShipmentPf
+                ? 'bg-orange-50 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300'
+                : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+          }`}>
+            {justSaved ? '✔ Salvo!' : selectedRegime}
+          </span>
+        </div>
+
+        {/* Linha com Select e Botão Salvar perfeitamente dimensionados */}
+        <div className="flex items-center gap-1.5">
+          <select
+            value={selectedRegime}
+            onChange={(e) => setSelectedRegime(e.target.value)}
+            disabled={isSavingRegime}
+            className={`flex-1 min-w-0 text-xs font-semibold rounded-lg px-2 py-1.5 border outline-hidden transition-all cursor-pointer truncate ${
+              isSimplesNacional
+                ? 'bg-purple-50/70 text-purple-900 border-purple-300 dark:bg-purple-950/50 dark:text-purple-200 dark:border-purple-800'
+                : isShipmentPf
+                  ? 'bg-orange-50/70 text-orange-900 border-orange-300 dark:bg-orange-950/50 dark:text-orange-200 dark:border-orange-800'
+                  : 'bg-blue-50/70 text-blue-900 border-blue-300 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-800'
+            }`}
+          >
+            <option value="Simples Nacional">🟣 Simples Nacional (3,40% s/ Frete Bruto)</option>
+            <option value="Lucro Real / Presumido">🔵 Lucro Real / Presumido (9,25% s/ Spread)</option>
+            <option value="PF">🟠 Pessoa Física / TAC (3,655% s/ Líq. + 4% CPRB)</option>
+            <option value="MEI">🟢 MEI (Simples Nacional - 3,40%)</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={handleSaveRegime}
+            disabled={isSavingRegime}
+            className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-all shrink-0 cursor-pointer"
+            title="Salvar regime tributário no banco de dados e registrar histórico"
+          >
+            {isSavingRegime ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
+            <span>Salvar</span>
+          </button>
+        </div>
+
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+          {isSimplesNacional 
+            ? 'Simples Nacional: 3,40% sobre Frete Empresa Bruto' 
+            : isShipmentPf 
+              ? 'PF / TAC: 3,655% s/ Frete Líquido + 4% CPRB' 
+              : 'Regime Normal: 9,25% s/ Spread Comercial'}
+        </p>
       </div>
 
       {/* LINHA 1: Cards Principais de Receita & Bases */}
@@ -402,9 +558,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               {formatBrl(invoiceValue)}
             </div>
           </div>
-          <div className="mt-1 pt-1 border-t border-indigo-50 dark:border-indigo-950/60" title={`Base de cálculo do seguro averbado: Valor da NF (${formatBrl(invoiceValue)}) + 18% = ${formatBrl(insuranceBaseValue)}`}>
+          <div className="mt-1 pt-1 border-t border-indigo-50 dark:border-indigo-950/60" title={`Base de cálculo do seguro averbado: Valor da NF (${formatBrl(invoiceValue)})${isExportCargo ? ' + 18% (Exportação)' : ' (Mercado Interno)'} = ${formatBrl(insuranceBaseValue)}`}>
             <div className="text-[9px] text-slate-400 dark:text-slate-500 leading-tight">
-              Base Seguro (+18%):
+              Base Seguro {isExportCargo ? '(+18% Exp.)' : '(NF)'}:
             </div>
             <div className="text-[11px] font-mono font-bold text-indigo-700 dark:text-indigo-300 leading-tight">
               {formatBrl(insuranceBaseValue)}
@@ -412,14 +568,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           </div>
         </div>
 
-        {/* Box 3: Crédito PIS COFINS (Gerado apenas se for Exportação) */}
+        {/* Box 3: Crédito Gerado (Gerado apenas se for Exportação) */}
         <div className={`bg-white dark:bg-slate-800/90 rounded-xl border p-2.5 shadow-2xs ${
           isExportCargo 
             ? 'border-emerald-200 dark:border-emerald-900/40' 
             : 'border-slate-200 dark:border-slate-800 opacity-80'
         }`}>
           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
-            <span className="uppercase tracking-wider">Crédito PIS / COFINS</span>
+            <span className="uppercase tracking-wider">Crédito Gerado</span>
             <Percent className={`w-3 h-3 shrink-0 ${isExportCargo ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
           </div>
           <div className={`text-sm sm:text-base font-bold font-mono ${
@@ -431,7 +587,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             className={`text-[10px] font-medium truncate mt-0.5 ${
               isExportCargo ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
             }`} 
-            title={isExportCargo ? `Exportação • ${creditRatePercentLabel}` : 'Gera crédito apenas quando a carga for de exportação'}
+            title={isExportCargo ? `Exportação PJ • 6,93519% s/ Frete Motorista Líquido de Pedágio (${formatBrl(baseFreteMotorista)}) = ${formatBrl(pisCofinsCredit)}` : 'Gera crédito apenas quando a carga for de exportação'}
           >
             {isExportCargo ? creditRatePercentLabel : 'Apenas Exportação'}
           </div>
@@ -506,19 +662,37 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
         <div className="grid grid-cols-2 gap-2">
           
-          {/* Imposto Federal (PIS/COFINS / Contribuições Federais) */}
+          {/* Imposto Federal (Simples Nacional 3,40% / PIS/COFINS / Contribuições Federais) */}
           <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
             <div className="flex items-center justify-between gap-1 mb-1">
               <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${isExportCargo ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'} shrink-0 max-w-[140px] truncate`} title={isExportCargo ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)}>
-                {isExportCargo ? 'Exportação (Isento)' : (isShipmentPf ? '3,655% Frete Líq.' : '9,25% s/ Spread')}
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+                isExportCargo 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                  : isSimplesNacional
+                    ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+              } shrink-0 max-w-[140px] truncate`} title={
+                isExportCargo 
+                  ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' 
+                  : isSimplesNacional
+                    ? `Simples Nacional (Anexo III): 3,40% sobre Frete Empresa Bruto (${formatBrl(cteGrossFreight)})`
+                    : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
+              }>
+                {isExportCargo ? 'Exportação (Isento)' : (isSimplesNacional ? '3,40% Simples Nac.' : (isShipmentPf ? '3,655% Frete Líq.' : '9,25% s/ Spread'))}
               </span>
             </div>
             <div className={`text-xs sm:text-sm font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
             </div>
-            <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={isExportCargo ? 'Exportação: Receita desonerada de PIS/COFINS' : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)}>
-              {isExportCargo ? 'Exportação: R$ 0,00' : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)}
+            <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+              isExportCargo 
+                ? 'Exportação: Receita desonerada de PIS/COFINS' 
+                : isSimplesNacional
+                  ? `Simples Nacional: Frete Empresa Bruto ${formatBrl(cteGrossFreight)} • 3,40% = ${formatBrl(impostoFederalSimples)}`
+                  : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
+            }>
+              {isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples Nac.: ${formatBrl(cteGrossFreight)} • 3,40%` : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`))}
             </div>
           </div>
 
@@ -592,15 +766,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
             <div className="flex items-center justify-between gap-1 mb-1">
               <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Acidente + Roubo</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title="0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (NF + 18%)">
-                0,025% (NF+18%)
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
+                {isExportCargo ? '0,025% (NF+18%)' : '0,025% (NF)'}
               </span>
             </div>
             <div className={`text-xs sm:text-sm font-bold font-mono ${totalSeguroAcidenteRoubo > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {totalSeguroAcidenteRoubo > 0 ? `- ${formatBrl(totalSeguroAcidenteRoubo)}` : 'R$ 0,00'}
             </div>
             {insuranceBaseValue > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base de Seguro: ${formatBrl(insuranceBaseValue)} (NF + 18%) x 0,025%`}>
+              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base de Seguro: ${formatBrl(insuranceBaseValue)}${isExportCargo ? ' (NF + 18%)' : ' (NF)'} x 0,025%`}>
                 Base {formatBrl(insuranceBaseValue)} • 0,025%
               </div>
             )}
@@ -637,7 +811,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             </div>
           </div>
 
-          {/* INSS Patronal / CPRB (3% s/ Frete Bruto em embarques PF, Isento para PJ) */}
+          {/* INSS Patronal / CPRB (4% s/ (Frete Motorista - Pedágio) em embarques PF, Isento para PJ) */}
           <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
             <div className="flex items-center justify-between gap-1 mb-1">
               <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">INSS Patronal / CPRB</span>
@@ -646,7 +820,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
                   : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
               }`}>
-                {isShipmentPf ? '3% CPRB (PF)' : 'Isento (PJ)'}
+                {isShipmentPf ? '4% CPRB (PF)' : 'Isento (PJ)'}
               </span>
             </div>
             <div className={`text-xs sm:text-sm font-bold font-mono ${
@@ -657,8 +831,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               {isShipmentPf && inssPatronalMotorista > 0 ? `- ${formatBrl(inssPatronalMotorista)}` : 'R$ 0,00'}
             </div>
             {isShipmentPf && inssPatronalMotorista > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`3,00% da CPRB sobre a receita bruta total do frete (${formatBrl(cteGrossFreight)})`}>
-                3% s/ Frete Bruto ({formatBrl(cteGrossFreight)})
+              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`4,00% do INSS Patronal / CPRB sobre o frete motorista líquido de pedágio (${formatBrl(driverFreight)} - ${formatBrl(toll)} = ${formatBrl(baseInssPatronal)})`}>
+                4% s/ Frete Mot. - Pedágio ({formatBrl(baseInssPatronal)})
               </div>
             )}
           </div>

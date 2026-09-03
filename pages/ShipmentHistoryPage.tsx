@@ -238,6 +238,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
         />
       )}
 

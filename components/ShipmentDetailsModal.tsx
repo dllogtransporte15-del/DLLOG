@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
-import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod } from '../types';
+import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod, AnttModality, EtcTaxRegime } from '../types';
 import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
 import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
@@ -179,6 +179,9 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       bankDetails: shipment.bankDetails || '',
       advancePercentage: shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70,
       driverReferences: shipment.driverReferences,
+      anttModality: shipment.anttModality,
+      etcTaxRegime: shipment.etcTaxRegime,
+      driverFreightType: shipment.driverFreightType,
       ownerContact: shipment.ownerContact,
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
       cteNumber: isCteApplicableForStatus(shipment.status) ? (shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : '')) : '',
@@ -823,21 +826,29 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         </div>
 
                         <div className="md:col-span-2">
-                            <DetailItem label="Referências do Motorista">
-                                {isEditingData ? (
-                                    <textarea 
-                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[80px]"
-                                        value={editedData.driverReferences || ''}
-                                        onChange={e => setEditedData({...editedData, driverReferences: e.target.value})}
-                                        placeholder="Informe as referências..."
-                                    />
-                                ) : (
-                                    <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-md border dark:border-gray-700">
-                                        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
-                                            {shipment.driverReferences || <span className="text-gray-400 italic">Não informadas</span>}
-                                        </p>
-                                    </div>
-                                )}
+                            <DetailItem label="Modalidade ANTT & Tipo de Frete">
+                                <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border dark:border-gray-700 flex flex-wrap items-center gap-2">
+                                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                        shipment.driverFreightType === 'PF' || shipment.anttModality === AnttModality.TAC
+                                            ? 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-200 dark:border-orange-800'
+                                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                    }`}>
+                                        {shipment.anttModality ? `ANTT: ${shipment.anttModality}` : (shipment.driverFreightType === 'PF' ? 'ANTT: TAC (Autônomo)' : 'ANTT: ETC (Empresa)')}
+                                    </span>
+                                    {shipment.etcTaxRegime && (
+                                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                            Regime: {shipment.etcTaxRegime}
+                                        </span>
+                                    )}
+                                    <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-200/80 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600">
+                                        Tipo: {shipment.driverFreightType || (shipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ')}
+                                    </span>
+                                    {shipment.driverReferences && (
+                                        <div className="w-full mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                                            <strong>Obs / Referências anteriores:</strong> {shipment.driverReferences}
+                                        </div>
+                                    )}
+                                </div>
                             </DetailItem>
                         </div>
                         

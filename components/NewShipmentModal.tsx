@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
-import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus } from '../types';
+import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus, AnttModality, EtcTaxRegime } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
 import { toCargo } from '../lib/db';
 import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
-import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
+import { autoFormatInput } from '../utils/formatters';
+import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap, Building2, User as UserIcon, Search, Loader2 } from 'lucide-react';
 
 
 interface NewShipmentModalProps {
@@ -48,8 +49,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [advancePercentage, setAdvancePercentage] = useState<number>(70);
   const [vehicleTag, setVehicleTag] = useState('');
   const [filesToAttach, setFilesToAttach] = useState<File[]>([]);
-  const [driverReferences, setDriverReferences] = useState('');
+  const [anttModality, setAnttModality] = useState<AnttModality | ''>('');
+  const [anttOwnerIdentifier, setAnttOwnerIdentifier] = useState('');
+  const [etcTaxRegime, setEtcTaxRegime] = useState<EtcTaxRegime | ''>('');
   const [driverFreightType, setDriverFreightType] = useState<'PJ' | 'PF'>('PJ');
+  const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
+  const [cnpjSearchResult, setCnpjSearchResult] = useState<{ razaoSocial?: string; status?: string; regimeFound?: string } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [activeShipmentsFound, setActiveShipmentsFound] = useState<Shipment[]>([]);
@@ -96,12 +101,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     if (data.trailerPlates[1]) setTrailer2Plate(data.trailerPlates[1].toUpperCase());
                     if (data.trailerPlates[2]) setTrailer3Plate(data.trailerPlates[2].toUpperCase());
                 }
-                
-                let refs = driverReferences;
-                if (data.driverCnh) refs += `\nCNH: ${data.driverCnh}`;
-                if (data.ownerName) refs += `\nProprietário: ${data.ownerName}`;
-                if (data.ownerCpfCnpj) refs += `\nCPF/CNPJ Proprietário: ${data.ownerCpfCnpj}`;
-                setDriverReferences(refs.trim());
             }
         }
         showToast('Digitalização concluída! Por favor, revise os campos preenchidos.', 'success');
@@ -157,8 +156,14 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setAdvancePercentage(lastShipment?.advancePercentage !== undefined ? lastShipment.advancePercentage : 70);
       setVehicleTag(lastShipment?.vehicleTag || '');
       setFilesToAttach([]);
-      setDriverReferences(lastShipment?.driverReferences || '');
-      setDriverFreightType(lastShipment?.driverFreightType || 'PJ');
+      
+      const initialAntt = (lastShipment?.anttModality as AnttModality) || (lastShipment?.driverFreightType === 'PF' ? AnttModality.TAC : (lastShipment?.driverFreightType === 'PJ' ? AnttModality.ETC : ''));
+      setAnttModality(initialAntt || '');
+      setAnttOwnerIdentifier(lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (driverInDb?.cpf || lastShipment?.driverCpf || '') : ''));
+      setCnpjSearchResult(null);
+      setEtcTaxRegime((lastShipment?.etcTaxRegime as EtcTaxRegime) || (initialAntt === AnttModality.ETC ? EtcTaxRegime.SimplesNacional : ''));
+      setDriverFreightType(lastShipment?.driverFreightType || (initialAntt === AnttModality.TAC ? 'PF' : 'PJ'));
+
       setEmbarcadorId(currentUser?.id || '');
       setShowConfirmModal(false);
       setActiveShipmentsFound([]);
@@ -217,8 +222,22 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
                 if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
                 setVehicleTag(lastShipment.vehicleTag || '');
-                if (lastShipment.driverFreightType) {
+                if (lastShipment.anttOwnerIdentifier) {
+                  setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
+                } else if (selectedDriver.cpf) {
+                  setAnttOwnerIdentifier(selectedDriver.cpf);
+                }
+                if (lastShipment.anttModality) {
+                  setAnttModality(lastShipment.anttModality as AnttModality);
+                  setDriverFreightType(lastShipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ');
+                } else if (lastShipment.driverFreightType) {
                   setDriverFreightType(lastShipment.driverFreightType);
+                  setAnttModality(lastShipment.driverFreightType === 'PF' ? AnttModality.TAC : AnttModality.ETC);
+                }
+                if (lastShipment.etcTaxRegime) {
+                  setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
+                } else if (lastShipment.driverFreightType === 'PJ' || lastShipment.anttModality === AnttModality.ETC) {
+                  setEtcTaxRegime(EtcTaxRegime.SimplesNacional);
                 }
             }
             setLastAutofilledDriverId(selectedDriver.id);
@@ -230,6 +249,97 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         setLastAlertedDriverId('');
     }
   }, [driverName, driverCpf, drivers, shipments, lastAlertedDriverId, lastAutofilledDriverId]);
+
+  // Automatic CNPJ Tax Regime Lookup
+  const searchCnpjTaxRegime = async (cnpjInput: string) => {
+    const clean = cnpjInput.replace(/\D/g, '');
+    if (clean.length !== 14) {
+      showToast('Digite os 14 dígitos do CNPJ para realizar a pesquisa.', 'warning');
+      return;
+    }
+    setIsSearchingCnpj(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 9000);
+      let data: any = null;
+
+      try {
+        const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`, {
+          signal: controller.signal
+        });
+        if (resp.ok) {
+          data = await resp.json();
+        }
+      } catch (e) {
+        console.warn('Consulta BrasilAPI falhou, tentando fallback...', e);
+      }
+
+      if (!data) {
+        try {
+          const respFallback = await fetch(`https://minhareceita.org/${clean}`, {
+            signal: controller.signal
+          });
+          if (respFallback.ok) {
+            data = await respFallback.json();
+          }
+        } catch (e) {
+          console.warn('Fallback também falhou:', e);
+        }
+      }
+
+      clearTimeout(timeoutId);
+
+      if (!data) {
+        throw new Error('CNPJ não localizado na base da Receita Federal.');
+      }
+
+      let detectedRegime: EtcTaxRegime = EtcTaxRegime.SimplesNacional;
+      let desc = '';
+
+      if (data.opcao_pelo_mei === true) {
+        detectedRegime = EtcTaxRegime.MEI;
+        desc = 'MEI (Microempreendedor Individual)';
+      } else if (data.opcao_pelo_simples === true) {
+        detectedRegime = EtcTaxRegime.SimplesNacional;
+        desc = 'Simples Nacional';
+      } else {
+        detectedRegime = EtcTaxRegime.LucroPresumido;
+        desc = 'Regime Normal (Lucro Presumido / Real)';
+      }
+
+      setAnttModality(AnttModality.ETC);
+      setEtcTaxRegime(detectedRegime);
+      setDriverFreightType('PJ');
+
+      const companyName = data.razao_social || data.nome_fantasia || '';
+      setCnpjSearchResult({
+        razaoSocial: companyName,
+        status: data.descricao_situacao_cadastral || data.situacao_cadastral || 'Ativa',
+        regimeFound: desc
+      });
+
+      showToast(`CNPJ Identificado: ${companyName} (${desc})`, 'success');
+    } catch (err: any) {
+      console.warn('Erro na busca do CNPJ:', err);
+      showToast(`Aviso: ${err.message || 'Não foi possível consultar os dados automaticamente'}. Você pode selecionar o regime manualmente.`, 'warning');
+    } finally {
+      setIsSearchingCnpj(false);
+    }
+  };
+
+  const handleAnttOwnerIdentifierChange = (value: string) => {
+    if (anttModality === AnttModality.TAC) {
+      const formatted = autoFormatInput('cpf', value);
+      setAnttOwnerIdentifier(formatted);
+    } else {
+      const formatted = autoFormatInput('cnpj', value);
+      setAnttOwnerIdentifier(formatted);
+      const clean = formatted.replace(/\D/g, '');
+      if (clean.length === 14 && !isSearchingCnpj) {
+        searchCnpjTaxRegime(formatted);
+      }
+    }
+  };
   
   useEffect(() => {
     const cleanPlate = horsePlate.trim().toLowerCase();
@@ -493,6 +603,37 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         return;
     }
 
+    if (!anttModality) {
+        showToast('A Modalidade da ANTT (TAC ou ETC) é obrigatória para solicitar o embarque.', 'warning');
+        return;
+    }
+
+    if (!anttOwnerIdentifier.trim()) {
+        showToast(`O ${anttModality === AnttModality.TAC ? 'CPF' : 'CNPJ'} do Titular da ANTT é obrigatório.`, 'warning');
+        return;
+    }
+
+    const cleanAnttId = anttOwnerIdentifier.replace(/\D/g, '');
+    if (anttModality === AnttModality.TAC && cleanAnttId.length !== 11) {
+        showToast('CPF do Titular da ANTT inválido (deve conter 11 dígitos).', 'warning');
+        return;
+    }
+
+    if (anttModality === AnttModality.ETC && cleanAnttId.length !== 14) {
+        showToast('CNPJ do Titular da ANTT inválido (deve conter 14 dígitos).', 'warning');
+        return;
+    }
+
+    if (anttModality === AnttModality.ETC && !etcTaxRegime) {
+        showToast('Para a modalidade ETC (Pessoa Jurídica), selecione o Regime Tributário (MEI, Simples Nacional, Lucro Presumido ou Lucro Real).', 'warning');
+        return;
+    }
+
+    if (anttModality === AnttModality.TAC && isPfDisabled) {
+        showToast('O frete PF (Pessoa Física / TAC) foi desabilitado nesta carga. Selecione a modalidade ETC (Pessoa Jurídica).', 'warning');
+        return;
+    }
+
     const calc = calculateAdvanceAndBalance({
       driverFreightValue: calculatedFreight,
       driverFreightRate: currentFreightRate,
@@ -514,7 +655,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       shipmentTonnage,
       driverFreightValue: calculatedFreight,
       driverFreightRateSnapshot: currentFreightRate,
-      driverFreightType: driverFreightType,
+      driverFreightType: anttModality === AnttModality.TAC ? 'PF' : 'PJ',
+      anttOwnerIdentifier: anttOwnerIdentifier.trim(),
+      anttModality: anttModality,
+      etcTaxRegime: anttModality === AnttModality.ETC ? (etcTaxRegime || undefined) : undefined,
       embarcadorId: embarcadorId,
       scheduledDate,
       scheduledTime,
@@ -529,7 +673,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       balanceToReceiveValue: calc.balanceToReceiveValue,
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
-      driverReferences: driverReferences || undefined,
     };
 
     // Check for active shipments for this driver
@@ -917,21 +1060,24 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                       />
                     </div>
 
-                    {/* Dashed Box for TIPO DE EMBARQUE */}
+                    {/* Dashed Box for TIPO DE EMBARQUE (Somente Leitura / Definido pela ANTT) */}
                     <div className="p-4 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl bg-gray-50/50 dark:bg-gray-900/30 space-y-3">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
-                          TIPO DE EMBARQUE <span className="text-red-500">*</span>
-                        </label>
+                        <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                              TIPO DE EMBARQUE <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-gray-200/80 dark:bg-gray-700 text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                              <span>🔒</span> Definido pela ANTT
+                            </span>
+                        </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            {/* PJ Card */}
-                            <button
-                              type="button"
-                              onClick={() => setDriverFreightType('PJ')}
-                              className={`p-4 rounded-2xl border-2 text-center transition-all duration-200 flex flex-col items-center justify-center ${
-                                driverFreightType === 'PJ'
+                            {/* PJ Card (Read-only display) */}
+                            <div
+                              className={`p-4 rounded-2xl border-2 text-center transition-all duration-200 flex flex-col items-center justify-center relative select-none ${
+                                driverFreightType === 'PJ' && anttModality === AnttModality.ETC
                                   ? 'border-emerald-600 bg-white dark:bg-gray-800 shadow-md ring-2 ring-emerald-500/20'
-                                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300'
+                                  : 'border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-800/40 opacity-40'
                               }`}
                             >
                                 <span className="text-xl font-black text-gray-900 dark:text-white">PJ</span>
@@ -939,21 +1085,21 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                 <span className="text-base font-black text-gray-900 dark:text-white mt-2">
                                   {formatCurrency(ratePj)}{hasPjToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">/ton</span>
                                 </span>
-                            </button>
+                                {anttModality === AnttModality.ETC && (
+                                  <span className="mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                                    ETC {etcTaxRegime ? `• ${etcTaxRegime}` : ''}
+                                  </span>
+                                )}
+                            </div>
 
-                            {/* PF Card */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!isPfDisabled) setDriverFreightType('PF');
-                              }}
-                              disabled={isPfDisabled}
-                              className={`p-4 rounded-2xl border-2 text-center transition-all duration-200 flex flex-col items-center justify-center ${
+                            {/* PF Card (Read-only display) */}
+                            <div
+                              className={`p-4 rounded-2xl border-2 text-center transition-all duration-200 flex flex-col items-center justify-center relative select-none ${
                                 isPfDisabled
-                                  ? 'border-gray-200 bg-gray-100 dark:bg-gray-900/50 opacity-50 cursor-not-allowed'
-                                  : driverFreightType === 'PF'
+                                  ? 'border-gray-200 bg-gray-100 dark:bg-gray-900/50 opacity-30 cursor-not-allowed'
+                                  : driverFreightType === 'PF' && anttModality === AnttModality.TAC
                                   ? 'border-orange-500 bg-white dark:bg-gray-800 shadow-md ring-2 ring-orange-500/20'
-                                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300'
+                                  : 'border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-800/40 opacity-40'
                               }`}
                             >
                                 <span className="text-xl font-black text-gray-900 dark:text-white">PF</span>
@@ -965,16 +1111,27 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                     <>{formatCurrency(ratePf)}{hasPfToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">/ton</span></>
                                   )}
                                 </span>
-                            </button>
+                                {anttModality === AnttModality.TAC && (
+                                  <span className="mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/60 dark:text-orange-300">
+                                    TAC • Autônomo
+                                  </span>
+                                )}
+                            </div>
                         </div>
 
-                        <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 text-center flex items-center justify-center gap-1 pt-1">
-                          ⚠️ Selecione o tipo antes de solicitar
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 text-center flex items-center justify-center gap-1 pt-0.5">
+                          {anttModality === AnttModality.TAC ? (
+                            <span className="text-orange-600 dark:text-orange-400">👤 Frete PF selecionado automaticamente (TAC)</span>
+                          ) : anttModality === AnttModality.ETC ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">🏢 Frete PJ selecionado automaticamente (ETC)</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400">⚠️ Selecione a Modalidade ANTT ao lado</span>
+                          )}
                         </p>
                     </div>
                 </div>
 
-                {/* Right Column: Tag & Referências */}
+                {/* Right Column: Tag & Modalidade ANTT */}
                 <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Tag do Veículo</label>
@@ -988,16 +1145,205 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                         />
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Referências do Motorista</label>
-                        <textarea
-                          value={driverReferences}
-                          onChange={(e) => setDriverReferences(e.target.value)}
-                          placeholder="Indicações, referências ou observações sobre o motorista..."
-                          className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y text-sm"
-                          rows={4}
-                          required
-                        />
+                    {/* MODALIDADE DA ANTT */}
+                    <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 space-y-3.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <ShieldCheck className="w-4 h-4 text-primary" />
+                              <span>MODALIDADE DA ANTT <span className="text-red-500">*</span></span>
+                            </label>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
+                              Obrigatório
+                            </span>
+                        </div>
+
+                        {/* TAC vs ETC selection buttons */}
+                        <div className="grid grid-cols-2 gap-3">
+                            {/* TAC Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAnttModality(AnttModality.TAC);
+                                setEtcTaxRegime('');
+                                setCnpjSearchResult(null);
+                                if (!anttOwnerIdentifier || anttOwnerIdentifier.replace(/\D/g, '').length > 11) {
+                                  setAnttOwnerIdentifier(driverCpf || '');
+                                }
+                                if (!isPfDisabled) {
+                                  setDriverFreightType('PF');
+                                } else {
+                                  showToast('Atenção: Frete PF está desabilitado nesta carga.', 'warning');
+                                }
+                              }}
+                              className={`p-3.5 rounded-xl border-2 text-left transition-all duration-200 flex flex-col justify-between ${
+                                anttModality === AnttModality.TAC
+                                  ? 'border-orange-500 bg-orange-50/60 dark:bg-orange-950/40 text-orange-950 dark:text-orange-100 ring-2 ring-orange-500/20 shadow-sm'
+                                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                              }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <UserIcon className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                                    <span className="font-extrabold text-base">TAC</span>
+                                  </div>
+                                  <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-orange-200/80 dark:bg-orange-900/70 text-orange-800 dark:text-orange-200">
+                                    PF
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-tight font-medium">
+                                  Transportador Autônomo de Cargas (Pessoa Física)
+                                </p>
+                            </button>
+
+                            {/* ETC Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAnttModality(AnttModality.ETC);
+                                setDriverFreightType('PJ');
+                                if (anttOwnerIdentifier.replace(/\D/g, '').length === 11) {
+                                  setAnttOwnerIdentifier('');
+                                }
+                                if (!etcTaxRegime) {
+                                  setEtcTaxRegime(EtcTaxRegime.SimplesNacional);
+                                }
+                              }}
+                              className={`p-3.5 rounded-xl border-2 text-left transition-all duration-200 flex flex-col justify-between ${
+                                anttModality === AnttModality.ETC
+                                  ? 'border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 ring-2 ring-emerald-500/20 shadow-sm'
+                                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                              }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <Building2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    <span className="font-extrabold text-base">ETC</span>
+                                  </div>
+                                  <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-200/80 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200">
+                                    PJ
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 leading-tight font-medium">
+                                  Empresa de Transporte Rodoviário (Pessoa Jurídica)
+                                </p>
+                            </button>
+                        </div>
+
+                        {/* When TAC is selected: CPF do Titular */}
+                        {anttModality === AnttModality.TAC && (
+                            <div className="pt-2 space-y-1.5 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
+                                <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                    CPF do Titular da ANTT (TAC) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={anttOwnerIdentifier}
+                                    onChange={(e) => handleAnttOwnerIdentifierChange(e.target.value)}
+                                    placeholder="000.000.000-00"
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
+                                    required
+                                />
+                                <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                    CPF do transportador autônomo titular do RNTRC
+                                </p>
+                            </div>
+                        )}
+
+                        {/* When ETC is selected: CNPJ with Lookup and Regime Tributário */}
+                        {anttModality === AnttModality.ETC && (
+                            <div className="pt-2 space-y-3 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            CNPJ da Transportadora (ETC) <span className="text-red-500">*</span>
+                                        </label>
+                                        {isSearchingCnpj && (
+                                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                <Loader2 className="w-3 h-3 animate-spin" /> Buscando na Receita...
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={anttOwnerIdentifier}
+                                            onChange={(e) => handleAnttOwnerIdentifierChange(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    searchCnpjTaxRegime(anttOwnerIdentifier);
+                                                }
+                                            }}
+                                            placeholder="00.000.000/0000-00"
+                                            className="p-2.5 flex-1 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-emerald-600"
+                                            required
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => searchCnpjTaxRegime(anttOwnerIdentifier)}
+                                            disabled={isSearchingCnpj || anttOwnerIdentifier.replace(/\D/g, '').length !== 14}
+                                            className="px-3 py-2.5 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                                            title="Consultar CNPJ na Receita Federal para identificar o regime tributário"
+                                        >
+                                            {isSearchingCnpj ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                                            <span>Consultar</span>
+                                        </button>
+                                    </div>
+
+                                    {cnpjSearchResult && (
+                                        <div className="p-2.5 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 rounded-xl text-xs space-y-0.5 animate-fade-in">
+                                            <p className="font-bold text-emerald-950 dark:text-emerald-100 truncate">
+                                                🏢 {cnpjSearchResult.razaoSocial}
+                                            </p>
+                                            <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                                Regime Identificado: <strong>{cnpjSearchResult.regimeFound}</strong>
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Regime Tributário (ETC) */}
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                        Regime Tributário (ETC) <span className="text-red-500">*</span>
+                                      </label>
+                                      {etcTaxRegime && (
+                                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                                          ✓ {etcTaxRegime}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {[
+                                          { value: EtcTaxRegime.MEI, label: 'MEI' },
+                                          { value: EtcTaxRegime.SimplesNacional, label: 'Simples Nacional' },
+                                          { value: EtcTaxRegime.LucroPresumido, label: 'Lucro Presumido' },
+                                          { value: EtcTaxRegime.LucroReal, label: 'Lucro Real' },
+                                        ].map(item => (
+                                          <button
+                                            key={item.value}
+                                            type="button"
+                                            onClick={() => {
+                                              setAnttModality(AnttModality.ETC);
+                                              setEtcTaxRegime(item.value);
+                                              setDriverFreightType('PJ');
+                                            }}
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold border text-center transition-all flex flex-col items-center justify-center ${
+                                              etcTaxRegime === item.value
+                                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-500/30'
+                                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                            }`}
+                                          >
+                                            <span>{item.label}</span>
+                                          </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

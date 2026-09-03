@@ -495,6 +495,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           clients={clients}
           users={users}
           riskQueryOptions={riskQueryOptions}
+          onUpdateShipmentData={onUpdateShipmentData}
         />
       )}
 

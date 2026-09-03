@@ -1101,6 +1101,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1176,6 +1177,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1251,6 +1253,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1326,6 +1329,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             clients={clients}
             users={users}
             riskQueryOptions={riskQueryOptions}
+            onUpdateShipmentData={onUpdateShipmentData}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1931,6 +1935,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           clients={clients}
           users={users}
           riskQueryOptions={riskQueryOptions}
+          onUpdateShipmentData={onUpdateShipmentData}
         />
       )}
 

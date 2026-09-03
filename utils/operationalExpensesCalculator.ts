@@ -4,20 +4,22 @@ export interface OperationalExpensesConfig {
   insuranceAcidenteRate: number; // 0.0125% -> 0.000125
   insuranceRouboRate: number;    // 0.0125% -> 0.000125
   insuranceRcvPerLoad: number;   // R$ 5,00 por carga
-  patronalPfRate: number;        // 3% sobre frete bruto se PF (CPRB) -> 0.03
+  patronalPfRate: number;        // 4% sobre (Frete Motorista - Pedágio) se PF (CPRB) -> 0.04
   ciotRate: number;              // 0.20% sobre frete do motorista -> 0.0020
   custoFixoRate: number;         // 0.35% sobre frete bruto -> 0.0035
   comissaoComercialRate: number; // 0.20% sobre frete bruto -> 0.0020
+  simplesNacionalFederalRate: number; // 3.40% sobre Frete Empresa Bruto (Anexo III) -> 0.0340
 }
 
 export const DEFAULT_EXPENSES_CONFIG: OperationalExpensesConfig = {
   insuranceAcidenteRate: 0.000125, // 0.0125%
   insuranceRouboRate: 0.000125,    // 0.0125%
   insuranceRcvPerLoad: 5.00,       // R$ 5,00 por carga
-  patronalPfRate: 0.03,            // 3% da CPRB sobre Frete Bruto se PF
+  patronalPfRate: 0.04,            // 4% de INSS Patronal / CPRB sobre (Frete Motorista - Pedágio) se PF
   ciotRate: 0.0020,                // 0,20% sobre o Frete Motorista
   custoFixoRate: 0.0035,           // 0,35% sobre Frete Bruto
   comissaoComercialRate: 0.0020,   // 0,20% sobre Frete Bruto
+  simplesNacionalFederalRate: 0.0340, // 3,40% sobre Frete Empresa Bruto (Anexo III)
 };
 
 export interface CalculatedOperationalExpenses {
@@ -42,6 +44,7 @@ export interface CalculatedOperationalExpenses {
   comissaoComercial: number;
   salespersonCommission: number;
   riskCost: number;
+  generatedCredit: number;
   expenseItems: OperationalExpenseItem[];
   totalExpenses: number; // Total deduções sem frete motorista
   totalDeducoesComFrete: number; // Total deduções com frete motorista
@@ -115,26 +118,52 @@ export function calculateShipmentExpenses(
     ? Number(((freightDifference / freteLiquidoIcms) * 100).toFixed(2))
     : 0;
 
-  // 6. Imposto Federal (PIS/COFINS)
+  // 6. Imposto Federal (Simples Nacional 3,40% s/ Frete Bruto | PF: 3,655% s/ Líquido | PJ Normal: 9,25% s/ Spread)
+  const isSimplesNacional = Boolean(
+    shipment.etcTaxRegime === 'Simples Nacional' ||
+    shipment.etcTaxRegime === 'MEI' ||
+    (shipment as any)?.isSimplesNacional ||
+    (cargo as any)?.isSimplesNacional ||
+    (shipment.documents as any)?.etc_tax_regime === 'Simples Nacional' ||
+    (shipment.documents as any)?.etc_tax_regime === 'MEI' ||
+    (shipment.documents as any)?.crt === '1' ||
+    (shipment.documents as any)?.crt === '2'
+  );
+
+  const simplesFederalRate = config.simplesNacionalFederalRate ?? 0.0340;
+  const impostoFederalSimples = Number((companyFreight * simplesFederalRate).toFixed(2));
   const impostoFederalPf = Number((freteLiquidoIcms * 0.03655).toFixed(2));
   const impostoFederalPjSpread = Number((Math.max(0, freightDifference) * 0.0925).toFixed(2));
-  const impostoFederalMercadoInterno = isShipmentPf ? impostoFederalPf : impostoFederalPjSpread;
+
+  let impostoFederalMercadoInterno = 0;
+  if (isSimplesNacional) {
+    impostoFederalMercadoInterno = impostoFederalSimples;
+  } else if (isShipmentPf) {
+    impostoFederalMercadoInterno = impostoFederalPf;
+  } else {
+    impostoFederalMercadoInterno = impostoFederalPjSpread;
+  }
+
   const impostoFederal = isExportCargo
     ? 0
     : (shipment.realProfitData?.federalTax !== undefined && shipment.realProfitData.federalTax > 0
         ? shipment.realProfitData.federalTax
         : impostoFederalMercadoInterno);
 
-  // 7. INSS Patronal / CPRB (3% sobre frete bruto se PF, Isento se PJ)
-  const inssPatronal = isShipmentPf && companyFreight > 0 
-    ? Number((companyFreight * config.patronalPfRate).toFixed(2)) 
+  // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
+  const toll = shipment.tollValue || shipment.realProfitData?.toll || 0;
+  const baseInssPatronal = Math.max(0, driverFreight - toll);
+  const inssPatronal = isShipmentPf && baseInssPatronal > 0 
+    ? Number((baseInssPatronal * config.patronalPfRate).toFixed(2)) 
     : 0;
 
-  // 8. Valor da NF e Base de Seguro (+18%)
+  // 8. Valor da NF e Base de Seguro (+18% somente em carga de exportação)
   const invoiceValue = shipment.nfeValue || 
                        shipment.realProfitData?.invoiceValue || 
                        0;
-  const insuranceBaseValue = invoiceValue > 0 ? Number((invoiceValue * 1.18).toFixed(2)) : 0;
+  const insuranceBaseValue = invoiceValue > 0 
+    ? Number((invoiceValue * (isExportCargo ? 1.18 : 1.00)).toFixed(2)) 
+    : 0;
 
   // 9. Seguros Averbados
   const insuranceAcidente = insuranceBaseValue > 0 
@@ -176,6 +205,15 @@ export function calculateShipmentExpenses(
         ? (RISK_QUERY_COST_MAP[shipment.riskQueryType] ?? RISK_QUERY_COST_MAP[shipment.riskQueryType.toLowerCase().trim()] ?? 0) 
         : 0);
 
+  // 14.1 Crédito Gerado (Exportação PJ: 6,93519% s/ Frete Motorista Líquido de Pedágio | PF: 6,9375%)
+  // REGRA EXATA: Base = Frete Motorista - Pedágio (ex: R$ 6.636,91 - R$ 468,63 = R$ 6.168,28) * 0,0693519 -> 6.168,28 * 0,0693519 = 427,79
+  const baseDriverFreightNoToll = Math.max(0, driverFreight - toll);
+  const autoCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
+  const calculatedCredit = (isExportCargo && baseDriverFreightNoToll > 0)
+    ? Number((baseDriverFreightNoToll * (isShipmentPf ? 0.069375 : 0.0693519)).toFixed(2))
+    : 0;
+  const generatedCredit = (autoCredit !== undefined && autoCredit > 0) ? autoCredit : calculatedCredit;
+
   // 15. Montagem discriminada dos itens de despesa operacionais
   const expenseItems: OperationalExpenseItem[] = [];
 
@@ -188,8 +226,14 @@ export function calculateShipmentExpenses(
   }
 
   if (impostoFederal > 0) {
+    const federalLabel = isSimplesNacional
+      ? `Imposto Federal (${(simplesFederalRate * 100).toFixed(2).replace('.', ',')}% Simples Nacional Anexo III)`
+      : isShipmentPf
+        ? 'Imposto Federal (3,655% s/ Líq.)'
+        : 'Imposto Federal (9,25% s/ Spread)';
+
     expenseItems.push({
-      name: `Imposto Federal (${isShipmentPf ? '3,655% s/ Líq.' : '9,25% s/ Spread'})`,
+      name: federalLabel,
       value: impostoFederal,
       type: 'negative'
     });
@@ -197,7 +241,7 @@ export function calculateShipmentExpenses(
 
   if (inssPatronal > 0) {
     expenseItems.push({
-      name: `INSS Patronal / CPRB (3% s/ Bruto PF)`,
+      name: `INSS Patronal / CPRB (4% s/ Frete Mot. - Pedágio)`,
       value: inssPatronal,
       type: 'negative'
     });
@@ -205,7 +249,7 @@ export function calculateShipmentExpenses(
 
   if (insuranceAcidente > 0) {
     expenseItems.push({
-      name: `Seguro Averbado - Acidente (0,0125% s/ NF+18%)`,
+      name: `Seguro Averbado - Acidente (0,0125% s/ ${isExportCargo ? 'NF+18%' : 'NF'})`,
       value: insuranceAcidente,
       type: 'negative'
     });
@@ -213,7 +257,7 @@ export function calculateShipmentExpenses(
 
   if (insuranceRoubo > 0) {
     expenseItems.push({
-      name: `Seguro Averbado - Roubo (0,0125% s/ NF+18%)`,
+      name: `Seguro Averbado - Roubo (0,0125% s/ ${isExportCargo ? 'NF+18%' : 'NF'})`,
       value: insuranceRoubo,
       type: 'negative'
     });
@@ -332,6 +376,7 @@ export function calculateShipmentExpenses(
     comissaoComercial,
     salespersonCommission,
     riskCost,
+    generatedCredit,
     expenseItems,
     totalExpenses,
     totalDeducoesComFrete,

@@ -457,6 +457,8 @@ export interface Shipment {
       userId: string;
   }[];
   anttOwnerIdentifier?: string;
+  anttModality?: AnttModality | string;
+  etcTaxRegime?: EtcTaxRegime | string;
   paymentMethod?: DriverPaymentMethod | string;
   pixKey?: string;
   advancePercentage?: number;
@@ -605,3 +607,15 @@ export interface FreightOffer {
   isExport?: boolean;
 }
 
+export enum AnttModality {
+  TAC = 'TAC',
+  ETC = 'ETC',
+  CTC = 'CTC',
+}
+
+export enum EtcTaxRegime {
+  MEI = 'MEI',
+  SimplesNacional = 'Simples Nacional',
+  LucroPresumido = 'Lucro Presumido',
+  LucroReal = 'Lucro Real',
+}

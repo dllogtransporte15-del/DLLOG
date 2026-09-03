@@ -9,7 +9,8 @@ import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building,
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
-import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
+import { calculateAdvanceAndBalance, calculateTacTaxDeductions } from '../utils/freightCalculation';
+import { calculateFreightBalance } from '../utils/freightBalanceCalculator';
 
 interface AttachmentModalProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ interface AttachmentModalProps {
   clients?: Client[];
   users?: User[];
   riskQueryOptions?: RiskQueryOption[];
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
 }
 
 declare const L: any;
@@ -225,7 +227,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   products = [],
   clients = [],
   users = [],
-  riskQueryOptions: propRiskQueryOptions
+  riskQueryOptions: propRiskQueryOptions,
+  onUpdateShipmentData,
 }) => {
   const riskQueryOptions = React.useMemo<RiskQueryOption[]>(() => {
     if (propRiskQueryOptions && propRiskQueryOptions.length > 0) {
@@ -499,8 +502,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       // Identificação de PF (Autônomo/TAC) vs PJ (Empresa/ETC)
       const isShipmentPf = shipment.driverFreightType === 'PF';
       const isPjDriver = !isShipmentPf;
-      const creditRate = isPjDriver ? 0.0925 : 0.069375; // PJ: 100% (9,25%) | PF: 75% (6,9375%)
-      const creditRateLabel = isPjDriver ? 'PJ (100% - 9,25%)' : 'PF (75% - 6,9375%)';
+      // Regra de Frete PJ Exportação: Alíquota multiplicadora de 6,93519% (0,0693519) sobre o Frete Motorista
+      // Teste: 6.168,28 * 0,0693519 = 427,79
+      const creditRate = isPjDriver ? 0.0693519 : 0.069375;
+      const creditRateLabel = isPjDriver ? 'PJ (6,93519% • ICMS s/ Frete Mot.)' : 'PF (75% • 6,9375%)';
 
       // Exportação
       const isExportCargo = cargo?.isExport !== undefined
@@ -544,9 +549,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ? ((parsedPis || 0) + (parsedCofins || 0))
             : Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2))));
 
-      // Crédito PIS/COFINS gerado apenas em operações de exportação
+      // Crédito Gerado apurado sobre o Frete Motorista Líquido de Pedágio em operações de exportação
+      // Base: (R$ 6.636,91 - R$ 468,63 = R$ 6.168,28) * 0,0693519 -> 6.168,28 * 0,0693519 = 427,79
       const effectiveCredit = isExportCargo
-        ? Number((baseFreteMotoristaLiqIcms * creditRate).toFixed(2))
+        ? Number((baseFreteMotorista * creditRate).toFixed(2))
         : 0;
 
       // Passo 1, 2 & 3: Frete Líquido e Imposto Federal para Mercado Interno
@@ -556,10 +562,28 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       const freteLiquidoIcms = Math.max(0, cteGrossFreight - icmsBruto);
       const diferencaFreteReais = Math.max(0, freteLiquidoIcms - (shipment.realProfitData?.driverFreight || shipment.driverFreightValue || baseFreteMotorista));
 
-      // PF: 3,655% s/ Frete Líquido | PJ: 9,25% s/ Spread Comercial (Diferença de Frete)
+      // Simples Nacional: 3,40% s/ Frete Empresa Bruto | PF: 3,655% s/ Frete Líquido | PJ: 9,25% s/ Spread
+      const isSimplesNacional = Boolean(
+        shipment.etcTaxRegime === 'Simples Nacional' ||
+        shipment.etcTaxRegime === 'MEI' ||
+        (shipment as any)?.isSimplesNacional ||
+        (cargo as any)?.isSimplesNacional ||
+        (shipment.documents as any)?.etc_tax_regime === 'Simples Nacional' ||
+        (shipment.documents as any)?.etc_tax_regime === 'MEI'
+      );
+
+      const impostoFederalSimples = Number((cteGrossFreight * 0.0340).toFixed(2));
       const impostoFederalPf = Number((freteLiquidoIcms * 0.03655).toFixed(2));
       const impostoFederalPjSpread = Number((diferencaFreteReais * 0.0925).toFixed(2));
-      const impostoFederalMercadoInterno = isShipmentPf ? impostoFederalPf : impostoFederalPjSpread;
+
+      let impostoFederalMercadoInterno = 0;
+      if (isSimplesNacional) {
+        impostoFederalMercadoInterno = impostoFederalSimples;
+      } else if (isShipmentPf) {
+        impostoFederalMercadoInterno = impostoFederalPf;
+      } else {
+        impostoFederalMercadoInterno = impostoFederalPjSpread;
+      }
 
       const effectiveFederalTax = isExportCargo
         ? 0
@@ -567,7 +591,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ? parsedFederalTax
             : impostoFederalMercadoInterno);
 
-      showToast(`Impostos Federais sincronizados! Imposto Federal Líquido: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveFederalTax)} ${isExportCargo ? `(Exportação - Crédito ${creditRateLabel}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveCredit)})` : (isShipmentPf ? '(PF: 3,655% s/ Frete Líquido)' : `(PJ: 9,25% s/ Spread ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(diferencaFreteReais)})`)}`, 'success');
+      const federalTaxDesc = isExportCargo
+        ? `(Exportação - Crédito ${creditRateLabel}: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveCredit)})`
+        : isSimplesNacional
+          ? '(Simples Nacional: 3,40% s/ Frete Bruto)'
+          : isShipmentPf
+            ? '(PF: 3,655% s/ Frete Líquido)'
+            : `(PJ: 9,25% s/ Spread ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(diferencaFreteReais)})`;
+
+      showToast(`Impostos Federais sincronizados! Imposto Federal Líquido: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(effectiveFederalTax)} ${federalTaxDesc}`, 'success');
     } catch (err: any) {
       showToast('Erro ao sincronizar impostos federais.', 'error');
     } finally {
@@ -587,6 +619,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
       const advPercent = advancePercentage !== '' && advancePercentage !== undefined ? Number(advancePercentage) : 70;
       const tagVal = Number(tollValue || 0);
+      const isPf = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
 
       const calc = calculateAdvanceAndBalance({
         driverFreightValue: totalFreight,
@@ -594,18 +627,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         tonnage: loadedTonnageValue,
         tollValue: tagVal,
         advancePercentage: advPercent,
+        driverFreightType: isPf ? 'PF' : 'PJ',
       });
 
       // Atualiza Valor Pago na Conta
       if (Math.abs(calc.advanceInAccountValue - Number(advanceValue || 0)) > 0.001) {
         setAdvanceValue(calc.advanceInAccountValue > 0 ? calc.advanceInAccountValue : 0);
       }
-      // Atualiza Saldo Original
+      // Atualiza Saldo
       if (Math.abs(calc.balanceToReceiveValue - Number(balanceToReceiveValue || 0)) > 0.001) {
-        setBalanceToReceiveValue(calc.balanceToReceiveValue > 0 ? calc.balanceToReceiveValue : 0);
+        setBalanceToReceiveValue(calc.balanceToReceiveValue !== undefined ? calc.balanceToReceiveValue : 0);
       }
     }
-  }, [advancePercentage, tollValue, shipment.status, shipment.driverFreightRateSnapshot, shipment.shipmentTonnage, shipment.driverFreightValue, cargo?.driverFreightValuePerTon]);
+  }, [advancePercentage, tollValue, shipment.status, shipment.driverFreightRateSnapshot, shipment.shipmentTonnage, shipment.driverFreightValue, shipment.driverFreightType, shipment.anttModality, cargo?.driverFreightValuePerTon]);
 
   // AUTO-CALCULATION: Valor Liquido de Saldo = Valor de Saldo a Receber - Valor a Descontar
   useEffect(() => {
@@ -1198,6 +1232,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 loadedTonnage={loadedTonnage}
                 riskQueryType={riskQueryType}
                 riskReleaseCode={riskReleaseCode}
+                onUpdateShipmentData={onUpdateShipmentData}
               />
             </div>
           </div>
@@ -1382,85 +1417,144 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 />
 
                 {/* Financial calculation & summary box */}
-                <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
-                  <div className="flex items-center justify-between text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
-                    <span>Detalhamento de Pagamento do Frete</span>
-                    <span className="text-gray-500 dark:text-gray-400 font-medium normal-case">
-                      Frete Total: <strong className="text-gray-900 dark:text-white font-bold">{formatCurrency(totalDriverFreight)}</strong>
-                    </span>
-                  </div>
+                {(() => {
+                  const isPfShipment = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
+                  const tacDeductions = isPfShipment ? calculateTacTaxDeductions(totalDriverFreight) : null;
+                  const originalSaldo = Math.max(0, totalDriverFreight - ((Number(tollValue) || 0) + (Number(advanceValue) || 0)));
+                  const saldoLiquidoPreDescarga = tacDeductions ? Number((originalSaldo - tacDeductions.totalDeductions).toFixed(2)) : originalSaldo;
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                        Valor pago no Tag
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
-                        <input
-                          type="number"
-                          value={tollValue}
-                          onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))}
-                          className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
-                          disabled={!canSave}
-                          placeholder="0,00"
-                        />
+                  return (
+                    <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
+                      <div className="flex items-center justify-between text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                        <div className="flex items-center gap-2">
+                          <span>Detalhamento de Pagamento do Frete</span>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            isPfShipment
+                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-200 dark:border-orange-800'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          }`}>
+                            {isPfShipment ? 'TAC (Pessoa Física)' : 'ETC (Pessoa Jurídica)'}
+                          </span>
+                        </div>
+                        <span className="text-gray-500 dark:text-gray-400 font-medium normal-case">
+                          Frete Total (Bruto): <strong className="text-gray-900 dark:text-white font-bold">{formatCurrency(totalDriverFreight)}</strong>
+                        </span>
                       </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                        % Adiantamento
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          value={advancePercentage}
-                          onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))}
-                          className={`w-full px-3 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
-                          disabled={!canSave}
-                          placeholder="Ex: 80"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">%</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                            Valor pago no Tag
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
+                            <input
+                              type="number"
+                              value={tollValue}
+                              onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))}
+                              className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
+                              disabled={!canSave}
+                              placeholder="0,00"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                            % Adiantamento
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              value={advancePercentage}
+                              onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
+                              disabled={!canSave}
+                              placeholder="Ex: 80"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">%</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                            Valor pago na Conta
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
+                            <input
+                              type="number"
+                              value={advanceValue}
+                              onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))}
+                              className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
+                              disabled={!canSave}
+                              placeholder="0,00"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bg-blue-50/80 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800 flex flex-col justify-between shadow-2xs">
+                          <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-tight">
+                            Total Adiantamento
+                          </span>
+                          <span className="text-base font-black text-blue-900 dark:text-blue-100 mt-1">
+                            {formatCurrency((Number(tollValue) || 0) + (Number(advanceValue) || 0))}
+                          </span>
+                        </div>
+
+                        <div className="bg-emerald-50/80 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between shadow-2xs">
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
+                            {isPfShipment ? 'Saldo Líquido Pré-Desc.' : 'Valor do Saldo'}
+                          </span>
+                          <span className={`text-base font-black mt-1 ${saldoLiquidoPreDescarga < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-900 dark:text-emerald-100'}`}>
+                            {formatCurrency(saldoLiquidoPreDescarga)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                        Valor pago na Conta
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
-                        <input
-                          type="number"
-                          value={advanceValue}
-                          onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))}
-                          className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
-                          disabled={!canSave}
-                          placeholder="0,00"
-                        />
-                      </div>
-                    </div>
+                      {/* Memória de Cálculo TAC (Pessoa Física) */}
+                      {isPfShipment && tacDeductions && (
+                        <div className="pt-2 border-t border-orange-200/80 dark:border-orange-900/50 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
+                              <span>📋</span> Retenções Fiscais e Previdenciárias (Regra TAC / Autônomo)
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-900">
+                              Base Fiscal (20%): <strong>{formatCurrency(tacDeductions.fiscalBase)}</strong>
+                            </span>
+                          </div>
 
-                    <div className="bg-blue-50/80 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800 flex flex-col justify-between shadow-2xs">
-                      <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-tight">
-                        Total Adiantamento
-                      </span>
-                      <span className="text-base font-black text-blue-900 dark:text-blue-100 mt-1">
-                        {formatCurrency((Number(tollValue) || 0) + (Number(advanceValue) || 0))}
-                      </span>
-                    </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">INSS (11%)</span>
+                              <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.inss)}</span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">SEST/SENAT (2,5%)</span>
+                              <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.sestSenat)}</span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">IRRF (Prog.)</span>
+                              <span className="font-bold text-red-600 dark:text-red-400">
+                                {tacDeductions.irrf > 0 ? `- ${formatCurrency(tacDeductions.irrf)}` : 'Isento (R$ 0,00)'}
+                              </span>
+                            </div>
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Total Retenções</span>
+                              <span className="font-black text-red-700 dark:text-red-300">- {formatCurrency(tacDeductions.totalDeductions)}</span>
+                            </div>
+                          </div>
 
-                    <div className="bg-emerald-50/80 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between shadow-2xs">
-                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
-                        Valor do Saldo
-                      </span>
-                      <span className="text-base font-black text-emerald-900 dark:text-emerald-100 mt-1">
-                        {formatCurrency(Math.max(0, totalDriverFreight - ((Number(tollValue) || 0) + (Number(advanceValue) || 0))))}
-                      </span>
+                          <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-600 dark:text-gray-400 bg-white/60 dark:bg-gray-800/60 p-2 rounded-lg border border-gray-200 dark:border-gray-700/60">
+                            <span>Saldo Original Contratual: <strong>{formatCurrency(originalSaldo)}</strong></span>
+                            <span>Retenções: <strong className="text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.totalDeductions)}</strong></span>
+                            <span>Subtotal Líquido Pré-Descarga: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             ) : shipment.status === ShipmentStatus.AguardandoDescarga ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1550,6 +1644,77 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Detalhamento do Ajuste de Quebra (Passos 5 e 6) */}
+                {(() => {
+                  const isPfShipment = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
+                  const pesoSaida = shipment.shipmentTonnage || 0;
+                  const pesoChegada = shipment.unloadedTonnage || 0;
+                  const diferencaKg = (pesoSaida > 0 && pesoChegada > 0 && pesoChegada < pesoSaida) 
+                    ? (pesoSaida - pesoChegada) * 1000 
+                    : 0;
+
+                  if (diferencaKg <= 0) return null;
+
+                  const rateSnapshot = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+                  const freteUnitarioKg = rateSnapshot > 0 ? (rateSnapshot / 1000) : (totalDriverFreight / (pesoSaida * 1000));
+                  const valKgMercadoria = isPfShipment ? 0.1170 : 0.3736;
+                  
+                  const descMercadoria = Number((diferencaKg * valKgMercadoria).toFixed(2));
+                  const descEstornoFrete = Number((diferencaKg * freteUnitarioKg).toFixed(2));
+                  const totalQuebraCalculada = Number((descMercadoria + descEstornoFrete).toFixed(2));
+
+                  return (
+                    <div className="p-3 bg-red-50/60 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between font-bold text-red-900 dark:text-red-200">
+                        <span>⚖️ Memória de Ajuste de Quebra / Falta na Balança de Destino</span>
+                        <span className="font-mono">Quebra: {(diferencaKg / 1000).toFixed(2)} t ({diferencaKg.toFixed(0)} kg)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Desconto 1: Mercadoria Faltante</span>
+                          <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(descMercadoria)}</span>
+                          <span className="text-[10px] text-gray-400 block font-mono">({diferencaKg.toFixed(0)} kg × {formatCurrency(valKgMercadoria)}/kg)</span>
+                        </div>
+                        <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Desconto 2: Estorno Frete Não Transportado</span>
+                          <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(descEstornoFrete)}</span>
+                          <span className="text-[10px] text-gray-400 block font-mono">({diferencaKg.toFixed(0)} kg × {formatCurrency(freteUnitarioKg)}/kg)</span>
+                        </div>
+                        <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30 flex flex-col justify-between">
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Total Desconto Quebra</span>
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-red-700 dark:text-red-300">- {formatCurrency(totalQuebraCalculada)}</span>
+                            {!isBreakageWaived && (
+                              <button
+                                type="button"
+                                onClick={() => setDiscountValue(totalQuebraCalculada)}
+                                className="px-2 py-1 bg-red-100 hover:bg-red-200 dark:bg-red-900/60 dark:hover:bg-red-900 text-red-800 dark:text-red-200 rounded text-[10px] font-bold transition-all"
+                              >
+                                Preencher
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Alerta de Saldo Negativo / Ressarcimento pelo Motorista */}
+                {(Number(balanceToReceiveValue || 0) - Number(isBreakageWaived ? 0 : (discountValue || 0))) < 0 && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-700 rounded-xl flex items-center gap-3">
+                    <span className="text-xl">⚠️</span>
+                    <div>
+                      <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                        Saldo Final Devedor: Valor a ser ressarcido pelo motorista à contratante
+                      </p>
+                      <p className="text-sm font-black text-red-600 dark:text-red-400">
+                        {formatCurrency(Math.abs(Number(balanceToReceiveValue || 0) - Number(isBreakageWaived ? 0 : (discountValue || 0))))} (A Ressarcir)
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Alerta / Ação de Quebra */}
                 {shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001 && (

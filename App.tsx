@@ -1255,6 +1255,9 @@ const App: React.FC = () => {
       createdById: currentUser.id,
       driverReferences: data.driverReferences,
       ownerContact: data.ownerContact,
+      anttOwnerIdentifier: data.anttOwnerIdentifier,
+      anttModality: data.anttModality,
+      etcTaxRegime: data.etcTaxRegime,
       statusHistory: [{
         status: initialStatus,
         timestamp: new Date().toISOString(),
@@ -1944,7 +1947,7 @@ const App: React.FC = () => {
       }
     });
 
-    if (changes.length === 0) return;
+    if (changes.length === 0 && Object.keys(data).length === 0) return;
 
     let updatedDriverFreight = data.driverFreightValue !== undefined ? data.driverFreightValue : shipmentToUpdate.driverFreightValue;
     let updatedCargo: Cargo | undefined;
@@ -2011,7 +2014,9 @@ const App: React.FC = () => {
       documents: updatedDocs,
       driverFreightRateSnapshot: rateToUse,
       driverFreightValue: updatedDriverFreight,
-      history: [...shipmentToUpdate.history, createHistoryLog(`Dados do embarque corrigidos: ${changes.join(' ')}`)] 
+      history: changes.length > 0 
+        ? [...shipmentToUpdate.history, createHistoryLog(`Dados do embarque corrigidos: ${changes.join(' ')}`)]
+        : shipmentToUpdate.history
     };
 
     setShipments((prev: Shipment[]) => prev.map(s => s.id === shipmentId ? updatedShipment : s));

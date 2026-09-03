@@ -357,6 +357,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           clients={clients}
           users={users}
           riskQueryOptions={riskQueryOptions}
+          onUpdateShipmentData={onUpdateShipmentData}
         />
       )}
 
