@@ -895,8 +895,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         route: route ? route : undefined,
         grStatus: isRiskModal ? grStatus : undefined,
         riskReleaseCode: (isRiskModal && grStatus === 'aprovado') ? riskReleaseCode : undefined,
-        riskQueryType: (isRiskModal && grStatus === 'aprovado') ? riskQueryType : undefined,
-        riskQueryCost: (isRiskModal && grStatus === 'aprovado') ? calculatedRiskCost : undefined,
+        riskQueryType: isRiskModal ? (riskQueryType || undefined) : undefined,
+        riskQueryCost: isRiskModal ? (calculatedRiskCost !== undefined ? calculatedRiskCost : (riskQueryType ? 6.50 : undefined)) : undefined,
       });
     } catch (err: any) {
       console.error('Error in handleSave:', err);
@@ -1387,24 +1387,54 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       </div>
                     )}
                   </>
-                ) : grStatus === 'reprovado' ? (
-                  <div className="p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 space-y-1">
-                    <div className="font-bold flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
-                      ⚠️ Ação ao clicar em "Salvar e Avançar":
-                    </div>
-                    <p className="text-xs">
-                      Ao salvar com a opção <strong>Reprovado no GR</strong>, este embarque será automaticamente <strong>cancelado</strong> no sistema com o motivo <em>"Reprovado no GR"</em>.
-                    </p>
-                  </div>
                 ) : (
-                  <div className="p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-900 dark:text-red-200 space-y-1">
-                    <div className="font-bold flex items-center gap-2 text-sm text-red-800 dark:text-red-300">
-                      ⛔ Ação ao clicar em "Salvar e Avançar":
+                  <>
+                    <div className={grStatus === 'reprovado' ? "p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200 space-y-1" : "p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-900 dark:text-red-200 space-y-1"}>
+                      <div className="font-bold flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+                        {grStatus === 'reprovado' ? '⚠️ Ação ao clicar em "Salvar e Avançar":' : '⛔ Ação ao clicar em "Salvar e Avançar":'}
+                      </div>
+                      <p className="text-xs">
+                        {grStatus === 'reprovado' ? (
+                          <>Ao salvar com a opção <strong>Reprovado no GR</strong>, este embarque será automaticamente <strong>cancelado</strong> no sistema com o motivo <em>"Reprovado no GR"</em>.</>
+                        ) : (
+                          <>Ao salvar com a opção <strong>Reprovado no GR e Restrito</strong>, este embarque será <strong>cancelado</strong> e o motorista <strong>{shipment.driverName}</strong> terá seu cadastro alterado para o status <strong>RESTRITO</strong> (impedindo novos agendamentos).</>
+                        )}
+                      </p>
                     </div>
-                    <p className="text-xs">
-                      Ao salvar com a opção <strong>Reprovado no GR e Restrito</strong>, este embarque será <strong>cancelado</strong> e o motorista <strong>{shipment.driverName}</strong> terá seu cadastro alterado para o status <strong>RESTRITO</strong> (impedindo novos agendamentos).
-                    </p>
-                  </div>
+
+                    <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                        Modalidade de Consulta Realizada (Tarifada na GR) <span className="text-red-500">*</span>
+                      </label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                        Selecione a consulta que foi executada na seguradora/gerenciadora para correta contabilização do custo de desperdício.
+                      </p>
+                      <select
+                        value={riskQueryType}
+                        onChange={(e) => setRiskQueryType(e.target.value)}
+                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 font-medium"
+                      >
+                        <option value="">Selecione a modalidade tarifada...</option>
+                        {riskQueryOptions
+                          .filter(opt => opt.active || opt.name === riskQueryType)
+                          .sort((a, b) => (a.orderIndex ?? 999) - (b.orderIndex ?? 999))
+                          .map((opt, idx) => (
+                            <option key={opt.id || idx} value={opt.name}>
+                              {(opt.orderIndex ?? (idx + 1))} - {opt.name} (Valor: R$ {opt.cost.toFixed(2).replace('.', ',')})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {riskQueryType && (
+                      <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center justify-between">
+                        <span className="text-xs font-bold text-red-800 dark:text-red-300 uppercase tracking-wide">Custo de Desperdício (GR):</span>
+                        <span className="text-sm font-black text-red-950 dark:text-red-100 bg-white dark:bg-red-900 px-3 py-1 rounded-lg border border-red-200 dark:border-red-700 shadow-sm">
+                          R$ {(riskQueryOptions.find(o => o.name === riskQueryType || o.name.toLowerCase().trim() === riskQueryType?.toLowerCase().trim())?.cost ?? (RISK_QUERY_COST_MAP[riskQueryType] ?? RISK_QUERY_COST_MAP[riskQueryType.toLowerCase().trim()] ?? 0)).toFixed(2).replace('.', ',')}
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : shipment.status === ShipmentStatus.AguardandoAdiantamento ? (

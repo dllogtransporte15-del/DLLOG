@@ -142,7 +142,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       const path = await uploadShipmentAttachment(shipmentId, 'Ordem de Carregamento TMS', file);
       const publicUrl = getShipmentAttachmentUrl(path);
 
-      const currentDocs = targetShipmentForTmsUpload.documents || {};
+      const latestShipment = shipments.find(s => s.id === shipmentId) || targetShipmentForTmsUpload;
+      const currentDocs = latestShipment.documents || {};
       const updatedDocuments = {
         ...currentDocs,
         'Ordem de Carregamento TMS': [publicUrl]
@@ -155,10 +156,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
         description: `Ordem de carregamento TMS anexada: ${file.name}`
       };
 
-      const updatedHistory = [...(targetShipmentForTmsUpload.history || []), newLog];
+      const updatedHistory = [...(latestShipment.history || []), newLog];
 
       const updatedShipment: Shipment = {
-        ...targetShipmentForTmsUpload,
+        ...latestShipment,
         documents: updatedDocuments,
         history: updatedHistory
       };

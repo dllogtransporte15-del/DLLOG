@@ -176,6 +176,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
   const driverMap = useMemo(() => new Map(drivers.map(d => [d.cpf ? d.cpf.replace(/\D/g, '') : d.name.toLowerCase(), d])), [drivers]);
   const vehicleMap = useMemo(() => new Map(vehicles.map(v => [v.plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase(), v])), [vehicles]);
+  const productMap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
   const costMapFromOptions = useMemo(() => {
     const map = new Map<string, number>();
     riskQueryOptions.forEach(o => map.set(o.name, o.cost));
@@ -189,7 +190,28 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         const isCurrentAgSeguradora = s.status === ShipmentStatus.AguardandoSeguradora;
         const hasRiskInfo = !!s.riskQueryType || !!s.riskReleaseCode || (s.riskQueryCost !== undefined && s.riskQueryCost > 0);
         const hasPassedAgSeguradora = s.statusHistory && s.statusHistory.some(h => h.status === ShipmentStatus.AguardandoSeguradora);
-        return isCurrentAgSeguradora || hasRiskInfo || hasPassedAgSeguradora;
+        
+        const reasonLower = (s.cancellationReason || '').toLowerCase();
+        const isCancelledForRisk = s.status === ShipmentStatus.Cancelado && (
+          reasonLower.includes('reprov') ||
+          reasonLower.includes('seguradora') ||
+          reasonLower.includes('risco') ||
+          reasonLower.includes('gr') ||
+          reasonLower.includes('buonny') ||
+          reasonLower.includes('opentech') ||
+          reasonLower.includes('pamcary') ||
+          reasonLower.includes('restrito') ||
+          reasonLower.includes('bloqueado') ||
+          reasonLower.includes('consulta')
+        );
+
+        // Also check if cargo product requires risk management (or default true)
+        const cargo = cargoMap.get(s.cargoId);
+        const product = cargo?.productId ? productMap.get(cargo.productId) : undefined;
+        const requiresRisk = product ? product.requiresRiskManagement !== false : true;
+        const isCancelledFromGRCargo = s.status === ShipmentStatus.Cancelado && requiresRisk;
+
+        return isCurrentAgSeguradora || hasRiskInfo || hasPassedAgSeguradora || isCancelledForRisk || isCancelledFromGRCargo;
       })
       .map(s => {
         const cargo = cargoMap.get(s.cargoId);
@@ -202,7 +224,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         const vehicle = vehicleMap.get(cleanPlate);
 
         // Query type and cost
-        let queryType = s.riskQueryType || (s.status === ShipmentStatus.AguardandoSeguradora ? 'Pendente de Definição' : 'Consulta');
+        let queryType = s.riskQueryType || (s.status === ShipmentStatus.AguardandoSeguradora ? 'Pendente de Definição' : 'Cadastro Geral + Biometria');
         let queryCost = 0;
         if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
           queryCost = Number(s.riskQueryCost);
@@ -217,7 +239,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         } else if (s.status === ShipmentStatus.AguardandoSeguradora) {
           queryCost = 0;
         } else {
-          queryCost = 6.50;
+          queryCost = costMapFromOptions.get(queryType) ?? 31.50;
         }
 
         // Release status
@@ -225,8 +247,22 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         let releaseStatus: RiskReleaseStatus = 'Pendente';
         if (s.status === ShipmentStatus.Cancelado) {
           const reasonLower = (s.cancellationReason || '').toLowerCase();
-          const isReproved = reasonLower.includes('reprov') || reasonLower.includes('seguradora') || reasonLower.includes('risco') || !releaseCode;
-          releaseStatus = isReproved ? 'Reprovado' : 'Aprovado';
+          const isExplicitlyReproved = reasonLower.includes('reprov') || 
+                                        reasonLower.includes('seguradora') || 
+                                        reasonLower.includes('risco') || 
+                                        reasonLower.includes('gr') || 
+                                        reasonLower.includes('buonny') || 
+                                        reasonLower.includes('opentech') || 
+                                        reasonLower.includes('pamcary') || 
+                                        reasonLower.includes('restrito') || 
+                                        reasonLower.includes('bloqueado');
+          if (isExplicitlyReproved) {
+            releaseStatus = 'Reprovado';
+          } else if (releaseCode) {
+            releaseStatus = 'Aprovado';
+          } else {
+            releaseStatus = 'Reprovado';
+          }
         } else if (releaseCode || s.status !== ShipmentStatus.AguardandoSeguradora) {
           releaseStatus = 'Aprovado';
         } else {
@@ -265,7 +301,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           scheduledDate: s.scheduledDate || ''
         };
       });
-  }, [shipments, cargoMap, clientMap, driverMap, vehicleMap, costMapFromOptions, riskQueryOptions]);
+  }, [shipments, cargoMap, clientMap, driverMap, vehicleMap, productMap, costMapFromOptions, riskQueryOptions, products]);
 
   // Handle Sort Toggle
   const handleSort = (field: SortField) => {
