@@ -2806,7 +2806,7 @@ const App: React.FC = () => {
       if (status === ShipmentStatus.AguardandoNota) {
         keys.push('Nota Fiscal', 'nfe_number', 'nfeNumber');
       } else if (status === ShipmentStatus.AguardandoFiscal) {
-        keys.push('CT-e', 'MDF-e', 'Carta Frete', 'Outros', 'cte_number', 'cte_emission_date', 'mdfe_number', 'cteNumber', 'cteEmissionDate', 'mdfeNumber');
+        keys.push('CT-e', 'CIOT', 'Ciot', 'XML do CT-e', 'MDF-e', 'Carta Frete', 'Outros', 'cte_number', 'cte_emission_date', 'mdfe_number', 'cteNumber', 'cteEmissionDate', 'mdfeNumber');
       } else if (status === ShipmentStatus.AguardandoSeguradora) {
         keys.push('risk_release_code', 'risk_query_type', 'risk_query_cost', 'riskReleaseCode', 'riskQueryType', 'riskQueryCost');
       } else if (status === ShipmentStatus.AguardandoAdiantamento) {

@@ -51,7 +51,7 @@ interface AttachmentModalProps {
 declare const L: any;
 
 const notaFiscalDocTypes = ['Nota Fiscal'];
-const travelDocTypes = ['CT-e', 'XML do CT-e', 'MDF-e', 'Carta Frete', 'Outros'];
+const travelDocTypes = ['CT-e', 'CIOT', 'MDF-e', 'Carta Frete', 'Outros'];
 const allowedDocsForClient = [
   'Ticket de Carregamento',
   'Nota Fiscal',
@@ -824,8 +824,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       if (shipment.status === ShipmentStatus.Finalizado) {
         filesToAttach = singleFiles.length > 0 ? { [documentName || 'Comprovante de Pagamento de Saldo']: singleFiles } : {};
       } else {
-        const hasXmlAttached = multiFiles['XML do CT-e'] && multiFiles['XML do CT-e'].length > 0;
-        if (!isReprovedGr && singleFiles.length === 0 && !hasExistingDoc && !hasXmlAttached) {
+        const hasExtraAttached = (multiFiles['CIOT'] && multiFiles['CIOT'].length > 0) || (multiFiles['Ciot'] && multiFiles['Ciot'].length > 0) || (multiFiles['XML do CT-e'] && multiFiles['XML do CT-e'].length > 0);
+        if (!isReprovedGr && singleFiles.length === 0 && !hasExistingDoc && !hasExtraAttached) {
           setError('Selecione ao menos um arquivo para anexar.');
           return;
         }
@@ -855,7 +855,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         filesToAttach = isReprovedGr ? {} : (singleFiles.length > 0 ? { [documentName]: singleFiles } : {});
       }
 
-      if (multiFiles['XML do CT-e'] && multiFiles['XML do CT-e'].length > 0) {
+      if (multiFiles['CIOT'] && multiFiles['CIOT'].length > 0) {
+        filesToAttach['CIOT'] = multiFiles['CIOT'];
+      } else if (multiFiles['Ciot'] && multiFiles['Ciot'].length > 0) {
+        filesToAttach['Ciot'] = multiFiles['Ciot'];
+      } else if (multiFiles['XML do CT-e'] && multiFiles['XML do CT-e'].length > 0) {
         filesToAttach['XML do CT-e'] = multiFiles['XML do CT-e'];
       }
     }
@@ -1028,9 +1032,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const embarcadorUser = users?.find(u => u.id === shipment.embarcadorId);
   const embarcadorName = embarcadorUser?.name || shipment.embarcadorId || 'Não especificado';
 
+  const canViewCompanyFreight = !isClientUser && currentUser.profile !== UserProfile.Motorista;
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (shipment.shipmentTonnage ? shipment.driverFreightValue / shipment.shipmentTonnage : 0);
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const totalDriverFreight = shipment.driverFreightValue || (driverRate * (shipment.shipmentTonnage || 0));
+  const totalCompanyFreight = shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
+    ? shipment.realProfitData.companyFreight
+    : (companyRate * (shipment.shipmentTonnage || 0));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
@@ -1127,7 +1135,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             </div>
 
             {/* Frete Empresa / ton */}
-            {!isClientUser && currentUser.profile !== UserProfile.Motorista && (
+            {canViewCompanyFreight && (
               <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
                 <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
                   <DollarSign className="w-3.5 h-3.5 text-blue-400" /> Frete Emp / ton
@@ -1163,7 +1171,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             </div>
 
             {/* Rota (Origem → Destino) */}
-            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 lg:col-span-2">
+            <div className={`bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 ${canViewCompanyFreight ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
               <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
                 <MapPin className="w-3.5 h-3.5 text-rose-400" /> Rota (Origem → Destino)
               </div>
@@ -1175,7 +1183,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             </div>
 
             {/* Solicitante / Cliente */}
-            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 lg:col-span-2">
+            <div className={`bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 ${canViewCompanyFreight ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
               <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
                 <Building className="w-3.5 h-3.5 text-indigo-400" /> Solicitante / Cliente
               </div>
@@ -1183,6 +1191,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 <span className="text-slate-300">Sol.:</span> {embarcadorName} | <span className="text-slate-300">Cli.:</span> {clientName}
               </div>
             </div>
+
+            {/* Total Frete Empresa */}
+            {canViewCompanyFreight && (
+              <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70 col-span-2 sm:col-span-3 lg:col-span-2">
+                <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                  <DollarSign className="w-3.5 h-3.5 text-blue-400" /> Total Frete Emp
+                </div>
+                <div className="font-black text-white text-xs">
+                  {formatCurrency(totalCompanyFreight)}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

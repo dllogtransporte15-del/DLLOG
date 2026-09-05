@@ -175,8 +175,9 @@ export function calculateShipmentExpenses(
   const insuranceRcv = config.insuranceRcvPerLoad;
   const totalInsurance = Number((insuranceAcidente + insuranceRoubo + insuranceRcv).toFixed(2));
 
-  // 10. CIOT (0,20% s/ Frete Motorista)
-  const ciot = driverFreight > 0 ? Number((driverFreight * config.ciotRate).toFixed(2)) : 0;
+  // 10. CIOT (0,20% s/ Frete Motorista - Pedágio)
+  const baseCiot = Math.max(0, driverFreight - toll);
+  const ciot = baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0;
 
   // 11. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixo = companyFreight > 0 
@@ -274,7 +275,7 @@ export function calculateShipmentExpenses(
 
   if (ciot > 0) {
     expenseItems.push({
-      name: `CIOT (0,20% s/ Frete Motorista)`,
+      name: toll > 0 ? `CIOT (0,20% s/ Frete Mot. - Pedágio)` : `CIOT (0,20% s/ Frete Motorista)`,
       value: ciot,
       type: 'negative'
     });
@@ -344,8 +345,8 @@ export function calculateShipmentExpenses(
   // Total com frete motorista
   const totalDeducoesComFrete = Number((totalExpenses + driverFreight).toFixed(2));
 
-  // Resultado / Lucro Líquido Real da Operação (incluindo Crédito Fiscal Gerado em Exportação)
-  const netProfitCalculated = Number((companyFreight - totalDeducoesComFrete + (isExportCargo ? generatedCredit : 0)).toFixed(2));
+  // Resultado / Lucro Líquido Real da Operação (SEM somar Crédito Fiscal Gerado, que é mantido como informativo)
+  const netProfitCalculated = Number((companyFreight - totalDeducoesComFrete).toFixed(2));
   const netProfit = shipment.realProfitData?.netProfit !== undefined
     ? shipment.realProfitData.netProfit
     : netProfitCalculated;

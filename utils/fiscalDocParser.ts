@@ -10,7 +10,7 @@ if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.G
 }
 
 export interface DetailedDocumentData {
-  documentType: 'CT-e' | 'MDF-e' | 'Carta Frete' | 'Nota Fiscal' | 'Outro';
+  documentType: 'CT-e' | 'MDF-e' | 'Carta Frete' | 'Nota Fiscal' | 'CIOT' | 'Outro';
   rawText?: string;
   sourceType: 'xml' | 'pdf' | 'text';
   
@@ -531,6 +531,8 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     res.documentType = 'Nota Fiscal';
   } else if (isCteDocType(declaredDocType) || keyMeta?.docType === 'CT-e' || upper.includes('DACTE') || upper.includes('CONHECIMENTO DE TRANSPORTE')) {
     res.documentType = 'CT-e';
+  } else if (declaredDocType && declaredDocType.toUpperCase().includes('CIOT')) {
+    res.documentType = 'CIOT';
   } else if (keyMeta) {
     res.documentType = keyMeta.docType;
   }

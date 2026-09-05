@@ -385,8 +385,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number((baseInssPatronal * cprbPfRate).toFixed(2))
     : 0;
 
-  // 11. CIOT (0,20% s/ Frete do Motorista)
-  const ciotValue = Number((driverFreight * 0.0020).toFixed(2));
+  // 11. CIOT (0,20% s/ Frete do Motorista abatido o Pedágio)
+  const baseCiotFreight = Math.max(0, driverFreight - toll);
+  const ciotValue = Number((baseCiotFreight * 0.0020).toFixed(2));
 
   // 13. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixoValue = Number((cteGrossFreight * 0.0035).toFixed(2));
@@ -421,8 +422,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     driverFreight
   ).toFixed(2));
 
-  const creditoExportacaoAplicado = isExportCargo ? pisCofinsCredit : 0;
-  const netProfitCalculated = Number((cteGrossFreight - totalDeducoes + creditoExportacaoAplicado).toFixed(2));
+  // Lucro Líquido Real Calculado (Deduções operacionais efetivas da transportadora - SEM somar o Crédito Gerado, que é mantido como informativo)
+  const netProfitCalculated = Number((cteGrossFreight - totalDeducoes).toFixed(2));
   const realProfit = shipment.realProfitData?.netProfit !== undefined
     ? shipment.realProfitData.netProfit
     : netProfitCalculated;
@@ -569,7 +570,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           </div>
         </div>
 
-        {/* Box 3: Crédito Gerado (Gerado apenas se for Exportação) */}
+        {/* Box 3: Crédito Gerado (Informativo Fiscal - Gerado apenas se for Exportação) */}
         <div className={`bg-white dark:bg-slate-800/90 rounded-xl border p-2.5 shadow-2xs ${
           isExportCargo 
             ? 'border-emerald-200 dark:border-emerald-900/40' 
@@ -577,7 +578,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         }`}>
           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
             <span className="uppercase tracking-wider">Crédito Gerado</span>
-            <Percent className={`w-3 h-3 shrink-0 ${isExportCargo ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+            <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
+              Informativo
+            </span>
           </div>
           <div className={`text-sm sm:text-base font-bold font-mono ${
             isExportCargo ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
@@ -588,9 +591,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             className={`text-[10px] font-medium truncate mt-0.5 ${
               isExportCargo ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
             }`} 
-            title={isExportCargo ? `Exportação PJ • 6,93519% s/ Frete Motorista Líquido de Pedágio (${formatBrl(baseFreteMotorista)}) = ${formatBrl(pisCofinsCredit)}` : 'Gera crédito apenas quando a carga for de exportação'}
+            title={isExportCargo ? `Exportação PJ • Crédito Fiscal PIS/COFINS informativo (${formatBrl(pisCofinsCredit)})` : 'Gera crédito fiscal apenas quando a carga for de exportação'}
           >
-            {isExportCargo ? creditRatePercentLabel : 'Apenas Exportação'}
+            {isExportCargo ? `${creditRatePercentLabel} (Info)` : 'Apenas Exportação'}
           </div>
         </div>
       </div>
@@ -781,20 +784,20 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             )}
           </div>
 
-          {/* CIOT (0,20% sobre o Frete Motorista) */}
+          {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio) */}
           <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
             <div className="flex items-center justify-between gap-1 mb-1">
               <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" title="0,20% sobre o frete total recebido pelo motorista">
-                0,20% Mot.
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" title="0,20% sobre o frete do motorista abatido o valor do pedágio">
+                0,20% Mot.{toll > 0 ? ' - Ped.' : ''}
               </span>
             </div>
             <div className="text-xs sm:text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
               - {formatBrl(ciotValue)}
             </div>
             {driverFreight > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre o frete do motorista (${formatBrl(driverFreight)})`}>
-                0,20% s/ Mot. ({formatBrl(driverFreight)})
+              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`}>
+                {toll > 0 ? `0,20% s/ Mot.-Ped. (${formatBrl(baseCiotFreight)})` : `0,20% s/ Mot. (${formatBrl(driverFreight)})`}
               </div>
             )}
           </div>

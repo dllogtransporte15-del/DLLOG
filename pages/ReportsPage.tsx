@@ -58,6 +58,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [filterClient, setFilterClient] = useState<string[]>([]);
   const [filterClientCnpj, setFilterClientCnpj] = useState<string[]>([]);
+  const [filterExport, setFilterExport] = useState<string[]>([]);
+  const [filterDriverRegime, setFilterDriverRegime] = useState<string[]>([]);
   const [filterOrigin, setFilterOrigin] = useState<string[]>([]);
   const [filterDest, setFilterDest] = useState<string[]>([]);
   const [filterBranch, setFilterBranch] = useState<string[]>([]);
@@ -66,6 +68,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
   
   const statusOptions = Object.values(ShipmentStatus);
+  const exportOptions = ['Exportação', 'Mercado Interno'];
+  const driverRegimeOptions = ['PF', 'PJ Simples', 'PJ Real/Presumido'];
   const clientOptions = Array.from(new Set(cargos.map(c => clients.find(cl => cl.id === c.clientId)?.nomeFantasia || 'N/A'))).filter(Boolean).sort();
   
   const cnpjOptions = useMemo(() => {
@@ -93,6 +97,33 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const destOptions = Array.from(new Set(cargos.map(c => c.destination))).filter(Boolean).sort();
   const branchOptions = branches.map(b => b.name).sort();
 
+  const getShipmentDriverRegime = (s: Shipment): 'PF' | 'PJ Simples' | 'PJ Real/Presumido' => {
+    const isPf = s.driverFreightType === 'PF' || s.anttModality === 'TAC';
+    if (isPf) return 'PF';
+    const isSimples = Boolean(
+      s.etcTaxRegime === 'Simples Nacional' ||
+      s.etcTaxRegime === 'MEI' ||
+      (s as any)?.isSimplesNacional ||
+      (s.documents as any)?.etc_tax_regime === 'Simples Nacional' ||
+      (s.documents as any)?.etc_tax_regime === 'MEI' ||
+      (s.documents as any)?.crt === '1' ||
+      (s.documents as any)?.crt === '2'
+    );
+    if (isSimples) return 'PJ Simples';
+    return 'PJ Real/Presumido';
+  };
+
+  const getShipmentIsExport = (s: Shipment, cargo?: Cargo): boolean => {
+    return Boolean(
+      cargo?.isExport ||
+      (s as any)?.isExport ||
+      (cargo?.observations && /export/i.test(cargo.observations)) ||
+      (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+      ((s as any)?.observations && /export/i.test((s as any).observations)) ||
+      ((s as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((s as any).destination))
+    );
+  };
+
   const getEffectiveDate = (s: Shipment) => {
     // Find when it reached Aguardando Nota (effective volume)
     const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
@@ -114,6 +145,17 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        if (filterStatus.length > 0 && !filterStatus.includes(s.status)) return false;
 
        const cargo = cargoMap.get(s.cargoId);
+
+       if (filterExport.length > 0) {
+         const isExp = getShipmentIsExport(s, cargo);
+         const expLabel = isExp ? 'Exportação' : 'Mercado Interno';
+         if (!filterExport.includes(expLabel)) return false;
+       }
+
+       if (filterDriverRegime.length > 0) {
+         const regimeLabel = getShipmentDriverRegime(s);
+         if (!filterDriverRegime.includes(regimeLabel)) return false;
+       }
 
        if (filterClient.length > 0) {
            if (!cargo) return false;
@@ -156,7 +198,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
        return true;
     });
-  }, [shipments, startDate, endDate, filterStatus, filterClient, filterClientCnpj, filterOrigin, filterDest, filterBranch, cargoMap, clients, branches, userBranchMap]);
+  }, [shipments, startDate, endDate, filterStatus, filterExport, filterDriverRegime, filterClient, filterClientCnpj, filterOrigin, filterDest, filterBranch, cargoMap, clients, branches, userBranchMap]);
 
   const filteredStays = useMemo(() => {
     return stays.filter(s => {
@@ -359,10 +401,19 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     }
   });
 
-  const activeFiltersCount = (filterStatus.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0) + (filterClientCnpj.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0) + (filterBranch.length > 0 ? 1 : 0);
+  const activeFiltersCount = (filterStatus.length > 0 ? 1 : 0) + 
+    (filterExport.length > 0 ? 1 : 0) + 
+    (filterDriverRegime.length > 0 ? 1 : 0) + 
+    (filterClient.length > 0 ? 1 : 0) + 
+    (filterClientCnpj.length > 0 ? 1 : 0) + 
+    (filterOrigin.length > 0 ? 1 : 0) + 
+    (filterDest.length > 0 ? 1 : 0) + 
+    (filterBranch.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
       setFilterStatus([]);
+      setFilterExport([]);
+      setFilterDriverRegime([]);
       setFilterClient([]);
       setFilterClientCnpj([]);
       setFilterOrigin([]);
@@ -375,31 +426,53 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   return (
     <>
       <Header title="Relatórios" />
-      
-      {/* GLOBAL FILTERS SECTION */}
-      <div className="bg-white dark:bg-gray-800/90 rounded-2xl mb-8 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden">
-        <div className="flex flex-col md:flex-row items-center justify-between p-5 gap-4">
-          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
-            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/80 p-2 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner">
-              <Calendar className="w-5 h-5 text-gray-500 dark:text-gray-400 ml-2" />
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-1.5 bg-transparent border-none text-sm focus:ring-0 outline-none font-medium text-gray-800 dark:text-gray-100" title="Data Inicial" />
-              <span className="text-gray-400 dark:text-gray-500 font-medium">até</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-1.5 bg-transparent border-none text-sm focus:ring-0 outline-none font-medium text-gray-800 dark:text-gray-100" title="Data Final" />
-            </div>
-            <button 
-                onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all duration-300 shadow-sm font-medium cursor-pointer ${showFilters || activeFiltersCount > 0 ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/70 hover:shadow-md'}`}
+      {/* TOP REPORT NAVIGATION TABS (Substituindo o campo do topo pela navegação) */}
+      <div className="bg-white dark:bg-gray-800/90 rounded-2xl mb-6 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden p-3 space-y-3">
+        {/* Abas Horizontais dos Relatórios */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveReport(item.id as ActiveReport)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap shrink-0 cursor-pointer ${
+                activeReport === item.id
+                  ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md shadow-primary/20 scale-[1.02]'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/70 hover:text-gray-900 dark:hover:text-white border border-transparent'
+              }`}
             >
-                <Filter className="w-4 h-4" />
-                <span className="text-sm">Filtros Avançados {activeFiltersCount > 0 && <span className="ml-1 bg-white/20 px-2 py-0.5 rounded-full text-xs">{activeFiltersCount}</span>}</span>
+              <item.icon className="w-4 h-4 shrink-0" />
+              <span>{item.label}</span>
             </button>
-          </div>
+          ))}
         </div>
 
-        {showFilters && (
-            <div className="p-5 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/40 rounded-b-2xl animate-fade-in">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {/* Barra de Filtros para os Relatórios que utilizam filtros globais */}
+        {activeReport !== 'lucro-real' && (
+          <div className="pt-2.5 border-t border-gray-100 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900/80 px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner text-xs">
+                <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400 ml-1" />
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-1 bg-transparent border-none text-xs focus:ring-0 outline-none font-semibold text-gray-800 dark:text-gray-100" title="Data Inicial" />
+                <span className="text-gray-400 dark:text-gray-500 font-medium">até</span>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="p-1 bg-transparent border-none text-xs focus:ring-0 outline-none font-semibold text-gray-800 dark:text-gray-100" title="Data Final" />
+              </div>
+              <button 
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl transition-all duration-200 shadow-xs text-xs font-bold cursor-pointer ${showFilters || activeFiltersCount > 0 ? 'bg-primary text-white shadow-md' : 'bg-gray-50 dark:bg-gray-700/60 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-100'}`}
+              >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>Filtros Avançados {activeFiltersCount > 0 && <span className="ml-1 bg-white/20 px-1.5 py-0.2 rounded-full text-[10px]">{activeFiltersCount}</span>}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showFilters && activeReport !== 'lucro-real' && (
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/40 rounded-xl animate-fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
                     <MultiSelectDropdown label="Status do Embarque" options={statusOptions} selectedValues={filterStatus} onChange={setFilterStatus} placeholder="Todos..." />
+                    <MultiSelectDropdown label="Destinação Carga" options={exportOptions} selectedValues={filterExport} onChange={setFilterExport} placeholder="Todas..." />
+                    <MultiSelectDropdown label="Regime Tributário" options={driverRegimeOptions} selectedValues={filterDriverRegime} onChange={setFilterDriverRegime} placeholder="Todos..." />
                     {!isCliente && (
                       <MultiSelectDropdown label="Cliente (Empresa)" options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos..." />
                     )}
@@ -411,9 +484,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                     )}
                 </div>
                 {activeFiltersCount > 0 && (
-                    <div className="mt-4 flex justify-end">
-                        <button onClick={clearFilters} className="text-sm flex items-center gap-1.5 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-lg transition-colors font-medium cursor-pointer">
-                            <X className="w-4 h-4" /> Limpar Filtros
+                    <div className="mt-3 flex justify-end">
+                        <button onClick={clearFilters} className="text-xs flex items-center gap-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg transition-colors font-semibold cursor-pointer">
+                            <X className="w-3.5 h-3.5" /> Limpar Filtros
                         </button>
                     </div>
                 )}
@@ -421,136 +494,119 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         )}
       </div>
 
-      {/* GLOBAL KPIs SECTION */}
-      {isCliente ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques Totais</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
-               </div>
-           </div>
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Programado</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                     {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
-                  </p>
-               </div>
-           </div>
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetivado</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                     {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
-                  </p>
-               </div>
-           </div>
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total em Frete">Total em Frete</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
-                     R$ {(kpis.grossBilled / 1000).toFixed(1)}k
-                  </p>
-               </div>
-           </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
-               </div>
-           </div>
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Prog.</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                     {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
-                  </p>
-               </div>
-           </div>
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetiv.</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
-                     {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
-                  </p>
-               </div>
-           </div>
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Faturamento Bruto">Fat. Bruto</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
-                     R$ {(kpis.grossBilled / 1000).toFixed(1)}k
-                  </p>
-               </div>
-           </div>
+      {/* GLOBAL KPIs SECTION (para relatórios gerais) */}
+      {activeReport !== 'lucro-real' && (
+        isCliente ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques Totais</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
+                 </div>
+             </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Programado</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                       {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                    </p>
+                 </div>
+             </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetivado</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                       {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                    </p>
+                 </div>
+             </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total em Frete">Total em Frete</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
+                       R$ {(kpis.grossBilled / 1000).toFixed(1)}k
+                    </p>
+                 </div>
+             </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
+                 </div>
+             </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700/60 flex flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600/50"><Package className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Programado">Total Prog.</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                       {filteredStats.totalProgramado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                    </p>
+                 </div>
+             </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 flex flex-shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/50"><CheckCircle className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Total Efetivado">Total Efetiv.</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`}>
+                       {filteredStats.totalEfetivado.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} <span className="text-[10px] font-medium text-gray-400">ton</span>
+                    </p>
+                 </div>
+             </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/60 flex flex-shrink-0 items-center justify-center text-green-600 dark:text-green-400 border border-green-100 dark:border-green-800/50"><DollarSign className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Faturamento Bruto">Fat. Bruto</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.grossBilled)}>
+                       R$ {(kpis.grossBilled / 1000).toFixed(1)}k
+                    </p>
+                 </div>
+             </div>
 
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-950/60 flex flex-shrink-0 items-center justify-center text-teal-600 dark:text-teal-400 border border-teal-100 dark:border-teal-800/50"><DollarSign className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Estimado">Lucro Est.</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.profitMargin)}>
-                     R$ {(kpis.profitMargin / 1000).toFixed(1)}k
-                  </p>
-               </div>
-           </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-950/60 flex flex-shrink-0 items-center justify-center text-teal-600 dark:text-teal-400 border border-teal-100 dark:border-teal-800/50"><DollarSign className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Estimado">Lucro Est.</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.profitMargin)}>
+                       R$ {(kpis.profitMargin / 1000).toFixed(1)}k
+                    </p>
+                 </div>
+             </div>
 
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 flex flex-shrink-0 items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50"><DollarSign className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Efetivado">Lucro Efe.</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.totalProfitMargin)}>
-                     R$ {(kpis.totalProfitMargin / 1000).toFixed(1)}k
-                  </p>
-               </div>
-           </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 flex flex-shrink-0 items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50"><DollarSign className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Lucro Efetivado">Lucro Efe.</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={formatCurrency(kpis.totalProfitMargin)}>
+                       R$ {(kpis.totalProfitMargin / 1000).toFixed(1)}k
+                    </p>
+                 </div>
+             </div>
 
-           <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
-               <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-950/60 flex flex-shrink-0 items-center justify-center text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-800/50"><TrendingUp className="w-5 h-5" /></div>
-               <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Margem de Lucro Total">Margem</p>
-                  <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${kpis.percentageMargin.toFixed(2)}% (Efetivado: ${kpis.effectivePercentageMargin.toFixed(2)}%)`}>
-                     {kpis.percentageMargin.toFixed(1)}%
-                  </p>
-               </div>
-           </div>
-        </div>
+             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+                 <div className="w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-950/60 flex flex-shrink-0 items-center justify-center text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-800/50"><TrendingUp className="w-5 h-5" /></div>
+                 <div className="min-w-0 flex-1">
+                    <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5" title="Margem de Lucro Total">Margem</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate" title={`${kpis.percentageMargin.toFixed(2)}% (Efetivado: ${kpis.effectivePercentageMargin.toFixed(2)}%)`}>
+                       {kpis.percentageMargin.toFixed(1)}%
+                    </p>
+                 </div>
+             </div>
+          </div>
+        )
       )}
 
-      <div className="flex flex-col md:flex-row gap-8">
-        <aside className="w-full md:w-64">
-          <nav className="flex flex-row md:flex-col gap-2 p-2 bg-white dark:bg-gray-800/90 border border-gray-200/80 dark:border-gray-700/80 rounded-2xl overflow-x-auto shadow-sm">
-             {navItems.map(item => (
-                 <button
-                    key={item.id}
-                    onClick={() => setActiveReport(item.id as ActiveReport)}
-                    className={`flex items-center w-full px-4 py-3.5 text-sm font-semibold text-left rounded-xl transition-all duration-300 whitespace-nowrap md:whitespace-normal ${
-                        activeReport === item.id
-                        ? 'bg-gradient-to-r from-primary to-primary-dark text-white shadow-md transform scale-[1.02]'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/70 hover:text-gray-900 dark:hover:text-white'
-                    }`}
-                    >
-                    <item.icon className="w-5 h-5 mr-3 flex-shrink-0" />
-                    {item.label}
-                 </button>
-             ))}
-          </nav>
-        </aside>
-        <main className="flex-1 pb-16">
-          {renderReport()}
-        </main>
-      </div>
+      {/* MAIN CONTENT FULL WIDTH */}
+      <main className="w-full pb-16">
+        {renderReport()}
+      </main>
     </>
   );
 };

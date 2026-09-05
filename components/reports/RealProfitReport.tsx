@@ -77,6 +77,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedExport, setSelectedExport] = useState<string[]>([]);
+  const [selectedDriverRegimes, setSelectedDriverRegimes] = useState<string[]>([]);
   const [onlyWithOcr, setOnlyWithOcr] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -110,6 +112,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
   // Opções para MultiSelect
   const statusOptions = Object.values(ShipmentStatus);
+  const exportOptions = ['Exportação', 'Mercado Interno'];
+  const driverRegimeOptions = ['PF', 'PJ Simples', 'PJ Real/Presumido'];
   const clientOptions = Array.from(new Set(cargos.map(c => {
     const cl = clientMap.get(c.clientId);
     return cl?.nomeFantasia || cl?.razaoSocial || c.clientId;
@@ -152,6 +156,45 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         return false;
       }
 
+      // Filtro Destinação da Carga (Exportação / Mercado Interno)
+      if (selectedExport.length > 0) {
+        const isExp = Boolean(
+          cargo?.isExport ||
+          (s as any)?.isExport ||
+          (cargo?.observations && /export/i.test(cargo.observations)) ||
+          (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+          ((s as any)?.observations && /export/i.test((s as any).observations)) ||
+          ((s as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((s as any).destination))
+        );
+        const expLabel = isExp ? 'Exportação' : 'Mercado Interno';
+        if (!selectedExport.includes(expLabel)) {
+          return false;
+        }
+      }
+
+      // Filtro Regime Tributário do Motorista (PF / PJ Simples / PJ Real/Presumido)
+      if (selectedDriverRegimes.length > 0) {
+        const isPf = s.driverFreightType === 'PF' || s.anttModality === 'TAC';
+        let regimeLabel: 'PF' | 'PJ Simples' | 'PJ Real/Presumido' = 'PF';
+        if (isPf) {
+          regimeLabel = 'PF';
+        } else {
+          const isSimples = Boolean(
+            s.etcTaxRegime === 'Simples Nacional' ||
+            s.etcTaxRegime === 'MEI' ||
+            (s as any)?.isSimplesNacional ||
+            (s.documents as any)?.etc_tax_regime === 'Simples Nacional' ||
+            (s.documents as any)?.etc_tax_regime === 'MEI' ||
+            (s.documents as any)?.crt === '1' ||
+            (s.documents as any)?.crt === '2'
+          );
+          regimeLabel = isSimples ? 'PJ Simples' : 'PJ Real/Presumido';
+        }
+        if (!selectedDriverRegimes.includes(regimeLabel)) {
+          return false;
+        }
+      }
+
       // Filtro de Cliente
       if (selectedClients.length > 0 && !selectedClients.includes(clientName)) {
         return false;
@@ -192,7 +235,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
       return true;
     });
-  }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, selectedStatus, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
+  }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
 
   // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e)
   const enrichedRows = useMemo(() => {
@@ -213,6 +256,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         profitMarginPercent,
         expenseItems: rawExpenseItems,
         riskCost,
+        generatedCredit,
       } = calculatedExpenses;
 
       // Comprovante / Anexo de saldo ou despesas
@@ -237,6 +281,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         totalExpenses,
         netProfit,
         profitMarginPercent,
+        generatedCredit: generatedCredit || 0,
         hasOcr: Boolean(s.realProfitData),
         expenseItems: rawExpenseItems,
         attachmentUrl,
@@ -253,6 +298,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     let sumExpenses = 0;
     let sumFreightDiff = 0;
     let sumNetProfit = 0;
+    let sumGeneratedCredit = 0;
+    let countExportCredits = 0;
     let countOcr = 0;
 
     enrichedRows.forEach(r => {
@@ -261,6 +308,10 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       sumExpenses += r.totalExpenses;
       sumFreightDiff += r.freightDifference;
       sumNetProfit += r.netProfit;
+      if (r.generatedCredit > 0) {
+        sumGeneratedCredit += r.generatedCredit;
+        countExportCredits++;
+      }
       if (r.hasOcr) countOcr++;
     });
 
@@ -275,11 +326,13 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     return {
       totalShipments: enrichedRows.length,
       countOcr,
+      countExportCredits,
       sumCompanyFreight,
       sumDriverFreight,
       sumExpenses,
       sumFreightDiff,
       sumNetProfit,
+      sumGeneratedCredit,
       consolidatedMargin,
       consolidatedFreightDiffMargin
     };
@@ -310,6 +363,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
       `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
       `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '---',
       `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
       r.hasOcr ? 'Sim (IA)' : 'Estimado'
     ]);
@@ -325,12 +379,13 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         'Frete Motorista (-)', 
         'Dif. Frete', 
         'Despesas (-)', 
+        'Créd. Exp. (Info)',
         'Lucro Real (=)', 
         'OCR'
       ]],
       body: tableData,
       startY: 26,
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: 7.5, cellPadding: 2 },
       headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       foot: [[
@@ -343,6 +398,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         `R$ ${totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         `R$ ${totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         `R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         `R$ ${totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${totals.consolidatedMargin.toFixed(1)}%)`,
         `${totals.countOcr} lidos`
       ]],
@@ -369,6 +425,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       'Diferenca de Frete (R$)',
       'Margem Frete (%)',
       'Despesas Operacionais (R$)',
+      'Credito Gerado Exportacao (R$)',
       'Lucro Real / Resultado (R$)',
       'Margem Real (%)',
       'Despesas Detalhadas',
@@ -392,6 +449,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         r.freightDifference.toFixed(2),
         r.freightDifferenceMarginPercent.toFixed(2),
         r.totalExpenses.toFixed(2),
+        r.generatedCredit.toFixed(2),
         r.netProfit.toFixed(2),
         r.profitMarginPercent.toFixed(2),
         `"${expenseDesc.replace(/"/g, '""')}"`,
@@ -412,170 +470,6 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* CABEÇALHO DO RELATÓRIO */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-md">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Lucro Real da Operação de Embarque
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Detalhamento exato de receitas, despesas operacionais e resultado consolidado de embarques efetivados (com CT-e emitido).
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
-              showFilters || selectedStatus.length > 0 || selectedClients.length > 0 || selectedDrivers.length > 0 || onlyWithOcr
-                ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
-                : 'bg-gray-50 dark:bg-gray-700/60 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Filtros Avançados
-            {(selectedStatus.length > 0 || selectedClients.length > 0 || selectedDrivers.length > 0 || onlyWithOcr) && (
-              <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400" />
-            )}
-          </button>
-
-          {onBatchUpdateShipments && (
-            <button
-              type="button"
-              onClick={() => setIsSyncModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs cursor-pointer"
-              title="Lê e atualiza dados de CT-e, Nota Fiscal, MDF-e e Carta Frete em lote"
-            >
-              <RefreshCw className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              Sincronizar Documentos
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            Exportar CSV / Excel
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gray-900 hover:bg-gray-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 transition-colors shadow-sm cursor-pointer"
-          >
-            <FileText className="w-4 h-4" />
-            Exportar PDF
-          </button>
-        </div>
-      </div>
-
-      {/* CARDS DE INDICADORES / KPIS NO TOPO */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Frete Empresa Total */}
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              Frete Empresa (+)
-            </span>
-            <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-              <DollarSign className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-lg sm:text-xl font-mono font-black text-gray-900 dark:text-white">
-            R$ {totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-            Faturamento bruto dos embarques
-          </p>
-        </div>
-
-        {/* Frete Motorista Total */}
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              Frete Motoristas (-)
-            </span>
-            <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
-              <Truck className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-lg sm:text-xl font-mono font-black text-gray-900 dark:text-white">
-            R$ {totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-            Custo total de frete pago a terceiros
-          </p>
-        </div>
-
-        {/* Despesas Operacionais Totais */}
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400">
-              Despesas Operacionais (-)
-            </span>
-            <div className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400">
-              <Receipt className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-lg sm:text-xl font-mono font-black text-red-600 dark:text-red-400">
-            R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-            Impostos, CPRB, comissões, seguros, etc.
-          </p>
-        </div>
-
-        {/* Lucro Real Líquido */}
-        <div className={`p-4 rounded-2xl border-2 shadow-sm relative overflow-hidden ${
-          totals.sumNetProfit >= 0 
-            ? 'bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-700/60' 
-            : 'bg-red-50/80 dark:bg-red-950/20 border-red-300 dark:border-red-700/60'
-        }`}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-              Lucro Real Consolidado (=)
-            </span>
-            <div className={`p-1.5 rounded-lg ${totals.sumNetProfit >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'}`}>
-              <TrendingUp className="w-4 h-4" />
-            </div>
-          </div>
-          <p className={`text-lg sm:text-xl font-mono font-black ${totals.sumNetProfit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-            R$ {totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-[11px] text-emerald-800/80 dark:text-emerald-400 mt-1 font-semibold">
-            Margem Líquida Real: {totals.consolidatedMargin.toFixed(2)}%
-          </p>
-        </div>
-
-        {/* Total de Embarques & OCR */}
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-              Embarques Filtrados
-            </span>
-            <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
-              <Sparkles className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-lg sm:text-xl font-mono font-black text-gray-900 dark:text-white">
-            {totals.totalShipments} <span className="text-xs font-normal text-gray-500">embarques</span>
-          </p>
-          <p className="text-[11px] text-indigo-600 dark:text-indigo-400 mt-1 font-semibold">
-            {totals.countOcr} com demonstrativo OCR lido
-          </p>
-        </div>
-      </div>
-
       {/* BANNER DE REGRAS DE DESPESAS OPERACIONAIS E TRIBUTÁRIAS */}
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-3.5 rounded-2xl border border-indigo-800/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2.5">
@@ -607,10 +501,192 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         </div>
       </div>
 
+      {/* CARDS DE INDICADORES / KPIS (REDUZIDOS EM 20%) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        {/* Frete Empresa Total */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+              Frete Empresa (+)
+            </span>
+            <div className="p-1 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+              <DollarSign className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white">
+            R$ {totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+            Faturamento bruto dos embarques
+          </p>
+        </div>
+
+        {/* Frete Motorista Total */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Frete Motoristas (-)
+            </span>
+            <div className="p-1 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+              <Truck className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white">
+            R$ {totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+            Custo total pago a terceiros
+          </p>
+        </div>
+
+        {/* Despesas Operacionais Totais */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400">
+              Despesas Operac. (-)
+            </span>
+            <div className="p-1 rounded-md bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+              <Receipt className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-base sm:text-lg font-mono font-black text-red-600 dark:text-red-400">
+            R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+            Impostos, CPRB, comissões, etc.
+          </p>
+        </div>
+
+        {/* Crédito Gerado (Exportação) - Informativo */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              Créd. Exportação (Info)
+            </span>
+            <div className="p-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400" title="Total de créditos fiscais PIS/COFINS apurados em cargas de exportação (Informativo contábil)">
+              <Percent className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-base sm:text-lg font-mono font-black text-emerald-600 dark:text-emerald-400">
+            R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-emerald-700/80 dark:text-emerald-400/80 mt-0.5 font-medium">
+            {totals.countExportCredits} embarque(s) com crédito
+          </p>
+        </div>
+
+        {/* Lucro Real Líquido */}
+        <div className={`p-3 rounded-xl border shadow-xs relative overflow-hidden ${
+          totals.sumNetProfit >= 0 
+            ? 'bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-700/60' 
+            : 'bg-red-50/80 dark:bg-red-950/20 border-red-300 dark:border-red-700/60'
+        }`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+              Lucro Real Consolidado (=)
+            </span>
+            <div className={`p-1 rounded-md ${totals.sumNetProfit >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'}`}>
+              <TrendingUp className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className={`text-base sm:text-lg font-mono font-black ${totals.sumNetProfit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
+            R$ {totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-emerald-800/80 dark:text-emerald-400 mt-0.5 font-semibold">
+            Margem Líquida Real: {totals.consolidatedMargin.toFixed(2)}%
+          </p>
+        </div>
+
+        {/* Total de Embarques & OCR */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              Embarques Filtrados
+            </span>
+            <div className="p-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white">
+            {totals.totalShipments} <span className="text-[11px] font-normal text-gray-500">embarques</span>
+          </p>
+          <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-0.5 font-semibold">
+            {totals.countOcr} com comprovante OCR
+          </p>
+        </div>
+      </div>
+
+      {/* CABEÇALHO DO RELATÓRIO (REDUZIDO EM 20%) */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-xs">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white leading-tight">
+                Lucro Real da Operação de Embarque
+              </h2>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                Detalhamento exato de receitas, despesas operacionais e resultado consolidado de embarques efetivados (com CT-e emitido).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${
+              showFilters || selectedStatus.length > 0 || selectedClients.length > 0 || selectedDrivers.length > 0 || selectedBranches.length > 0 || selectedExport.length > 0 || selectedDriverRegimes.length > 0 || onlyWithOcr
+                ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
+                : 'bg-gray-50 dark:bg-gray-700/60 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            Filtros Avançados
+            {(selectedStatus.length > 0 || selectedClients.length > 0 || selectedDrivers.length > 0 || selectedBranches.length > 0 || selectedExport.length > 0 || selectedDriverRegimes.length > 0 || onlyWithOcr) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+            )}
+          </button>
+
+          {onBatchUpdateShipments && (
+            <button
+              type="button"
+              onClick={() => setIsSyncModalOpen(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs cursor-pointer"
+              title="Lê e atualiza dados de CT-e, Nota Fiscal, MDF-e e Carta Frete em lote"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              Sincronizar Documentos
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Exportar CSV / Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-gray-900 hover:bg-gray-800 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500 transition-colors shadow-xs cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Exportar PDF
+          </button>
+        </div>
+      </div>
+
       {/* PAINEL DE FILTROS */}
       {showFilters && (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-4 animate-in fade-in duration-200">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
             {/* Busca textual */}
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
@@ -626,6 +702,32 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                   className="w-full pl-9 pr-3 py-2 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
+            </div>
+
+            {/* Filtro Destinação Carga (Exportação / Interno) */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                Destinação da Carga
+              </label>
+              <MultiSelectDropdown
+                options={exportOptions}
+                selectedValues={selectedExport}
+                onChange={setSelectedExport}
+                placeholder="Todas..."
+              />
+            </div>
+
+            {/* Filtro Regime Tributário Motorista (PF / PJ) */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                Regime Motorista (PF/PJ)
+              </label>
+              <MultiSelectDropdown
+                options={driverRegimeOptions}
+                selectedValues={selectedDriverRegimes}
+                onChange={setSelectedDriverRegimes}
+                placeholder="Todos os regimes"
+              />
             </div>
 
             {/* Filtro Status */}
@@ -696,6 +798,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
               type="button"
               onClick={() => {
                 setSearchTerm('');
+                setSelectedExport([]);
+                setSelectedDriverRegimes([]);
                 setSelectedStatus([]);
                 setSelectedClients([]);
                 setSelectedDrivers([]);
@@ -723,6 +827,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 <th className="py-3.5 px-4 text-right">Frete Motorista (-)</th>
                 <th className="py-3.5 px-4 text-right">Dif. Frete</th>
                 <th className="py-3.5 px-4 text-center">Despesas Operacionais</th>
+                <th className="py-3.5 px-4 text-right">Créd. Exp. (Info)</th>
                 <th className="py-3.5 px-4 text-right">Resultado Final (=)</th>
                 <th className="py-3.5 px-4 text-center">Anexo</th>
               </tr>
@@ -826,6 +931,22 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       )}
                     </td>
 
+                    {/* Crédito Fiscal Gerado (Exportação) */}
+                    <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
+                      {row.generatedCredit > 0 ? (
+                        <div>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                            + R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <p className="text-[9px] text-emerald-700/70 dark:text-emerald-400/70 font-semibold">
+                            PIS/COFINS
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 dark:text-gray-500 text-[11px]">---</span>
+                      )}
+                    </td>
+
                     {/* Resultado Final (Lucro Real da Operação) */}
                     <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
                       <div className="flex flex-col items-end">
@@ -875,7 +996,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={10} className="py-10 text-center text-gray-500 dark:text-gray-400">
                     <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     Nenhum embarque encontrado com os filtros selecionados.
                   </td>
@@ -902,6 +1023,9 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                   </td>
                   <td className="py-3.5 px-4 text-center font-mono text-xs text-red-600 dark:text-red-400">
                     - R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                    + R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono text-xs">
                     <span className={`text-sm font-black ${
