@@ -1679,10 +1679,12 @@ const App: React.FC = () => {
     const effectiveTollValue = tollValue !== undefined ? tollValue : (extractedTollValue !== undefined ? extractedTollValue : originalShipment.tollValue);
     const effectiveAdvancePercentage = advancePercentage !== undefined ? advancePercentage : (extractedAdvancePercentage !== undefined ? extractedAdvancePercentage : (originalShipment.advancePercentage !== undefined ? originalShipment.advancePercentage : 70));
 
+    const isPfCalc = (originalShipment.driverFreightType === 'PF' || originalShipment.anttModality === 'TAC');
     const calcResult = calculateAdvanceAndBalance({
       driverFreightValue: updatedDriverFreight,
       tollValue: effectiveTollValue || 0,
       advancePercentage: effectiveAdvancePercentage,
+      driverFreightType: isPfCalc ? 'PF' : 'PJ',
     });
 
     if (advanceValue !== undefined) {
@@ -1994,12 +1996,14 @@ const App: React.FC = () => {
 
     if (ADVANCE_ELIGIBLE_STATUSES.includes(shipmentToUpdate.status)) {
       const toll = data.tollValue !== undefined ? data.tollValue : (shipmentToUpdate.tollValue || 0);
+      const isPfCalc = (shipmentToUpdate.driverFreightType === 'PF' || shipmentToUpdate.anttModality === 'TAC');
       const calc = calculateAdvanceAndBalance({
         driverFreightValue: updatedDriverFreight,
         driverFreightRate: rateToUse,
         tonnage: targetTonnage,
         tollValue: toll,
         advancePercentage: calculatedAdvancePct,
+        driverFreightType: isPfCalc ? 'PF' : 'PJ',
       });
       calculatedAdvanceVal = calc.advanceInAccountValue;
       calculatedBalanceVal = calc.balanceToReceiveValue;
@@ -2080,12 +2084,14 @@ const App: React.FC = () => {
     }
 
     if (ADVANCE_ELIGIBLE_STATUSES.includes(shipmentToUpdate.status)) {
+      const isPfCalc = (shipmentToUpdate.driverFreightType === 'PF' || shipmentToUpdate.anttModality === 'TAC');
       const calc = calculateAdvanceAndBalance({
         driverFreightValue: data.newTotal,
         driverFreightRate: data.newRate ?? shipmentToUpdate.driverFreightRateSnapshot,
         tonnage: shipmentToUpdate.shipmentTonnage,
         tollValue: shipmentToUpdate.tollValue || 0,
         advancePercentage: shipmentToUpdate.advancePercentage !== undefined ? shipmentToUpdate.advancePercentage : 70,
+        driverFreightType: isPfCalc ? 'PF' : 'PJ',
       });
       updateObj.advancePercentage = calc.advancePercentage;
       updateObj.advanceValue = calc.advanceInAccountValue;

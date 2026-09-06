@@ -1377,12 +1377,14 @@ export async function backfillAdvanceAndBalanceCalculations(): Promise<{ updated
       const toll = s.tollValue || 0;
       const advPct = s.advancePercentage !== undefined ? s.advancePercentage : 70;
 
+      const isPfShipment = (s.driverFreightType === 'PF' || s.anttModality === 'TAC' || (s.driverCpf && !s.driverCnpj));
       const calc = calculateAdvanceAndBalance({
         driverFreightValue: totalFreight,
         driverFreightRate: rate,
         tonnage,
         tollValue: toll,
         advancePercentage: advPct,
+        driverFreightType: isPfShipment ? 'PF' : 'PJ',
       });
 
       const needsUpdate = 

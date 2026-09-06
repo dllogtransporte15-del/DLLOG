@@ -640,6 +640,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       tonnage: shipmentTonnage,
       tollValue: 0,
       advancePercentage: advancePercentage !== undefined ? advancePercentage : 70,
+      driverFreightType: anttModality === AnttModality.TAC ? 'PF' : 'PJ',
     });
 
     const shipmentData = {

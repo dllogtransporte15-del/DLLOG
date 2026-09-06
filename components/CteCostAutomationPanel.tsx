@@ -186,16 +186,17 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     setTimeout(() => setIsSyncing(false), 500);
   };
 
-  // 2. Verificação de Carga de Exportação (Define suspensão tributária e acréscimo de seguro de 18%)
+  // 2. Verificação de Carga de Exportação (Destino Porto, Terminal Retroportuário, EADI, Armazém Alfandegado, CFOP 6353, CST 40)
   const isExportCargo = cargo?.isExport !== undefined
     ? cargo.isExport
     : ((shipment as any)?.isExport !== undefined
         ? (shipment as any).isExport
         : Boolean(
-            (cargo?.observations && /export/i.test(cargo.observations)) ||
-            (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
-            ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
-            ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
+            (cargo?.observations && /export|cfop\s*6353|cst\s*40/i.test(cargo.observations)) ||
+            (cargo?.destination && /(porto|terminal|retroportu[aá]rio|eadi|alfandeg|armaz[eé]m|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+            ((shipment as any)?.observations && /export|cfop\s*6353|cst\s*40/i.test((shipment as any).observations)) ||
+            ((shipment as any)?.destination && /(porto|terminal|retroportu[aá]rio|eadi|alfandeg|armaz[eé]m|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination)) ||
+            ((shipment.documents as any)?.cfop === '6353' || (shipment.documents as any)?.cst === '40')
           ));
 
   const isExportSuspended = isExportCargo;
@@ -227,16 +228,22 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             ? shipment.tollValue
             : (shipment.realProfitData?.toll || 0)));
 
-  const isShipmentPf = selectedRegime === 'PF' || selectedRegime === 'TAC' || (!selectedRegime && shipment.driverFreightType === 'PF');
+  const isExplicitPj = selectedRegime === 'Lucro Real / Presumido' || selectedRegime === 'Lucro Real' || selectedRegime === 'Lucro Presumido' || selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI' || selectedRegime === 'PJ' || selectedRegime === 'ETC' || shipment.driverFreightType === 'PJ' || shipment.anttModality === 'ETC';
+  const isShipmentPf = !isExplicitPj && (selectedRegime === 'PF' || selectedRegime === 'TAC' || shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC');
   const isPjDriver = !isShipmentPf;
   const isPf = isShipmentPf;
   const isSimplesNacional = selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI';
-  // REGRA EXATA FRETE PJ EXPORTAÇÃO (Três Etapas):
-  // 1. Base Efetiva do Frete Tributável = Valor da Prestação - Vale-Pedágio (ex: R$ 6.952,75 - R$ 468,63 = R$ 6.484,12)
-  // 2. Alíquota Efetiva de Crédito = 6,5975059% (6,5975%) -> R$ 6.484,12 * 0,065975059 = R$ 427,79
-  // 3. Aplicação na Soma do Crédito: O crédito gerado é somado positivamente ao Lucro Líquido Real da viagem
-  const creditRate = isPjDriver ? 0.065975059 : 0.069375;
-  const creditRatePercentLabel = isPjDriver ? 'PJ (6,5975% • ICMS s/ Frete Trib.)' : 'PF (75% • 6,9375%)';
+  // REGRA APURAÇÃO CRÉDITO FISCAL EXPORTAÇÃO:
+  // 1. Base Efetiva do Frete Tributável (BC Crédito / BC Serviço) = Frete Empresa - Vale-Pedágio
+  // 2. Alíquota Efetiva de Crédito:
+  //    - PF (TAC / Terceiro PF): 6,52834% (Manutenção de Crédito: ICMS 12% * 54,39%)
+  //    - PJ (Lucro Real / Lucro Presumido / Simples Nacional / MEI): 6,5136% (Manutenção de Crédito: ICMS 12% * 54,28%)
+  const creditRate = isShipmentPf 
+    ? 0.0652834 
+    : 0.065136;
+  const creditRatePercentLabel = isShipmentPf 
+    ? 'PF (6,52834% • Manutenção Crédito)' 
+    : 'PJ (6,5136% • Manut. ICMS Exportação)';
 
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
@@ -307,12 +314,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number(((diferencaFreteReais / freteLiquidoIcms) * 100).toFixed(2))
     : 0;
 
-  // 5. Crédito Gerado (Gerado EXCLUSIVAMENTE quando a carga for de exportação em Frete PJ)
-  // Regra em 3 Etapas: Base Efetiva = Frete Tributável (cteGrossFreight - toll = R$ 6.484,12) * 6,5975059% = R$ 427,79
+  // 5. Crédito Gerado (Gerado EXCLUSIVAMENTE quando a carga for de exportação)
+  // Regra PF: BC_Servico = (cteGrossFreight - toll) * 6,52834% (Manutenção de Crédito de Exportação)
+  // Regra PJ: BC_Credito = (cteGrossFreight - toll) * 6,5136% (Manutenção de Crédito de Exportação)
   const autoOrRealCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
   const calculatedExportCredit = (isExportCargo && baseFreteEmpresa > 0)
-    ? Number((baseFreteEmpresa * (isPjDriver ? 0.065975059 : 0.069375)).toFixed(2))
-    : (isExportCargo && baseFreteMotorista > 0 ? Number((baseFreteMotorista * 0.0693519).toFixed(2)) : 0);
+    ? Number((baseFreteEmpresa * creditRate).toFixed(2))
+    : (isExportCargo && baseFreteMotorista > 0 ? Number((baseFreteMotorista * creditRate).toFixed(2)) : 0);
   const pisCofinsCredit = (autoOrRealCredit !== undefined && autoOrRealCredit > 0)
     ? autoOrRealCredit
     : calculatedExportCredit;

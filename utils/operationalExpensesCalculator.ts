@@ -87,19 +87,35 @@ export function calculateShipmentExpenses(
     ? shipment.realProfitData.driverFreight 
     : (shipment.driverFreightValue || (driverRate > 0 && tonnage > 0 ? Number((driverRate * tonnage).toFixed(2)) : 0));
 
-  // Perfil PF vs PJ
-  const isShipmentPf = shipment.driverFreightType === 'PF';
+  // Perfil PF vs PJ (PJ / ETC é 100% isento de INSS Patronal / CPRB)
+  const isExplicitPj = shipment.driverFreightType === 'PJ' || 
+    shipment.anttModality === 'ETC' || 
+    (shipment as any)?.selectedRegime === 'PJ' || 
+    (shipment as any)?.selectedRegime === 'ETC' || 
+    (shipment as any)?.selectedRegime === 'Lucro Real / Presumido' || 
+    (shipment as any)?.selectedRegime === 'Lucro Real' || 
+    (shipment as any)?.selectedRegime === 'Lucro Presumido' || 
+    (shipment as any)?.selectedRegime === 'Simples Nacional' || 
+    (shipment as any)?.selectedRegime === 'MEI';
 
-  // Verificação de Carga Exportação
+  const isShipmentPf = !isExplicitPj && (
+    shipment.driverFreightType === 'PF' || 
+    shipment.anttModality === 'TAC' || 
+    (shipment as any)?.selectedRegime === 'PF' || 
+    (shipment as any)?.selectedRegime === 'TAC'
+  );
+
+  // Verificação de Carga Exportação (Destino Porto, Terminal Retroportuário, EADI, Armazém Alfandegado, CFOP 6353, CST 40)
   const isExportCargo = cargo?.isExport !== undefined
     ? cargo.isExport
     : (shipment.isExport !== undefined
         ? shipment.isExport
         : Boolean(
-            (cargo?.observations && /export/i.test(cargo.observations)) ||
-            (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
-            ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
-            ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
+            (cargo?.observations && /export|cfop\s*6353|cst\s*40/i.test(cargo.observations)) ||
+            (cargo?.destination && /(porto|terminal|retroportu[aá]rio|eadi|alfandeg|armaz[eé]m|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+            ((shipment as any)?.observations && /export|cfop\s*6353|cst\s*40/i.test((shipment as any).observations)) ||
+            ((shipment as any)?.destination && /(porto|terminal|retroportu[aá]rio|eadi|alfandeg|armaz[eé]m|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination)) ||
+            ((shipment.documents as any)?.cfop === '6353' || (shipment.documents as any)?.cst === '40')
           ));
 
   // 3. ICMS Destacado Completo
@@ -206,14 +222,16 @@ export function calculateShipmentExpenses(
         ? (RISK_QUERY_COST_MAP[shipment.riskQueryType] ?? RISK_QUERY_COST_MAP[shipment.riskQueryType.toLowerCase().trim()] ?? 0) 
         : 0);
 
-  // 14.1 Crédito Gerado (Exportação PJ: 6,5975% s/ Frete Tributável da Empresa | PF: 6,9375%)
-  // REGRA EXATA: Base Tributável = Frete Empresa - Pedágio (ex: R$ 6.952,75 - R$ 468,63 = R$ 6.484,12) * 0,065975059 -> R$ 427,79
+  // 14.1 Crédito Gerado (Exportação):
+  // - PF (TAC / Terceiro PF): 6,52834% s/ BC Serviço (ICMS 12% * 54,39%)
+  // - PJ (Lucro Real / Presumido / Simples Nacional / MEI): 6,5136% s/ BC Crédito (ICMS 12% * 54,28%)
   const baseCompanyFreightNoToll = Math.max(0, companyFreight - toll);
   const baseDriverFreightNoToll = Math.max(0, driverFreight - toll);
+  const exportCreditRate = isShipmentPf ? 0.0652834 : 0.065136;
   const autoCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
   const calculatedCredit = (isExportCargo && baseCompanyFreightNoToll > 0)
-    ? Number((baseCompanyFreightNoToll * (isShipmentPf ? 0.069375 : 0.065975059)).toFixed(2))
-    : (isExportCargo && baseDriverFreightNoToll > 0 ? Number((baseDriverFreightNoToll * 0.0693519).toFixed(2)) : 0);
+    ? Number((baseCompanyFreightNoToll * exportCreditRate).toFixed(2))
+    : (isExportCargo && baseDriverFreightNoToll > 0 ? Number((baseDriverFreightNoToll * exportCreditRate).toFixed(2)) : 0);
   const generatedCredit = (autoCredit !== undefined && autoCredit > 0) ? autoCredit : calculatedCredit;
 
   // 15. Montagem discriminada dos itens de despesa operacionais

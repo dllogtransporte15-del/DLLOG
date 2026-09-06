@@ -427,7 +427,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     <>
       <Header title="Relatórios" />
       {/* TOP REPORT NAVIGATION TABS (Substituindo o campo do topo pela navegação) */}
-      <div className="bg-white dark:bg-gray-800/90 rounded-2xl mb-6 border border-gray-200/80 dark:border-gray-700/80 shadow-sm overflow-hidden p-3 space-y-3">
+      <div className="bg-white dark:bg-gray-800/90 rounded-2xl mb-6 border border-gray-200/80 dark:border-gray-700/80 shadow-sm p-3 space-y-3 relative z-20">
         {/* Abas Horizontais dos Relatórios */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
           {navItems.map(item => (

@@ -311,6 +311,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       const rate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
       const tVal = shipment.shipmentTonnage || 0;
       const totFrete = shipment.driverFreightValue || (rate * tVal);
+      const isPfInit = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
 
       const calcInit = calculateAdvanceAndBalance({
         driverFreightValue: totFrete,
@@ -318,6 +319,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         tonnage: tVal,
         tollValue: initialToll,
         advancePercentage: initialAdvPct,
+        driverFreightType: isPfInit ? 'PF' : 'PJ',
       });
 
       setAdvancePercentage(initialAdvPct);
@@ -500,23 +502,56 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       const driverFreight = (driverRate * tonnageVal) > 0 ? (driverRate * tonnageVal) : (shipment.driverFreightValue || 0);
 
       // Identificação de PF (Autônomo/TAC) vs PJ (Empresa/ETC)
-      const isShipmentPf = shipment.driverFreightType === 'PF';
-      const isPjDriver = !isShipmentPf;
-      // Regra de Frete PJ Exportação (3 Etapas): Alíquota efetiva de 6,5975059% (6,5975%) sobre Frete Tributável
-      // Teste: R$ 6.484,12 * 0,065975059 = R$ 427,79
-      const creditRate = isPjDriver ? 0.065975059 : 0.069375;
-      const creditRateLabel = isPjDriver ? 'PJ (6,5975% • ICMS s/ Frete Trib.)' : 'PF (75% • 6,9375%)';
+      const isExplicitPj = shipment.driverFreightType === 'PJ' || 
+        shipment.anttModality === 'ETC' || 
+        (shipment as any)?.selectedRegime === 'PJ' || 
+        (shipment as any)?.selectedRegime === 'ETC' || 
+        (shipment as any)?.selectedRegime === 'Lucro Real / Presumido' || 
+        (shipment as any)?.selectedRegime === 'Lucro Real' || 
+        (shipment as any)?.selectedRegime === 'Lucro Presumido' || 
+        (shipment as any)?.selectedRegime === 'Simples Nacional' || 
+        (shipment as any)?.selectedRegime === 'MEI';
 
-      // Exportação
+      const isShipmentPf = !isExplicitPj && (
+        shipment.driverFreightType === 'PF' || 
+        shipment.anttModality === 'TAC' || 
+        (shipment as any)?.selectedRegime === 'PF' || 
+        (shipment as any)?.selectedRegime === 'TAC'
+      );
+      const isSimplesNacional = Boolean(
+        shipment.etcTaxRegime === 'Simples Nacional' ||
+        shipment.etcTaxRegime === 'MEI' ||
+        (shipment as any)?.selectedRegime === 'Simples Nacional' ||
+        (shipment as any)?.selectedRegime === 'MEI' ||
+        (shipment as any)?.isSimplesNacional ||
+        (cargo as any)?.isSimplesNacional ||
+        (shipment.documents as any)?.etc_tax_regime === 'Simples Nacional' ||
+        (shipment.documents as any)?.etc_tax_regime === 'MEI' ||
+        (shipment.documents as any)?.crt === '1' ||
+        (shipment.documents as any)?.crt === '2'
+      );
+
+      // Regra de Frete Exportação:
+      // - PF (TAC/Autônomo): 6,52834% sobre BC Serviço (Manutenção de Crédito: ICMS 12% * 54,39%)
+      // - PJ (Lucro Real / Presumido / Simples Nacional / MEI): 6,5136% sobre BC Crédito (Manutenção de Crédito: ICMS 12% * 54,28%)
+      const creditRate = isShipmentPf 
+        ? 0.0652834 
+        : 0.065136;
+      const creditRateLabel = isShipmentPf 
+        ? 'PF (6,52834% • Manutenção Crédito)' 
+        : 'PJ (6,5136% • Manut. ICMS Exportação)';
+
+      // Exportação (Destino Porto, Terminal Retroportuário, EADI, Armazém Alfandegado, CFOP 6353, CST 40)
       const isExportCargo = cargo?.isExport !== undefined
         ? cargo.isExport
         : ((shipment as any)?.isExport !== undefined
             ? (shipment as any).isExport
             : Boolean(
-                (cargo?.observations && /export/i.test(cargo.observations)) ||
-                (cargo?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
-                ((shipment as any)?.observations && /export/i.test((shipment as any).observations)) ||
-                ((shipment as any)?.destination && /(porto|terminal|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination))
+                (cargo?.observations && /export|cfop\s*6353|cst\s*40/i.test(cargo.observations)) ||
+                (cargo?.destination && /(porto|terminal|retroportu[aá]rio|eadi|alfandeg|armaz[eé]m|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test(cargo.destination)) ||
+                ((shipment as any)?.observations && /export|cfop\s*6353|cst\s*40/i.test((shipment as any).observations)) ||
+                ((shipment as any)?.destination && /(porto|terminal|retroportu[aá]rio|eadi|alfandeg|armaz[eé]m|embarque portu[aá]rio|santos|paranagu[aá]|itaqui|rio grande|barcarena|suape|vit[oó]ria)/i.test((shipment as any).destination)) ||
+                ((shipment.documents as any)?.cfop === '6353' || (shipment.documents as any)?.cst === '40')
               ));
 
       if (parsedToll !== undefined && parsedToll > 0) setTollValue(parsedToll);
@@ -549,10 +584,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ? ((parsedPis || 0) + (parsedCofins || 0))
             : Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2))));
 
-      // Crédito Gerado apurado sobre o Frete Tributável da Empresa em operações de exportação
-      // Base: (R$ 6.952,75 - R$ 468,63 = R$ 6.484,12) * 0,065975059 -> R$ 427,79
+      // Crédito Gerado apurado sobre o Frete Tributável da Empresa (BC Serviço) em operações de exportação
       const effectiveCredit = isExportCargo
-        ? Number((baseFreteEmpresa * (isPjDriver ? 0.065975059 : 0.069375)).toFixed(2))
+        ? Number((baseFreteEmpresa * creditRate).toFixed(2))
         : 0;
 
       // Passo 1, 2 & 3: Frete Líquido e Imposto Federal para Mercado Interno
@@ -563,14 +597,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       const diferencaFreteReais = Math.max(0, freteLiquidoIcms - (shipment.realProfitData?.driverFreight || shipment.driverFreightValue || baseFreteMotorista));
 
       // Simples Nacional: 3,40% s/ Frete Empresa Bruto | PF: 3,655% s/ Frete Líquido | PJ: 9,25% s/ Spread
-      const isSimplesNacional = Boolean(
-        shipment.etcTaxRegime === 'Simples Nacional' ||
-        shipment.etcTaxRegime === 'MEI' ||
-        (shipment as any)?.isSimplesNacional ||
-        (cargo as any)?.isSimplesNacional ||
-        (shipment.documents as any)?.etc_tax_regime === 'Simples Nacional' ||
-        (shipment.documents as any)?.etc_tax_regime === 'MEI'
-      );
 
       const impostoFederalSimples = Number((cteGrossFreight * 0.0340).toFixed(2));
       const impostoFederalPf = Number((freteLiquidoIcms * 0.03655).toFixed(2));
@@ -1470,8 +1496,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 {(() => {
                   const isPfShipment = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
                   const tacDeductions = isPfShipment ? calculateTacTaxDeductions(totalDriverFreight) : null;
-                  const originalSaldo = Math.max(0, totalDriverFreight - ((Number(tollValue) || 0) + (Number(advanceValue) || 0)));
-                  const saldoLiquidoPreDescarga = tacDeductions ? Number((originalSaldo - tacDeductions.totalDeductions).toFixed(2)) : originalSaldo;
+                  const tagNum = Number(tollValue) || 0;
+                  const baseFrete = Math.max(0, totalDriverFreight - tagNum);
+                  const advPctNum = advancePercentage !== '' && advancePercentage !== undefined ? Number(advancePercentage) : 70;
+                  const adiantamentoBruto = Number((baseFrete * (advPctNum / 100)).toFixed(2));
+                  const retencoesAdiantamento = tacDeductions ? Number((tacDeductions.inss + tacDeductions.sestSenat).toFixed(2)) : 0;
+                  const valorContaCalculado = isPfShipment ? Math.max(0, Number((adiantamentoBruto - retencoesAdiantamento).toFixed(2))) : adiantamentoBruto;
+                  const saldoOriginalContratual = Number((baseFrete * ((100 - advPctNum) / 100)).toFixed(2));
+                  const irrfSaldo = tacDeductions ? tacDeductions.irrf : 0;
+                  const saldoLiquidoPreDescarga = isPfShipment ? Math.max(0, Number((saldoOriginalContratual - irrfSaldo).toFixed(2))) : saldoOriginalContratual;
 
                   return (
                     <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
@@ -1528,7 +1561,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         <div>
                           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                            Valor pago na Conta
+                            Valor pago na Conta {isPfShipment && '(Líq. INSS/SEST)'}
                           </label>
                           <div className="relative">
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
@@ -1554,7 +1587,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         <div className="bg-emerald-50/80 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between shadow-2xs">
                           <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
-                            {isPfShipment ? 'Saldo Líquido Pré-Desc.' : 'Valor do Saldo'}
+                            {isPfShipment ? 'Saldo Restante Líquido' : 'Valor do Saldo'}
                           </span>
                           <span className={`text-base font-black mt-1 ${saldoLiquidoPreDescarga < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-900 dark:text-emerald-100'}`}>
                             {formatCurrency(saldoLiquidoPreDescarga)}
@@ -1567,7 +1600,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         <div className="pt-2 border-t border-orange-200/80 dark:border-orange-900/50 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-bold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
-                              <span>📋</span> Retenções Fiscais e Previdenciárias (Regra TAC / Autônomo)
+                              <span>📋</span> Retenções Fiscais e Previdenciárias do Autônomo (PF)
                             </span>
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-900">
                               Base Fiscal (20%): <strong>{formatCurrency(tacDeductions.fiscalBase)}</strong>
@@ -1575,30 +1608,35 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
-                              <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">INSS (11%)</span>
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">INSS Autônomo (11%)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.inss)}</span>
+                              <span className="text-[9px] text-orange-600 dark:text-orange-400 block mt-0.5">Deduz no Adiantamento</span>
                             </div>
-                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">SEST/SENAT (2,5%)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.sestSenat)}</span>
+                              <span className="text-[9px] text-orange-600 dark:text-orange-400 block mt-0.5">Deduz no Adiantamento</span>
                             </div>
-                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">IRRF (Prog.)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">
                                 {tacDeductions.irrf > 0 ? `- ${formatCurrency(tacDeductions.irrf)}` : 'Isento (R$ 0,00)'}
                               </span>
+                              <span className="text-[9px] text-gray-400 block mt-0.5">Deduz no Saldo</span>
                             </div>
-                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-gray-700">
+                            <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Total Retenções</span>
                               <span className="font-black text-red-700 dark:text-red-300">- {formatCurrency(tacDeductions.totalDeductions)}</span>
+                              <span className="text-[9px] text-gray-500 dark:text-gray-400 block mt-0.5">INSS + SEST + IRRF</span>
                             </div>
                           </div>
 
                           <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-600 dark:text-gray-400 bg-white/60 dark:bg-gray-800/60 p-2 rounded-lg border border-gray-200 dark:border-gray-700/60">
-                            <span>Saldo Original Contratual: <strong>{formatCurrency(originalSaldo)}</strong></span>
-                            <span>Retenções: <strong className="text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.totalDeductions)}</strong></span>
-                            <span>Subtotal Líquido Pré-Descarga: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
+                            <span>Adiant. Bruto ({advPctNum}%): <strong>{formatCurrency(adiantamentoBruto)}</strong></span>
+                            <span>Desconto na Conta (INSS+SEST): <strong className="text-red-600 dark:text-red-400">- {formatCurrency(retencoesAdiantamento)}</strong></span>
+                            <span>Pago na Conta: <strong className="text-blue-700 dark:text-blue-400">{formatCurrency(valorContaCalculado)}</strong></span>
+                            <span>Saldo Restante: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
                           </div>
                         </div>
                       )}
