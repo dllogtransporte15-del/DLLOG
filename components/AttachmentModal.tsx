@@ -1524,7 +1524,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div>
                           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
                             Valor pago no Tag
@@ -1561,7 +1561,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         <div>
                           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                            Valor pago na Conta {isPfShipment && '(Líq. INSS/SEST)'}
+                            Adiantamento PG {isPfShipment && '(Líq. INSS/SEST)'}
                           </label>
                           <div className="relative">
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
@@ -1574,15 +1574,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                               placeholder="0,00"
                             />
                           </div>
-                        </div>
-
-                        <div className="bg-blue-50/80 dark:bg-blue-950/40 p-2.5 rounded-xl border border-blue-200 dark:border-blue-800 flex flex-col justify-between shadow-2xs">
-                          <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-tight">
-                            Total Adiantamento
-                          </span>
-                          <span className="text-base font-black text-blue-900 dark:text-blue-100 mt-1">
-                            {formatCurrency((Number(tollValue) || 0) + (Number(advanceValue) || 0))}
-                          </span>
+                          <div className="mt-1 flex items-center justify-between text-[11px] px-0.5 text-gray-500 dark:text-gray-400 font-medium">
+                            <span>Total Adiantamento:</span>
+                            <span className="font-bold text-blue-600 dark:text-blue-400">
+                              {formatCurrency((Number(tollValue) || 0) + (Number(advanceValue) || 0))}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="bg-emerald-50/80 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between shadow-2xs">
