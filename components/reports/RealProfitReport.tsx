@@ -862,16 +862,16 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 dark:bg-gray-900/60 text-gray-600 dark:text-gray-400 font-bold border-b dark:border-gray-700 uppercase tracking-wider text-[10px]">
               <tr>
-                <th className="py-3.5 px-4">ID / Data</th>
-                <th className="py-3.5 px-4">Cliente / Trajeto</th>
-                <th className="py-3.5 px-4">Motorista / Placa</th>
-                <th className="py-3.5 px-4 text-right">Frete Empresa (+)</th>
-                <th className="py-3.5 px-4 text-right">Frete Motorista (-)</th>
-                <th className="py-3.5 px-4 text-right">Dif. Frete</th>
-                <th className="py-3.5 px-4 text-center">Despesas Operacionais</th>
-                <th className="py-3.5 px-4 text-right">Créd. Exp. (Info)</th>
-                <th className="py-3.5 px-4 text-right">Resultado Final (=)</th>
-                <th className="py-3.5 px-4 text-center">Anexo</th>
+                <th className="py-2.5 px-2">ID / Data</th>
+                <th className="py-2.5 px-2">Cliente / Trajeto</th>
+                <th className="py-2.5 px-2">Motorista / Placa</th>
+                <th className="py-2.5 px-2 text-right">Frete Empresa (+)</th>
+                <th className="py-2.5 px-2 text-right">Frete Motorista (-)</th>
+                <th className="py-2.5 px-2 text-right">Dif. Frete</th>
+                <th className="py-2.5 px-2 text-center">Despesas Operac.</th>
+                <th className="py-2.5 px-2 text-right">Créd. Exp.</th>
+                <th className="py-2.5 px-2 text-right">Resultado (=)</th>
+                <th className="py-2.5 px-2 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -879,18 +879,18 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 enrichedRows.map((row) => (
                   <tr key={row.shipment.id} className="hover:bg-gray-50/70 dark:hover:bg-gray-700/30 transition-colors">
                     {/* ID / Data */}
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
+                    <td className="py-2.5 px-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
                         <span className="font-mono font-bold text-gray-900 dark:text-white">
                           {row.shipment.id}
                         </span>
                         {row.hasOcr && (
-                          <span title="Processado via IA Multimodal" className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 text-[9px] font-extrabold">
+                          <span title="Processado via IA Multimodal" className="inline-flex items-center px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 text-[8px] font-extrabold">
                             IA
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
                         {row.shipment.scheduledDate ? new Date(row.shipment.scheduledDate + 'T00:00:00').toLocaleDateString('pt-BR') : '---'}
                       </p>
                       <span className="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -899,137 +899,135 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                     </td>
 
                     {/* Cliente / Trajeto */}
-                    <td className="py-3 px-4 max-w-[200px]">
+                    <td className="py-2.5 px-2 max-w-[140px] xl:max-w-[180px]">
                       <p className="font-semibold text-gray-900 dark:text-white truncate" title={row.clientName}>
                         {row.clientName}
                       </p>
-                      <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate" title={`${row.cargo?.origin || ''} → ${row.cargo?.destination || ''}`}>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate" title={`${row.cargo?.origin || ''} → ${row.cargo?.destination || ''}`}>
                         {row.cargo?.origin || '---'} → {row.cargo?.destination || '---'}
                       </p>
                       {row.cte ? (
-                        <span className="inline-block mt-1 text-[10px] font-mono text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                        <span className="inline-block mt-0.5 text-[9px] font-mono text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800">
                           CT-e nº {row.cte}
                         </span>
                       ) : null}
                     </td>
 
                     {/* Motorista / Placa */}
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <p className="font-semibold text-gray-900 dark:text-white">
+                    <td className="py-2.5 px-2 max-w-[130px] xl:max-w-[160px]">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate" title={row.shipment.driverName}>
                         {row.shipment.driverName}
                       </p>
-                      <p className="text-[11px] font-mono text-gray-500 dark:text-gray-400">
+                      <p className="text-[10px] font-mono text-gray-500 dark:text-gray-400 truncate">
                         Placa: {row.shipment.horsePlate}
                       </p>
                     </td>
 
                     {/* Frete Empresa */}
-                    <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
-                      <span className="font-bold text-gray-900 dark:text-white">
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                      <span className="font-bold text-gray-900 dark:text-white text-xs">
                         R$ {row.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       {row.shipment.realProfitData?.complementCharged ? (
-                        <p className="text-[10px] text-blue-600 dark:text-blue-400">
-                          + R$ {row.shipment.realProfitData.complementCharged.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} compl.
+                        <p className="text-[9px] text-blue-600 dark:text-blue-400">
+                          + R$ {row.shipment.realProfitData.complementCharged.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
                       ) : null}
                     </td>
 
                     {/* Frete Motorista */}
-                    <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
-                      <span className="font-bold text-gray-800 dark:text-gray-200">
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                      <span className="font-bold text-gray-800 dark:text-gray-200 text-xs">
                         R$ {row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </td>
 
                     {/* Diferença de Frete */}
-                    <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
-                      <p className="font-bold text-indigo-600 dark:text-indigo-400">
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                      <p className="font-bold text-indigo-600 dark:text-indigo-400 text-xs">
                         R$ {row.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
-                      <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                      <span className="text-[9px] font-semibold text-gray-500 dark:text-gray-400">
                         {row.freightDifferenceMarginPercent.toFixed(1)}%
                       </span>
                     </td>
 
                     {/* Despesas Operacionais */}
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
                       {row.totalExpenses > 0 || row.expenseItems.length > 0 ? (
                         <div className="flex flex-col items-center">
-                          <span className="font-mono font-bold text-red-600 dark:text-red-400">
+                          <span className="font-mono font-bold text-red-600 dark:text-red-400 text-xs">
                             - R$ {row.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                           <button
                             type="button"
                             onClick={() => setSelectedShipmentForDetail(row.shipment)}
-                            className="mt-0.5 text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-1"
+                            className="mt-0.5 text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-0.5"
                           >
-                            <Receipt className="w-3 h-3" />
+                            <Receipt className="w-2.5 h-2.5" />
                             Ver {row.expenseItems.length} despesa(s)
                           </button>
                         </div>
                       ) : (
-                        <span className="text-gray-400 text-[11px]">R$ 0,00</span>
+                        <span className="text-gray-400 text-[10px]">R$ 0,00</span>
                       )}
                     </td>
 
                     {/* Crédito Fiscal Gerado (Exportação) - Informativo */}
-                    <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
                       {row.generatedCredit > 0 ? (
                         <div>
-                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
                             R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
-                          <p className="text-[9px] text-gray-500 dark:text-gray-400 font-medium">
+                          <p className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">
                             Informativo
                           </p>
                         </div>
                       ) : (
-                        <span className="text-gray-400 dark:text-gray-500 text-[11px]">---</span>
+                        <span className="text-gray-400 dark:text-gray-500 text-[10px]">---</span>
                       )}
                     </td>
 
                     {/* Resultado Final (Lucro Real da Operação) */}
-                    <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
                       <div className="flex flex-col items-end">
-                        <span className={`text-sm font-black ${
+                        <span className={`text-xs font-black ${
                           row.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
                         }`}>
                           R$ {row.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
-                        <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded mt-0.5 ${
+                        <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
                           row.netProfit >= 0 
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' 
                             : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
                         }`}>
-                          {row.profitMarginPercent.toFixed(2)}%
+                          {row.profitMarginPercent.toFixed(1)}%
                         </span>
                       </div>
                     </td>
 
                     {/* Acesso ao Anexo e Ação de Correção */}
-                    <td className="py-3 px-4 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1">
                         {row.attachmentUrl ? (
                           <button
                             type="button"
                             onClick={() => openDocumentInNewTab(row.attachmentUrl!, `Resumo Custos - ${row.shipment.id}`)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800"
+                            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-[10px] font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800"
                             title="Visualizar Comprovante / Imagem Original"
                           >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Ver</span>
+                            <Eye className="w-3 h-3" />
+                            <span>Ver</span>
                           </button>
-                        ) : (
-                          <span className="text-gray-400 text-[10px] hidden sm:inline mr-1">Sem anexo</span>
-                        )}
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setEditingShipmentForAttachment(row.shipment)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-xs font-semibold transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-[10px] font-semibold transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800"
                           title="Anexar ou corrigir imagem do resumo de custos e recalcular o Lucro Real"
                         >
-                          <Upload className="w-3.5 h-3.5" />
+                          <Upload className="w-3 h-3" />
                           <span>{row.hasOcr ? 'Editar' : 'Anexar'}</span>
                         </button>
                       </div>
@@ -1050,39 +1048,39 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             {enrichedRows.length > 0 && (
               <tfoot className="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white font-bold border-t-2 border-gray-300 dark:border-gray-600">
                 <tr>
-                  <td className="py-3.5 px-4 font-mono font-black uppercase text-xs" colSpan={3}>
-                    Total Consolidado ({totals.totalShipments} embarques)
+                  <td className="py-2.5 px-2 font-mono font-black uppercase text-[11px]" colSpan={3}>
+                    TOTAL CONSOLIDADO ({totals.totalShipments} EMB.)
                   </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-xs text-blue-700 dark:text-blue-300">
+                  <td className="py-2.5 px-2 text-right font-mono text-xs text-blue-700 dark:text-blue-300">
                     R$ {totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-xs text-amber-700 dark:text-amber-300">
+                  <td className="py-2.5 px-2 text-right font-mono text-xs text-amber-700 dark:text-amber-300">
                     R$ {totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-xs text-indigo-700 dark:text-indigo-300">
+                  <td className="py-2.5 px-2 text-right font-mono text-xs text-indigo-700 dark:text-indigo-300">
                     R$ {totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    <p className="text-[10px] font-normal">{totals.consolidatedFreightDiffMargin.toFixed(1)}%</p>
+                    <p className="text-[9px] font-normal">{totals.consolidatedFreightDiffMargin.toFixed(1)}%</p>
                   </td>
-                  <td className="py-3.5 px-4 text-center font-mono text-xs text-red-600 dark:text-red-400">
+                  <td className="py-2.5 px-2 text-center font-mono text-xs text-red-600 dark:text-red-400">
                     - R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                  <td className="py-2.5 px-2 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">
                     R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    <p className="text-[9px] font-normal text-gray-500 dark:text-gray-400">Informativo</p>
+                    <p className="text-[8px] font-normal text-gray-500 dark:text-gray-400">Informativo</p>
                   </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-xs">
-                    <span className={`text-sm font-black ${
+                  <td className="py-2.5 px-2 text-right font-mono text-xs">
+                    <span className={`text-xs font-black ${
                       totals.sumNetProfit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'
                     }`}>
                       R$ {totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
-                    <p className={`text-[10px] font-extrabold ${
+                    <p className={`text-[9px] font-extrabold ${
                       totals.sumNetProfit >= 0 ? 'text-emerald-800 dark:text-emerald-400' : 'text-red-800 dark:text-red-400'
                     }`}>
                       Margem: {totals.consolidatedMargin.toFixed(2)}%
                     </p>
                   </td>
-                  <td className="py-3.5 px-4 text-center text-xs text-gray-500">
+                  <td className="py-2.5 px-2 text-center text-[10px] text-gray-500">
                     {totals.countOcr} IA
                   </td>
                 </tr>

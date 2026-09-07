@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
-import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus, AnttModality, EtcTaxRegime } from '../types';
+import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus, AnttModality, EtcTaxRegime, FreightCalculationType } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
 import { toCargo } from '../lib/db';
@@ -491,11 +491,16 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const hasPfToll = leg1.driverFreightPfHasToll ?? currentCargo?.driverFreightPfHasToll ?? false;
 
   const currentFreightRate = (driverFreightType === 'PF' && !isPfDisabled) ? ratePf : ratePj;
+  const isFixedFreight = currentCargo?.freightCalculationType === FreightCalculationType.Fixed || leg1.freightCalculationType === FreightCalculationType.Fixed;
 
   const calculatedFreight = useMemo(() => {
-    if (!currentCargo || shipmentTonnage <= 0) return 0;
+    if (!currentCargo) return 0;
+    if (isFixedFreight) {
+      return currentFreightRate;
+    }
+    if (shipmentTonnage <= 0) return 0;
     return currentFreightRate * shipmentTonnage;
-  }, [currentCargo, shipmentTonnage, currentFreightRate]);
+  }, [currentCargo, shipmentTonnage, currentFreightRate, isFixedFreight]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -643,6 +648,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       driverFreightType: anttModality === AnttModality.TAC ? 'PF' : 'PJ',
     });
 
+    const companyFreightRate = currentCargo.companyFreightValuePerTon || 0;
+
     const shipmentData = {
       cargoId: currentCargo.id,
       driverName,
@@ -656,6 +663,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       shipmentTonnage,
       driverFreightValue: calculatedFreight,
       driverFreightRateSnapshot: currentFreightRate,
+      companyFreightRateSnapshot: companyFreightRate,
+      freightCalculationType: currentCargo.freightCalculationType || leg1.freightCalculationType,
+      icmsValue: currentCargo.icmsValue || leg1.icmsValue,
       driverFreightType: anttModality === AnttModality.TAC ? 'PF' : 'PJ',
       anttOwnerIdentifier: anttOwnerIdentifier.trim(),
       anttModality: anttModality,
@@ -1084,7 +1094,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                 <span className="text-xl font-black text-gray-900 dark:text-white">PJ</span>
                                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 mt-0.5">Pessoa Jurídica</span>
                                 <span className="text-base font-black text-gray-900 dark:text-white mt-2">
-                                  {formatCurrency(ratePj)}{hasPjToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">/ton</span>
+                                  {formatCurrency(ratePj)}{hasPjToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">{isFixedFreight ? 'fixo' : '/ton'}</span>
                                 </span>
                                 {anttModality === AnttModality.ETC && (
                                   <span className="mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
@@ -1109,7 +1119,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                   {isPfDisabled ? (
                                     <span className="text-xs text-red-500 italic">Desabilitado</span>
                                   ) : (
-                                    <>{formatCurrency(ratePf)}{hasPfToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">/ton</span></>
+                                    <>{formatCurrency(ratePf)}{hasPfToll ? ' + Ped' : ''} <span className="text-xs font-normal text-gray-400">{isFixedFreight ? 'fixo' : '/ton'}</span></>
                                   )}
                                 </span>
                                 {anttModality === AnttModality.TAC && (

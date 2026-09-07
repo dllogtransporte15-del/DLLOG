@@ -5,7 +5,7 @@ import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/
 import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
 } from '../types';
-import { DEFAULT_RISK_QUERY_OPTIONS } from '../types';
+import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType } from '../types';
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
@@ -380,6 +380,20 @@ export const toCargo = (row: any): Cargo => ({
     }
     return undefined;
   })(),
+  freightCalculationType: (() => {
+    if (row.freight_calculation_type) return row.freight_calculation_type;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_freight_calc_type') : null;
+    if (metaLog?.description) return metaLog.description as FreightCalculationType;
+    return safeParseJson(row.freight_legs, undefined)?.[0]?.freightCalculationType || FreightCalculationType.PerTon;
+  })(),
+  icmsValue: (() => {
+    if (row.icms_value !== null && row.icms_value !== undefined) return Number(row.icms_value);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_icms_value') : null;
+    if (metaLog?.description) return Number(metaLog.description) || 0;
+    return safeParseJson(row.freight_legs, undefined)?.[0]?.icmsValue || 0;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -442,6 +456,24 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
       userId: 'system',
       timestamp: new Date().toISOString(),
       description: c.isExport ? 'true' : 'false'
+    });
+  }
+  if (c.freightCalculationType !== undefined) {
+    history = history.filter(h => h.id !== 'meta_freight_calc_type');
+    history.push({
+      id: 'meta_freight_calc_type',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: c.freightCalculationType
+    });
+  }
+  if (c.icmsValue !== undefined) {
+    history = history.filter(h => h.id !== 'meta_icms_value');
+    history.push({
+      id: 'meta_icms_value',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.icmsValue)
     });
   }
 
@@ -526,6 +558,8 @@ const toShipment = (row: any): Shipment => ({
   vehicleTag: row.vehicle_tag,
   companyFreightRateSnapshot: row.company_freight_rate_snapshot !== null ? Number(row.company_freight_rate_snapshot) : undefined,
   driverFreightRateSnapshot: row.driver_freight_rate_snapshot !== null ? Number(row.driver_freight_rate_snapshot) : undefined,
+  freightCalculationType: row.freight_calculation_type || row.documents?.freight_calculation_type || undefined,
+  icmsValue: row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (row.documents?.icms_value !== undefined && row.documents?.icms_value !== null ? Number(row.documents.icms_value) : undefined),
   route: row.route,
   cancellationReason: row.cancellation_reason,
   driverReferences: Array.isArray(row.driver_references) ? row.driver_references.join('\n') : (row.driver_references || ''),
@@ -585,6 +619,8 @@ const fromShipment = (s: Shipment) => ({
     nfe_number: s.nfeNumber ?? null,
     mdfe_number: s.mdfeNumber ?? null,
     real_profit_data: s.realProfitData ?? null,
+    freight_calculation_type: s.freightCalculationType ?? null,
+    icms_value: s.icmsValue !== undefined ? s.icmsValue : null,
   },
   history: s.history,
   created_at: s.createdAt,

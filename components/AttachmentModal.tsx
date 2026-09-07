@@ -1494,6 +1494,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                 {/* Financial calculation & summary box */}
                 {(() => {
+                  const isAgAdiantamento = shipment.status === ShipmentStatus.AguardandoAdiantamento;
                   const isPfShipment = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
                   const tagNum = Number(tollValue) || 0;
                   const tacDeductions = isPfShipment ? calculateTacTaxDeductions(totalDriverFreight, tagNum) : null;
@@ -1558,24 +1559,39 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                            Adiantamento PG
-                          </label>
+                        <div className={
+                          isAgAdiantamento
+                            ? "bg-blue-50/90 dark:bg-blue-950/40 p-2.5 rounded-xl border-2 border-blue-500 dark:border-blue-400 flex flex-col justify-between shadow-xs ring-2 ring-blue-500/20"
+                            : ""
+                        }>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className={`block text-xs font-semibold ${isAgAdiantamento ? 'text-blue-900 dark:text-blue-100 font-bold uppercase tracking-tight text-[11px]' : 'text-gray-600 dark:text-gray-300'}`}>
+                              Adiantamento PG
+                            </label>
+                            {isAgAdiantamento && (
+                              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-xs">
+                                A Pagar
+                              </span>
+                            )}
+                          </div>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
+                            <span className={`absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-medium ${isAgAdiantamento ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-400'}`}>R$</span>
                             <input
                               type="number"
                               value={advanceValue}
                               onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))}
-                              className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
+                              className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm ${
+                                isAgAdiantamento
+                                  ? 'border-blue-400 dark:border-blue-500 font-bold text-blue-950 dark:text-white bg-white dark:bg-gray-800 shadow-xs focus:ring-2 focus:ring-blue-500'
+                                  : 'dark:bg-gray-700 dark:border-gray-600 bg-white'
+                              } ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`}
                               disabled={!canSave}
                               placeholder="0,00"
                             />
                           </div>
                           <div className="mt-1 flex items-center justify-between text-[11px] px-0.5 text-gray-500 dark:text-gray-400 font-medium">
                             <span>Total Adiantamento:</span>
-                            <span className="font-bold text-blue-600 dark:text-blue-400">
+                            <span className={`font-bold ${isAgAdiantamento ? 'text-blue-700 dark:text-blue-300 font-extrabold' : 'text-blue-600 dark:text-blue-400'}`}>
                               {formatCurrency((Number(tollValue) || 0) + (Number(advanceValue) || 0))}
                             </span>
                           </div>

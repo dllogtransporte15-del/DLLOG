@@ -1,10 +1,10 @@
 
 import React, { useMemo } from 'react';
 import type { Cargo, Client, Product, User, FreightLeg, Shipment } from '../types';
+import { FreightCalculationType, ShipmentStatus } from '../types';
 import VolumeBar from './VolumeBar';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { StayRecord } from '../utils/toolStorage';
-import { ShipmentStatus } from '../types';
 import { DocumentAttachmentCard } from './ImageLightboxModal';
 import FormattedObservations from './FormattedObservations';
 import { Globe2 } from 'lucide-react';
@@ -28,13 +28,19 @@ const DetailItem: React.FC<{ label: string; value?: string | number | null; chil
     </div>
 );
 
-const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitiveData?: boolean; isMotorista?: boolean }> = ({ leg, index, hideSensitiveData, isMotorista }) => (
+const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitiveData?: boolean; isMotorista?: boolean; calculationType?: FreightCalculationType }> = ({ leg, index, hideSensitiveData, isMotorista, calculationType }) => (
     <div className="p-4 border rounded-md dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
         <div className="flex justify-between items-center mb-3">
             <h4 className="font-semibold text-gray-600 dark:text-gray-300">Perna {index + 1}</h4>
             {!isMotorista && (
-                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${leg.hasIcms ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'}`}>
-                    ICMS: {leg.hasIcms ? `Sim (${leg.icmsPercentage}%)` : 'Não'}
+                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                    calculationType === FreightCalculationType.PerTonPlusIcms || leg.hasIcms
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+                        : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
+                }`}>
+                    {calculationType === FreightCalculationType.PerTonPlusIcms
+                        ? `ICMS: ${leg.icmsPercentage || 0}% (+${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((leg.companyFreightValuePerTon || 0) * ((leg.icmsPercentage || 0) / 100))}/t)`
+                        : `ICMS: ${leg.hasIcms ? `Sim (${leg.icmsPercentage}%)` : 'Não'}`}
                 </span>
             )}
         </div>
@@ -257,7 +263,9 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
             </div>
 
             <div className="border-t dark:border-gray-700 pt-4">
-                <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Valores de Frete (por Tonelada)</h3>
+                <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Valores de Frete {cargo.freightCalculationType === FreightCalculationType.Fixed ? '(Frete Fechado)' : cargo.freightCalculationType === FreightCalculationType.PerTonPlusIcms ? '(P/ton + ICMS)' : '(por Tonelada)'}
+                </h3>
                 <div className="space-y-3">
                     {freightLegsToDisplay.map((leg, index) => (
                         <FreightLegDetail 
@@ -266,6 +274,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                             index={index} 
                             hideSensitiveData={isClient} 
                             isMotorista={currentUser?.profile === 'Motorista'} 
+                            calculationType={cargo.freightCalculationType}
                         />
                     ))}
                 </div>

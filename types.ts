@@ -218,6 +218,12 @@ export interface HistoryLog {
     description: string;
 }
 
+export enum FreightCalculationType {
+  PerTon = "per_ton",                 // Por Tonelada (R$/ton)
+  Fixed = "fixed",                   // Frete Fechado (Valor Fixo R$)
+  PerTonPlusIcms = "per_ton_plus_icms" // VLR P/ton + ICMS
+}
+
 export interface FreightLeg {
   companyFreightValuePerTon: number;
   companyFreightHasToll?: boolean;
@@ -228,6 +234,11 @@ export interface FreightLeg {
   disablePfFreight?: boolean;
   hasIcms: boolean;
   icmsPercentage: number;
+  freightCalculationType?: FreightCalculationType;
+  icmsValue?: number;
+  companyFreightTotalFixed?: number;
+  driverFreightTotalFixedPj?: number;
+  driverFreightTotalFixedPf?: number;
 }
 
 export enum DailyScheduleType {
@@ -263,6 +274,11 @@ export interface Cargo {
   driverFreightPfHasToll?: boolean;
   hasIcms: boolean;
   icmsPercentage: number;
+  freightCalculationType?: FreightCalculationType;
+  icmsValue?: number;
+  companyFreightTotalFixed?: number;
+  driverFreightTotalFixedPj?: number;
+  driverFreightTotalFixedPf?: number;
   requiresScheduling: boolean;
   type: CargoType;
   status: CargoStatus;
@@ -469,6 +485,8 @@ export interface Shipment {
   vehicleTag?: string;
   companyFreightRateSnapshot?: number;
   driverFreightRateSnapshot?: number;
+  freightCalculationType?: FreightCalculationType;
+  icmsValue?: number;
   driverFreightType?: 'PJ' | 'PF';
   route?: string;
   isExport?: boolean;
