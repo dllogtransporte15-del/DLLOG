@@ -349,7 +349,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       case 'lucro-real':
         return (
           <RealProfitReport
-            shipments={filteredShipments}
+            shipments={shipments}
             cargos={cargos}
             clients={clients}
             users={users}

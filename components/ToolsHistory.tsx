@@ -4,6 +4,7 @@ import { format, parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-f
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getStays, getQuotes, StayRecord, QuoteRecord } from '../utils/storage';
+import { getStoredCompanyLogo } from '../utils/pdfGenerator';
 
 interface HistoryProps {
   companyId: string;
@@ -101,13 +102,14 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
   // ─── PDF Exports ───
   const exportStaysPDF = () => {
     const doc = new jsPDF({ orientation: 'landscape' });
+    const logo = companyLogo || getStoredCompanyLogo();
     // Logo e Cabeçalho (Alinhados)
-    const hasLogo = !!companyLogo;
+    const hasLogo = !!logo;
     const logoSize = 12;
 
-    if (hasLogo && companyLogo) {
+    if (hasLogo && logo) {
       try {
-        doc.addImage(companyLogo, 'PNG', 14, 10, logoSize, logoSize);
+        doc.addImage(logo, 'PNG', 14, 10, logoSize, logoSize);
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF", e);
       }
@@ -147,15 +149,16 @@ export default function History({ companyId, companyLogo }: HistoryProps) {
 
   const exportQuotesPDF = () => {
     const doc = new jsPDF({ orientation: 'landscape' });
+    const logo = companyLogo || getStoredCompanyLogo();
 
     // Logo e Cabeçalho (Alinhados)
     let currentY = 22;
-    const hasLogo = !!companyLogo;
+    const hasLogo = !!logo;
     const logoSize = 12; // Menor e mais discreto
 
-    if (hasLogo && companyLogo) {
+    if (hasLogo && logo) {
       try {
-        doc.addImage(companyLogo, 'PNG', 14, 10, logoSize, logoSize);
+        doc.addImage(logo, 'PNG', 14, 10, logoSize, logoSize);
       } catch (e) {
         console.error("Erro ao adicionar logo ao PDF", e);
       }

@@ -19,6 +19,7 @@ import { autoFormatInput } from '../utils/formatters';
 import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
 import { geocodeCity } from '../utils/geocoding';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
+import { addPdfLogo } from '../utils/pdfGenerator';
 
 // Fix Leaflet icon issue by using CDN directly to prevent webpack/vite breaking the image paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -373,6 +374,7 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
     if (!results || !routeInfo) return;
 
     const doc = new jsPDF();
+    addPdfLogo(doc, undefined, { align: 'right', y: 8, width: 35, height: 15 });
     doc.setFontSize(18);
     doc.text('Cotação de Frete', 14, 22);
 

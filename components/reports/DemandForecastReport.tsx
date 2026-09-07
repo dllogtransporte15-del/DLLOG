@@ -4,6 +4,7 @@ import { ShipmentStatus } from "../../types";
 import { Download, FileSpreadsheet } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { addPdfLogo } from "../../utils/pdfGenerator";
 
 interface DemandForecastReportProps {
   cargos: Cargo[];
@@ -147,15 +148,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
 
   const handleExportPDF = () => {
     const doc = new jsPDF("landscape");
-
-    if (companyLogo) {
-      try {
-        const pageWidth = doc.internal.pageSize.getWidth();
-        doc.addImage(companyLogo, 'PNG', pageWidth - 14 - 35, 5, 35, 15);
-      } catch (e) {
-        console.warn("Could not add company logo to PDF", e);
-      }
-    }
+    addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 15 });
     doc.setFontSize(14);
     doc.text("Previsao de Demandas", 14, 14);
     doc.setFontSize(9);

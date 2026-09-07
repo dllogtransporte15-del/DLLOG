@@ -6,6 +6,7 @@ import { Calculator, Download, FileText, Truck, Clock, MapPin, FileDigit, User, 
 import { saveStay, getClients, saveClient, Client } from '../utils/storage';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
+import { addPdfLogo } from '../utils/pdfGenerator';
 
 interface StayData {
   clientName: string;
@@ -235,6 +236,7 @@ export default function StayCalculator({ companyId }: StayCalculatorProps) {
 
     const isDaily = formData.calculationType === 'DAILY_FIXED';
     const doc = new jsPDF();
+    addPdfLogo(doc, undefined, { align: 'right', y: 8, width: 35, height: 15 });
     doc.setFontSize(18);
     doc.text('Relatório de Cálculo de Estadia', 14, 22);
     doc.setFontSize(11);

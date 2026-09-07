@@ -3,6 +3,55 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Shipment, Cargo, Client, Product, Vehicle } from "../types";
 
+export const getStoredCompanyLogo = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return (
+    localStorage.getItem('transcunha_companyLogo') ||
+    localStorage.getItem('trancunha_companyLogo') ||
+    null
+  );
+};
+
+export const addPdfLogo = (
+  doc: jsPDF,
+  logo?: string | null,
+  options?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    align?: 'left' | 'right' | 'center';
+  }
+): boolean => {
+  const effectiveLogo = logo || getStoredCompanyLogo();
+  if (!effectiveLogo) return false;
+
+  const w = options?.width ?? 35;
+  const h = options?.height ?? 15;
+  const y = options?.y ?? 5;
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  let x = options?.x;
+  if (x === undefined) {
+    if (options?.align === 'left') {
+      x = 14;
+    } else if (options?.align === 'center') {
+      x = (pageWidth - w) / 2;
+    } else {
+      // Default: Top right
+      x = pageWidth - 14 - w;
+    }
+  }
+
+  try {
+    doc.addImage(effectiveLogo, 'PNG', x, y, w, h);
+    return true;
+  } catch (e) {
+    console.warn("Could not add company logo to PDF", e);
+    return false;
+  }
+};
+
 export const generateLoadingOrderPDF = (
   shipment: Shipment,
   cargo: Cargo,
@@ -32,10 +81,10 @@ export const generateLoadingOrderPDF = (
   doc.rect(0, 0, pageWidth, 40, 'F');
   
   // Logo
-  if (companyLogo) {
+  const effectiveLogo = companyLogo || getStoredCompanyLogo();
+  if (effectiveLogo) {
       try {
-          // Adjust logo width/height if needed to prevent squash, but keeping original dimension settings
-          doc.addImage(companyLogo, 'PNG', margin, 5, 35, 20); 
+          doc.addImage(effectiveLogo, 'PNG', margin, 5, 35, 20); 
       } catch (e) {
           console.warn("Could not add company logo to PDF", e);
       }

@@ -383,11 +383,8 @@ export function calculateShipmentExpenses(
   // Total com frete motorista
   const totalDeducoesComFrete = Number((totalExpenses + driverFreight).toFixed(2));
 
-  // Resultado / Lucro Líquido Real da Operação (SEM somar Crédito Fiscal Gerado, que é mantido como informativo)
-  const netProfitCalculated = Number((companyFreight - totalDeducoesComFrete).toFixed(2));
-  const netProfit = shipment.realProfitData?.netProfit !== undefined
-    ? shipment.realProfitData.netProfit
-    : netProfitCalculated;
+  // Resultado / Lucro Líquido Real da Operação (SEM somar Crédito Fiscal Gerado, que é estritamente informativo)
+  const netProfit = Number((companyFreight - totalDeducoesComFrete).toFixed(2));
 
   // Margem Efetiva sobre Frete Bruto
   const profitMarginPercent = companyFreight > 0 

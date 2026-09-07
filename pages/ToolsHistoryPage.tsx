@@ -20,6 +20,7 @@ import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../t
 import { UserProfile, ShipmentStatus } from '../types';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
+import { addPdfLogo } from '../utils/pdfGenerator';
 
 interface ToolsHistoryPageProps {
   currentUser: AppUser | null;
@@ -316,6 +317,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (data.length === 0) return;
 
     const doc = new jsPDF('l', 'mm', 'a4');
+    addPdfLogo(doc, undefined, { align: 'right', y: 8, width: 35, height: 15 });
     doc.setFontSize(18);
     doc.text(`Histórico de ${isStays ? 'Estadias' : 'Cotações de Frete'}`, 14, 20);
     doc.setFontSize(10);

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfLogo } from '../utils/pdfGenerator';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EditRiskQueryModal from '../components/EditRiskQueryModal';
@@ -721,13 +722,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
     const doc = new jsPDF('landscape');
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    if (companyLogo) {
-      try {
-        doc.addImage(companyLogo, 'PNG', pageWidth - 14 - 35, 6, 35, 12);
-      } catch (e) {
-        console.warn('Erro ao inserir logo no PDF:', e);
-      }
-    }
+    addPdfLogo(doc, companyLogo, { align: 'right', y: 6, width: 35, height: 12 });
 
     doc.setFontSize(16);
     doc.setTextColor(29, 59, 141);

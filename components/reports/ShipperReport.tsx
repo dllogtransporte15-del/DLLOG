@@ -9,6 +9,7 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { Download, List, X, Filter } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfLogo } from '../../utils/pdfGenerator';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 
 interface ShipperReportProps {
@@ -159,15 +160,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         if (filterModalDest.length > 0) filterDesc.push(`Destino: ${filterModalDest.join(', ')}`);
 
         const doc = new jsPDF('landscape');
-
-        if (companyLogo) {
-            try {
-                const pageWidth = doc.internal.pageSize.getWidth();
-                doc.addImage(companyLogo, 'PNG', pageWidth - 14 - 35, 5, 35, 15);
-            } catch (e) {
-                console.warn("Could not add company logo to PDF", e);
-            }
-        }
+        addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 15 });
 
         doc.setFontSize(16);
         doc.text(`Listagem de Embarques - ${embarcadorName}`, 14, 15);
@@ -293,15 +286,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             : 'Geral';
 
         const doc = new jsPDF('landscape');
-
-        if (companyLogo) {
-            try {
-                const pageWidth = doc.internal.pageSize.getWidth();
-                doc.addImage(companyLogo, 'PNG', pageWidth - 14 - 35, 5, 35, 15);
-            } catch (e) {
-                console.warn("Could not add company logo to PDF", e);
-            }
-        }
+        addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 15 });
         
         doc.setFontSize(16);
         doc.text(`Relatório de Embarques Finalizados - Embarcador: ${embarcadorName || 'Todos'}`, 14, 15);

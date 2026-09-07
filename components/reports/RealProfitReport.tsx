@@ -1,11 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import type { Shipment, User, Cargo, Client, Driver, Vehicle, Branch, Product } from '../../types';
-import { ShipmentStatus, UserProfile, RISK_QUERY_COST_MAP } from '../../types';
+import { ShipmentStatus } from '../../types';
 import { 
   DollarSign, 
   TrendingUp, 
   TrendingDown, 
-  Percent, 
   FileText, 
   Download, 
   Search, 
@@ -13,18 +12,12 @@ import {
   Eye, 
   Paperclip, 
   Receipt, 
-  X, 
+  X,
   Truck, 
-  Building2, 
-  Calendar,
-  Layers,
   Sparkles,
-  ExternalLink,
-  ChevronDown,
-  ChevronUp,
   Upload,
-  Edit2,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -33,10 +26,9 @@ import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
-
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import { addPdfLogo } from '../../utils/pdfGenerator';
 import { SyncDocumentsModal } from '../SyncDocumentsModal';
-import { RefreshCw } from 'lucide-react';
 
 interface RealProfitReportProps {
   shipments: Shipment[];
@@ -73,6 +65,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 }) => {
   // Filtros internos
   const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState(propStartDate || '');
+  const [endDate, setEndDate] = useState(propEndDate || '');
   const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
@@ -82,6 +76,14 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const [onlyWithOcr, setOnlyWithOcr] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (propStartDate) setStartDate(propStartDate);
+  }, [propStartDate]);
+
+  React.useEffect(() => {
+    if (propEndDate) setEndDate(propEndDate);
+  }, [propEndDate]);
 
   // Modal de Detalhes de Despesas
   const [selectedShipmentForDetail, setSelectedShipmentForDetail] = useState<Shipment | null>(null);
@@ -147,6 +149,22 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         const matchesDest = cargo?.destination?.toLowerCase().includes(term);
 
         if (!matchesId && !matchesCte && !matchesNfe && !matchesDriver && !matchesPlate && !matchesClient && !matchesOrigin && !matchesDest) {
+          return false;
+        }
+      }
+
+      // Filtro por Data de Início e Fim (Data Programada ou Data Efetivada / Criação)
+      if (startDate || endDate) {
+        const rawDate = s.scheduledDate || (s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota)?.timestamp?.substring(0, 10)) || (s.createdAt ? s.createdAt.substring(0, 10) : '');
+        const shipDate = rawDate ? rawDate.substring(0, 10) : '';
+
+        if (!shipDate) {
+          return false;
+        }
+        if (startDate && shipDate < startDate) {
+          return false;
+        }
+        if (endDate && shipDate > endDate) {
           return false;
         }
       }
@@ -235,7 +253,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
       return true;
     });
-  }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
+  }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, startDate, endDate, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
 
   // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e)
   const enrichedRows = useMemo(() => {
@@ -267,13 +285,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
       const attachmentUrl = Array.isArray(saldoDoc) ? saldoDoc[0] : (typeof saldoDoc === 'string' ? saldoDoc : undefined);
 
-      const cte = getShipmentCte(s);
-
       return {
         shipment: s,
         cargo,
         clientName,
-        cte: (cte && cte !== '-') ? cte : '',
+        cte: getShipmentCte(s),
         companyFreight,
         driverFreight,
         freightDifference,
@@ -281,60 +297,42 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         totalExpenses,
         netProfit,
         profitMarginPercent,
-        generatedCredit: generatedCredit || 0,
-        hasOcr: Boolean(s.realProfitData),
         expenseItems: rawExpenseItems,
-        attachmentUrl,
         riskCost,
+        generatedCredit,
+        hasOcr: Boolean(s.realProfitData),
+        attachmentUrl,
         calculatedExpenses,
       };
     });
   }, [filteredData, cargoMap, clientMap]);
 
-  // Totalizadores globais (Footer / KPIs)
+  // Totais Gerais
   const totals = useMemo(() => {
-    let sumCompanyFreight = 0;
-    let sumDriverFreight = 0;
-    let sumExpenses = 0;
-    let sumFreightDiff = 0;
-    let sumNetProfit = 0;
-    let sumGeneratedCredit = 0;
-    let countExportCredits = 0;
-    let countOcr = 0;
+    const totalShipments = enrichedRows.length;
+    const sumCompanyFreight = enrichedRows.reduce((acc, r) => acc + r.companyFreight, 0);
+    const sumDriverFreight = enrichedRows.reduce((acc, r) => acc + r.driverFreight, 0);
+    const sumFreightDiff = enrichedRows.reduce((acc, r) => acc + r.freightDifference, 0);
+    const sumExpenses = enrichedRows.reduce((acc, r) => acc + r.totalExpenses, 0);
+    const sumGeneratedCredit = enrichedRows.reduce((acc, r) => acc + r.generatedCredit, 0);
+    const sumNetProfit = enrichedRows.reduce((acc, r) => acc + r.netProfit, 0);
+    const countOcr = enrichedRows.filter(r => r.hasOcr).length;
 
-    enrichedRows.forEach(r => {
-      sumCompanyFreight += r.companyFreight;
-      sumDriverFreight += r.driverFreight;
-      sumExpenses += r.totalExpenses;
-      sumFreightDiff += r.freightDifference;
-      sumNetProfit += r.netProfit;
-      if (r.generatedCredit > 0) {
-        sumGeneratedCredit += r.generatedCredit;
-        countExportCredits++;
-      }
-      if (r.hasOcr) countOcr++;
-    });
-
-    const consolidatedMargin = sumCompanyFreight > 0 
-      ? (sumNetProfit / sumCompanyFreight) * 100 
-      : 0;
-
-    const consolidatedFreightDiffMargin = sumCompanyFreight > 0 
-      ? (sumFreightDiff / sumCompanyFreight) * 100 
-      : 0;
+    const consolidatedMargin = sumCompanyFreight > 0 ? (sumNetProfit / sumCompanyFreight) * 100 : 0;
+    const consolidatedFreightMargin = sumCompanyFreight > 0 ? (sumFreightDiff / sumCompanyFreight) * 100 : 0;
 
     return {
-      totalShipments: enrichedRows.length,
-      countOcr,
-      countExportCredits,
+      totalShipments,
       sumCompanyFreight,
       sumDriverFreight,
-      sumExpenses,
       sumFreightDiff,
-      sumNetProfit,
+      sumExpenses,
       sumGeneratedCredit,
+      sumNetProfit,
       consolidatedMargin,
-      consolidatedFreightDiffMargin
+      consolidatedFreightMargin,
+      consolidatedFreightDiffMargin: consolidatedFreightMargin,
+      countOcr,
     };
   }, [enrichedRows]);
 
@@ -342,6 +340,9 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const handleExportPDF = () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     
+    // Logo
+    addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 14 });
+
     // Cabeçalho
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
@@ -349,7 +350,13 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    const periodText = propStartDate && propEndDate ? `Período: ${propStartDate} a ${propEndDate}` : 'Todos os períodos';
+    const periodText = startDate && endDate 
+      ? `Período: ${new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(endDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
+      : (startDate 
+          ? `A partir de: ${new Date(startDate + 'T00:00:00').toLocaleDateString('pt-BR')}` 
+          : (endDate 
+              ? `Até: ${new Date(endDate + 'T00:00:00').toLocaleDateString('pt-BR')}` 
+              : 'Todos os períodos'));
     doc.text(`${periodText} | Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, 21);
 
     // Tabela
@@ -462,11 +469,25 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `lucro_real_embarques_${new Date().toISOString().split('T')[0]}.csv`);
+    const dateSuffix = startDate && endDate ? `_${startDate}_a_${endDate}` : `_${new Date().toISOString().split('T')[0]}`;
+    link.setAttribute('download', `lucro_real_embarques${dateSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  const hasActiveFilters = Boolean(
+    searchTerm.trim() ||
+    startDate ||
+    endDate ||
+    selectedStatus.length > 0 ||
+    selectedClients.length > 0 ||
+    selectedDrivers.length > 0 ||
+    selectedBranches.length > 0 ||
+    selectedExport.length > 0 ||
+    selectedDriverRegimes.length > 0 ||
+    onlyWithOcr
+  );
 
   return (
     <div className="space-y-6">
@@ -478,122 +499,104 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           </div>
           <div>
             <p className="font-bold text-slate-100">
-              Despesas & Encargos Operacionais Configurados para Apuração do Lucro Real
+              Automatização Completa & Conformidade Tributária Integrada
             </p>
             <p className="text-indigo-200/80 text-[11px] mt-0.5">
-              Aplicados automaticamente na apuração contábil de cada viagem e discriminados nos detalhes da operação.
+              Cálculo exato de Diferença de Frete, Despesas Operacionais, Consultas de Risco, Comissões e Lucro Real apurado individualmente.
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-indigo-200 border border-white/10 font-medium">
-            🛡️ Seguro Acidente: <strong className="text-white">0,0125% NF</strong>
-          </span>
-          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-indigo-200 border border-white/10 font-medium">
-            🔒 Seguro Roubo: <strong className="text-white">0,0125% NF</strong>
-          </span>
-          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-indigo-200 border border-white/10 font-medium">
-            🚛 Seguro RCV: <strong className="text-white">R$ 5,00 / carga</strong>
-          </span>
-          <span className="px-2.5 py-1 rounded-lg bg-white/10 text-amber-300 border border-amber-400/20 font-medium">
-            🏛️ INSS Patronal: <strong className="text-amber-200">4% Frete PF</strong>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 text-[10px] font-mono font-semibold">
+            Apuração Inteligente
           </span>
         </div>
       </div>
 
-      {/* CARDS DE INDICADORES / KPIS (REDUZIDOS EM 20%) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        {/* Frete Empresa Total */}
+      {/* CARDS DE RESUMO CONSOLIDADO (KPIs) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Frete Bruto Empresa */}
         <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              Frete Empresa (+)
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Frete Empresa
             </span>
             <div className="p-1 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
               <DollarSign className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white">
-            R$ {totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white truncate" title={`R$ ${totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+            R$ {totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-            Faturamento bruto dos embarques
-          </p>
+          <p className="text-[10px] text-gray-400 mt-0.5 font-medium">Receita total a faturar</p>
         </div>
 
-        {/* Frete Motorista Total */}
+        {/* Frete Motorista / Carreteiro */}
         <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              Frete Motoristas (-)
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Frete Motorista
             </span>
             <div className="p-1 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
               <Truck className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white">
-            R$ {totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white truncate" title={`R$ ${totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+            R$ {totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-            Custo total pago a terceiros
-          </p>
+          <p className="text-[10px] text-gray-400 mt-0.5 font-medium">Custo do frete contratado</p>
         </div>
 
-        {/* Despesas Operacionais Totais */}
+        {/* Diferença de Frete */}
         <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400">
-              Despesas Operac. (-)
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Dif. Frete Bruta
             </span>
-            <div className="p-1 rounded-md bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400">
-              <Receipt className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <p className="text-base sm:text-lg font-mono font-black text-red-600 dark:text-red-400">
-            R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-            Impostos, CPRB, comissões, etc.
-          </p>
-        </div>
-
-        {/* Crédito Gerado (Exportação) - Informativo */}
-        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs relative overflow-hidden">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              Créd. Exportação (Info)
-            </span>
-            <div className="p-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400" title="Total de créditos fiscais PIS/COFINS apurados em cargas de exportação (Informativo contábil)">
-              <Percent className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <p className="text-base sm:text-lg font-mono font-black text-emerald-600 dark:text-emerald-400">
-            R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-          <p className="text-[10px] text-emerald-700/80 dark:text-emerald-400/80 mt-0.5 font-medium">
-            {totals.countExportCredits} embarque(s) com crédito
-          </p>
-        </div>
-
-        {/* Lucro Real Líquido */}
-        <div className={`p-3 rounded-xl border shadow-xs relative overflow-hidden ${
-          totals.sumNetProfit >= 0 
-            ? 'bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-700/60' 
-            : 'bg-red-50/80 dark:bg-red-950/20 border-red-300 dark:border-red-700/60'
-        }`}>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-              Lucro Real Consolidado (=)
-            </span>
-            <div className={`p-1 rounded-md ${totals.sumNetProfit >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'}`}>
+            <div className="p-1 rounded-md bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
               <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
-          <p className={`text-base sm:text-lg font-mono font-black ${totals.sumNetProfit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-            R$ {totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <p className="text-base sm:text-lg font-mono font-black text-purple-600 dark:text-purple-400 truncate" title={`R$ ${totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+            R$ {totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-[10px] text-emerald-800/80 dark:text-emerald-400 mt-0.5 font-semibold">
-            Margem Líquida Real: {totals.consolidatedMargin.toFixed(2)}%
+          <p className="text-[10px] text-purple-600/80 dark:text-purple-400/80 mt-0.5 font-semibold">
+            {totals.consolidatedFreightMargin.toFixed(1)}% do frete bruto
+          </p>
+        </div>
+
+        {/* Total de Despesas Operacionais */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+              Despesas Operac.
+            </span>
+            <div className="p-1 rounded-md bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
+              <TrendingDown className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className="text-base sm:text-lg font-mono font-black text-rose-600 dark:text-rose-400 truncate" title={`R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+            R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-rose-600/80 dark:text-rose-400/80 mt-0.5 font-medium">Impostos + Taxas + Risco</p>
+        </div>
+
+        {/* Lucro Real Consolidado */}
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border-2 border-emerald-500/50 dark:border-emerald-500/40 shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              Lucro Real
+            </span>
+            <div className="p-1 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+              <DollarSign className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <p className={`text-base sm:text-lg font-mono font-black truncate ${totals.sumNetProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`} title={`R$ ${totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+            R$ {totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-bold">
+            Margem Real: {totals.consolidatedMargin.toFixed(1)}%
           </p>
         </div>
 
@@ -608,7 +611,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             </div>
           </div>
           <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white">
-            {totals.totalShipments} <span className="text-[11px] font-normal text-gray-500">embarques</span>
+            {totals.totalShipments} <span className="text-[11px] font-normal text-gray-500">emb.</span>
           </p>
           <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-0.5 font-semibold">
             {totals.countOcr} com comprovante OCR
@@ -616,37 +619,30 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         </div>
       </div>
 
-      {/* CABEÇALHO DO RELATÓRIO (REDUZIDO EM 20%) */}
+      {/* CABEÇALHO DO RELATÓRIO */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-xs">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white leading-tight">
-                Lucro Real da Operação de Embarque
-              </h2>
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                Detalhamento exato de receitas, despesas operacionais e resultado consolidado de embarques efetivados (com CT-e emitido).
-              </p>
-            </div>
-          </div>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white leading-tight">
+            Relatório de Lucro Real
+          </h2>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+            Acompanhe o desempenho financeiro real das operações de transporte.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setShowFilters(!showFilters)}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${
-              showFilters || selectedStatus.length > 0 || selectedClients.length > 0 || selectedDrivers.length > 0 || selectedBranches.length > 0 || selectedExport.length > 0 || selectedDriverRegimes.length > 0 || onlyWithOcr
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
+              showFilters || hasActiveFilters
                 ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700'
                 : 'bg-gray-50 dark:bg-gray-700/60 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'
             }`}
           >
             <Filter className="w-3.5 h-3.5" />
             Filtros Avançados
-            {(selectedStatus.length > 0 || selectedClients.length > 0 || selectedDrivers.length > 0 || selectedBranches.length > 0 || selectedExport.length > 0 || selectedDriverRegimes.length > 0 || onlyWithOcr) && (
+            {hasActiveFilters && (
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
             )}
           </button>
@@ -656,7 +652,6 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
               type="button"
               onClick={() => setIsSyncModalOpen(true)}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs cursor-pointer"
-              title="Lê e atualiza dados de CT-e, Nota Fiscal, MDF-e e Carta Frete em lote"
             >
               <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               Sincronizar Documentos
@@ -669,7 +664,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            Exportar CSV / Excel
+            Exportar CSV
           </button>
 
           <button
@@ -686,7 +681,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       {/* PAINEL DE FILTROS */}
       {showFilters && (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-4 animate-in fade-in duration-200">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-9 gap-3">
             {/* Busca textual */}
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
@@ -700,6 +695,37 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+            </div>
+
+            {/* Data Início */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                Data Início
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-2.5 py-2 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Data Fim */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                Data Fim
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate || undefined}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-2.5 py-2 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium"
                 />
               </div>
             </div>
@@ -798,6 +824,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
               type="button"
               onClick={() => {
                 setSearchTerm('');
+                setStartDate('');
+                setEndDate('');
                 setSelectedExport([]);
                 setSelectedDriverRegimes([]);
                 setSelectedStatus([]);
@@ -931,15 +959,15 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       )}
                     </td>
 
-                    {/* Crédito Fiscal Gerado (Exportação) */}
+                    {/* Crédito Fiscal Gerado (Exportação) - Informativo */}
                     <td className="py-3 px-4 text-right font-mono whitespace-nowrap">
                       {row.generatedCredit > 0 ? (
                         <div>
                           <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                            + R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
-                          <p className="text-[9px] text-emerald-700/70 dark:text-emerald-400/70 font-semibold">
-                            PIS/COFINS
+                          <p className="text-[9px] text-gray-500 dark:text-gray-400 font-medium">
+                            Informativo
                           </p>
                         </div>
                       ) : (
@@ -1025,7 +1053,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                     - R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                    + R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <p className="text-[9px] font-normal text-gray-500 dark:text-gray-400">Informativo</p>
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono text-xs">
                     <span className={`text-sm font-black ${

@@ -11,6 +11,7 @@ import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
 import { geocodeCity } from '../utils/geocoding';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
+import { addPdfLogo } from '../utils/pdfGenerator';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -276,8 +277,7 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
       driverAnalysis: {
         dieselCost,
         commissionValue,
-        netProfit: driverNetProfit,
-        profitMargin: (driverNetProfit / driverTotalValue) * 100
+        netProfit: driverNetProfit
       },
       carrierAnalysis: {
         grossProfit: carrierGrossProfit,
@@ -289,93 +289,66 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
 
   const handleSave = () => {
     if (!result) return;
-    
-    if (!formData.origin || !formData.destination || !formData.distance) {
-      showToast("Por favor, preencha os campos obrigatórios (Origem, Destino, Distância).", 'warning');
-      return;
-    }
-
-    if (formData.clientName) {
-      saveClient(companyId, formData.clientName);
-      setClients(getClients(companyId));
-    }
-
     saveQuote({
       companyId,
-      clientName: formData.clientName || 'Não Informado',
+      clientName: formData.clientName || 'Cliente Balcão',
       origin: formData.origin,
       destination: formData.destination,
-      distance: parseFloat(formData.distance),
-      axes: parseInt(formData.axes, 10),
+      distance: parseFloat(formData.distance) || 0,
+      axes: parseInt(formData.axes) || 4,
       cargoType: formData.cargoType,
       inputMode: formData.inputMode,
       valuePerKm: parseFloat(formData.valuePerKm) || 0,
-      driverTotalValue: parseFloat(formData.driverTotalValue) || 0,
+      driverTotalValue: result.driverTotalValue,
       tollValue: parseFloat(formData.tollValue) || 0,
       anttValue: parseFloat(formData.anttValue) || 0,
       weight: parseFloat(formData.weight) || 0,
       margin: parseFloat(formData.margin) || 0,
       icms: parseFloat(formData.icms) || 0,
-      driverFreightPerTon: result.driverFreightPerTon,
-      companyFreightPerTon: result.companyFreightPerTon,
-      companyTotalFreight: result.companyTotalFreight,
       dieselPrice: parseFloat(formData.dieselPrice) || 0,
       averageConsumption: parseFloat(formData.averageConsumption) || 0,
       driverCommissionPercent: parseFloat(formData.driverCommissionPercent) || 0,
+      companyTotalFreight: result.companyTotalFreight,
+      driverFreightPerTon: result.driverFreightPerTon,
+      companyFreightPerTon: result.companyFreightPerTon,
       dieselCost: result.driverAnalysis.dieselCost,
       commissionValue: result.driverAnalysis.commissionValue,
       carrierNetProfit: result.carrierAnalysis.netProfit,
       carrierProfitMargin: result.carrierAnalysis.profitMargin
     });
-
+    if (formData.clientName && !clients.some(c => c.name.toLowerCase() === formData.clientName.toLowerCase())) {
+      saveClient(companyId, formData.clientName);
+      setClients(getClients(companyId));
+    }
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    showToast('Cotação salva com sucesso!', 'success');
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  const formatNumber = (value: number, decimals: number = 2) => {
-    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value);
+  const formatNumber = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(val);
   };
 
   const exportToCSV = () => {
     if (!result) return;
-    
-    const headers = [
-      'Cliente', 'Origem', 'Destino', 'Distância (km)', 'Eixos', 'Tipo de Carga',
-      'Peso (Ton)', 'Valor Motorista (R$)', 'Pedágio (R$)', 'ANTT (R$)',
-      'Margem (%)', 'ICMS (%)', 'Frete Total Motorista', 'Frete Ton Motorista',
-      'Frete Total Empresa', 'Frete Ton Empresa', 'Lucro Líquido Transportadora'
-    ];
-    
+    const headers = ['Origem', 'Destino', 'Distancia (KM)', 'Frete Motorista', 'Frete Empresa', 'Lucro Transportadora', 'Margem (%)'];
     const row = [
-      formData.clientName || 'Não Informado',
       formData.origin,
       formData.destination,
       formData.distance,
-      formData.axes,
-      formData.cargoType,
-      formData.weight,
       result.driverTotalValue.toFixed(2),
-      formData.tollValue,
-      formData.anttValue,
-      formData.margin,
-      formData.icms,
-      result.driverTotalValue.toFixed(2),
-      result.driverFreightPerTon.toFixed(2),
       result.companyTotalFreight.toFixed(2),
-      result.companyFreightPerTon.toFixed(2),
-      result.carrierAnalysis.netProfit.toFixed(2)
+      result.carrierAnalysis.netProfit.toFixed(2),
+      result.carrierAnalysis.profitMargin.toFixed(2)
     ];
-
-    const csvContent = [headers.join(','), row.map(v => `"${v}"`).join(',')].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `cotacao_${formData.origin}_${formData.destination}.csv`);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), row.join(',')].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `cotacao_${formData.origin}_${formData.destination}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -383,111 +356,99 @@ export default function FreightQuote({ companyId }: FreightQuoteProps) {
 
   const exportToPDF = () => {
     if (!result) return;
-
     const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text('Relatório de Cotação de Frete', 14, 22);
+    addPdfLogo(doc, undefined, { align: 'right', y: 8, width: 35, height: 15 });
+    doc.setFontSize(16);
+    doc.text("Cotação de Frete", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 28);
     
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Gerada em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 30);
-
     autoTable(doc, {
-      startY: 40,
-      head: [['Dados da Rota e Carga', 'Valores']],
+      startY: 35,
+      head: [['Item', 'Detalhe']],
       body: [
-        ['Cliente', formData.clientName || 'Não Informado'],
+        ['Cliente', formData.clientName || 'Não informado'],
         ['Origem', formData.origin],
         ['Destino', formData.destination],
-        ['Distância', `${formatNumber(parseFloat(formData.distance))} km`],
-        ['Veículo/Eixos', `${formData.axes} Eixos`],
-        ['Tipo de Carga', formData.cargoType],
-        ['Peso', `${formatNumber(parseFloat(formData.weight))} Ton`],
+        ['Distância', `${formData.distance} km`],
+        ['Eixos / Tipo de Carga', `${formData.axes} Eixos / ${formData.cargoType}`],
+        ['Peso da Carga', `${formData.weight} Toneladas`],
+        ['Frete Motorista (Total)', formatCurrency(result.driverTotalValue)],
+        ['Frete Motorista / Ton', formatCurrency(result.driverFreightPerTon)],
+        ['Frete Empresa (Total)', formatCurrency(result.companyTotalFreight)],
+        ['Frete Empresa / Ton', formatCurrency(result.companyFreightPerTon)],
+        ['Lucro Líquido Transportadora', formatCurrency(result.carrierAnalysis.netProfit)],
+        ['Margem Líquida Transportadora', `${formatNumber(result.carrierAnalysis.profitMargin)}%`]
       ],
       theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229] },
-    });
-
-    let finalY = (doc as any).lastAutoTable.finalY || 40;
-
-    autoTable(doc, {
-      startY: finalY + 10,
-      head: [['Análise do Frete Motorista', 'Valores']],
-      body: [
-        ['Valor por Km', formatCurrency(result.valuePerKm)],
-        ['Frete Base (+ Pedágio + ANTT)', formatCurrency(result.driverTotalValue + parseFloat(formData.tollValue || '0') + parseFloat(formData.anttValue || '0'))],
-        ['Frete por Tonelada', formatCurrency(result.driverFreightPerTon)],
-      ],
-      theme: 'grid',
-      headStyles: { fillColor: [59, 130, 246] },
-    });
-
-    finalY = (doc as any).lastAutoTable.finalY || 40;
-
-    autoTable(doc, {
-      startY: finalY + 10,
-      head: [['Valores Finais para o Cliente (Empresa)', 'Valores']],
-      body: [
-        ['Margem Aplicada', `${formData.margin}%`],
-        ['Valor do ICMS', formatCurrency(result.taxes.icmsValue)],
-        ['Frete Total a Cobrar', formatCurrency(result.companyTotalFreight)],
-        ['Valor por Tonelada', formatCurrency(result.companyFreightPerTon)],
-        ['Lucro Líquido Previsto', formatCurrency(result.carrierAnalysis.netProfit)],
-      ],
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42] },
-      didParseCell: function(data) {
-        if (data.row.index === 2 && data.section === 'body') {
-          data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.textColor = [5, 150, 105];
-        }
-      }
+      headStyles: { fillColor: [79, 70, 229] }
     });
 
     doc.save(`cotacao_${formData.origin}_${formData.destination}.pdf`);
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 font-sans">
-      <div className="xl:col-span-4 space-y-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-          <div className="flex justify-between items-center mb-5">
-            <h2 className="text-base font-semibold flex items-center text-slate-800">
-              <Truck className="w-4 h-4 mr-2 text-indigo-500" />
-              Rota e Rastreamento
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        <div className="xl:col-span-4 space-y-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+            <h2 className="text-base font-semibold flex items-center text-slate-800 mb-4">
+              <MapPin className="w-4 h-4 mr-2 text-indigo-500" /> Rota e Carga
             </h2>
-            <button onClick={clearFields} className="text-xs text-slate-500 hover:text-slate-700 flex items-center transition-colors">
-              <Trash2 className="w-3 h-3 mr-1" /> Limpar
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-700 flex items-center"><Building2 className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Cliente (Opcional)</label>
-              <input type="text" name="clientName" value={formData.clientName} onChange={handleInputChange} list="clients-list" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Nome do cliente" />
-              <datalist id="clients-list">{clients.map(c => <option key={c.id} value={c.name} />)}</datalist>
-            </div>
-            
-            <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700 flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-emerald-500" /> Origem *</label>
-                <input type="text" name="origin" value={formData.origin} onChange={handleInputChange} list="city-suggestions-fq" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Uberaba, MG" />
-              </div>
-
-              <div className="flex items-center justify-center -my-2 relative z-10">
-                <div className="bg-white p-1 rounded-full border border-slate-200"><Navigation className="w-4 h-4 text-slate-400 transform rotate-180" /></div>
+                <label className="text-xs font-medium text-slate-700 flex items-center">
+                  <Building2 className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Cliente
+                </label>
+                <input
+                  type="text"
+                  name="clientName"
+                  value={formData.clientName}
+                  onChange={handleInputChange}
+                  list="clients-list"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="Nome do cliente (opcional)"
+                />
+                <datalist id="clients-list">
+                  {clients.map(c => <option key={c.id} value={c.name} />)}
+                </datalist>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700 flex items-center"><MapPin className="w-3.5 h-3.5 mr-1.5 text-indigo-500" /> Destino *</label>
-                <input type="text" name="destination" value={formData.destination} onChange={handleInputChange} list="city-suggestions-fq" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Sacramento, MG" />
+                <label className="text-xs font-medium text-slate-700 flex items-center">
+                  <MapPin className="w-3.5 h-3.5 mr-1.5 text-emerald-500" /> Origem *
+                </label>
+                <input
+                  type="text"
+                  name="origin"
+                  value={formData.origin}
+                  onChange={handleInputChange}
+                  list="brazilian-cities-origin"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="Cidade - UF"
+                />
+                <datalist id="brazilian-cities-origin">
+                  {BRAZILIAN_CITIES.map((c, i) => <option key={i} value={c} />)}
+                </datalist>
               </div>
 
-              <datalist id="city-suggestions-fq">
-                {BRAZILIAN_CITIES.map((city, idx) => (
-                  <option key={idx} value={city} />
-                ))}
-              </datalist>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700 flex items-center">
+                  <MapPin className="w-3.5 h-3.5 mr-1.5 text-red-500" /> Destino *
+                </label>
+                <input
+                  type="text"
+                  name="destination"
+                  value={formData.destination}
+                  onChange={handleInputChange}
+                  list="brazilian-cities-dest"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="Cidade - UF"
+                />
+                <datalist id="brazilian-cities-dest">
+                  {BRAZILIAN_CITIES.map((c, i) => <option key={i} value={c} />)}
+                </datalist>
+              </div>
 
               <button 
                 onClick={calculateRoute}

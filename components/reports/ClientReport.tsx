@@ -8,6 +8,7 @@ import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalcul
 import { Download, List, X, Filter, Building2, ChevronDown, ChevronUp, MapPin, CheckCircle2, TrendingUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfLogo } from '../../utils/pdfGenerator';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 
 interface ClientReportProps {
@@ -403,15 +404,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     }
 
     const doc = new jsPDF('landscape');
-
-    if (companyLogo) {
-      try {
-        const pageWidth = doc.internal.pageSize.getWidth();
-        doc.addImage(companyLogo, 'PNG', pageWidth - 14 - 35, 5, 35, 15);
-      } catch (e) {
-        console.warn('Could not add company logo to PDF', e);
-      }
-    }
+    addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 15 });
 
     doc.setFontSize(15);
     doc.text(isClientUser ? `Relatório de Demandas e Embarques - ${subTitleName}` : `Relatório de Embarques Finalizados - Cliente: ${subTitleName}`, 14, 15);
@@ -564,15 +557,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     if (filterModalDest.length > 0) filterDesc.push(`Destino: ${filterModalDest.join(', ')}`);
 
     const doc = new jsPDF('landscape');
-
-    if (companyLogo) {
-      try {
-        const pageWidth = doc.internal.pageSize.getWidth();
-        doc.addImage(companyLogo, 'PNG', pageWidth - 14 - 35, 5, 35, 15);
-      } catch (e) {
-        console.warn('Could not add company logo to PDF', e);
-      }
-    }
+    addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 15 });
 
     doc.setFontSize(15);
     doc.text(`Listagem de Embarques - ${clientName}`, 14, 15);
