@@ -329,6 +329,7 @@ export const DocumentExtractedDataModal: React.FC<DocumentExtractedDataModalProp
                     const calc = calculateFreightBalance({
                       tipoPessoa: effectivePersonType,
                       freteBruto: data.financeiro?.valorTotalFrete,
+                      tollValue: data.financeiro?.valorPedagio,
                       adiantamento: data.financeiro?.valorAdiantamento,
                       saldoOriginal: data.financeiro?.valorSaldo,
                       inssRetido: effectivePersonType === 'PF' ? data.calculoSaldoFrete?.inssRetido : 0,

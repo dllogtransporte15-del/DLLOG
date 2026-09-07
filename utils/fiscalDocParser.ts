@@ -798,6 +798,7 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     res.calculoSaldoFrete = calculateFreightBalance({
       tipoPessoa,
       freteBruto: res.financeiro?.valorTotalFrete,
+      tollValue: res.financeiro?.valorPedagio,
       adiantamento: res.financeiro?.valorAdiantamento,
       saldoOriginal: val351 || res.financeiro?.valorSaldo,
       inssRetido: val352,

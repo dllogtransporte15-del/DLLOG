@@ -1495,16 +1495,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 {/* Financial calculation & summary box */}
                 {(() => {
                   const isPfShipment = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
-                  const tacDeductions = isPfShipment ? calculateTacTaxDeductions(totalDriverFreight) : null;
                   const tagNum = Number(tollValue) || 0;
+                  const tacDeductions = isPfShipment ? calculateTacTaxDeductions(totalDriverFreight, tagNum) : null;
                   const baseFrete = Math.max(0, totalDriverFreight - tagNum);
                   const advPctNum = advancePercentage !== '' && advancePercentage !== undefined ? Number(advancePercentage) : 70;
                   const adiantamentoBruto = Number((baseFrete * (advPctNum / 100)).toFixed(2));
-                  const retencoesAdiantamento = tacDeductions ? Number((tacDeductions.inss + tacDeductions.sestSenat).toFixed(2)) : 0;
-                  const valorContaCalculado = isPfShipment ? Math.max(0, Number((adiantamentoBruto - retencoesAdiantamento).toFixed(2))) : adiantamentoBruto;
+                  const valorContaCalculado = adiantamentoBruto;
                   const saldoOriginalContratual = Number((baseFrete * ((100 - advPctNum) / 100)).toFixed(2));
-                  const irrfSaldo = tacDeductions ? tacDeductions.irrf : 0;
-                  const saldoLiquidoPreDescarga = isPfShipment ? Math.max(0, Number((saldoOriginalContratual - irrfSaldo).toFixed(2))) : saldoOriginalContratual;
+                  const totalRetencoesSaldo = tacDeductions ? Number((tacDeductions.inss + tacDeductions.sestSenat + tacDeductions.irrf).toFixed(2)) : 0;
+                  const saldoLiquidoPreDescarga = isPfShipment ? Math.max(0, Number((saldoOriginalContratual - totalRetencoesSaldo).toFixed(2))) : saldoOriginalContratual;
 
                   return (
                     <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
@@ -1561,7 +1560,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         <div>
                           <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                            Adiantamento PG {isPfShipment && '(Líq. INSS/SEST)'}
+                            Adiantamento PG
                           </label>
                           <div className="relative">
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
@@ -1599,8 +1598,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             <span className="font-bold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
                               <span>📋</span> Retenções Fiscais e Previdenciárias do Autônomo (PF)
                             </span>
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-900">
-                              Base Fiscal (20%): <strong>{formatCurrency(tacDeductions.fiscalBase)}</strong>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-900" title="Base calculada sobre 20% do frete líquido de pedágio">
+                              Base Fiscal (20% s/ Líq. Pedágio): <strong>{formatCurrency(tacDeductions.fiscalBase)}</strong>
                             </span>
                           </div>
 
@@ -1608,19 +1607,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">INSS Autônomo (11%)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.inss)}</span>
-                              <span className="text-[9px] text-orange-600 dark:text-orange-400 block mt-0.5">Deduz no Adiantamento</span>
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Deduz no Saldo</span>
                             </div>
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">SEST/SENAT (2,5%)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.sestSenat)}</span>
-                              <span className="text-[9px] text-orange-600 dark:text-orange-400 block mt-0.5">Deduz no Adiantamento</span>
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Deduz no Saldo</span>
                             </div>
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">IRRF (Prog.)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">
                                 {tacDeductions.irrf > 0 ? `- ${formatCurrency(tacDeductions.irrf)}` : 'Isento (R$ 0,00)'}
                               </span>
-                              <span className="text-[9px] text-gray-400 block mt-0.5">Deduz no Saldo</span>
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Deduz no Saldo</span>
                             </div>
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Total Retenções</span>
@@ -1630,10 +1629,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           </div>
 
                           <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-600 dark:text-gray-400 bg-white/60 dark:bg-gray-800/60 p-2 rounded-lg border border-gray-200 dark:border-gray-700/60">
-                            <span>Adiant. Bruto ({advPctNum}%): <strong>{formatCurrency(adiantamentoBruto)}</strong></span>
-                            <span>Desconto na Conta (INSS+SEST): <strong className="text-red-600 dark:text-red-400">- {formatCurrency(retencoesAdiantamento)}</strong></span>
-                            <span>Pago na Conta: <strong className="text-blue-700 dark:text-blue-400">{formatCurrency(valorContaCalculado)}</strong></span>
-                            <span>Saldo Restante: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
+                            <span>Adiant. na Conta ({advPctNum}%): <strong>{formatCurrency(valorContaCalculado)}</strong></span>
+                            <span>Total Retenções no Saldo: <strong className="text-red-600 dark:text-red-400">- {formatCurrency(totalRetencoesSaldo)}</strong></span>
+                            <span>Saldo Original: <strong>{formatCurrency(saldoOriginalContratual)}</strong></span>
+                            <span>Saldo Restante Líquido: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
                           </div>
                         </div>
                       )}

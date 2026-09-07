@@ -53,6 +53,7 @@ export interface FreightBalanceCalculation {
 export function calculateFreightBalance(params: {
   tipoPessoa?: 'PF' | 'PJ';
   freteBruto?: number;
+  tollValue?: number;
   adiantamento?: number;
   saldoOriginal?: number;
   inssRetido?: number;
@@ -72,6 +73,7 @@ export function calculateFreightBalance(params: {
 }): FreightBalanceCalculation {
   const tipoPessoa = params.tipoPessoa || 'PF';
   const freteBruto = params.freteBruto || 0;
+  const tagVal = params.tollValue || 0;
   const adiantamento = params.adiantamento || 0;
 
   // 1 & 2. Saldo Original Contratual
@@ -87,7 +89,7 @@ export function calculateFreightBalance(params: {
 
   // 3. Retenções Previdenciárias e Fiscais (Regra TAC Autônomo)
   if (tipoPessoa === 'PF') {
-    tacTaxes = calculateTacTaxDeductions(freteBruto);
+    tacTaxes = calculateTacTaxDeductions(freteBruto, tagVal);
     baseCalculoFiscal = tacTaxes.fiscalBase;
     inssRetido = params.inssRetido !== undefined ? params.inssRetido : tacTaxes.inss;
     sestSenat = params.sestSenat !== undefined ? params.sestSenat : tacTaxes.sestSenat;
