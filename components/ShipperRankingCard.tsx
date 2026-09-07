@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import type { Shipment, Cargo, User } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
+import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ShipperRankingCardProps {
   shipments: Shipment[];
@@ -75,10 +76,8 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
 
             const cargo = cargoMap.get(shipment.cargoId);
             if (cargo) {
-              const companyRate = shipment.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
-              const companyFreightValue = companyRate * shipment.shipmentTonnage;
-              const driverFreightValue = shipment.driverFreightValue;
-              netMargin += (companyFreightValue - driverFreightValue);
+              const expenses = calculateShipmentExpenses(shipment, cargo);
+              netMargin += expenses.netProfit;
             }
 
             effectiveTonnage += (shipment.shipmentTonnage || 0);

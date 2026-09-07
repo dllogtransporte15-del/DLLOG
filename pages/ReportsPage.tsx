@@ -20,6 +20,7 @@ import RealProfitReport from '../components/reports/RealProfitReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
 import { getShipmentCte, isCteApplicableForStatus } from '../utils';
+import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ReportsPageProps {
   shipments: Shipment[];
@@ -274,10 +275,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        const hasCte = isCteApplicableForStatus(s.status) && cteVal !== '-' && cteVal.trim() !== '' && s.status !== ShipmentStatus.Cancelado;
 
        if (profitMarginStatuses.includes(s.status)) {
-           const grossRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-           const driverRate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
-           const commissionRate = cargo?.salespersonCommissionPerTon || 0;
-           const ton = s.loadedTonnage || s.shipmentTonnage || 0;
+           const expenses = calculateShipmentExpenses(s, cargo);
            
            const demurrageRevenue = stays
                .filter(stay => stay.shipmentId === s.id)
@@ -287,8 +285,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                .filter(stay => stay.shipmentId === s.id)
                .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
                
-           const profit = ((grossRate - driverRate - commissionRate) * ton) + demurrageProfit;
-           const revenue = (grossRate * ton) + demurrageRevenue;
+           const profit = expenses.netProfit + demurrageProfit;
+           const revenue = expenses.companyFreight + demurrageRevenue;
            
            // Faturamento Bruto: soma apenas os embarques que possuem CT-e emitido
            if (hasCte) {

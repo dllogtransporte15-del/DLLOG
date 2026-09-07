@@ -4,6 +4,7 @@ import { ShipmentStatus, UserProfile } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { StayRecord } from '../../utils/toolStorage';
+import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { Download, List, X, Filter, Building2, ChevronDown, ChevronUp, MapPin, CheckCircle2, TrendingUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -200,9 +201,9 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       if (!hasShipmentCte && !hasStayCte) return;
 
       const client = clients.find(c => c.id === cargo.clientId);
-      const grossRate = shipment.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
       const ton = shipment.loadedTonnage || shipment.shipmentTonnage || 0;
-      const grossValue = grossRate * ton;
+      const expenses = calculateShipmentExpenses(shipment, cargo);
+      const grossValue = expenses.companyFreight;
 
       // Estadia aprovada: faturamento bruto inclui o valor cobrado ao cliente (approvedValue)
       const demurrageRevenue = shipmentStays
@@ -214,18 +215,15 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       // Faturamento bruto = frete + estadias aprovadas
       const totalGrossValue = hasShipmentCte ? grossValue + demurrageRevenue : demurrageRevenue;
 
-      const icmsValue = cargo.hasIcms ? grossValue * (cargo.icmsPercentage / 100) : 0;
-      const netFreightValue = grossValue - icmsValue;
-      const commissionRate = cargo.salespersonCommissionPerTon || 0;
-
       const profit = hasShipmentCte
-        ? (netFreightValue - shipment.driverFreightValue - (commissionRate * ton) + demurrageProfit)
+        ? (expenses.netProfit + demurrageProfit)
         : demurrageProfit;
 
       const isCompleted = shipment.status === ShipmentStatus.Finalizado;
+      const isCanceled = shipment.status === ShipmentStatus.Cancelado;
 
       // Add to overall client
-      if (hasShipmentCte) {
+      if (hasShipmentCte && !isCanceled) {
         clientEntry.totalTonnage += ton;
         clientEntry.totalShipments += 1;
         if (isCompleted) clientEntry.completedShipments += 1;
@@ -256,7 +254,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
         }
       }
 
-      if (hasShipmentCte) {
+      if (hasShipmentCte && !isCanceled) {
         branchStat.totalTonnage += ton;
         branchStat.totalShipments += 1;
         if (isCompleted) branchStat.completedShipments += 1;
@@ -301,7 +299,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const getShipmentsForPdfAndList = (clientId?: string, specificCnpj?: string) => {
-    let result = shipments;
+    let result = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
     if (clientId && clientId !== 'ALL') {
       result = result.filter(s => cargoMap.get(s.cargoId)?.clientId === clientId);
     }
@@ -319,13 +317,14 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const baseModalShipments = useMemo(() => {
+    const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
     if (selectedClientId && selectedClientId !== 'ALL') {
-      return shipments.filter(s => cargoMap.get(s.cargoId)?.clientId === selectedClientId);
+      return nonCanceled.filter(s => cargoMap.get(s.cargoId)?.clientId === selectedClientId);
     }
     if (isClientUser && currentUser?.clientId) {
-      return shipments.filter(s => cargoMap.get(s.cargoId)?.clientId === currentUser.clientId);
+      return nonCanceled.filter(s => cargoMap.get(s.cargoId)?.clientId === currentUser.clientId);
     }
-    return shipments;
+    return nonCanceled;
   }, [shipments, selectedClientId, isClientUser, currentUser, cargoMap]);
 
   // Modal filter options

@@ -5,6 +5,7 @@ import { ShipmentStatus, UserProfile } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { StayRecord } from '../../utils/toolStorage';
+import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 
 interface SalespersonReportProps {
   shipments: Shipment[];
@@ -70,19 +71,22 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
           const cargo = cargoMap.get(shipment.cargoId);
           if (!cargo) return acc;
 
-          const grossRate = shipment.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
-          const driverRate = shipment.driverFreightRateSnapshot || cargo.driverFreightValuePerTon;
-          const commissionRate = cargo.salespersonCommissionPerTon || 0;
+          const expenses = calculateShipmentExpenses(shipment, cargo);
           
+          const demurrageRevenue = stays
+              .filter(stay => stay.shipmentId === shipment.id)
+              .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+
           const demurrageProfit = stays
               .filter(stay => stay.shipmentId === shipment.id)
               .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
               
-          const profit = ((grossRate - driverRate - commissionRate) * shipment.shipmentTonnage) + demurrageProfit;
+          const profit = expenses.netProfit + demurrageProfit;
           
-          acc.grossBilled += grossRate * shipment.shipmentTonnage;
+          acc.grossBilled += expenses.companyFreight + demurrageRevenue;
+          acc.netBilled += expenses.freteLiquidoIcms;
           acc.profitMargin += profit;
-          acc.totalTonnage += shipment.shipmentTonnage;
+          acc.totalTonnage += shipment.shipmentTonnage || 0;
           
           return acc;
       }, { grossBilled: 0, netBilled: 0, profitMargin: 0, totalTonnage: 0 });

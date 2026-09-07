@@ -1,4 +1,4 @@
-import { Shipment, Cargo, OperationalExpenseItem, RealProfitData, RISK_QUERY_COST_MAP } from '../types';
+import { Shipment, Cargo, OperationalExpenseItem, RealProfitData, RISK_QUERY_COST_MAP, ShipmentStatus } from '../types';
 
 export interface OperationalExpensesConfig {
   insuranceAcidenteRate: number; // 0.0125% -> 0.000125
@@ -216,11 +216,31 @@ export function calculateShipmentExpenses(
     : 0;
 
   // 14. Gerenciadora de Risco (GR)
-  const riskCost = shipment.riskQueryCost !== undefined && shipment.riskQueryCost > 0
-    ? shipment.riskQueryCost
-    : (shipment.riskQueryType 
-        ? (RISK_QUERY_COST_MAP[shipment.riskQueryType] ?? RISK_QUERY_COST_MAP[shipment.riskQueryType.toLowerCase().trim()] ?? 0) 
-        : 0);
+  let historyRiskType: string | undefined;
+  let historyRiskCost: number | undefined;
+
+  if (Array.isArray(shipment.history)) {
+    for (const h of shipment.history) {
+      const msg = typeof h === 'string' ? h : ((h as any)?.description || (h as any)?.message || '');
+      const matchGr = msg.match(/Libera[çc][ãa]o\s+de\s+Seguradora:\s*(?:C[óo]d\s*)?([^\(\n]+?)\s*\(([^-\)]+?)(?:\s*-\s*R\$\s*([\d.,]+))?\)/i);
+      if (matchGr) {
+        if (matchGr[2] && matchGr[2].trim()) historyRiskType = matchGr[2].trim();
+        if (matchGr[3] && matchGr[3].trim()) {
+          const c = parseFloat(matchGr[3].replace('.', '').replace(',', '.'));
+          if (!isNaN(c)) historyRiskCost = c;
+        }
+      }
+    }
+  }
+
+  const effectiveRiskType = shipment.riskQueryType || historyRiskType;
+  const riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0)
+    ? Number(shipment.riskQueryCost)
+    : (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0
+        ? historyRiskCost
+        : (effectiveRiskType 
+            ? (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50) 
+            : (shipment.status === ShipmentStatus.AguardandoSeguradora ? 0 : 6.50)));
 
   // 14.1 Crédito Gerado (Exportação):
   // - PF (TAC / Terceiro PF): 6,52834% s/ BC Serviço (ICMS 12% * 54,39%)

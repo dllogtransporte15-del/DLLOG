@@ -4,6 +4,8 @@ import { ShipmentStatus } from '../../types';
 import { Building2, TrendingUp, TrendingDown, DollarSign, Package } from 'lucide-react';
 
 import type { StayRecord } from '../../utils/toolStorage';
+import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
 
 interface BranchReportProps {
   shipments: Shipment[];
@@ -28,6 +30,19 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
     }]));
 
     shipments.forEach(s => {
+      if (s.status === ShipmentStatus.Cancelado) return;
+
+      const cteVal = getShipmentCte(s);
+      const hasShipmentCte = Boolean(
+        cteVal && cteVal !== '-' && cteVal.trim() !== '' && isCteApplicableForStatus(s.status)
+      );
+
+      const shipmentStays = stays.filter(stay => stay.shipmentId === s.id && (stay.approvedValue || 0) > 0);
+      const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
+
+      // Contabiliza apenas se tiver CT-e do embarque ou CT-e complementar de estadia
+      if (!hasShipmentCte && !hasStayCte) return;
+
       const cargo = cargoMap.get(s.cargoId);
       if (!cargo) return;
 
@@ -41,39 +56,23 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       const stats = statsMap.get(effectiveBranchId);
       if (!stats) return;
 
-      const profitMarginStatuses = [
-        ShipmentStatus.AguardandoSeguradora,
-        ShipmentStatus.PreCadastro,
-        ShipmentStatus.AguardandoCarregamento,
-        ShipmentStatus.AguardandoNota,
-        ShipmentStatus.AguardandoAdiantamento,
-        ShipmentStatus.AguardandoAgendamento,
-        ShipmentStatus.AguardandoDescarga,
-        ShipmentStatus.AguardandoPagamentoSaldo,
-        ShipmentStatus.Finalizado
-      ];
+      const expenses = calculateShipmentExpenses(s, cargo);
+      
+      const demurrageRevenue = shipmentStays
+          .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+          
+      const demurrageProfit = shipmentStays
+          .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+          
+      const profit = hasShipmentCte ? (expenses.netProfit + demurrageProfit) : demurrageProfit;
+      const revenue = hasShipmentCte ? (expenses.companyFreight + demurrageRevenue) : demurrageRevenue;
 
-      if (profitMarginStatuses.includes(s.status)) {
-        const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon;
-        const driverRate = s.driverFreightRateSnapshot || cargo.driverFreightValuePerTon;
-        const commissionRate = cargo.salespersonCommissionPerTon || 0;
-        
-        const demurrageRevenue = stays
-            .filter(stay => stay.shipmentId === s.id)
-            .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
-            
-        const demurrageProfit = stays
-            .filter(stay => stay.shipmentId === s.id)
-            .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
-            
-        const profit = ((grossRate - driverRate - commissionRate) * s.shipmentTonnage) + demurrageProfit;
-        const revenue = (grossRate * s.shipmentTonnage) + demurrageRevenue;
-
+      if (hasShipmentCte) {
         stats.shipmentCount += 1;
         stats.totalWeight += s.shipmentTonnage || 0;
-        stats.totalBilled += revenue;
-        stats.totalMargin += profit;
       }
+      stats.totalBilled += revenue;
+      stats.totalMargin += profit;
     });
 
     const result = Array.from(statsMap.values()).map(s => ({
@@ -143,7 +142,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
                 <th className="px-6 py-4">Filial</th>
                 <th className="px-6 py-4 text-center">Embarques</th>
                 <th className="px-6 py-4 text-center">Peso Total</th>
-                <th className="px-6 py-4 text-right">Fat. Bruto Efetivado + Programado</th>
+                <th className="px-6 py-4 text-right">Faturamento Bruto</th>
                 <th className="px-6 py-4 text-right">Margem Líquida</th>
                 <th className="px-6 py-4 text-right">% Margem</th>
               </tr>

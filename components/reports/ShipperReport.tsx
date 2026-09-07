@@ -100,24 +100,26 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             return {
                 id: creatorId,
                 name: creator?.name || `Usuário (${creatorId})`,
-                total: creatorShipments.length,
+                total: stats.finalizado + stats.emAndamento,
                 ...stats,
             };
         }).sort((a, b) => b.total - a.total);
     }, [shipments, users]);
 
     const getShipmentsForPdfAndList = (embarcadorId?: string) => {
+        const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
         if (embarcadorId && embarcadorId !== 'ALL') {
-            return shipments.filter(s => s.embarcadorId === embarcadorId || s.createdById === embarcadorId);
+            return nonCanceled.filter(s => s.embarcadorId === embarcadorId || s.createdById === embarcadorId);
         }
-        return shipments;
+        return nonCanceled;
     };
 
     const baseModalShipments = useMemo(() => {
+        const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
         if (selectedEmbarcadorId && selectedEmbarcadorId !== 'ALL') {
-            return shipments.filter(s => s.embarcadorId === selectedEmbarcadorId || s.createdById === selectedEmbarcadorId);
+            return nonCanceled.filter(s => s.embarcadorId === selectedEmbarcadorId || s.createdById === selectedEmbarcadorId);
         }
-        return shipments;
+        return nonCanceled;
     }, [shipments, selectedEmbarcadorId]);
 
     const modalStatusOptions = useMemo(() => Array.from(new Set(baseModalShipments.map(s => s.status))).filter(Boolean).sort(), [baseModalShipments]);

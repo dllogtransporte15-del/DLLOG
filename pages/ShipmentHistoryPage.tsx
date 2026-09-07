@@ -11,6 +11,7 @@ import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver, RiskQuery
 import { ShipmentStatus } from '../types';
 import { isCteApplicableForStatus, getShipmentCte } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
+import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ShipmentHistoryPageProps {
   shipments: Shipment[];
@@ -50,15 +51,13 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
   const calculateMargin = (s: Shipment) => {
     const cargo = cargoMap.get(s.cargoId);
     if (!cargo) return 0;
-    const grossRate = s.companyFreightRateSnapshot || cargo.companyFreightValuePerTon || 0;
-    const driverRate = s.driverFreightRateSnapshot || (s.driverFreightValue / (s.shipmentTonnage || 1));
-    const commissionRate = cargo.salespersonCommissionPerTon || 0;
+    const expenses = calculateShipmentExpenses(s, cargo);
     
     const demurrageProfit = stays
         .filter(stay => stay.shipmentId === s.id)
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
         
-    return ((grossRate - driverRate - commissionRate) * s.shipmentTonnage) + demurrageProfit;
+    return expenses.netProfit + demurrageProfit;
   };
 
   // Sync selected shipment with latest data from props

@@ -4,6 +4,7 @@ import { ShipmentStatus, UserProfile } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
+import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
 import { Building2, CheckCircle2, XCircle, TrendingUp, ShieldCheck, Briefcase, Settings, Edit3, X, Save, CheckSquare, Square, Percent, Users } from 'lucide-react';
 
@@ -127,10 +128,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       
       const cargo = cargoMap.get(s.cargoId);
 
-      const grossRate = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-      const driverRate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
-      const commissionRate = cargo?.salespersonCommissionPerTon || 0;
-      const ton = s.loadedTonnage || s.shipmentTonnage || 0;
+      const expenses = calculateShipmentExpenses(s, cargo);
 
       const demurrageRevenue = stays
         .filter(stay => stay.shipmentId === s.id)
@@ -140,8 +138,8 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         .filter(stay => stay.shipmentId === s.id)
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
         
-      const shipmentGrossRevenue = (grossRate * ton) + demurrageRevenue;
-      const shipmentNetRevenue = ((grossRate - driverRate - commissionRate) * ton) + demurrageProfit;
+      const shipmentGrossRevenue = expenses.companyFreight + demurrageRevenue;
+      const shipmentNetRevenue = expenses.netProfit + demurrageProfit;
 
       // Resolução de Filial em cascata
       const effectiveBranchId = s.branchId || (s.createdById ? userBranchMap.get(s.createdById) : undefined) || cargo?.branchId || (cargo?.createdById ? userBranchMap.get(cargo.createdById) : undefined);

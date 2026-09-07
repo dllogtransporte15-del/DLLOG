@@ -436,6 +436,7 @@ export interface Shipment {
   driverName: string;
   driverContact?: string;
   driverCpf?: string;
+  driverCnpj?: string;
   embarcadorId: string;
   horsePlate: string;
   trailer1Plate?: string;
