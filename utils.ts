@@ -276,5 +276,155 @@ export function getShipmentEffectiveDate(shipment?: { status?: any; cteEmissionD
   return null;
 }
 
+export function isStayForShipment(
+  stay?: { shipmentId?: string; plate?: string; driver?: string; invoice?: string; entryDate?: string; date?: string } | null,
+  shipment?: { id?: string; orderId?: string; horsePlate?: string; driverName?: string; nfeNumber?: string; documents?: any; scheduledDate?: string; createdAt?: string } | null
+): boolean {
+  if (!stay || !shipment) return false;
+
+  // 1. Direct match by shipmentId
+  if (stay.shipmentId && typeof stay.shipmentId === 'string' && stay.shipmentId.trim() !== '') {
+    const cleanStayId = stay.shipmentId.trim().toLowerCase();
+    if (shipment.id && shipment.id.toLowerCase() === cleanStayId) return true;
+    if (shipment.orderId && shipment.orderId.toLowerCase() === cleanStayId) return true;
+    return false; // If stay has an explicit shipmentId assigned, it strictly belongs to that shipment
+  }
+
+  // 2. Match by Plate and Driver if available
+  const stayPlate = stay.plate ? stay.plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+  const sPlate = shipment.horsePlate ? shipment.horsePlate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+
+  if (stayPlate && sPlate && stayPlate === sPlate) {
+    // If date is available, check month compatibility to avoid cross-month driver trip collisions
+    const stayDateStr = stay.entryDate || stay.date;
+    const stayYmd = parseDateToYmd(stayDateStr);
+    const shipYmd = getShipmentEffectiveDate(shipment as any) || parseDateToYmd(shipment.scheduledDate) || parseDateToYmd(shipment.createdAt);
+    if (stayYmd && shipYmd) {
+      const stayMonth = stayYmd.substring(0, 7);
+      const shipMonth = shipYmd.substring(0, 7);
+      if (stayMonth !== shipMonth) {
+        return false;
+      }
+    }
+
+    if (stay.driver && shipment.driverName) {
+      const d1 = stay.driver.toLowerCase().trim();
+      const d2 = shipment.driverName.toLowerCase().trim();
+      if (d1.includes(d2) || d2.includes(d1) || d1.split(' ')[0] === d2.split(' ')[0]) {
+        return true;
+      }
+    } else {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function findShipmentForStay<T extends { id?: string; orderId?: string; horsePlate?: string; driverName?: string; nfeNumber?: string; documents?: any; scheduledDate?: string; createdAt?: string }>(
+  stay?: { shipmentId?: string; plate?: string; invoice?: string; driver?: string; date?: string } | null,
+  shipments?: T[] | null
+): T | null {
+  if (!stay || !shipments || shipments.length === 0) return null;
+
+  // 1. Direct match by shipmentId
+  if (stay.shipmentId && typeof stay.shipmentId === 'string' && stay.shipmentId.trim() !== '') {
+    const cleanId = stay.shipmentId.trim().toLowerCase();
+    const directMatch = shipments.find(s => 
+      (s.id && s.id.toLowerCase() === cleanId) || 
+      (s.orderId && s.orderId.toLowerCase() === cleanId)
+    );
+    if (directMatch) return directMatch;
+  }
+
+  // 2. Match by Plate
+  const stayPlate = stay.plate ? stay.plate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+  const stayInvoice = stay.invoice ? stay.invoice.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+
+  if (stayPlate) {
+    const matchingPlateShipments = shipments.filter(s => {
+      const sPlate = s.horsePlate ? s.horsePlate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+      return sPlate === stayPlate;
+    });
+
+    if (matchingPlateShipments.length === 1) {
+      return matchingPlateShipments[0];
+    }
+
+    if (matchingPlateShipments.length > 1) {
+      // Try NF-e match
+      if (stayInvoice) {
+        const invMatch = matchingPlateShipments.find(s => {
+          const sNfe = (s.nfeNumber || s.documents?.nfe_number || s.documents?.['NF-e'] || '') + '';
+          return sNfe.replace(/[^a-zA-Z0-9]/g, '').includes(stayInvoice);
+        });
+        if (invMatch) return invMatch;
+      }
+
+      // Try Driver match
+      if (stay.driver) {
+        const cleanDriver = stay.driver.toLowerCase().trim();
+        const driverMatch = matchingPlateShipments.find(s => 
+          s.driverName && (s.driverName.toLowerCase().includes(cleanDriver) || cleanDriver.includes(s.driverName.toLowerCase().trim()))
+        );
+        if (driverMatch) return driverMatch;
+      }
+
+      // Date proximity fallback
+      if (stay.date) {
+        const stayTime = new Date(stay.date).getTime();
+        if (!isNaN(stayTime)) {
+          let closest = matchingPlateShipments[0];
+          let minDiff = Infinity;
+          for (const s of matchingPlateShipments) {
+            const sEffDate = getShipmentEffectiveDate(s as any) || s.scheduledDate || s.createdAt;
+            if (sEffDate) {
+              const diff = Math.abs(new Date(sEffDate).getTime() - stayTime);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closest = s;
+              }
+            }
+          }
+          return closest;
+        }
+      }
+
+      return matchingPlateShipments[0];
+    }
+  }
+
+  return null;
+}
+
+export function getStayEffectiveDate(
+  stay?: { shipmentId?: string; plate?: string; invoice?: string; driver?: string; date?: string } | null,
+  shipments?: any[] | null
+): string | null {
+  if (!stay) return null;
+
+  if (shipments && shipments.length > 0) {
+    const linkedShipment = findShipmentForStay(stay, shipments);
+    if (linkedShipment) {
+      const effDate = getShipmentEffectiveDate(linkedShipment);
+      if (effDate) return effDate;
+      if (linkedShipment.scheduledDate) {
+        const ymd = parseDateToYmd(linkedShipment.scheduledDate);
+        if (ymd) return ymd;
+      }
+    }
+  }
+
+  // Fallback to stay.date
+  if (stay.date) {
+    const ymd = parseDateToYmd(stay.date);
+    if (ymd) return ymd;
+    return String(stay.date).substring(0, 10);
+  }
+
+  return null;
+}
+
+
 
 

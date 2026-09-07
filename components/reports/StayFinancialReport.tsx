@@ -1,12 +1,15 @@
 import React, { useMemo } from 'react';
 import type { StayRecord } from '../../utils/toolStorage';
+import type { Shipment } from '../../types';
 import { DollarSign, TrendingUp, TrendingDown, Scale, FileText, CheckCircle } from 'lucide-react';
+import { findShipmentForStay, getStayEffectiveDate } from '../../utils';
 
 interface StayFinancialReportProps {
   stays: StayRecord[];
+  shipments?: Shipment[];
 }
 
-const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays }) => {
+const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays, shipments = [] }) => {
   const formatCurrency = (val: number) => 
     val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -96,10 +99,23 @@ const StayFinancialReport: React.FC<StayFinancialReportProps> = ({ stays }) => {
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
               {stays.map((stay) => {
                 const profit = (stay.approvedValue || 0) - (stay.driverPaidValue || 0);
+                const linkedShipment = findShipmentForStay(stay, shipments);
+                const effDateStr = getStayEffectiveDate(stay, shipments);
+                const displayDate = effDateStr
+                  ? new Date(effDateStr + 'T00:00:00').toLocaleDateString('pt-BR')
+                  : new Date(stay.date).toLocaleDateString('pt-BR');
+
                 return (
                   <tr key={stay.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors">
                     <td className="px-6 py-4">
-                      <p className="font-bold text-gray-800 dark:text-gray-200">{new Date(stay.date).toLocaleDateString('pt-BR')}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-gray-800 dark:text-gray-200">{displayDate}</p>
+                        {linkedShipment && (
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-100 dark:border-indigo-800" title={`Vinculado ao Embarque ${linkedShipment.id}`}>
+                            {linkedShipment.id}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-gray-400 truncate max-w-[150px]">{stay.clientName || 'N/A'}</p>
                     </td>
                     <td className="px-6 py-4 text-center">

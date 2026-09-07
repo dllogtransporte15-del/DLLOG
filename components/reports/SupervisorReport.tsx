@@ -5,7 +5,7 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
+import { getShipmentCte, isCteApplicableForStatus, isStayForShipment } from '../../utils';
 import { Building2, CheckCircle2, XCircle, TrendingUp, ShieldCheck, Briefcase, Settings, Edit3, X, Save, CheckSquare, Square, Percent, Users } from 'lucide-react';
 
 interface CommercialReportProps {
@@ -130,13 +130,9 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
       const expenses = calculateShipmentExpenses(s, cargo);
 
-      const demurrageRevenue = stays
-        .filter(stay => stay.shipmentId === s.id)
-        .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
-
-      const demurrageProfit = stays
-        .filter(stay => stay.shipmentId === s.id)
-        .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
+      const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+      const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
         
       const shipmentGrossRevenue = expenses.companyFreight + demurrageRevenue;
       const shipmentNetRevenue = expenses.netProfit + demurrageProfit;

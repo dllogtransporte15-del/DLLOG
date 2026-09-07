@@ -9,7 +9,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
 import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver, RiskQueryOption } from '../types';
 import { ShipmentStatus } from '../types';
-import { isCteApplicableForStatus, getShipmentCte } from '../utils';
+import { isCteApplicableForStatus, getShipmentCte, isStayForShipment } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
@@ -54,7 +54,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
     const expenses = calculateShipmentExpenses(s, cargo);
     
     const demurrageProfit = stays
-        .filter(stay => stay.shipmentId === s.id)
+        .filter(stay => isStayForShipment(stay, s))
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
         
     return expenses.netProfit + demurrageProfit;

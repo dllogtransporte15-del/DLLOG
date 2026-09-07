@@ -19,7 +19,7 @@ import DemandForecastReport from '../components/reports/DemandForecastReport';
 import RealProfitReport from '../components/reports/RealProfitReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, getShipmentEffectiveDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd } from '../utils';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ReportsPageProps {
@@ -67,6 +67,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const [showFilters, setShowFilters] = useState(false);
 
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
+  const shipmentMap = useMemo(() => new Map(shipments.map(s => [s.id, s])), [shipments]);
   
   const statusOptions = Object.values(ShipmentStatus);
   const exportOptions = ['Exportação', 'Mercado Interno'];
@@ -199,10 +200,11 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
 
   const filteredStays = useMemo(() => {
     return stays.filter(s => {
-      const stayDate = s.date.substring(0, 10);
+      const stayDate = getStayEffectiveDate(s, shipments);
+      if (!stayDate) return false;
       return stayDate >= startDate && stayDate <= endDate;
     });
-  }, [stays, startDate, endDate]);
+  }, [stays, shipments, startDate, endDate]);
 
   const filteredStats = useMemo(() => {
     let totalProgramado = 0;
@@ -272,13 +274,9 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        if (profitMarginStatuses.includes(s.status)) {
            const expenses = calculateShipmentExpenses(s, cargo);
            
-           const demurrageRevenue = stays
-               .filter(stay => stay.shipmentId === s.id)
-               .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
-               
-           const demurrageProfit = stays
-               .filter(stay => stay.shipmentId === s.id)
-               .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+           const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
+           const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+           const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
                
            const profit = expenses.netProfit + demurrageProfit;
            const revenue = expenses.companyFreight + demurrageRevenue;
@@ -338,7 +336,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
             </div>
           );
         }
-        return <StayFinancialReport stays={filteredStays} />;
+        return <StayFinancialReport stays={filteredStays} shipments={shipments} />;
       case 'previsao-demandas':
         return <DemandForecastReport cargos={cargos} clients={clients} shipments={shipments} companyLogo={companyLogo} />;
       case 'lucro-real':
@@ -352,6 +350,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
             drivers={drivers}
             vehicles={vehicles}
             branches={branches}
+            stays={stays}
             companyLogo={companyLogo}
             startDate={startDate}
             endDate={endDate}

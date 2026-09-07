@@ -4,6 +4,7 @@ import { ShipmentStatus } from '../types';
 import type { Shipment, Cargo } from '../types';
 import { FileText, X } from 'lucide-react';
 import { StayRecord } from '../utils/toolStorage';
+import { isStayForShipment } from '../utils';
 
 interface ShipmentHistoryFilterProps {
   shipments: Shipment[];
@@ -58,7 +59,7 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
     const commissionRate = cargo.salespersonCommissionPerTon || 0;
     
     const demurrageProfit = stays
-        .filter(stay => stay.shipmentId === s.id)
+        .filter(stay => isStayForShipment(stay, s))
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
         
     return ((grossRate - driverRate - commissionRate) * s.shipmentTonnage) + demurrageProfit;

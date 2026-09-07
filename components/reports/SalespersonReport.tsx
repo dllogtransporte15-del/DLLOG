@@ -6,6 +6,7 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import { isStayForShipment } from '../../utils';
 
 interface SalespersonReportProps {
   shipments: Shipment[];
@@ -73,13 +74,9 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
 
           const expenses = calculateShipmentExpenses(shipment, cargo);
           
-          const demurrageRevenue = stays
-              .filter(stay => stay.shipmentId === shipment.id)
-              .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
-
-          const demurrageProfit = stays
-              .filter(stay => stay.shipmentId === shipment.id)
-              .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+          const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment));
+          const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+          const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
               
           const profit = expenses.netProfit + demurrageProfit;
           

@@ -5,6 +5,7 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import { isStayForShipment } from '../../utils';
 import { Download, List, X, Filter, Building2, ChevronDown, ChevronUp, MapPin, CheckCircle2, TrendingUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -195,7 +196,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       );
 
       // CT-e de estadia: estadias aprovadas vinculadas a este embarque
-      const shipmentStays = stays.filter(stay => stay.shipmentId === shipment.id && (stay.approvedValue || 0) > 0);
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment) && (stay.approvedValue || 0) > 0);
       const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
 
       // Contar apenas se tiver CT-e do embarque ou CT-e complementar de estadia

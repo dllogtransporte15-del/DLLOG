@@ -3,6 +3,8 @@ import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog } from
 import { extractDetailedDocData } from '../utils/fiscalDocParser';
 import { upsertShipment } from '../lib/db';
 import { useToast } from '../hooks/useToast';
+import { StayRecord, getAllToolStays } from '../utils/toolStorage';
+import { isStayForShipment } from '../utils';
 import { 
   Calculator, 
   ShieldCheck, 
@@ -16,7 +18,10 @@ import {
   Sparkles,
   Building2,
   Save,
-  CheckCircle2
+  CheckCircle2,
+  Clock,
+  FileText,
+  ExternalLink
 } from 'lucide-react';
 
 interface CteCostAutomationPanelProps {
@@ -26,6 +31,7 @@ interface CteCostAutomationPanelProps {
   loadedTonnage?: number | string;
   riskQueryType?: string;
   riskReleaseCode?: string;
+  stays?: StayRecord[];
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
 }
 
@@ -36,6 +42,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   loadedTonnage,
   riskQueryType,
   riskReleaseCode,
+  stays,
   onUpdateShipmentData,
 }) => {
   const { showToast } = useToast();
@@ -415,6 +422,44 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         ? shipment.realProfitData.commission
         : comissaoComercialCalculada);
 
+  // 14.2 Estadias / CT-e Complementar Vinculados
+  const [fetchedStays, setFetchedStays] = React.useState<StayRecord[]>([]);
+
+  React.useEffect(() => {
+    if (stays && stays.length > 0) {
+      setFetchedStays(stays);
+      return;
+    }
+    let isMounted = true;
+    getAllToolStays().then(allStays => {
+      if (isMounted && allStays) {
+        setFetchedStays(allStays);
+      }
+    }).catch(err => {
+      console.warn('Erro ao carregar estadias no painel de automação CT-e:', err);
+    });
+    return () => { isMounted = false; };
+  }, [stays, shipment.id]);
+
+  const activeStaysList = (stays && stays.length > 0) ? stays : fetchedStays;
+  const shipmentStays = React.useMemo(() => {
+    return activeStaysList.filter(s => isStayForShipment(s, shipment));
+  }, [activeStaysList, shipment]);
+
+  const demurrageRevenue = shipmentStays.reduce((sum, s) => sum + (s.approvedValue || 0), 0);
+  const demurrageDriverPaid = shipmentStays.reduce((sum, s) => sum + (s.driverPaidValue || 0), 0);
+  const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
+  const hasStays = shipmentStays.length > 0 && (demurrageRevenue > 0 || demurrageDriverPaid > 0 || shipmentStays.length > 0);
+
+  // Totais Combinados (Frete Base CT-e + Estadia / CT-e Complementar)
+  const totalCompanyFreight = cteGrossFreight + demurrageRevenue;
+  const totalDriverFreight = driverFreight + demurrageDriverPaid;
+  const freteLiquidoIcmsWithStay = freteLiquidoIcms + demurrageRevenue;
+  const totalDiferencaFreteReais = Number((freteLiquidoIcmsWithStay - totalDriverFreight).toFixed(2));
+  const margemFretePercentWithStay = freteLiquidoIcmsWithStay > 0
+    ? Number(((totalDiferencaFreteReais / freteLiquidoIcmsWithStay) * 100).toFixed(2))
+    : 0;
+
   // 15. Lucro Líquido Real Calculado (Deduções operacionais efetivas da transportadora)
   const totalDeducoes = Number((
     impostoFederalLiquido +
@@ -436,7 +481,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? shipment.realProfitData.netProfit
     : netProfitCalculated;
 
+  const totalDeducoesWithStay = Number((totalDeducoes - driverFreight + totalDriverFreight).toFixed(2));
+  const totalRealProfit = Number((totalCompanyFreight - totalDeducoesWithStay).toFixed(2));
   const marginPercent = cteGrossFreight > 0 ? ((realProfit / cteGrossFreight) * 100).toFixed(1) : '0.0';
+  const totalMarginPercent = totalCompanyFreight > 0 ? ((totalRealProfit / totalCompanyFreight) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="w-full bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 shadow-xs text-slate-800 dark:text-slate-100 font-sans space-y-3.5">
@@ -541,6 +589,122 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         </p>
       </div>
 
+      {/* SEÇÃO DE ESTADIAS / CT-E COMPLEMENTAR (Exibida quando houver estadias vinculadas ao embarque) */}
+      {hasStays && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 dark:from-amber-950/40 dark:via-orange-950/20 dark:to-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-700/70 p-3 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-amber-500 text-white rounded-lg shadow-2xs">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-bold text-amber-950 dark:text-amber-200 uppercase tracking-tight">
+                    Estadia Vinculada (CT-e Complementar)
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                    {shipmentStays.length} {shipmentStays.length === 1 ? 'registro' : 'registros'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-amber-800 dark:text-amber-300">
+                  Estadia faturada ao cliente e repassada ao motorista integrada aos cálculos
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Resumo Financeiro da Estadia */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {/* Faturado Cliente */}
+            <div className="bg-white/90 dark:bg-slate-800/90 rounded-lg p-2 border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
+              <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-tight">
+                Faturado Cliente (CT-e Comp.)
+              </div>
+              <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 font-mono">
+                + {formatBrl(demurrageRevenue)}
+              </div>
+            </div>
+
+            {/* Repasse Motorista */}
+            <div className="bg-white/90 dark:bg-slate-800/90 rounded-lg p-2 border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
+              <div className="text-[9px] font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-tight">
+                Pago ao Motorista
+              </div>
+              <div className="text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 font-mono">
+                - {formatBrl(demurrageDriverPaid)}
+              </div>
+            </div>
+
+            {/* Margem / Lucro da Estadia */}
+            <div className="bg-white/90 dark:bg-slate-800/90 rounded-lg p-2 border border-emerald-200/80 dark:border-emerald-800/60 shadow-2xs">
+              <div className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
+                Resultado Estadia
+              </div>
+              <div className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-300 font-mono">
+                {demurrageProfit >= 0 ? `+ ${formatBrl(demurrageProfit)}` : formatBrl(demurrageProfit)}
+              </div>
+            </div>
+          </div>
+
+          {/* Lista detalhada das estadias vinculadas */}
+          <div className="space-y-1 pt-1 border-t border-amber-200/60 dark:border-amber-800/40">
+            {shipmentStays.map((stay, idx) => (
+              <div key={stay.id || idx} className="bg-white/80 dark:bg-slate-800/70 rounded-lg p-1.5 sm:p-2 border border-amber-100 dark:border-amber-900/40 flex items-center justify-between gap-2 text-[10px] flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-200">
+                    {stay.entryDate ? new Date(stay.entryDate).toLocaleDateString('pt-BR') : stay.date ? new Date(stay.date).toLocaleDateString('pt-BR') : 'Data n/d'}
+                  </span>
+                  {stay.invoice && (
+                    <span className="px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 font-mono text-slate-600 dark:text-slate-300">
+                      NF: {stay.invoice}
+                    </span>
+                  )}
+                  <span className="text-slate-600 dark:text-slate-300">
+                    {stay.driver} • <strong className="font-mono">{stay.plate}</strong>
+                  </span>
+                  {stay.totalHours ? (
+                    <span className="text-slate-500 dark:text-slate-400">
+                      ({stay.totalHours}h)
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-700 dark:text-amber-300 font-mono font-semibold" title="Valor aprovado cliente">
+                    Cli: {formatBrl(stay.approvedValue || 0)}
+                  </span>
+                  <span className="text-rose-600 dark:text-rose-400 font-mono font-semibold" title="Valor pago motorista">
+                    Mot: {formatBrl(stay.driverPaidValue || 0)}
+                  </span>
+                  {stay.cteUrl && (
+                    <a
+                      href={stay.cteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                    >
+                      <FileText className="w-3 h-3" />
+                      CT-e
+                    </a>
+                  )}
+                  {stay.paymentProofUrl && (
+                    <a
+                      href={stay.paymentProofUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 hover:underline font-semibold"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Recibo
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* LINHA 1: Cards Principais de Receita & Bases */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {/* Box 1: CTe Frete Bruto */}
@@ -550,10 +714,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <Receipt className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
           </div>
           <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono">
-            {formatBrl(cteGrossFreight)}
+            {formatBrl(totalCompanyFreight)}
           </div>
-          <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium truncate mt-0.5">
+          <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium truncate mt-0.5" title={demurrageRevenue > 0 ? `Frete Base: ${formatBrl(cteGrossFreight)} + Estadia: ${formatBrl(demurrageRevenue)}` : undefined}>
             Empresa • {tonnage.toLocaleString('pt-BR')} ton
+            {demurrageRevenue > 0 && (
+              <span className="text-amber-600 dark:text-amber-400 font-semibold ml-1">
+                (+{formatBrl(demurrageRevenue)} estadia)
+              </span>
+            )}
           </div>
         </div>
 
@@ -619,7 +788,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] text-slate-400 font-medium">Margem:</span>
             <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
-              {margemFretePercent}%
+              {margemFretePercentWithStay}%
             </span>
           </div>
         </div>
@@ -631,9 +800,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <div className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-tight truncate">
               Frete Líquido
             </div>
-            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono truncate" title={`Frete Bruto ${formatBrl(cteGrossFreight)} - ICMS ${formatBrl(icmsBruto)}`}>
-              {formatBrl(freteLiquidoIcms)}
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono truncate" title={`Frete Bruto ${formatBrl(totalCompanyFreight)} - ICMS ${formatBrl(icmsBruto)}`}>
+              {formatBrl(freteLiquidoIcmsWithStay)}
             </div>
+            {demurrageRevenue > 0 && (
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate">
+                Base {formatBrl(freteLiquidoIcms)} + Est. {formatBrl(demurrageRevenue)}
+              </div>
+            )}
           </div>
 
           {/* Frete Motorista */}
@@ -642,9 +816,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <div className="text-[9px] font-semibold text-rose-500 uppercase tracking-tight truncate">
               Frete Motorista
             </div>
-            <div className="text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 font-mono truncate" title="Frete contratado do motorista">
-              {formatBrl(driverFreight)}
+            <div className="text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 font-mono truncate" title={demurrageDriverPaid > 0 ? `Base: ${formatBrl(driverFreight)} + Estadia: ${formatBrl(demurrageDriverPaid)}` : 'Frete contratado do motorista'}>
+              {formatBrl(totalDriverFreight)}
             </div>
+            {demurrageDriverPaid > 0 && (
+              <div className="text-[8px] text-rose-400 dark:text-rose-500 truncate">
+                Base {formatBrl(driverFreight)} + Est. {formatBrl(demurrageDriverPaid)}
+              </div>
+            )}
             <span className="absolute -right-1.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs pointer-events-none select-none">=</span>
           </div>
 
@@ -654,8 +833,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               Diferença R$
             </div>
             <div className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-300 font-mono truncate">
-              {formatBrl(diferencaFreteReais)}
+              {formatBrl(totalDiferencaFreteReais)}
             </div>
+            {demurrageProfit !== 0 && (
+              <div className="text-[8px] text-emerald-600 dark:text-emerald-400 truncate">
+                Margem Estadia: {formatBrl(demurrageProfit)}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -668,7 +852,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             Composição das Deduções
           </span>
           <span className="text-[10px] font-normal text-slate-400 lowercase">
-            total descontos: <strong className="font-mono text-rose-600 dark:text-rose-400 font-bold">{formatBrl(totalDeducoes)}</strong>
+            total descontos: <strong className="font-mono text-rose-600 dark:text-rose-400 font-bold">{formatBrl(totalDeducoesWithStay)}</strong>
           </span>
         </div>
 
@@ -885,8 +1069,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               </span>
             </div>
             <div className="text-xs sm:text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
-              - {formatBrl(driverFreight)}
+              - {formatBrl(totalDriverFreight)}
             </div>
+            {demurrageDriverPaid > 0 && (
+              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base: ${formatBrl(driverFreight)} • Estadia: ${formatBrl(demurrageDriverPaid)}`}>
+                Base {formatBrl(driverFreight)} • Est. {formatBrl(demurrageDriverPaid)}
+              </div>
+            )}
           </div>
 
           {/* Comissão do Comercial (0,20% sobre o Frete Bruto da Empresa) */}
@@ -915,14 +1104,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       {/* LINHA 3: Card de Destaque - LUCRO LÍQUIDO REAL */}
       <div>
         <div className={`p-3 sm:p-3.5 rounded-xl border transition-all duration-300 ${
-          realProfit >= 0
+          totalRealProfit >= 0
             ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-xs'
             : 'bg-gradient-to-r from-rose-500/10 via-red-500/5 to-rose-500/10 border-rose-500/30 dark:border-rose-500/40 shadow-xs'
         }`}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
               <div className={`p-2 rounded-lg shadow-xs shrink-0 ${
-                realProfit >= 0 
+                totalRealProfit >= 0 
                   ? 'bg-emerald-600 text-white dark:bg-emerald-500' 
                   : 'bg-rose-600 text-white dark:bg-rose-500'
               }`}>
@@ -934,30 +1123,35 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 </span>
                 <div className="flex items-baseline gap-1.5">
                   <span className={`text-base sm:text-lg font-black font-mono tracking-tight ${
-                    realProfit >= 0
+                    totalRealProfit >= 0
                       ? 'text-emerald-700 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}>
-                    {formatBrl(realProfit)}
+                    {formatBrl(totalRealProfit)}
                   </span>
                   <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                    realProfit >= 0
+                    totalRealProfit >= 0
                       ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
                       : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
                   }`}>
-                    {marginPercent}%
+                    {totalMarginPercent}%
                   </span>
                 </div>
+                {hasStays && (
+                  <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                    Frete Base: <strong>{formatBrl(realProfit)}</strong> | Estadia: <strong>{formatBrl(demurrageProfit)}</strong>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="shrink-0">
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
-                realProfit >= 0
+                totalRealProfit >= 0
                   ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
                   : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
               }`}>
-                {realProfit >= 0 ? '✓ Lucrativo' : '⚠ Negativo'}
+                {totalRealProfit >= 0 ? '✓ Lucrativo' : '⚠ Negativo'}
               </span>
             </div>
           </div>

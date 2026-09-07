@@ -24,11 +24,12 @@ import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment } from '../../utils';
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import { SyncDocumentsModal } from '../SyncDocumentsModal';
+import type { StayRecord } from '../../utils/toolStorage';
 
 interface RealProfitReportProps {
   shipments: Shipment[];
@@ -40,6 +41,7 @@ interface RealProfitReportProps {
   vehicles?: Vehicle[];
   branches?: Branch[];
   products?: Product[];
+  stays?: StayRecord[];
   companyLogo?: string | null;
   startDate?: string;
   endDate?: string;
@@ -57,6 +59,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   vehicles = [],
   branches = [],
   products = [],
+  stays = [],
   companyLogo,
   startDate: propStartDate,
   endDate: propEndDate,
@@ -254,7 +257,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     });
   }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, startDate, endDate, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
 
-  // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e)
+  // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e e Estadias)
   const enrichedRows = useMemo(() => {
     return filteredData.map(s => {
       const cargo = cargoMap.get(s.cargoId);
@@ -264,17 +267,26 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       // Apuração Completa e Parametrizada idêntica à "Automatização do CT-e"
       const calculatedExpenses = calculateShipmentExpenses(s, cargo);
       const {
-        companyFreight,
-        driverFreight,
-        freightDifference,
-        freightDifferenceMarginPercent,
+        companyFreight: baseCompanyFreight,
+        driverFreight: baseDriverFreight,
         totalExpenses,
-        netProfit,
-        profitMarginPercent,
         expenseItems: rawExpenseItems,
         riskCost,
         generatedCredit,
       } = calculatedExpenses;
+
+      // Estadias vinculadas a este embarque
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
+      const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+      const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);
+      const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
+
+      const companyFreight = baseCompanyFreight + demurrageRevenue;
+      const driverFreight = baseDriverFreight + demurrageDriverPaid;
+      const freightDifference = companyFreight - driverFreight;
+      const freightDifferenceMarginPercent = companyFreight > 0 ? (freightDifference / companyFreight) * 100 : 0;
+      const netProfit = calculatedExpenses.netProfit + demurrageProfit;
+      const profitMarginPercent = companyFreight > 0 ? (netProfit / companyFreight) * 100 : 0;
 
       // Comprovante / Anexo de saldo ou despesas
       const saldoDoc = s.documents?.['Comprovante de Pagamento de Saldo'] || 
@@ -302,9 +314,12 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         hasOcr: Boolean(s.realProfitData),
         attachmentUrl,
         calculatedExpenses,
+        demurrageRevenue,
+        demurrageDriverPaid,
+        demurrageProfit,
       };
     });
-  }, [filteredData, cargoMap, clientMap]);
+  }, [filteredData, cargoMap, clientMap, stays]);
 
   // Totais Gerais
   const totals = useMemo(() => {
@@ -1108,6 +1123,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                     shipment={selectedShipmentForDetail}
                     cargo={cargo}
                     loadedTonnage={tonnage}
+                    stays={stays}
                   />
                 </div>
               );

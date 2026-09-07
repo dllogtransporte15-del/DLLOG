@@ -5,7 +5,7 @@ import { Building2, TrendingUp, TrendingDown, DollarSign, Package } from 'lucide
 
 import type { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
+import { getShipmentCte, isCteApplicableForStatus, isStayForShipment } from '../../utils';
 
 interface BranchReportProps {
   shipments: Shipment[];
@@ -37,7 +37,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
         cteVal && cteVal !== '-' && cteVal.trim() !== '' && isCteApplicableForStatus(s.status)
       );
 
-      const shipmentStays = stays.filter(stay => stay.shipmentId === s.id && (stay.approvedValue || 0) > 0);
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, s) && (stay.approvedValue || 0) > 0);
       const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
 
       // Contabiliza apenas se tiver CT-e do embarque ou CT-e complementar de estadia
