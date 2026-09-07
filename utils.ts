@@ -216,4 +216,65 @@ export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissio
   return null;
 }
 
+export function parseDateToYmd(dateStr?: string | null): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  // Match DD/MM/YYYY or DD-MM-YYYY (with optional time)
+  const dmy = trimmed.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  }
+
+  // Match YYYY-MM-DD (with optional time)
+  const ymd = trimmed.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})/);
+  if (ymd) {
+    return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+
+  return null;
+}
+
+export function getShipmentEffectiveDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any; statusHistory?: any[]; scheduledDate?: string; createdAt?: string } | null): string | null {
+  if (!shipment) return null;
+
+  // 1. Prioritize CT-e Emission Date if CT-e exists and status is applicable
+  const cteEmission = getShipmentCteEmissionDate(shipment);
+  if (cteEmission) {
+    const ymd = parseDateToYmd(cteEmission);
+    if (ymd) return ymd;
+  }
+
+  // 2. Aguardando Nota status history timestamp (effective loading)
+  const effectiveEntry = shipment.statusHistory?.find((h: any) => 
+    h.status === 'AguardandoNota' || 
+    h.status === 'Ag. Nota' || 
+    h.status === 'Aguardando Nota'
+  );
+  if (effectiveEntry?.timestamp) {
+    return effectiveEntry.timestamp.substring(0, 10);
+  }
+
+  // 3. Scheduled Date
+  if (shipment.scheduledDate) {
+    const ymd = parseDateToYmd(shipment.scheduledDate);
+    if (ymd) return ymd;
+    return shipment.scheduledDate.substring(0, 10);
+  }
+
+  // 4. Created At
+  if (shipment.createdAt) {
+    return shipment.createdAt.substring(0, 10);
+  }
+
+  return null;
+}
+
+
 

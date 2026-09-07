@@ -24,7 +24,7 @@ import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { getShipmentCte, isCteApplicableForStatus } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus } from '../../utils';
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
@@ -153,10 +153,9 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         }
       }
 
-      // Filtro por Data de Início e Fim (Data Programada ou Data Efetivada / Criação)
+      // Filtro por Data de Início e Fim (Data de Emissão CT-e, Data Efetivada ou Data Programada)
       if (startDate || endDate) {
-        const rawDate = s.scheduledDate || (s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota)?.timestamp?.substring(0, 10)) || (s.createdAt ? s.createdAt.substring(0, 10) : '');
-        const shipDate = rawDate ? rawDate.substring(0, 10) : '';
+        const shipDate = getShipmentEffectiveDate(s) || s.scheduledDate || (s.createdAt ? s.createdAt.substring(0, 10) : '');
 
         if (!shipDate) {
           return false;

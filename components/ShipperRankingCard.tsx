@@ -4,6 +4,7 @@ import type { Shipment, Cargo, User } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
+import { getShipmentEffectiveDate } from '../utils';
 
 interface ShipperRankingCardProps {
   shipments: Shipment[];
@@ -62,10 +63,10 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
       let shipmentCount = 0;
 
       shipperShipments.forEach(shipment => {
-        const effectiveEntry = shipment.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
+        const effDateStr = getShipmentEffectiveDate(shipment);
         
-        if (effectiveEntry) {
-          const referenceDate = new Date(effectiveEntry.timestamp);
+        if (effDateStr) {
+          const referenceDate = new Date(effDateStr + 'T00:00:00');
           const isCurrentMonth = referenceDate.getMonth() === currentMonth && referenceDate.getFullYear() === currentYear;
 
           if (isCurrentMonth) {

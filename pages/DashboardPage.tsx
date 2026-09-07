@@ -23,7 +23,7 @@ import CadastroAnttModal from '../components/CadastroAnttModal';
 import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/OptimizedShipmentsBoard';
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
-import { getMatchedCargo } from '../utils';
+import { getMatchedCargo, getShipmentEffectiveDate } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
@@ -477,10 +477,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const volumesByClient: Record<string, { total: number; branches: Record<string, { name: string; cnpj: string; city?: string; state?: string; volume: number; shipmentsCount: number }> }> = {};
 
     shipments.forEach(s => {
-      // Find when it reached Aguardando Nota (effective volume)
-      const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-      if (effectiveEntry) {
-        const date = new Date(effectiveEntry.timestamp);
+      // Find effective date (CT-e emission date or when it reached Aguardando Nota)
+      const effDateStr = getShipmentEffectiveDate(s);
+      if (effDateStr) {
+        const date = new Date(effDateStr + 'T00:00:00');
         if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
           const cargo = cargos.find(c => c.id === s.cargoId);
           if (cargo) {
@@ -582,9 +582,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     let monthlyEffectiveTonnage = 0;
     
     shipments.forEach(s => {
-      const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-      if (effectiveEntry) {
-        const date = new Date(effectiveEntry.timestamp);
+      const effDateStr = getShipmentEffectiveDate(s);
+      if (effDateStr) {
+        const date = new Date(effDateStr + 'T00:00:00');
         if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
           monthlyEffectiveTonnage += s.shipmentTonnage || 0;
         }
@@ -659,15 +659,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     const myShipments = allShipmentsPool.filter(s => clientCargoIds.has(s.cargoId));
 
     const getEffectiveDate = (s: Shipment) => {
-      const entry = s.statusHistory?.find(h => 
-        h.status === ShipmentStatus.AguardandoNota || 
-        (h.status as string) === 'Ag. Nota' || 
-        (h.status as string) === 'Aguardando Nota' ||
-        (h.status as string) === 'Aguardando Nota Fiscal' ||
-        h.status === ShipmentStatus.Finalizado ||
-        (h.status as string) === 'Finalizado'
-      );
-      if (entry?.timestamp) return new Date(entry.timestamp);
+      const effDateStr = getShipmentEffectiveDate(s);
+      if (effDateStr) return new Date(effDateStr + 'T00:00:00');
       if (s.createdAt) return new Date(s.createdAt);
       return null;
     };

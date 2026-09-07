@@ -19,7 +19,7 @@ import DemandForecastReport from '../components/reports/DemandForecastReport';
 import RealProfitReport from '../components/reports/RealProfitReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
-import { getShipmentCte, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus } from '../utils';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ReportsPageProps {
@@ -126,18 +126,14 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   };
 
   const getEffectiveDate = (s: Shipment) => {
-    // Find when it reached Aguardando Nota (effective volume)
-    const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-    
-    // Return the effective timestamp date string, or scheduledDate if not effective yet
-    return effectiveEntry ? effectiveEntry.timestamp.substring(0, 10) : s.scheduledDate;
+    return getShipmentEffectiveDate(s) || s.scheduledDate;
   };
 
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
 
   const filteredShipments = useMemo(() => {
     return shipments.filter(s => {
-       // Filter by effective date (the moment it was loaded/became effective)
+       // Filter by effective date (the moment CT-e was emitted or it was loaded/became effective)
        const effDate = getEffectiveDate(s);
        if (!effDate) return false; // Not effective yet
 
@@ -229,9 +225,8 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       const cteVal = getShipmentCte(s);
       const hasCte = isCteApplicableForStatus(s.status) && cteVal !== '-' && cteVal.trim() !== '';
       if (hasCte && s.status !== ShipmentStatus.Cancelado) {
-        const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
-        const effDateStr = effectiveEntry ? effectiveEntry.timestamp.substring(0, 10) : s.scheduledDate;
-        if (effDateStr >= startDate && effDateStr <= endDate) {
+        const effDateStr = getShipmentEffectiveDate(s);
+        if (effDateStr && effDateStr >= startDate && effDateStr <= endDate) {
           totalEfetivado += s.loadedTonnage || s.shipmentTonnage || 0;
         }
       }

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { X, Building2, Truck, FileText, TrendingUp, Search } from 'lucide-react';
 import type { Client, Shipment, Cargo, Product } from '../types';
 import { ShipmentStatus } from '../types';
+import { getShipmentEffectiveDate } from '../utils';
 
 interface ClientBranchesHistoryModalProps {
   isOpen: boolean;
@@ -104,12 +105,12 @@ export const ClientBranchesHistoryModal: React.FC<ClientBranchesHistoryModalProp
         branchCityState = matched.city ? `${matched.city}/${matched.state || ''}` : '-';
       }
 
-      const effectiveEntry = s.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoNota);
+      const effDateStr = getShipmentEffectiveDate(s);
       let isEffectiveMonth = false;
       let effectiveDateStr = s.scheduledDate || '-';
 
-      if (effectiveEntry) {
-        const d = new Date(effectiveEntry.timestamp);
+      if (effDateStr) {
+        const d = new Date(effDateStr + 'T00:00:00');
         effectiveDateStr = d.toLocaleDateString('pt-BR');
         if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
           isEffectiveMonth = true;
