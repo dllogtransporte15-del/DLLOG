@@ -111,6 +111,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   cteEmissionDate: 'Data/Hora de Emissão do CT-e',
   nfeNumber: 'Número da NF-e',
   mdfeNumber: 'Número do MDF-e',
+  federalTax: 'Imposto Federal',
   riskQueryType: 'Tipo de Consulta de Risco (Modalidade)',
   riskQueryCost: 'Custo da Consulta de Risco',
   riskReleaseCode: 'Código de Liberação da Seguradora',
@@ -1936,7 +1937,7 @@ const App: React.FC = () => {
       'horsePlate', 'trailer1Plate', 'trailer2Plate', 'trailer3Plate', 
       'vehicleTag', 'vehicleSetType', 'vehicleBodyType',
       'shipmentTonnage', 'bankDetails', 'driverReferences', 'ownerContact', 'anttOwnerIdentifier',
-      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber',
+      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber', 'federalTax',
       'riskQueryType', 'riskQueryCost', 'riskReleaseCode',
       'advancePercentage', 'paymentMethod', 'pixKey'
     ];
@@ -1988,6 +1989,8 @@ const App: React.FC = () => {
       ...(data.riskQueryType !== undefined ? { risk_query_type: data.riskQueryType } : {}),
       ...(data.riskQueryCost !== undefined ? { risk_query_cost: data.riskQueryCost } : {}),
       ...(data.riskReleaseCode !== undefined ? { risk_release_code: data.riskReleaseCode } : {}),
+      ...(data.federalTax !== undefined ? { federal_tax: data.federalTax, imposto_federal: data.federalTax } : {}),
+      ...(data.realProfitData !== undefined ? { real_profit_data: data.realProfitData } : {}),
     };
 
     let calculatedAdvanceVal = data.advanceValue !== undefined ? data.advanceValue : shipmentToUpdate.advanceValue;

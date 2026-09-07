@@ -164,7 +164,9 @@ export function calculateShipmentExpenses(
     ? 0
     : (shipment.realProfitData?.federalTax !== undefined && shipment.realProfitData.federalTax > 0
         ? shipment.realProfitData.federalTax
-        : impostoFederalMercadoInterno);
+        : (shipment.federalTax !== undefined && shipment.federalTax > 0
+            ? shipment.federalTax
+            : impostoFederalMercadoInterno));
 
   // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
   const toll = shipment.tollValue || shipment.realProfitData?.toll || 0;

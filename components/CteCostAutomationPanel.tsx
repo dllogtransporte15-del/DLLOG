@@ -21,7 +21,11 @@ import {
   CheckCircle2,
   Clock,
   FileText,
-  ExternalLink
+  ExternalLink,
+  Pencil,
+  Check,
+  X,
+  RotateCcw
 } from 'lucide-react';
 
 interface CteCostAutomationPanelProps {
@@ -125,6 +129,180 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       showToast('Erro ao persistir enquadramento tributário.', 'error');
     } finally {
       setIsSavingRegime(false);
+    }
+  };
+
+  // Status Ag. Fiscal: Libera edição manual do campo Imposto Federal
+  const isAguardandoFiscal = shipment.status === ShipmentStatus.AguardandoFiscal || 
+    (shipment.status as string) === 'Ag. Fiscal' || 
+    (shipment.status as string) === 'Aguardando Fiscal';
+
+  const parseCurrencyInput = (val: string | number | undefined | null): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    const cleanStr = String(val).replace(/[R$\s]/g, '').trim();
+    if (!cleanStr) return 0;
+    if (cleanStr.includes('.') && cleanStr.includes(',')) {
+      if (cleanStr.lastIndexOf(',') > cleanStr.lastIndexOf('.')) {
+        return parseFloat(cleanStr.replace(/\./g, '').replace(',', '.'));
+      } else {
+        return parseFloat(cleanStr.replace(/,/g, ''));
+      }
+    }
+    if (cleanStr.includes(',')) {
+      return parseFloat(cleanStr.replace(',', '.'));
+    }
+    return parseFloat(cleanStr);
+  };
+
+  // Imposto Federal editável em Ag. Fiscal
+  const initialCustomFederalTax = shipment.realProfitData?.federalTax !== undefined 
+    ? shipment.realProfitData.federalTax 
+    : (shipment.federalTax !== undefined 
+        ? shipment.federalTax 
+        : ((shipment.documents as any)?.federal_tax !== undefined 
+            ? Number((shipment.documents as any).federal_tax) 
+            : ((shipment.documents as any)?.imposto_federal !== undefined 
+                ? Number((shipment.documents as any).imposto_federal) 
+                : undefined)));
+
+  const [customFederalTax, setCustomFederalTax] = React.useState<number | undefined>(initialCustomFederalTax);
+  const [isEditingFederalTax, setIsEditingFederalTax] = React.useState(false);
+  const [federalTaxInput, setFederalTaxInput] = React.useState<string>('');
+  const [isSavingFederalTax, setIsSavingFederalTax] = React.useState(false);
+  const [justSavedFederalTax, setJustSavedFederalTax] = React.useState(false);
+
+  React.useEffect(() => {
+    const currentVal = shipment.realProfitData?.federalTax !== undefined 
+      ? shipment.realProfitData.federalTax 
+      : (shipment.federalTax !== undefined 
+          ? shipment.federalTax 
+          : ((shipment.documents as any)?.federal_tax !== undefined 
+              ? Number((shipment.documents as any).federal_tax) 
+              : ((shipment.documents as any)?.imposto_federal !== undefined 
+                  ? Number((shipment.documents as any).imposto_federal) 
+                  : undefined)));
+    setCustomFederalTax(currentVal);
+  }, [shipment.realProfitData?.federalTax, shipment.federalTax, shipment.documents]);
+
+  const handleStartEditFederalTax = () => {
+    const currentNum = customFederalTax !== undefined ? customFederalTax : (impostoFederalLiquido > 0 ? impostoFederalLiquido : 0);
+    setFederalTaxInput(currentNum > 0 ? String(currentNum) : '');
+    setIsEditingFederalTax(true);
+  };
+
+  const handleSaveFederalTax = async () => {
+    setIsSavingFederalTax(true);
+    try {
+      const parsedVal = parseCurrencyInput(federalTaxInput);
+      const validNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : Number(parsedVal.toFixed(2));
+      
+      // Atualiza estado local imediatamente para refletir no painel
+      setCustomFederalTax(validNum);
+      setIsEditingFederalTax(false);
+      setJustSavedFederalTax(true);
+      setTimeout(() => setJustSavedFederalTax(false), 3000);
+
+      const oldTax = impostoFederalLiquido;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Imposto Federal editado manualmente no status Ag. Fiscal: de "${formatBrl(oldTax)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        federalTax: validNum,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        imposto_federal: validNum,
+        federal_tax: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        federalTax: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          federalTax: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast(`Imposto Federal atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar Imposto Federal:', err);
+      showToast('Erro ao salvar Imposto Federal.', 'error');
+    } finally {
+      setIsSavingFederalTax(false);
+    }
+  };
+
+  const handleRestoreDefaultFederalTax = async () => {
+    setIsSavingFederalTax(true);
+    try {
+      setCustomFederalTax(undefined);
+      setIsEditingFederalTax(false);
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Imposto Federal restaurado para o cálculo automático do sistema no status Ag. Fiscal.`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+      };
+      delete (updatedRealProfitData as any).federalTax;
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        real_profit_data: Object.keys(updatedRealProfitData).length > 0 ? updatedRealProfitData : undefined,
+      };
+      delete (updatedDocs as any).imposto_federal;
+      delete (updatedDocs as any).federal_tax;
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        federalTax: undefined,
+        realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
+        documents: updatedDocs,
+        history: updatedHistory,
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          federalTax: undefined,
+          realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
+          documents: updatedDocs,
+          history: updatedHistory,
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast('Imposto Federal restaurado para o cálculo automático do sistema!', 'success');
+    } catch (err) {
+      console.error('Erro ao restaurar Imposto Federal:', err);
+      showToast('Erro ao restaurar cálculo automático.', 'error');
+    } finally {
+      setIsSavingFederalTax(false);
     }
   };
 
@@ -333,8 +511,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : calculatedExportCredit;
 
   // 6. Débito PIS COFINS
-  const autoOrRealFederalTax = autoFederalTax || shipment.realProfitData?.federalTax;
-  const federalPisCofinsDebito = isExportCargo
+  const autoOrRealFederalTax = customFederalTax !== undefined
+    ? customFederalTax
+    : (autoFederalTax || shipment.realProfitData?.federalTax || shipment.federalTax);
+  const federalPisCofinsDebito = (isExportCargo && customFederalTax === undefined)
     ? 0
     : ((autoOrRealFederalTax !== undefined && autoOrRealFederalTax > 0)
         ? autoOrRealFederalTax
@@ -356,11 +536,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   }
 
   // Imposto Federal Líquido Efetivo a Recolher
-  const impostoFederalLiquido = isExportCargo
+  const impostoFederalLiquido = (isExportCargo && customFederalTax === undefined)
     ? 0
-    : ((autoOrRealFederalTax !== undefined && autoOrRealFederalTax > 0) 
-        ? autoOrRealFederalTax 
-        : impostoFederalMercadoInterno);
+    : (customFederalTax !== undefined
+        ? customFederalTax
+        : ((autoOrRealFederalTax !== undefined && autoOrRealFederalTax > 0) 
+            ? autoOrRealFederalTax 
+            : impostoFederalMercadoInterno));
+
+  const isFederalTaxCustom = customFederalTax !== undefined;
 
   // 9. GR (Gerenciadora de Risco - Modalidade de Consulta Realizada)
   let historyRiskType: string | undefined;
@@ -859,37 +1043,154 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         <div className="grid grid-cols-2 gap-2">
           
           {/* Imposto Federal (Simples Nacional 3,40% / PIS/COFINS / Contribuições Federais) */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+          <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border ${
+            isEditingFederalTax
+              ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
+              : isFederalTaxCustom
+                ? 'border-amber-300 dark:border-amber-700/80 shadow-2xs'
+                : 'border-slate-200/90 dark:border-slate-700/80 shadow-2xs'
+          } flex flex-col justify-between transition-all relative`}>
             <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                isExportCargo 
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                  : isSimplesNacional
-                    ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-              } shrink-0 max-w-[140px] truncate`} title={
-                isExportCargo 
-                  ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' 
-                  : isSimplesNacional
-                    ? `Simples Nacional (Anexo III): 3,40% sobre Frete Empresa Bruto (${formatBrl(cteGrossFreight)})`
-                    : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
-              }>
-                {isExportCargo ? 'Exportação (Isento)' : (isSimplesNacional ? '3,40% Simples Nac.' : (isShipmentPf ? '3,655% Frete Líq.' : '9,25% s/ Spread'))}
-              </span>
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
+                {isFederalTaxCustom && (
+                  <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 shrink-0">
+                    Manual
+                  </span>
+                )}
+                {justSavedFederalTax && (
+                  <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
+                    ✔ Salvo!
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-1 shrink-0">
+                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+                  isExportCargo && !isFederalTaxCustom
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                    : isSimplesNacional && !isFederalTaxCustom
+                      ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                      : isFederalTaxCustom
+                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                        : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                } max-w-[130px] truncate`} title={
+                  isFederalTaxCustom
+                    ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)}`
+                    : isExportCargo 
+                      ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' 
+                      : isSimplesNacional
+                        ? `Simples Nacional (Anexo III): 3,40% sobre Frete Empresa Bruto (${formatBrl(cteGrossFreight)})`
+                        : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
+                }>
+                  {isFederalTaxCustom
+                    ? 'Valor Manual'
+                    : (isExportCargo ? 'Exportação (Isento)' : (isSimplesNacional ? '3,40% Simples Nac.' : (isShipmentPf ? '3,655% Frete Líq.' : '9,25% s/ Spread')))}
+                </span>
+
+                {isAguardandoFiscal && !isEditingFederalTax && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditFederalTax}
+                    className="p-1 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-md transition-all cursor-pointer"
+                    title="Editar valor do Imposto Federal (Disponível em Ag. Fiscal)"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
-            <div className={`text-xs sm:text-sm font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-              {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
-            </div>
-            <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
-              isExportCargo 
-                ? 'Exportação: Receita desonerada de PIS/COFINS' 
-                : isSimplesNacional
-                  ? `Simples Nacional: Frete Empresa Bruto ${formatBrl(cteGrossFreight)} • 3,40% = ${formatBrl(impostoFederalSimples)}`
-                  : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
-            }>
-              {isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples Nac.: ${formatBrl(cteGrossFreight)} • 3,40%` : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`))}
-            </div>
+
+            {isEditingFederalTax ? (
+              <div className="space-y-1.5 py-1">
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    placeholder="0,00"
+                    value={federalTaxInput}
+                    onChange={(e) => setFederalTaxInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveFederalTax();
+                      if (e.key === 'Escape') setIsEditingFederalTax(false);
+                    }}
+                    disabled={isSavingFederalTax}
+                    className="w-full text-xs sm:text-sm font-bold font-mono px-2 py-1 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between gap-1 pt-0.5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveFederalTax}
+                      disabled={isSavingFederalTax}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                      title="Salvar valor do Imposto Federal"
+                    >
+                      {isSavingFederalTax ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                      <span>Salvar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingFederalTax(false)}
+                      disabled={isSavingFederalTax}
+                      className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded transition-all cursor-pointer"
+                      title="Cancelar"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+
+                  {isFederalTaxCustom && (
+                    <button
+                      type="button"
+                      onClick={handleRestoreDefaultFederalTax}
+                      disabled={isSavingFederalTax}
+                      className="inline-flex items-center gap-0.5 text-[9px] text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 underline transition-all cursor-pointer"
+                      title="Restaurar fórmula de cálculo automático"
+                    >
+                      <RotateCcw className="w-2 h-2" />
+                      <span>Auto</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-baseline justify-between gap-1">
+                  <div className={`text-xs sm:text-sm font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
+                  </div>
+                  {isAguardandoFiscal && (
+                    <button
+                      type="button"
+                      onClick={handleStartEditFederalTax}
+                      className="text-[9px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                      <span>editar</span>
+                    </button>
+                  )}
+                </div>
+                <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+                  isFederalTaxCustom
+                    ? `Valor manual inserido em Ag. Fiscal. Cálculo padrão sugerido: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))}`
+                    : isExportCargo 
+                      ? 'Exportação: Receita desonerada de PIS/COFINS' 
+                      : isSimplesNacional
+                        ? `Simples Nacional: Frete Empresa Bruto ${formatBrl(cteGrossFreight)} • 3,40% = ${formatBrl(impostoFederalSimples)}`
+                        : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
+                }>
+                  {isFederalTaxCustom
+                    ? `Manual (Fórmula: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
+                    : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples Nac.: ${formatBrl(cteGrossFreight)} • 3,40%` : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* ICMS Destacado Completo */}

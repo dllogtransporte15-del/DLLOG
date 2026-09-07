@@ -582,6 +582,13 @@ const toShipment = (row: any): Shipment => ({
   nfeNumber: row.nfe_number || row.documents?.nfe_number,
   mdfeNumber: row.mdfe_number || row.documents?.mdfe_number,
   realProfitData: row.real_profit_data || row.documents?.real_profit_data,
+  federalTax: row.federal_tax !== null && row.federal_tax !== undefined 
+    ? Number(row.federal_tax) 
+    : (row.documents?.federal_tax !== undefined && row.documents?.federal_tax !== null
+        ? Number(row.documents.federal_tax)
+        : (row.documents?.imposto_federal !== undefined && row.documents?.imposto_federal !== null
+            ? Number(row.documents.imposto_federal)
+            : (row.real_profit_data?.federalTax ?? row.documents?.real_profit_data?.federalTax ?? undefined))),
 });
 
 const fromShipment = (s: Shipment) => ({
@@ -618,6 +625,8 @@ const fromShipment = (s: Shipment) => ({
     cte_emission_date: s.cteEmissionDate ?? null,
     nfe_number: s.nfeNumber ?? null,
     mdfe_number: s.mdfeNumber ?? null,
+    federal_tax: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
+    imposto_federal: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
     real_profit_data: s.realProfitData ?? null,
     freight_calculation_type: s.freightCalculationType ?? null,
     icms_value: s.icmsValue !== undefined ? s.icmsValue : null,

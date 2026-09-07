@@ -487,6 +487,7 @@ export interface Shipment {
   driverFreightRateSnapshot?: number;
   freightCalculationType?: FreightCalculationType;
   icmsValue?: number;
+  federalTax?: number;
   driverFreightType?: 'PJ' | 'PF';
   route?: string;
   isExport?: boolean;
