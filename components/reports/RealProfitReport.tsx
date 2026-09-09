@@ -47,6 +47,7 @@ interface RealProfitReportProps {
   endDate?: string;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
 }
 
 export const RealProfitReport: React.FC<RealProfitReportProps> = ({
@@ -64,7 +65,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   startDate: propStartDate,
   endDate: propEndDate,
   onUpdateAttachment,
-  onBatchUpdateShipments
+  onBatchUpdateShipments,
+  onUpdateShipmentData
 }) => {
   // Filtros internos
   const [searchTerm, setSearchTerm] = useState('');
@@ -1126,17 +1128,29 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             </div>
 
             {(() => {
-              const detailRow = enrichedRows.find(r => r.shipment.id === selectedShipmentForDetail.id);
-              const cargo = detailRow?.cargo;
-              const tonnage = selectedShipmentForDetail.shipmentTonnage || cargo?.totalVolume || 0;
+              const currentShipment = shipments.find(s => s.id === selectedShipmentForDetail.id) || selectedShipmentForDetail;
+              const detailRow = enrichedRows.find(r => r.shipment.id === currentShipment.id);
+              const cargo = detailRow?.cargo || cargoMap.get(currentShipment.cargoId);
+              const tonnage = currentShipment.shipmentTonnage || cargo?.totalVolume || 0;
 
               return (
                 <div className="p-4 sm:p-5 overflow-y-auto">
                   <CteCostAutomationPanel
-                    shipment={selectedShipmentForDetail}
+                    shipment={currentShipment}
                     cargo={cargo}
                     loadedTonnage={tonnage}
                     stays={stays}
+                    users={users}
+                    clients={clients}
+                    onUpdateShipmentData={async (shipmentId, data) => {
+                      if (onUpdateShipmentData) {
+                        await onUpdateShipmentData(shipmentId, data);
+                      } else if (onBatchUpdateShipments) {
+                        const target = shipments.find(s => s.id === shipmentId) || currentShipment;
+                        const updated = { ...target, ...data } as Shipment;
+                        await onBatchUpdateShipments([updated]);
+                      }
+                    }}
                   />
                 </div>
               );
@@ -1166,6 +1180,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             }
             setEditingShipmentForAttachment(null);
           }}
+          onUpdateShipmentData={onUpdateShipmentData}
           shipment={shipments.find(s => s.id === editingShipmentForAttachment.id) || editingShipmentForAttachment}
           cargo={cargoMap.get(editingShipmentForAttachment.cargoId)}
           documentName="Comprovante de Pagamento de Saldo"
