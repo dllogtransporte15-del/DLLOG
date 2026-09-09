@@ -392,8 +392,8 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   <th className="p-4">Modalidade / Base</th>
                   <th className="p-4">Status Comissão</th>
                   <th className="p-4">Fixo (R$)</th>
-                  <th className="p-4">Com. Matriz (%)</th>
-                  <th className="p-4 text-right">Lucro Real Consolidado</th>
+                  <th className="p-4">Comissões (%)</th>
+                  <th className="p-4 text-right">Valor a Receber</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">
@@ -451,7 +451,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
                   const matrizForUser = (isActive && effectiveMatrizRate > 0) ? targetMatrizRevenue * (effectiveMatrizRate / 100) : 0;
                   const filiaisForUser = (isActive && effectiveFiliaisRate > 0) ? userFiliaisRevenue * (effectiveFiliaisRate / 100) : 0;
-                  const totalForUser = isActive ? (userFixed + matrizForUser + filiaisForUser + totalAgencyShipmentComm) : 0;
+                  const totalCommissionsForUser = isAgenciador 
+                    ? totalAgencyShipmentComm + matrizForUser 
+                    : (matrizForUser + filiaisForUser);
+                  const totalForUser = isActive ? (userFixed + totalCommissionsForUser) : 0;
 
                   return (
                     <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
@@ -536,7 +539,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                         )}
                       </td>
 
-                      {/* COM. MATRIZ / AGENCIAMENTO (%) */}
+                      {/* COMISSÕES (%) */}
                       <td className="p-4 font-mono">
                         {isAgenciador ? (
                           <div>
@@ -547,7 +550,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                               {totalAgencyShipmentComm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </div>
                             <div className="text-[10px] text-gray-400 font-sans">
-                              Comissão s/ Lucro Real Líquido
+                              Comissão s/ Lucro Real ({totalAgencyShipmentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})
                             </div>
                             {effectiveMatrizRate > 0 && (
                               <div className="text-[10px] text-blue-500 font-sans">
@@ -558,23 +561,26 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                         ) : isActive ? (
                           <div>
                             <span className="font-bold text-blue-600 dark:text-blue-400">
-                              ({isAgencyMode ? effectiveMatrizRate.toFixed(2) : userMatrizRate.toFixed(2)}%)
+                              Total: {totalCommissionsForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </span>
-                            <div className="text-[11px] text-gray-500">{matrizForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            <div className="text-[10px] text-gray-500 font-sans mt-0.5">
+                              Matriz ({effectiveMatrizRate.toFixed(2)}%): {matrizForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                            {effectiveFiliaisRate > 0 && (
+                              <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-sans">
+                                + Filiais ({effectiveFiliaisRate.toFixed(2)}%): {filiaisForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </div>
+                            )}
                           </div>
                         ) : 'R$ 0,00'}
                       </td>
 
-                      {/* LUCRO REAL CONSOLIDADO */}
+                      {/* VALOR A RECEBER */}
                       <td className="p-4 text-right font-mono font-black text-sm">
                         {isActive ? (
                           <div className="flex flex-col items-end">
-                            <span className={`px-3 py-1 rounded-lg border font-mono font-bold text-sm ${
-                              (isAgenciador ? totalAgencyShipmentProfit : (agencyShipmentCount > 0 ? totalAgencyShipmentProfit : totalForUser)) >= 0
-                                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800'
-                                : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800'
-                            }`}>
-                              {(isAgenciador ? totalAgencyShipmentProfit : (agencyShipmentCount > 0 ? totalAgencyShipmentProfit : totalForUser)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                              {totalForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </span>
                             {isAgenciador ? (
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 font-sans font-medium">
@@ -584,11 +590,11 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                                   return teamCount > 0 ? ` (+${teamCount} op.)` : '';
                                 })()}
                               </span>
-                            ) : agencyShipmentCount > 0 ? (
+                            ) : (
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 font-sans font-medium">
-                                {agencyShipmentCount} {agencyShipmentCount === 1 ? 'embarque' : 'embarques'}
+                                Fixo + Comissões Matriz e Filiais
                               </span>
-                            ) : null}
+                            )}
                           </div>
                         ) : (
                           <span className="text-gray-400">R$ 0,00</span>
