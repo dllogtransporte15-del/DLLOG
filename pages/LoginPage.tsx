@@ -3,7 +3,11 @@ import { supabase } from '../supabase';
 import { User, UserProfile, DriverClassification, VehicleSetType, VehicleBodyType } from '../types';
 import type { ProfilePermissions } from '../types';
 import { formatCPF, formatPhone } from '../utils/formatters';
-import { UserPlus, ArrowLeft, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { 
+  UserPlus, ArrowLeft, Eye, EyeOff, CheckCircle2, 
+  ShieldCheck, Activity, Clock, Smartphone, Mail, Lock, 
+  Check, Sparkles, Building2, Truck, HelpCircle, Download
+} from 'lucide-react';
 
 interface LoginPageProps {
   onLogin: (user: User) => void;
@@ -17,6 +21,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [cpf, setCpf] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -76,6 +81,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     return val.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
   };
 
+  const handlePwaInstall = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          setDeferredPrompt(null);
+        }
+      });
+    } else {
+      alert("Para instalar o aplicativo no seu dispositivo:\n\n• No Android (Chrome): Toque no menu (3 pontinhos) e selecione 'Adicionar à tela inicial'.\n• No iPhone (Safari): Toque no ícone Compartilhar e selecione 'Adicionar à Tela de Início'.\n• No Computador (Chrome/Edge): Clique no ícone de instalação na barra de endereço.");
+    }
+  };
+
   // Submit de Login (Interno ou Motorista Existente)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +135,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         }
 
         console.log('[LoginPage] Iniciando login motorista para:', cleanCpf);
-
         const formattedCpf = formatCPF(cleanCpf);
 
         // Busca o motorista na tabela drivers (com ou sem formatação)
@@ -299,53 +317,34 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
     try {
       const formattedCpf = formatCPF(cleanCpf);
-
-      // 1. Verifica se já existe motorista cadastrado com este CPF
-      const { data: existingDriver } = await supabase
-        .from('drivers')
-        .select('id, name, cpf')
-        .or(`cpf.eq.${formattedCpf},cpf.eq.${cleanCpf}`)
-        .maybeSingle();
-
-      if (existingDriver) {
-        setError(`Já existe um motorista cadastrado com o CPF ${formattedCpf} (${existingDriver.name}). Por favor, faça o login.`);
-        setIsLoading(false);
-        return;
-      }
-
-      // 1.1 Calcula o próximo ID sequencial curto (padrão DRV-xxx)
-      const { data: allDrivers } = await supabase.from('drivers').select('id');
-      let maxDrvNum = 99;
-      if (allDrivers) {
-        for (const d of allDrivers) {
-          if (typeof d.id === 'string') {
-            const m = d.id.match(/DRV-(\d+)/i);
-            if (m) {
-              const n = parseInt(m[1], 10);
-              if (n < 1000000 && n > maxDrvNum) maxDrvNum = n;
-            }
-          }
-        }
-      }
-      const driverId = `DRV-${maxDrvNum + 1}`;
-
-      // 1.2 Calcula o próximo ID sequencial curto para os veículos (padrão VEH-xxx)
-      const { data: allVehicles } = await supabase.from('vehicles').select('id');
-      let currentVehNum = 99;
-      if (allVehicles) {
-        for (const v of allVehicles) {
-          if (typeof v.id === 'string') {
-            const m = v.id.match(/VEH-(\d+)/i);
-            if (m) {
-              const n = parseInt(m[1], 10);
-              if (n < 1000000 && n > currentVehNum) currentVehNum = n;
-            }
-          }
-        }
-      }
-
       const upperName = regName.trim().toUpperCase();
       const cleanHorsePlate = regHorsePlate.trim().toUpperCase();
+
+      // 1. Gera ID incremental para o novo motorista
+      const { data: lastDrivers } = await supabase
+        .from('drivers')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      let currentDriverNum = 1000;
+      if (lastDrivers && lastDrivers.length > 0 && lastDrivers[0].id) {
+        const match = lastDrivers[0].id.match(/\d+/);
+        if (match) currentDriverNum = parseInt(match[0], 10);
+      }
+      const driverId = `DRV-${currentDriverNum + 1}`;
+
+      const { data: lastVehicles } = await supabase
+        .from('vehicles')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      let currentVehNum = 2000;
+      if (lastVehicles && lastVehicles.length > 0 && lastVehicles[0].id) {
+        const match = lastVehicles[0].id.match(/\d+/);
+        if (match) currentVehNum = parseInt(match[0], 10);
+      }
 
       // 2. Insere na tabela 'drivers'
       const { error: driverErr } = await supabase
@@ -448,467 +447,657 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
   };
 
   return (
-    <div className="relative flex items-center justify-center min-h-screen bg-primary overflow-y-auto py-8 px-4 sm:px-6">
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[80%] h-full bg-accent opacity-10 skew-x-[-25deg] origin-top-right"></div>
-        <div className="absolute bottom-0 left-0 w-[40%] h-[50%] bg-accent opacity-5 skew-x-[-15deg] origin-bottom-left"></div>
-      </div>
+    <div 
+      className="relative min-h-screen w-full bg-[#070c18] text-slate-100 flex flex-col justify-between overflow-x-hidden select-none font-sans"
+      style={{ zoom: 0.9 }}
+    >
+      {/* Background Grid Pattern & Ambient Glows */}
+      <div 
+        className="absolute inset-0 pointer-events-none z-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px)
+          `,
+          backgroundSize: '48px 48px'
+        }}
+      />
+      
+      {/* Soft Radial Ambient Lighting */}
+      <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
-      <div className={`relative z-10 w-full ${isRegisteringDriver ? 'max-w-2xl' : 'max-w-md'} p-6 sm:p-10 space-y-6 sm:space-y-8 bg-white dark:bg-dark-card rounded-2xl shadow-2xl border-t-8 border-accent transition-all duration-300 my-auto`}>
-        <div className="text-center">
-          {companyLogo ? (
-            <img src={companyLogo} alt="Logo da Empresa" className="h-16 sm:h-20 mx-auto filter drop-shadow-md object-contain" />
-          ) : (
-            <h1 className="text-3xl sm:text-4xl font-black text-primary dark:text-white tracking-tighter">
-              TRANS<span className="text-accent">CUNHA</span>
-            </h1>
-          )}
-          <div className="mt-3 flex flex-col items-center">
-            <p className="text-base sm:text-lg font-bold text-primary dark:text-blue-400">
-              {isRegisteringDriver ? 'Cadastro de Motorista' : 'Sistema de Gestão Logística'}
-            </p>
-            <div className="h-1 w-12 bg-accent mt-1 rounded-full"></div>
+      {/* Main Container */}
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-5 sm:px-8 lg:px-12 py-8 lg:py-12 flex-1 flex flex-col justify-center">
+        
+        {/* Top Header Row (Logo + Status Badge) */}
+        <div className="flex items-center justify-between pb-8 lg:pb-12">
+          <div className="flex items-center gap-3">
+            {companyLogo ? (
+              <img 
+                src={companyLogo} 
+                alt="Logo TransCunha" 
+                className="h-24 sm:h-28 lg:h-32 max-w-[320px] sm:max-w-[380px] object-contain filter drop-shadow-[0_4px_20px_rgba(11,102,228,0.45)] transition-all" 
+              />
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-blue-700 via-primary to-sky-400 p-0.5 shadow-xl shadow-blue-500/25 flex items-center justify-center">
+                  <div className="w-full h-full bg-[#080e1e] rounded-[14px] flex items-center justify-center">
+                    <Truck className="w-8 h-8 sm:w-10 sm:h-10 text-sky-400" />
+                  </div>
+                </div>
+                <span className="text-4xl sm:text-5xl font-black tracking-tight text-white">
+                  TRANS<span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">CUNHA</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/60 shadow-inner backdrop-blur-md">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-[11px] font-bold text-slate-300 tracking-wider uppercase">Sistema Online</span>
           </div>
         </div>
 
-        {/* Abas Acesso Restrito / Sou Motorista (apenas quando não está no formulário de cadastro) */}
-        {!isRegisteringDriver && profilePermissions?.system_settings?.driver_portal_enabled !== false && (
-          <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-            <button
-              type="button"
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${loginType === 'interno' ? 'bg-white dark:bg-gray-700 shadow-sm text-primary dark:text-white' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => { setLoginType('interno'); setError(''); }}
-            >
-              Acesso Restrito
-            </button>
-            <button
-              type="button"
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${loginType === 'motorista' ? 'bg-white dark:bg-gray-700 shadow-sm text-accent dark:text-orange-400' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => { setLoginType('motorista'); setError(''); }}
-            >
-              Sou Motorista
-            </button>
-          </div>
-        )}
+        {/* Content Layout Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
+          
+          {/* ========================================================= */}
+          {/* LEFT SECTION: Portal de Acesso (Auth Card)               */}
+          {/* ========================================================= */}
+          <div className="lg:col-span-5 flex justify-center w-full">
+            <div className={`w-full ${isRegisteringDriver ? 'max-w-xl' : 'max-w-md'} p-6 sm:p-8 rounded-3xl bg-[#0b1328]/85 border border-slate-700/60 shadow-2xl shadow-blue-950/50 backdrop-blur-2xl transition-all duration-300 relative overflow-hidden`}>
+              
+              {/* Card Top Border Glow */}
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-80" />
 
-        {/* ========================================================= */}
-        {/* FORMULÁRIO DE CADASTRO DE NOVO MOTORISTA                  */}
-        {/* ========================================================= */}
-        {isRegisteringDriver ? (
-          <form className="space-y-4" onSubmit={handleDriverRegister}>
-            <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-800">
-              <button
-                type="button"
-                onClick={() => { setIsRegisteringDriver(false); setError(''); }}
-                className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-gray-500 hover:text-primary dark:hover:text-white transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Voltar ao login</span>
-              </button>
-              <span className="text-xs font-bold text-accent uppercase tracking-wider bg-orange-50 dark:bg-orange-950/40 px-2.5 py-1 rounded-md border border-orange-200 dark:border-orange-900/40">
-                Novo Cadastro
-              </span>
-            </div>
-
-            {/* Linha 1: CPF e Contato (WhatsApp) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  CPF do Motorista <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={isLoading}
-                  value={regCpf}
-                  onChange={handleRegCpfChange}
-                  placeholder="Digite o CPF do motorista"
-                  maxLength={14}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Contato (WhatsApp) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={isLoading}
-                  value={regPhone}
-                  onChange={handleRegPhoneChange}
-                  placeholder="(00) 00000-0000"
-                  maxLength={15}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Linha 2: Nome do Motorista */}
-            <div>
-              <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Motorista <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                disabled={isLoading}
-                value={regName}
-                onChange={e => setRegName(e.target.value)}
-                placeholder="Digite o nome do motorista"
-                className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none uppercase"
-              />
-            </div>
-
-            {/* Linha 3: Placa Cavalo */}
-            <div>
-              <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Placa Cavalo <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                disabled={isLoading}
-                value={regHorsePlate}
-                onChange={e => setRegHorsePlate(formatPlate(e.target.value))}
-                placeholder="AAA-1234"
-                maxLength={8}
-                className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono uppercase focus:ring-2 focus:ring-accent focus:outline-none"
-              />
-            </div>
-
-            {/* Linha 4: Tipo de Veículo e Tipo de Carroceria */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Tipo de Veículo <span className="text-red-500">*</span>
-                </label>
-                <select
-                  required
-                  disabled={isLoading}
-                  value={regVehicleSetType}
-                  onChange={e => setRegVehicleSetType(e.target.value as VehicleSetType)}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                >
-                  <option value="" disabled>Selecione...</option>
-                  {Object.values(VehicleSetType).map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Tipo de Carroceria <span className="text-red-500">*</span>
-                </label>
-                <select
-                  required
-                  disabled={isLoading}
-                  value={regVehicleBodyType}
-                  onChange={e => setRegVehicleBodyType(e.target.value as VehicleBodyType)}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                >
-                  <option value="" disabled>Selecione...</option>
-                  {Object.values(VehicleBodyType).map(b => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Linha 5: Placas das Carretas 1, 2 e 3 */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Placa Carreta 1 <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={isLoading}
-                  value={regTrailer1Plate}
-                  onChange={e => setRegTrailer1Plate(formatPlate(e.target.value))}
-                  placeholder="Obrigatório"
-                  maxLength={8}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono uppercase focus:ring-2 focus:ring-accent focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Placa Carreta 2
-                </label>
-                <input
-                  type="text"
-                  disabled={isLoading}
-                  value={regTrailer2Plate}
-                  onChange={e => setRegTrailer2Plate(formatPlate(e.target.value))}
-                  placeholder="Opcional"
-                  maxLength={8}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono uppercase focus:ring-2 focus:ring-accent focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Placa Carreta 3
-                </label>
-                <input
-                  type="text"
-                  disabled={isLoading}
-                  value={regTrailer3Plate}
-                  onChange={e => setRegTrailer3Plate(formatPlate(e.target.value))}
-                  placeholder="Opcional"
-                  maxLength={8}
-                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono uppercase focus:ring-2 focus:ring-accent focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Linha 6: Definição de Senha */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-gray-100 dark:border-gray-800">
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Criar Senha de Acesso <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showRegPassword ? 'text' : 'password'}
-                    required
-                    disabled={isLoading}
-                    value={regPassword}
-                    onChange={e => setRegPassword(e.target.value)}
-                    placeholder="Mínimo 4 dígitos"
-                    className="p-3 pr-10 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegPassword(!showRegPassword)}
-                    className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
-                  >
-                    {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Confirmar Senha <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showRegConfirmPassword ? 'text' : 'password'}
-                    required
-                    disabled={isLoading}
-                    value={regConfirmPassword}
-                    onChange={e => setRegConfirmPassword(e.target.value)}
-                    placeholder="Repita a senha"
-                    className="p-3 pr-10 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
-                    className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
-                  >
-                    {showRegConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {error && (
-              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                <p className="text-center text-xs sm:text-sm text-red-600 dark:text-red-400 font-medium">{error}</p>
-              </div>
-            )}
-
-            {successMessage && (
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <p className="text-xs sm:text-sm text-emerald-700 dark:text-emerald-300 font-semibold">{successMessage}</p>
-              </div>
-            )}
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={`w-full flex justify-center items-center gap-2 py-3.5 px-4 border border-transparent text-sm sm:text-base font-black rounded-xl text-white shadow-lg transition-all transform active:scale-[0.98] ${
-                  isLoading 
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : 'bg-accent hover:bg-accent-dark hover:-translate-y-0.5 shadow-accent/20'
-                }`}
-              >
-                {isLoading ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    CADASTRANDO MOTORISTA...
-                  </span>
-                ) : (
-                  <>
-                    <UserPlus className="w-5 h-5" />
-                    <span>CRIAR CONTA E ENTRAR</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => { setIsRegisteringDriver(false); setError(''); }}
-                className="text-xs sm:text-sm text-gray-500 hover:text-primary dark:hover:text-blue-400 underline font-medium"
-              >
-                Já possui cadastro? Fazer login com CPF
-              </button>
-            </div>
-          </form>
-        ) : (
-          /* ========================================================= */
-          /* FORMULÁRIO PADRÃO DE LOGIN (INTERNO OU MOTORISTA)        */
-          /* ========================================================= */
-          <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
-            {loginType === 'interno' ? (
-              <div className="space-y-4">
-                <div className="relative">
-                  <input
-                    id="email-address"
-                    name="email"
-                    type="email"
-                    required
-                    disabled={isLoading}
-                    className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50"
-                    placeholder="Seu email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="relative">
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    required
-                    disabled={isLoading}
-                    className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50"
-                    placeholder="Sua senha"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="relative">
-                  <input
-                    id="cpf-motorista"
-                    name="cpf"
-                    type="text"
-                    required
-                    disabled={isLoading}
-                    className="appearance-none block w-full px-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50 font-mono text-center text-lg"
-                    placeholder="Digite seu CPF"
-                    value={cpf}
-                    onChange={handleCpfChange}
-                    maxLength={14}
-                  />
-                </div>
-                
-                <div className="mt-4 relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-accent transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </div>
-                  <input
-                    type="password"
-                    className="appearance-none block w-full pl-12 pr-4 py-3 border border-gray-200 dark:border-gray-700 placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent sm:text-sm dark:bg-gray-800 dark:text-white transition-all disabled:opacity-50 text-center text-lg"
-                    placeholder="Senha (Opcional no 1º acesso)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={isLoading}
-                  />
-                </div>
-
-                <p className="mt-3 text-center text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-                  Acesse o aplicativo utilizando seu CPF e Senha.
+              {/* Header Title */}
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-black text-white tracking-tight">
+                  {isRegisteringDriver ? 'Cadastro de Motorista' : 'Portal de Acesso'}
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  {isRegisteringDriver 
+                    ? 'Preencha seus dados para criar sua conta no aplicativo' 
+                    : 'Entre com suas credenciais corporativas ou CPF'}
                 </p>
+              </div>
 
-                {/* Opção para criar conta de motorista */}
-                <div className="pt-2">
+              {/* Tab Switcher (Acesso Interno / Sou Motorista) */}
+              {!isRegisteringDriver && profilePermissions?.system_settings?.driver_portal_enabled !== false && (
+                <div className="flex p-1 mb-6 rounded-xl bg-slate-950/70 border border-slate-800">
                   <button
                     type="button"
-                    onClick={() => { setIsRegisteringDriver(true); setError(''); }}
-                    className="w-full py-2.5 px-3 rounded-xl border border-dashed border-accent/60 bg-accent/5 hover:bg-accent/10 text-accent font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                    className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                      loginType === 'interno'
+                        ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-900/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    onClick={() => { setLoginType('interno'); setError(''); }}
                   >
-                    <UserPlus className="w-4 h-4" />
-                    <span>Não é cadastrado? Criar conta de motorista</span>
+                    <Building2 className="w-4 h-4" />
+                    <span>Acesso Interno</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                      loginType === 'motorista'
+                        ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md shadow-blue-900/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    onClick={() => { setLoginType('motorista'); setError(''); }}
+                  >
+                    <Truck className="w-4 h-4" />
+                    <span>Sou Motorista</span>
                   </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {error && (
-              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                 <p className="text-center text-sm text-red-600 dark:text-red-400 font-medium">{error}</p>
-              </div>
-            )}
+              {/* ========================================================= */}
+              {/* FORMULÁRIO DE CADASTRO DE NOVO MOTORISTA                  */}
+              {/* ========================================================= */}
+              {isRegisteringDriver ? (
+                <form className="space-y-4" onSubmit={handleDriverRegister}>
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => { setIsRegisteringDriver(false); setError(''); }}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-sky-400 transition-colors"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Voltar ao login</span>
+                    </button>
+                    <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider bg-sky-950/60 px-2.5 py-1 rounded-md border border-sky-800/60">
+                      Novo Motorista
+                    </span>
+                  </div>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={`w-full flex justify-center py-4 px-4 border border-transparent text-base font-black rounded-xl text-white shadow-lg transition-all transform active:scale-[0.98] ${
-                  isLoading 
-                    ? 'bg-gray-400 cursor-not-allowed' 
-                    : 'bg-accent hover:bg-accent-dark hover:-translate-y-1 shadow-accent/20'
-                }`}
-              >
-                {isLoading ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    PROCESSANDO...
-                  </span>
-                ) : 'ENTRAR NO SISTEMA'}
-              </button>
+                  {/* CPF e Contato */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        CPF do Motorista <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        disabled={isLoading}
+                        value={regCpf}
+                        onChange={handleRegCpfChange}
+                        placeholder="000.000.000-00"
+                        maxLength={14}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        WhatsApp / Contato <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        disabled={isLoading}
+                        value={regPhone}
+                        onChange={handleRegPhoneChange}
+                        placeholder="(00) 00000-0000"
+                        maxLength={15}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Nome Completo */}
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      Nome Completo <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      disabled={isLoading}
+                      value={regName}
+                      onChange={e => setRegName(e.target.value)}
+                      placeholder="Nome completo do motorista"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  {/* Placa Cavalo */}
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      Placa do Cavalo <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      disabled={isLoading}
+                      value={regHorsePlate}
+                      onChange={e => setRegHorsePlate(formatPlate(e.target.value))}
+                      placeholder="ABC-1234 ou ABC1D23"
+                      maxLength={8}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  {/* Tipo de Veículo e Carroceria */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Tipo de Veículo <span className="text-red-400">*</span>
+                      </label>
+                      <select
+                        required
+                        disabled={isLoading}
+                        value={regVehicleSetType}
+                        onChange={e => setRegVehicleSetType(e.target.value as VehicleSetType)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                      >
+                        <option value="" disabled className="bg-slate-900 text-slate-400">Selecione...</option>
+                        {Object.values(VehicleSetType).map(t => (
+                          <option key={t} value={t} className="bg-slate-900 text-white">{t}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Carroceria <span className="text-red-400">*</span>
+                      </label>
+                      <select
+                        required
+                        disabled={isLoading}
+                        value={regVehicleBodyType}
+                        onChange={e => setRegVehicleBodyType(e.target.value as VehicleBodyType)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                      >
+                        <option value="" disabled className="bg-slate-900 text-slate-400">Selecione...</option>
+                        {Object.values(VehicleBodyType).map(b => (
+                          <option key={b} value={b} className="bg-slate-900 text-white">{b}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Carretas */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Carreta 1 <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        disabled={isLoading}
+                        value={regTrailer1Plate}
+                        onChange={e => setRegTrailer1Plate(formatPlate(e.target.value))}
+                        placeholder="Obrigatório"
+                        maxLength={8}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Carreta 2
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isLoading}
+                        value={regTrailer2Plate}
+                        onChange={e => setRegTrailer2Plate(formatPlate(e.target.value))}
+                        placeholder="Opcional"
+                        maxLength={8}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Carreta 3
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isLoading}
+                        value={regTrailer3Plate}
+                        onChange={e => setRegTrailer3Plate(formatPlate(e.target.value))}
+                        placeholder="Opcional"
+                        maxLength={8}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs font-mono uppercase placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Senha e Confirmação */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Criar Senha <span className="text-red-400">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showRegPassword ? 'text' : 'password'}
+                          required
+                          disabled={isLoading}
+                          value={regPassword}
+                          onChange={e => setRegPassword(e.target.value)}
+                          placeholder="Mínimo 4 dígitos"
+                          className="w-full px-3 py-2.5 pr-9 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegPassword(!showRegPassword)}
+                          className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-200"
+                        >
+                          {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                        Confirmar Senha <span className="text-red-400">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showRegConfirmPassword ? 'text' : 'password'}
+                          required
+                          disabled={isLoading}
+                          value={regConfirmPassword}
+                          onChange={e => setRegConfirmPassword(e.target.value)}
+                          placeholder="Repita a senha"
+                          className="w-full px-3 py-2.5 pr-9 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                          className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-200"
+                        >
+                          {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/80 text-center text-xs text-red-300 font-medium">
+                      {error}
+                    </div>
+                  )}
+
+                  {successMessage && (
+                    <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/80 flex items-center justify-center gap-2 text-xs text-emerald-300 font-semibold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>{successMessage}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-full py-3.5 px-4 rounded-xl font-black text-sm text-white bg-gradient-to-r from-blue-600 via-primary to-sky-500 hover:from-blue-500 hover:to-sky-400 shadow-lg shadow-blue-900/40 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isLoading ? (
+                        <span>CADASTRANDO MOTORISTA...</span>
+                      ) : (
+                        <>
+                          <UserPlus className="w-4 h-4" />
+                          <span>CRIAR CONTA E ENTRAR</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* ========================================================= */
+                /* FORMULÁRIO PADRÃO DE LOGIN (INTERNO OU MOTORISTA)        */
+                /* ========================================================= */
+                <form className="space-y-4" onSubmit={handleSubmit}>
+                  {loginType === 'interno' ? (
+                    <>
+                      {/* Campo E-mail */}
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                          E-mail Corporativo
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                            <Mail className="w-4 h-4" />
+                          </div>
+                          <input
+                            id="email-address"
+                            name="email"
+                            type="email"
+                            required
+                            disabled={isLoading}
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder="seu.email@transcunha.com.br"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Campo Senha */}
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                          Senha
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                            <Lock className="w-4 h-4" />
+                          </div>
+                          <input
+                            id="password"
+                            name="password"
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            disabled={isLoading}
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="Digite sua senha de acesso"
+                            className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300"
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Campo CPF Motorista */}
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                          CPF do Motorista
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                            <Truck className="w-4 h-4" />
+                          </div>
+                          <input
+                            id="cpf-motorista"
+                            name="cpf"
+                            type="text"
+                            required
+                            disabled={isLoading}
+                            value={cpf}
+                            onChange={handleCpfChange}
+                            maxLength={14}
+                            placeholder="000.000.000-00"
+                            className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Campo Senha Motorista */}
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                          Senha
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                            <Lock className="w-4 h-4" />
+                          </div>
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            disabled={isLoading}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Senha (Opcional no 1º acesso)"
+                            className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300"
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-center text-xs text-slate-400">
+                        Acesse o aplicativo utilizando seu CPF e Senha.
+                      </p>
+
+                      {/* Botão para criar conta de motorista */}
+                      <button
+                        type="button"
+                        onClick={() => { setIsRegisteringDriver(true); setError(''); }}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-sky-500/50 bg-sky-500/5 hover:bg-sky-500/10 text-sky-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        <span>Não é cadastrado? Criar conta de motorista</span>
+                      </button>
+                    </>
+                  )}
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/80 text-center text-xs text-red-300 font-medium">
+                      {error}
+                    </div>
+                  )}
+
+                  {/* Botão de Login Principal */}
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-full py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base text-white bg-gradient-to-r from-blue-600 via-primary to-blue-700 hover:from-blue-500 hover:to-blue-600 shadow-lg shadow-blue-900/50 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 tracking-wide uppercase"
+                    >
+                      {isLoading ? (
+                        <span>PROCESSANDO...</span>
+                      ) : (
+                        <>
+                          <span>ENTRAR NO SISTEMA</span>
+                          <span className="text-lg">→</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Card Footer Links */}
+              <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-center gap-4 text-xs text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@transcunha.com.br.")}
+                  className="hover:text-slate-200 transition-colors flex items-center gap-1"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Precisa de ajuda?</span>
+                </button>
+                <span className="text-slate-700">•</span>
+                <button
+                  type="button"
+                  onClick={handlePwaInstall}
+                  className="hover:text-sky-400 transition-colors flex items-center gap-1"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Instalar PWA</span>
+                </button>
+              </div>
+
             </div>
-          </form>
-        )}
-
-        {loginType === 'motorista' && !isRegisteringDriver && (
-          <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                if (deferredPrompt) {
-                  deferredPrompt.prompt();
-                  deferredPrompt.userChoice.then((choiceResult: any) => {
-                    if (choiceResult.outcome === 'accepted') {
-                      setDeferredPrompt(null);
-                    }
-                  });
-                } else {
-                  alert("Para instalar o aplicativo no seu celular:\n\nNo Android (Chrome): Toque nos 3 pontinhos e selecione 'Adicionar à tela inicial'.\n\nNo iPhone (Safari): Toque no ícone de Compartilhar e selecione 'Adicionar à Tela de Início'.");
-                }
-              }}
-              className="w-full flex justify-center py-3 px-4 border-2 border-primary dark:border-blue-500 text-primary dark:text-blue-500 hover:bg-primary hover:text-white dark:hover:bg-blue-600 dark:hover:text-white text-sm font-black rounded-xl transition-all"
-            >
-              BAIXAR APLICATIVO PARA MOTORISTA
-            </button>
           </div>
-        )}
-        
-        <div className="text-center pt-2">
-            <p className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-widest font-bold">
-                Transparência | Cuidado | Prazo
+
+          {/* ========================================================= */}
+          {/* RIGHT HERO SECTION: TransCunha Presentation & Features    */}
+          {/* ========================================================= */}
+          <div className="lg:col-span-7 flex flex-col space-y-6 lg:space-y-8 text-left">
+            
+            {/* Tag Pill */}
+            <div className="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-blue-950/60 border border-blue-500/30 text-sky-400 text-xs font-bold tracking-wide shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+              <span>LOGÍSTICA INTELIGENTE & GESTÃO DE CARGAS</span>
+            </div>
+
+            {/* Main Headline */}
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-[1.15]">
+              Eficiência, controle e pontualidade{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-sky-300 to-blue-400">
+                na estrada.
+              </span>
+            </h1>
+
+            {/* Description */}
+            <p className="text-sm sm:text-base text-slate-400 leading-relaxed max-w-2xl">
+              A plataforma definitiva para transportadores, embarcadores e motoristas. Acompanhe fretes, pedidos, emissões e rotas com transparência em tempo real.
             </p>
+
+            {/* 2x2 Feature Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 pt-2">
+              
+              {/* Card 1: Operações ao Vivo */}
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 group-hover:bg-blue-500/20 transition-colors">
+                  <Activity className="w-5 h-5 text-sky-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white mb-0.5">Operações ao Vivo</h2>
+                  <p className="text-xs text-slate-400 leading-relaxed">Controle completo de status e carregamento em tempo real.</p>
+                </div>
+              </div>
+
+              {/* Card 2: Segurança & ANTT */}
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 group-hover:bg-amber-500/20 transition-colors">
+                  <ShieldCheck className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white mb-0.5">Segurança & ANTT</h2>
+                  <p className="text-xs text-slate-400 leading-relaxed">Validação rigorosa de documentos e conformidade fiscal.</p>
+                </div>
+              </div>
+
+              {/* Card 3: Cálculo de Estadias */}
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:bg-emerald-500/20 transition-colors">
+                  <Clock className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white mb-0.5">Cálculo de Estadias</h2>
+                  <p className="text-xs text-slate-400 leading-relaxed">Cálculos precisos da Lei 11.442 e relatórios transparentes.</p>
+                </div>
+              </div>
+
+              {/* Card 4: App para Motoristas */}
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 transition-colors">
+                  <Smartphone className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white mb-0.5">App para Motoristas</h2>
+                  <p className="text-xs text-slate-400 leading-relaxed">Acesso via PWA sem complicação diretamente do celular.</p>
+                </div>
+              </div>
+
+            </div>
+
+            {/* TransCunha Pillars / Lema */}
+            <div className="pt-2 flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-bold tracking-wider uppercase text-slate-400">
+              <div className="flex items-center gap-2 text-slate-300">
+                <div className="w-4 h-4 rounded-full bg-orange-500/20 border border-orange-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-orange-400" />
+                </div>
+                <span>Transparência</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-300">
+                <div className="w-4 h-4 rounded-full bg-sky-500/20 border border-sky-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-sky-400" />
+                </div>
+                <span>Cuidado</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-300">
+                <div className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-blue-400" />
+                </div>
+                <span>Prazo</span>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Footer Bottom Bar */}
+      <div className="relative z-10 w-full border-t border-slate-800/80 bg-[#060a14]/90 py-4 px-6 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
+        <div>
+          © 2026 TRANSCUNHA Logística. Todos os direitos reservados.
+        </div>
+        <div className="font-mono text-slate-400">
+          v2.5 • Alta Performance
         </div>
       </div>
     </div>

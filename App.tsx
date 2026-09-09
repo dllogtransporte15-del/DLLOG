@@ -800,8 +800,8 @@ const App: React.FC = () => {
         }
       }
 
-      // 5. Embarcador profile
-      if (currentUser.profile === UserProfile.Embarcador) {
+      // 5. Embarcador & Agenciador profile
+      if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador) {
         return true;
       }
 
@@ -828,9 +828,9 @@ const App: React.FC = () => {
       return shipments.filter(s => (s.driverCpf || '').replace(/\D/g, '') === driverCpfClean);
     }
 
-    // Embarcador sees their shipments
-    if (currentUser.profile === UserProfile.Embarcador) {
-      return shipments.filter(s => s.embarcadorId === currentUser.id);
+    // Embarcador & Agenciador see their shipments (ou da sua filial)
+    if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador) {
+      return shipments.filter(s => s.embarcadorId === currentUser.id || s.createdById === currentUser.id || (currentUser.branchId && s.branchId === currentUser.branchId));
     }
 
     const visibleCargoIds = new Set(visibleLoads.map(c => c.id));
@@ -860,9 +860,9 @@ const App: React.FC = () => {
   
   const visibleEmbarcadores = useMemo(() => {
     if (!currentUser) return [];
-    const allEmbarcadorUsers = users.filter(u => u.profile === UserProfile.Embarcador);
+    const allEmbarcadorUsers = users.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
 
-    if (currentUser.profile === UserProfile.Embarcador) {
+    if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador) {
         return allEmbarcadorUsers.filter(u => u.id === currentUser.id);
     }
     
@@ -1226,6 +1226,18 @@ const App: React.FC = () => {
     if (attachedFileNames.length > 0) historyMsg += ` Anexo(s): ${attachedFileNames.join(', ')}.`;
     if (data.bankDetails) historyMsg += ` Dados bancários preenchidos.`;
 
+    // Identificação de comissão automática:
+    // 1. Agenciador: ativação automática de 30% de comissão de agência
+    const requestingUser = users.find(u => u.id === data.embarcadorId) || currentUser;
+    const isAgenciadorRequester = requestingUser.profile === UserProfile.Agenciador || currentUser.profile === UserProfile.Agenciador;
+    const agencyNameAuto = requestingUser.branchId 
+      ? `Agência ${requestingUser.branchId} (${requestingUser.name})` 
+      : requestingUser.name;
+
+    // 2. Embarcador com taxa R$/ton configurada: ativação automática da comissão do embarcador
+    const shipperRateConfigured = requestingUser.shipperCommissionRatePerTon || (data.embarcadorId ? users.find(u => u.id === data.embarcadorId)?.shipperCommissionRatePerTon : undefined);
+    const isShipperCommAuto = Boolean(shipperRateConfigured && shipperRateConfigured > 0);
+
     const newShipment: Shipment = {
       id: newShipmentId,
       orderId: `ord_${newShipmentId}`,
@@ -1259,6 +1271,11 @@ const App: React.FC = () => {
       anttOwnerIdentifier: data.anttOwnerIdentifier,
       anttModality: data.anttModality,
       etcTaxRegime: data.etcTaxRegime,
+      agencyCommissionEnabled: isAgenciadorRequester ? true : undefined,
+      agencyCommissionPercentage: isAgenciadorRequester ? 30 : undefined,
+      agencyCommissionAgencyName: isAgenciadorRequester ? agencyNameAuto : undefined,
+      shipperCommissionEnabled: isShipperCommAuto ? true : undefined,
+      shipperCommissionRatePerTon: isShipperCommAuto ? shipperRateConfigured : undefined,
       statusHistory: [{
         status: initialStatus,
         timestamp: new Date().toISOString(),

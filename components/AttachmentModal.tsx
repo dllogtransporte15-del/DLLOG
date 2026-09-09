@@ -997,15 +997,20 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
 
     return (
-      <ul className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {validDocs.map(([docType, files]) => {
           const fileList = (Array.isArray(files) ? files : (typeof files === 'string' ? [files] : [])).filter(f => typeof f === 'string' && f.trim() !== '');
           if (fileList.length === 0) return null;
 
           return (
-            <li key={docType}>
-              <p className="font-medium text-sm text-gray-800 dark:text-gray-200 mb-1">{docType}:</p>
-              <div className="flex flex-wrap gap-2.5 items-center">
+            <div key={docType} className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200/90 dark:border-slate-700/80 flex flex-col justify-between gap-2 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate" title={docType}>
+                  {docType}:
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
                 {fileList.map((file, index) => {
                   const fileName = typeof file === 'string' ? (file.split('/').pop()?.split('?')[0] || '') : '';
                   const rawDecoded = decodeURIComponent(fileName);
@@ -1014,16 +1019,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   return (
                     <div
                       key={index}
-                      className="inline-flex items-center gap-1 bg-indigo-50/80 dark:bg-indigo-900/30 p-1 rounded-xl border border-indigo-200 dark:border-indigo-800/50 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-700 transition-all"
+                      className="inline-flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-lg border border-indigo-200/80 dark:border-indigo-800/60 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-600 transition-all w-full justify-between"
                     >
                       <button
                         type="button"
                         onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-2 py-1 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 rounded text-xs font-semibold transition-colors cursor-pointer truncate min-w-0 flex-1"
                         title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
                       >
-                        <PaperclipIcon className="w-3.5 h-3.5" />
-                        <span className="truncate max-w-[180px]">{cleanFileName || 'Visualizar Anexo'}</span>
+                        <PaperclipIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{cleanFileName || 'Visualizar Anexo'}</span>
                       </button>
 
                       <button
@@ -1033,7 +1038,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           docType,
                           docName: cleanFileName
                         })}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs cursor-pointer"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] font-bold transition-all shadow-xs cursor-pointer shrink-0"
                         title="Ver todos os campos e dados extraídos deste documento"
                       >
                         <Eye className="w-3 h-3" />
@@ -1043,10 +1048,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   );
                 })}
               </div>
-            </li>
+            </div>
           );
         })}
-      </ul>
+      </div>
     );
   };
 
@@ -1256,32 +1261,48 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           </div>
         </div>
 
+        {/* Bloco 1: Documentos Anexados (Linha Horizontal) */}
         <div className="mb-6 border rounded-xl dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
-          <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 border-b dark:border-gray-600 font-bold text-gray-800 dark:text-gray-100">
-            Documentos Anexados
+          <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 border-b dark:border-gray-600 font-bold text-gray-800 dark:text-gray-100 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-500" />
+              Documentos Anexados
+            </span>
+            <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+              {documentsToShow.length} {documentsToShow.length === 1 ? 'categoria' : 'categorias'}
+            </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x dark:divide-gray-600">
-            <div className="p-4">
-              <h4 className="font-semibold text-gray-600 dark:text-gray-300 mb-2 border-b">Troca de Status</h4>
-              {statusDocuments.length > 0 ? renderDocumentList(statusDocuments) : <p className="text-sm italic text-gray-400">Nenhum.</p>}
-            </div>
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex flex-col gap-3">
-              {creationDocuments.length > 0 ? (
-                <div className="mb-1">
-                  {renderDocumentList(creationDocuments)}
-                </div>
-              ) : null}
-              <CteCostAutomationPanel
-                shipment={shipment}
-                cargo={cargo}
-                tollValue={tollValue}
-                loadedTonnage={loadedTonnage}
-                riskQueryType={riskQueryType}
-                riskReleaseCode={riskReleaseCode}
-                onUpdateShipmentData={onUpdateShipmentData}
-              />
+          <div className="p-4 space-y-4">
+            {creationDocuments.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 border-b pb-1">
+                  Arquivos Iniciais
+                </h4>
+                {renderDocumentList(creationDocuments)}
+              </div>
+            )}
+            <div>
+              <h4 className="font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 border-b pb-1">
+                Troca de Status
+              </h4>
+              {statusDocuments.length > 0 ? renderDocumentList(statusDocuments) : <p className="text-sm italic text-gray-400">Nenhum documento anexado.</p>}
             </div>
           </div>
+        </div>
+
+        {/* Bloco 2: Automatização do CT-e Custos & Margem (Embaixo) */}
+        <div className="mb-6">
+          <CteCostAutomationPanel
+            shipment={shipment}
+            cargo={cargo}
+            tollValue={tollValue}
+            loadedTonnage={loadedTonnage}
+            riskQueryType={riskQueryType}
+            riskReleaseCode={riskReleaseCode}
+            users={users}
+            clients={clients}
+            onUpdateShipmentData={onUpdateShipmentData}
+          />
         </div>
 
         {/* Números de Documentos Fiscais Extraídos */}

@@ -4,6 +4,7 @@ export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'driver
 
 export enum UserProfile {
   Embarcador = "Embarcador",
+  Agenciador = "Agenciador",
   Supervisor = "Supervisor",
   Comercial = "Comercial",
   GerenteComercial = "Gerente Comercial",
@@ -27,6 +28,7 @@ export const INTERNAL_PROFILES: UserProfile[] = [
   UserProfile.Fiscal,
   UserProfile.GerenciadoraDeRisco,
   UserProfile.Embarcador,
+  UserProfile.Agenciador,
 ];
 
 
@@ -61,6 +63,7 @@ export interface User {
   commercialIsAgencyMode?: boolean;
   commercialAgencySharePercent?: number;
   availableForDriverRequests?: boolean;
+  shipperCommissionRatePerTon?: number;
   customPermissions?: { [key in Page]?: CrudPermissions };
 }
 
@@ -440,6 +443,14 @@ export interface RealProfitData {
   processedAt?: string;
   attachmentUrl?: string;
   rawOcrText?: string;
+  additionalCost?: number;
+  additionalCostCategory?: string;
+  additionalCostDescription?: string;
+  agencyCommission?: number;
+  agencyCommissionEnabled?: boolean;
+  shipperCommission?: number;
+  shipperCommissionRatePerTon?: number;
+  shipperCommissionEnabled?: boolean;
 }
 
 export interface Shipment {
@@ -510,6 +521,23 @@ export interface Shipment {
   nfeValue?: number;    // Valor da Nota Fiscal / Mercadoria averbada
   mdfeNumber?: string;  // Número do MDF-e extraído automaticamente
   realProfitData?: RealProfitData; // Resumo e detalhamento de despesas extraídos via OCR/IA
+  additionalCost?: {
+    value: number;
+    category: string;
+    description: string;
+    createdAt?: string;
+    createdBy?: string;
+  };
+  additionalCostValue?: number;
+  additionalCostCategory?: string;
+  additionalCostDescription?: string;
+  agencyCommissionEnabled?: boolean;
+  agencyCommissionPercentage?: number;
+  agencyCommissionValue?: number;
+  agencyCommissionAgencyName?: string;
+  shipperCommissionEnabled?: boolean;
+  shipperCommissionRatePerTon?: number;
+  shipperCommissionValue?: number;
 }
 
 
@@ -535,6 +563,7 @@ export interface CrudPermissions {
 export interface Embarcador {
   id: string;
   name: string;
+  shipperCommissionRatePerTon?: number;
 }
 
 // Ticket System Types

@@ -151,6 +151,49 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             <p className="text-[10px] text-gray-500 mt-1">Usuários sem filial verão dados de todas as filiais (perfil admin/diretor).</p>
           </div>
 
+          {/* INFORMATIVO: PERFIL AGENCIADOR */}
+          {user.profile === UserProfile.Agenciador && (
+            <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl border border-blue-200/80 dark:border-blue-800/80 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                  Perfil Agenciador
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300">
+                  Comissão de Agência 30% Automática
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-800 dark:text-blue-300">
+                Este usuário terá acesso às visualizações operacionais, frete empresa e permissão para cadastrar Clientes, Cargas, Produtos, Veículos e Motoristas. Todo embarque solicitado por ele ativará automaticamente a <strong>Comissão de Agência (30% sobre o Lucro Real)</strong> vinculada à sua filial/agência.
+              </p>
+            </div>
+          )}
+
+          {/* COMISSÃO DO EMBARCADOR POR TONELADA */}
+          {user.profile === UserProfile.Embarcador && (
+            <div className="p-3 bg-amber-50/70 dark:bg-amber-950/40 rounded-xl border border-amber-200/80 dark:border-amber-800/80 space-y-2">
+              <label className="block text-xs font-bold text-amber-900 dark:text-amber-200">
+                Comissão do Embarcador (R$ / Tonelada):
+              </label>
+              <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                Defina o valor unitário por tonelada que será automaticamente lançado como custo e creditado ao embarcador nos embarques solicitados por este usuário.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-xs font-bold font-mono text-gray-500">R$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  name="shipperCommissionRatePerTon"
+                  value={user.shipperCommissionRatePerTon ?? ''}
+                  onChange={(e) => setUser(prev => ({ ...prev, shipperCommissionRatePerTon: parseFloat(e.target.value) || undefined }))}
+                  placeholder="Ex: 2.00"
+                  className="p-1.5 text-xs w-36 border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold"
+                />
+                <span className="text-xs text-gray-600 dark:text-gray-300 font-semibold">/ tonelada</span>
+              </div>
+            </div>
+          )}
+
           {/* ATIVAR COMISSÃO COMERCIAL (GERENTE COMERCIAL) */}
           <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl border border-blue-200/80 dark:border-blue-800/80 space-y-2">
             <div className="flex items-center">

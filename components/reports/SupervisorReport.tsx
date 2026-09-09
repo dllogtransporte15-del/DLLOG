@@ -334,7 +334,6 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   <th className="p-4">Status Comissão</th>
                   <th className="p-4">Fixo (R$)</th>
                   <th className="p-4">Com. Matriz (%)</th>
-                  <th className="p-4">Com. Filiais Selecionadas (%)</th>
                   <th className="p-4 text-right">Total a Receber</th>
                   {onSaveUser && <th className="p-4 text-center">Ações</th>}
                 </tr>
@@ -452,28 +451,6 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                               ({isAgencyMode ? effectiveMatrizRate.toFixed(2) : userMatrizRate.toFixed(2)}%)
                             </span>
                             <div className="text-[11px] text-gray-500">{matrizForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-                          </div>
-                        ) : 'R$ 0,00'}
-                      </td>
-
-                      {/* COM. FILIAIS SELECIONADAS (%) */}
-                      <td className="p-4 font-mono">
-                        {isActive ? (
-                          <div>
-                            <div className="flex items-center gap-1">
-                              <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                                ({userFiliaisRate.toFixed(2)}% {isAgencyMode ? `➔ ${effectiveFiliaisRate.toFixed(2)}%` : ''})
-                              </span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800">
-                                {selectedBranchCount} filial(is)
-                              </span>
-                            </div>
-                            {isAgencyMode && (
-                              <div className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold">
-                                Repartido entre {agencyMembersCount} membro(s) da agência
-                              </div>
-                            )}
-                            <div className="text-[11px] text-gray-500">{filiaisForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                           </div>
                         ) : 'R$ 0,00'}
                       </td>

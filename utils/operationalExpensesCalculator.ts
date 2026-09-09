@@ -1,4 +1,5 @@
 import { Shipment, Cargo, OperationalExpenseItem, RealProfitData, RISK_QUERY_COST_MAP, ShipmentStatus } from '../types';
+import { calculateTacTaxDeductions } from './freightCalculation';
 
 export interface OperationalExpensesConfig {
   insuranceAcidenteRate: number; // 0.0125% -> 0.000125
@@ -193,8 +194,12 @@ export function calculateShipmentExpenses(
   const insuranceRcv = config.insuranceRcvPerLoad;
   const totalInsurance = Number((insuranceAcidente + insuranceRoubo + insuranceRcv).toFixed(2));
 
-  // 10. CIOT (0,20% s/ Frete Motorista - Pedágio)
-  const baseCiot = Math.max(0, driverFreight - toll);
+  // 10. CIOT (0,20% s/ Frete Motorista - Pedágio; se PF deduz também INSS e SEST/SENAT)
+  let baseCiot = Math.max(0, driverFreight - toll);
+  if (isShipmentPf && baseCiot > 0) {
+    const tacTaxes = calculateTacTaxDeductions(driverFreight, toll);
+    baseCiot = Math.max(0, baseCiot - tacTaxes.inss - tacTaxes.sestSenat);
+  }
   const ciot = baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0;
 
   // 11. Custo Fixo (0,35% s/ Frete Bruto)
@@ -314,8 +319,11 @@ export function calculateShipmentExpenses(
   }
 
   if (ciot > 0) {
+    const ciotLabel = isShipmentPf
+      ? `CIOT (0,20% s/ Frete Mot. - Pedágio - INSS - SEST/SENAT)`
+      : (toll > 0 ? `CIOT (0,20% s/ Frete Mot. - Pedágio)` : `CIOT (0,20% s/ Frete Motorista)`);
     expenseItems.push({
-      name: toll > 0 ? `CIOT (0,20% s/ Frete Mot. - Pedágio)` : `CIOT (0,20% s/ Frete Motorista)`,
+      name: ciotLabel,
       value: ciot,
       type: 'negative'
     });

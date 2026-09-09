@@ -295,6 +295,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                        (s.documents ? Object.values(s.documents).flat().find(f => typeof f === 'string' && (f.includes('saldo') || f.includes('comprovante') || f.includes('resumo'))) : undefined);
 
       const attachmentUrl = Array.isArray(saldoDoc) ? saldoDoc[0] : (typeof saldoDoc === 'string' ? saldoDoc : undefined);
+      const toll = s.tollValue || s.realProfitData?.toll || 0;
+      const driverFreightNetToll = Math.max(0, driverFreight - toll);
 
       return {
         shipment: s,
@@ -303,6 +305,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         cte: getShipmentCte(s),
         companyFreight,
         driverFreight,
+        toll,
+        driverFreightNetToll,
         freightDifference,
         freightDifferenceMarginPercent,
         totalExpenses,
@@ -326,6 +330,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     const totalShipments = enrichedRows.length;
     const sumCompanyFreight = enrichedRows.reduce((acc, r) => acc + r.companyFreight, 0);
     const sumDriverFreight = enrichedRows.reduce((acc, r) => acc + r.driverFreight, 0);
+    const sumToll = enrichedRows.reduce((acc, r) => acc + r.toll, 0);
+    const sumDriverFreightNetToll = enrichedRows.reduce((acc, r) => acc + r.driverFreightNetToll, 0);
     const sumFreightDiff = enrichedRows.reduce((acc, r) => acc + r.freightDifference, 0);
     const sumExpenses = enrichedRows.reduce((acc, r) => acc + r.totalExpenses, 0);
     const sumGeneratedCredit = enrichedRows.reduce((acc, r) => acc + r.generatedCredit, 0);
@@ -339,6 +345,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       totalShipments,
       sumCompanyFreight,
       sumDriverFreight,
+      sumToll,
+      sumDriverFreightNetToll,
       sumFreightDiff,
       sumExpenses,
       sumGeneratedCredit,
@@ -559,7 +567,9 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           <p className="text-base sm:text-lg font-mono font-black text-gray-900 dark:text-white truncate" title={`R$ ${totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
             R$ {totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-[10px] text-gray-400 mt-0.5 font-medium">Custo do frete contratado</p>
+          <p className="text-[10px] text-gray-400 mt-0.5 font-medium truncate" title={totals.sumToll > 0 ? `Líquido de Pedágio: R$ ${totals.sumDriverFreightNetToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Custo do frete contratado'}>
+            {totals.sumToll > 0 ? `Líq. Ped: R$ ${totals.sumDriverFreightNetToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Custo do frete contratado'}
+          </p>
         </div>
 
         {/* Diferença de Frete */}
@@ -940,6 +950,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       <span className="font-bold text-gray-800 dark:text-gray-200 text-xs">
                         R$ {row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
+                      {row.toll > 0 && (
+                        <p className="text-[9px] text-gray-400 dark:text-gray-500" title={`Líquido de Pedágio (R$ ${row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} - R$ ${row.toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}>
+                          Líq. Ped: R$ {row.driverFreightNetToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                      )}
                     </td>
 
                     {/* Diferença de Frete */}

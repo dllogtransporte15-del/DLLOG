@@ -589,6 +589,19 @@ const toShipment = (row: any): Shipment => ({
         : (row.documents?.imposto_federal !== undefined && row.documents?.imposto_federal !== null
             ? Number(row.documents.imposto_federal)
             : (row.real_profit_data?.federalTax ?? row.documents?.real_profit_data?.federalTax ?? undefined))),
+  additionalCost: row.additional_cost || row.documents?.additional_cost || undefined,
+  additionalCostValue: row.additional_cost_value !== null && row.additional_cost_value !== undefined 
+    ? Number(row.additional_cost_value) 
+    : (row.documents?.additional_cost_value !== undefined ? Number(row.documents.additional_cost_value) : (row.documents?.additional_cost?.value !== undefined ? Number(row.documents.additional_cost.value) : undefined)),
+  additionalCostCategory: row.additional_cost_category || row.documents?.additional_cost_category || row.documents?.additional_cost?.category,
+  additionalCostDescription: row.additional_cost_description || row.documents?.additional_cost_description || row.documents?.additional_cost?.description,
+  agencyCommissionEnabled: row.agency_commission_enabled !== null && row.agency_commission_enabled !== undefined ? Boolean(row.agency_commission_enabled) : (row.documents?.agency_commission_enabled !== undefined ? Boolean(row.documents.agency_commission_enabled) : undefined),
+  agencyCommissionPercentage: row.agency_commission_percentage !== null && row.agency_commission_percentage !== undefined ? Number(row.agency_commission_percentage) : (row.documents?.agency_commission_percentage !== undefined ? Number(row.documents.agency_commission_percentage) : 30),
+  agencyCommissionValue: row.agency_commission_value !== null && row.agency_commission_value !== undefined ? Number(row.agency_commission_value) : (row.documents?.agency_commission_value !== undefined ? Number(row.documents.agency_commission_value) : undefined),
+  agencyCommissionAgencyName: row.agency_commission_agency_name || row.documents?.agency_commission_agency_name,
+  shipperCommissionEnabled: row.shipper_commission_enabled !== null && row.shipper_commission_enabled !== undefined ? Boolean(row.shipper_commission_enabled) : (row.documents?.shipper_commission_enabled !== undefined ? Boolean(row.documents.shipper_commission_enabled) : undefined),
+  shipperCommissionRatePerTon: row.shipper_commission_rate_per_ton !== null && row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : (row.documents?.shipper_commission_rate_per_ton !== undefined ? Number(row.documents.shipper_commission_rate_per_ton) : undefined),
+  shipperCommissionValue: row.shipper_commission_value !== null && row.shipper_commission_value !== undefined ? Number(row.shipper_commission_value) : (row.documents?.shipper_commission_value !== undefined ? Number(row.documents.shipper_commission_value) : undefined),
 });
 
 const fromShipment = (s: Shipment) => ({
@@ -630,6 +643,17 @@ const fromShipment = (s: Shipment) => ({
     real_profit_data: s.realProfitData ?? null,
     freight_calculation_type: s.freightCalculationType ?? null,
     icms_value: s.icmsValue !== undefined ? s.icmsValue : null,
+    additional_cost: s.additionalCost ?? null,
+    additional_cost_value: s.additionalCostValue !== undefined ? s.additionalCostValue : (s.additionalCost?.value ?? null),
+    additional_cost_category: s.additionalCostCategory ?? (s.additionalCost?.category ?? null),
+    additional_cost_description: s.additionalCostDescription ?? (s.additionalCost?.description ?? null),
+    agency_commission_enabled: s.agencyCommissionEnabled !== undefined ? s.agencyCommissionEnabled : null,
+    agency_commission_percentage: s.agencyCommissionPercentage ?? 30,
+    agency_commission_value: s.agencyCommissionValue !== undefined ? s.agencyCommissionValue : null,
+    agency_commission_agency_name: s.agencyCommissionAgencyName ?? null,
+    shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : null,
+    shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : null,
+    shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : null,
   },
   history: s.history,
   created_at: s.createdAt,
@@ -690,6 +714,7 @@ export const toUser = (row: any): User => {
     commercialIsAgencyMode: perms.commercialIsAgencyMode ?? false,
     commercialAgencySharePercent: perms.commercialAgencySharePercent ?? undefined,
     availableForDriverRequests: perms.availableForDriverRequests ?? row.available_for_driver_requests ?? true,
+    shipperCommissionRatePerTon: perms.shipperCommissionRatePerTon !== undefined ? Number(perms.shipperCommissionRatePerTon) : (row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : undefined),
   };
 };
 
@@ -708,6 +733,7 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
     commercialIsAgencyMode: u.commercialIsAgencyMode ?? false,
     commercialAgencySharePercent: u.commercialAgencySharePercent,
     availableForDriverRequests: u.availableForDriverRequests !== undefined ? u.availableForDriverRequests : true,
+    shipperCommissionRatePerTon: u.shipperCommissionRatePerTon,
   };
 
   return {

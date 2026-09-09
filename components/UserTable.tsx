@@ -81,7 +81,19 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients,
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                   <div className="flex flex-col gap-0.5">
-                    <span className="font-medium text-gray-900 dark:text-white">{user.profile}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium text-gray-900 dark:text-white">{user.profile}</span>
+                      {user.profile === UserProfile.Agenciador && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                          Agência 30%
+                        </span>
+                      )}
+                      {user.shipperCommissionRatePerTon !== undefined && user.shipperCommissionRatePerTon > 0 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300" title={`Comissão do Embarcador: R$ ${user.shipperCommissionRatePerTon.toFixed(2)} por tonelada`}>
+                          R$ {user.shipperCommissionRatePerTon.toFixed(2)}/t
+                        </span>
+                      )}
+                    </div>
                     {user.profile === UserProfile.Cliente && user.clientId && (
                       <span className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 font-medium truncate max-w-[160px]" title={clients?.find(c => c.id === user.clientId)?.nomeFantasia || clients?.find(c => c.id === user.clientId)?.razaoSocial}>
                         <Building2 className="w-3 h-3 flex-shrink-0" />

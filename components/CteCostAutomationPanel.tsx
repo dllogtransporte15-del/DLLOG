@@ -1,10 +1,11 @@
 import React from 'react';
-import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog } from '../types';
+import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog, User, Client, UserProfile } from '../types';
 import { extractDetailedDocData } from '../utils/fiscalDocParser';
 import { upsertShipment } from '../lib/db';
 import { useToast } from '../hooks/useToast';
 import { StayRecord, getAllToolStays } from '../utils/toolStorage';
 import { isStayForShipment } from '../utils';
+import { calculateTacTaxDeductions } from '../utils/freightCalculation';
 import { 
   Calculator, 
   ShieldCheck, 
@@ -25,7 +26,17 @@ import {
   Pencil,
   Check,
   X,
-  RotateCcw
+  RotateCcw,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  UserCheck,
+  Plus,
+  Trash2,
+  HelpCircle,
+  FileWarning
 } from 'lucide-react';
 
 interface CteCostAutomationPanelProps {
@@ -36,6 +47,8 @@ interface CteCostAutomationPanelProps {
   riskQueryType?: string;
   riskReleaseCode?: string;
   stays?: StayRecord[];
+  users?: User[];
+  clients?: Client[];
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
 }
 
@@ -47,6 +60,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   riskQueryType,
   riskReleaseCode,
   stays,
+  users,
+  clients,
   onUpdateShipmentData,
 }) => {
   const { showToast } = useToast();
@@ -58,10 +73,143 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     (shipment.documents as any)?.etc_tax_regime || 
     (shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC' ? 'PF' : 'Lucro Real / Presumido');
 
+  const [showDeductions, setShowDeductions] = React.useState(false);
   const [selectedRegime, setSelectedRegime] = React.useState<string>(defaultInitialRegime);
   const [savedRegime, setSavedRegime] = React.useState<string>(defaultInitialRegime);
   const [isSavingRegime, setIsSavingRegime] = React.useState(false);
   const [justSaved, setJustSaved] = React.useState(false);
+
+  // --- MÓDULO 1: Custo Adicional / Registro de Prejuízo ---
+  const [additionalCost, setAdditionalCost] = React.useState<{
+    value: number;
+    category: string;
+    description: string;
+  } | null>(() => {
+    if (shipment.additionalCost && shipment.additionalCost.value > 0) {
+      return {
+        value: shipment.additionalCost.value,
+        category: shipment.additionalCost.category || 'Outros Custos Imprevistos',
+        description: shipment.additionalCost.description || ''
+      };
+    }
+    if (shipment.additionalCostValue && shipment.additionalCostValue > 0) {
+      return {
+        value: shipment.additionalCostValue,
+        category: shipment.additionalCostCategory || (shipment.documents as any)?.additional_cost_category || 'Outros Custos Imprevistos',
+        description: shipment.additionalCostDescription || (shipment.documents as any)?.additional_cost_description || ''
+      };
+    }
+    if ((shipment.documents as any)?.additional_cost?.value > 0) {
+      const ac = (shipment.documents as any).additional_cost;
+      return {
+        value: Number(ac.value),
+        category: ac.category || 'Outros Custos Imprevistos',
+        description: ac.description || ''
+      };
+    }
+    return null;
+  });
+
+  const [isAdditionalCostModalOpen, setIsAdditionalCostModalOpen] = React.useState(false);
+  const [additionalCostModalMode, setAdditionalCostModalMode] = React.useState<'create' | 'edit' | 'view'>('create');
+  const [costFormValue, setCostFormValue] = React.useState('');
+  const [costFormCategory, setCostFormCategory] = React.useState('Avaria de Carga');
+  const [costFormDescription, setCostFormDescription] = React.useState('');
+  const [isSavingAdditionalCost, setIsSavingAdditionalCost] = React.useState(false);
+
+  React.useEffect(() => {
+    if (shipment.additionalCost && shipment.additionalCost.value > 0) {
+      setAdditionalCost({
+        value: shipment.additionalCost.value,
+        category: shipment.additionalCost.category || 'Outros Custos Imprevistos',
+        description: shipment.additionalCost.description || ''
+      });
+    } else if (shipment.additionalCostValue && shipment.additionalCostValue > 0) {
+      setAdditionalCost({
+        value: shipment.additionalCostValue,
+        category: shipment.additionalCostCategory || (shipment.documents as any)?.additional_cost_category || 'Outros Custos Imprevistos',
+        description: shipment.additionalCostDescription || (shipment.documents as any)?.additional_cost_description || ''
+      });
+    } else if ((shipment.documents as any)?.additional_cost?.value > 0) {
+      const ac = (shipment.documents as any).additional_cost;
+      setAdditionalCost({
+        value: Number(ac.value),
+        category: ac.category || 'Outros Custos Imprevistos',
+        description: ac.description || ''
+      });
+    } else {
+      setAdditionalCost(null);
+    }
+  }, [shipment.additionalCost, shipment.additionalCostValue, shipment.additionalCostCategory, shipment.additionalCostDescription, shipment.documents]);
+
+  // --- MÓDULO 2: Comissão de Agência (30% sobre Lucro Líquido Real) ---
+  const [agencyCommEnabled, setAgencyCommEnabled] = React.useState<boolean>(() => {
+    if (shipment.agencyCommissionEnabled !== undefined) return shipment.agencyCommissionEnabled;
+    if ((shipment.documents as any)?.agency_commission_enabled !== undefined) return Boolean((shipment.documents as any).agency_commission_enabled);
+    const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+    if (reqUser?.profile === UserProfile.Agenciador) return true;
+    return false;
+  });
+  const [isSavingAgencyComm, setIsSavingAgencyComm] = React.useState(false);
+
+  React.useEffect(() => {
+    if (shipment.agencyCommissionEnabled !== undefined) {
+      setAgencyCommEnabled(shipment.agencyCommissionEnabled);
+    } else if ((shipment.documents as any)?.agency_commission_enabled !== undefined) {
+      setAgencyCommEnabled(Boolean((shipment.documents as any).agency_commission_enabled));
+    } else {
+      const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+      if (reqUser?.profile === UserProfile.Agenciador) {
+        setAgencyCommEnabled(true);
+      }
+    }
+  }, [shipment.agencyCommissionEnabled, shipment.documents, shipment.embarcadorId, shipment.createdById, users]);
+
+  // --- MÓDULO 3: Comissão do Embarcador (Valor Variável por Tonelada) ---
+  const [shipperCommEnabled, setShipperCommEnabled] = React.useState<boolean>(() => {
+    if (shipment.shipperCommissionEnabled !== undefined) return shipment.shipperCommissionEnabled;
+    if ((shipment.documents as any)?.shipper_commission_enabled !== undefined) return Boolean((shipment.documents as any).shipper_commission_enabled);
+    const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+    if (reqUser?.shipperCommissionRatePerTon && reqUser.shipperCommissionRatePerTon > 0) return true;
+    return false;
+  });
+  const [shipperCommRate, setShipperCommRate] = React.useState<number>(() => {
+    if (shipment.shipperCommissionRatePerTon !== undefined) return shipment.shipperCommissionRatePerTon;
+    if ((shipment.documents as any)?.shipper_commission_rate_per_ton !== undefined) return Number((shipment.documents as any).shipper_commission_rate_per_ton);
+    const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+    if (reqUser?.shipperCommissionRatePerTon && reqUser.shipperCommissionRatePerTon > 0) return reqUser.shipperCommissionRatePerTon;
+    return 1.00;
+  });
+  const [isEditingShipperRate, setIsEditingShipperRate] = React.useState(false);
+  const [shipperRateInput, setShipperRateInput] = React.useState(String(shipperCommRate));
+  const [isSavingShipperComm, setIsSavingShipperComm] = React.useState(false);
+
+  React.useEffect(() => {
+    if (shipment.shipperCommissionEnabled !== undefined) {
+      setShipperCommEnabled(shipment.shipperCommissionEnabled);
+    } else if ((shipment.documents as any)?.shipper_commission_enabled !== undefined) {
+      setShipperCommEnabled(Boolean((shipment.documents as any).shipper_commission_enabled));
+    } else {
+      const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+      if (reqUser?.shipperCommissionRatePerTon && reqUser.shipperCommissionRatePerTon > 0) {
+        setShipperCommEnabled(true);
+      }
+    }
+    if (shipment.shipperCommissionRatePerTon !== undefined) {
+      setShipperCommRate(shipment.shipperCommissionRatePerTon);
+      setShipperRateInput(String(shipment.shipperCommissionRatePerTon));
+    } else if ((shipment.documents as any)?.shipper_commission_rate_per_ton !== undefined) {
+      const rate = Number((shipment.documents as any).shipper_commission_rate_per_ton);
+      setShipperCommRate(rate);
+      setShipperRateInput(String(rate));
+    } else {
+      const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+      if (reqUser?.shipperCommissionRatePerTon && reqUser.shipperCommissionRatePerTon > 0) {
+        setShipperCommRate(reqUser.shipperCommissionRatePerTon);
+        setShipperRateInput(String(reqUser.shipperCommissionRatePerTon));
+      }
+    }
+  }, [shipment.shipperCommissionEnabled, shipment.shipperCommissionRatePerTon, shipment.documents, shipment.embarcadorId, shipment.createdById, users]);
 
   React.useEffect(() => {
     const reg = shipment.etcTaxRegime || 
@@ -312,6 +460,386 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const tonnage = (parsedPropTonnage !== undefined && !isNaN(parsedPropTonnage) && parsedPropTonnage > 0)
     ? parsedPropTonnage
     : (shipment.shipmentTonnage || cargo?.totalVolume || 0);
+
+  // Identificação da Agência do Solicitante
+  const requesterUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+  const responsibleAgencyName = requesterUser?.name 
+    ? (requesterUser.branchId ? `Agência ${requesterUser.branchId} (${requesterUser.name})` : requesterUser.name)
+    : (shipment.branchId ? `Agência ${shipment.branchId}` : (shipment.embarcadorId || 'Agência Solicitante'));
+
+  // Identificação do Cliente / Embarcador
+  const shipmentClient = clients?.find(c => c.id === cargo?.clientId);
+  const clientBeneficiaryName = shipmentClient?.razaoSocial || shipmentClient?.nomeFantasia || cargo?.clientId || shipment.embarcadorId || 'Embarcador Solicitante';
+
+  // --- HANDLERS: Custo Adicional / Prejuízo ---
+  const handleOpenAddAdditionalCost = (mode: 'create' | 'edit' = 'create') => {
+    if (additionalCost && mode === 'edit') {
+      setCostFormValue(String(additionalCost.value));
+      setCostFormCategory(additionalCost.category || 'Avaria de Carga');
+      setCostFormDescription(additionalCost.description || '');
+      setAdditionalCostModalMode('edit');
+    } else {
+      setCostFormValue('');
+      setCostFormCategory('Avaria de Carga');
+      setCostFormDescription('');
+      setAdditionalCostModalMode('create');
+    }
+    setIsAdditionalCostModalOpen(true);
+  };
+
+  const handleOpenViewAdditionalCost = () => {
+    setAdditionalCostModalMode('view');
+    setIsAdditionalCostModalOpen(true);
+  };
+
+  const handleSaveAdditionalCost = async () => {
+    const numVal = parseCurrencyInput(costFormValue);
+    if (!numVal || numVal <= 0) {
+      showToast('Por favor, informe um valor monetário válido maior que zero.', 'error');
+      return;
+    }
+    if (!costFormDescription.trim()) {
+      showToast('Por favor, preencha a justificativa / descrição do ocorrido.', 'error');
+      return;
+    }
+
+    setIsSavingAdditionalCost(true);
+    try {
+      const newCost = {
+        value: Number(numVal.toFixed(2)),
+        category: costFormCategory.trim() || 'Outros Custos Imprevistos',
+        description: costFormDescription.trim(),
+        createdAt: new Date().toISOString(),
+        createdBy: 'sistema'
+      };
+
+      setAdditionalCost(newCost);
+      setIsAdditionalCostModalOpen(false);
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Custo Adicional / Prejuízo registrado: ${formatBrl(newCost.value)} (Categoria: ${newCost.category}). Justificativa: "${newCost.description}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        additionalCost: newCost.value,
+        additionalCostCategory: newCost.category,
+        additionalCostDescription: newCost.description,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        additional_cost: newCost,
+        additional_cost_value: newCost.value,
+        additional_cost_category: newCost.category,
+        additional_cost_description: newCost.description,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        additionalCost: newCost,
+        additionalCostValue: newCost.value,
+        additionalCostCategory: newCost.category,
+        additionalCostDescription: newCost.description,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          additionalCost: newCost,
+          additionalCostValue: newCost.value,
+          additionalCostCategory: newCost.category,
+          additionalCostDescription: newCost.description,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast(`Custo Adicional de ${formatBrl(newCost.value)} salvo com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar custo adicional:', err);
+      showToast('Erro ao salvar custo adicional.', 'error');
+    } finally {
+      setIsSavingAdditionalCost(false);
+    }
+  };
+
+  const handleDeleteAdditionalCost = async () => {
+    if (!window.confirm('Tem certeza que deseja remover este lançamento de custo adicional?')) return;
+    setIsSavingAdditionalCost(true);
+    try {
+      const oldVal = additionalCost?.value || 0;
+      setAdditionalCost(null);
+      setIsAdditionalCostModalOpen(false);
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Custo Adicional / Prejuízo de ${formatBrl(oldVal)} removido da operação.`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = { ...(shipment.realProfitData || {}) };
+      delete (updatedRealProfitData as any).additionalCost;
+      delete (updatedRealProfitData as any).additionalCostCategory;
+      delete (updatedRealProfitData as any).additionalCostDescription;
+
+      const updatedDocs = { ...(shipment.documents || {}) };
+      delete (updatedDocs as any).additional_cost;
+      delete (updatedDocs as any).additional_cost_value;
+      delete (updatedDocs as any).additional_cost_category;
+      delete (updatedDocs as any).additional_cost_description;
+      (updatedDocs as any).real_profit_data = Object.keys(updatedRealProfitData).length > 0 ? updatedRealProfitData : undefined;
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        additionalCost: undefined,
+        additionalCostValue: undefined,
+        additionalCostCategory: undefined,
+        additionalCostDescription: undefined,
+        realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
+        documents: updatedDocs,
+        history: updatedHistory
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          additionalCost: undefined,
+          additionalCostValue: undefined,
+          additionalCostCategory: undefined,
+          additionalCostDescription: undefined,
+          realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
+          documents: updatedDocs,
+          history: updatedHistory
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast('Custo Adicional removido com sucesso!', 'success');
+    } catch (err) {
+      console.error('Erro ao remover custo adicional:', err);
+      showToast('Erro ao remover custo adicional.', 'error');
+    } finally {
+      setIsSavingAdditionalCost(false);
+    }
+  };
+
+  // --- HANDLERS: Comissão de Agência (30%) ---
+  const handleToggleAgencyCommission = async () => {
+    const nextState = !agencyCommEnabled;
+    setIsSavingAgencyComm(true);
+    setAgencyCommEnabled(nextState);
+
+    try {
+      const calculatedAgencyVal = (nextState && operationalProfitBeforeAgency > 0)
+        ? Number((operationalProfitBeforeAgency * 0.30).toFixed(2))
+        : 0;
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Comissão de Agência (30% sobre Lucro Líquido Real) ${nextState ? `ativada: ${formatBrl(calculatedAgencyVal)} destinado à ${responsibleAgencyName}` : 'desativada'}.`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        agencyCommission: calculatedAgencyVal,
+        agencyCommissionEnabled: nextState
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        agency_commission_enabled: nextState,
+        agency_commission_percentage: 30,
+        agency_commission_value: calculatedAgencyVal,
+        agency_commission_agency_name: responsibleAgencyName,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        agencyCommissionEnabled: nextState,
+        agencyCommissionPercentage: 30,
+        agencyCommissionValue: calculatedAgencyVal,
+        agencyCommissionAgencyName: responsibleAgencyName,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          agencyCommissionEnabled: nextState,
+          agencyCommissionPercentage: 30,
+          agencyCommissionValue: calculatedAgencyVal,
+          agencyCommissionAgencyName: responsibleAgencyName,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast(nextState ? `Comissão de Agência (30%) ativada!` : `Comissão de Agência desativada.`, 'success');
+    } catch (err) {
+      console.error('Erro ao alternar comissão de agência:', err);
+      showToast('Erro ao atualizar comissão de agência.', 'error');
+      setAgencyCommEnabled(!nextState);
+    } finally {
+      setIsSavingAgencyComm(false);
+    }
+  };
+
+  // --- HANDLERS: Comissão do Embarcador (R$/ton) ---
+  const handleToggleShipperCommission = async () => {
+    const nextState = !shipperCommEnabled;
+    setIsSavingShipperComm(true);
+    setShipperCommEnabled(nextState);
+
+    try {
+      const calculatedShipperVal = (nextState && shipperCommRate > 0 && tonnage > 0)
+        ? Number((shipperCommRate * tonnage).toFixed(2))
+        : 0;
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Comissão do Embarcador (${formatBrl(shipperCommRate)}/t) ${nextState ? `ativada: ${formatBrl(calculatedShipperVal)} (${tonnage.toFixed(2)}t) creditado ao embarcador` : 'desativada'}.`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        shipperCommission: calculatedShipperVal,
+        shipperCommissionRatePerTon: shipperCommRate,
+        shipperCommissionEnabled: nextState
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        shipper_commission_enabled: nextState,
+        shipper_commission_rate_per_ton: shipperCommRate,
+        shipper_commission_value: calculatedShipperVal,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        shipperCommissionEnabled: nextState,
+        shipperCommissionRatePerTon: shipperCommRate,
+        shipperCommissionValue: calculatedShipperVal,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          shipperCommissionEnabled: nextState,
+          shipperCommissionRatePerTon: shipperCommRate,
+          shipperCommissionValue: calculatedShipperVal,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast(nextState ? `Comissão do Embarcador (${formatBrl(shipperCommRate)}/t) ativada!` : `Comissão do Embarcador desativada.`, 'success');
+    } catch (err) {
+      console.error('Erro ao alternar comissão do embarcador:', err);
+      showToast('Erro ao atualizar comissão do embarcador.', 'error');
+      setShipperCommEnabled(!nextState);
+    } finally {
+      setIsSavingShipperComm(false);
+    }
+  };
+
+  const handleSaveShipperRate = async (newRateVal?: number) => {
+    const parsedRate = newRateVal !== undefined ? newRateVal : parseCurrencyInput(shipperRateInput);
+    const validRate = isNaN(parsedRate) || parsedRate <= 0 ? 1.00 : Number(parsedRate.toFixed(2));
+
+    setIsSavingShipperComm(true);
+    setShipperCommRate(validRate);
+    setShipperRateInput(String(validRate));
+    setIsEditingShipperRate(false);
+
+    try {
+      const calculatedShipperVal = (shipperCommEnabled && validRate > 0 && tonnage > 0)
+        ? Number((validRate * tonnage).toFixed(2))
+        : 0;
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Taxa da Comissão do Embarcador alterada para ${formatBrl(validRate)}/ton (Total: ${formatBrl(calculatedShipperVal)}).`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        shipperCommission: calculatedShipperVal,
+        shipperCommissionRatePerTon: validRate,
+        shipperCommissionEnabled: shipperCommEnabled
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        shipper_commission_enabled: shipperCommEnabled,
+        shipper_commission_rate_per_ton: validRate,
+        shipper_commission_value: calculatedShipperVal,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        shipperCommissionEnabled: shipperCommEnabled,
+        shipperCommissionRatePerTon: validRate,
+        shipperCommissionValue: calculatedShipperVal,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          shipperCommissionEnabled: shipperCommEnabled,
+          shipperCommissionRatePerTon: validRate,
+          shipperCommissionValue: calculatedShipperVal,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      } else {
+        await upsertShipment(updatedShipment);
+      }
+
+      showToast(`Taxa de comissão do embarcador atualizada para ${formatBrl(validRate)}/t!`, 'success');
+    } catch (err) {
+      console.error('Erro ao atualizar taxa da comissão do embarcador:', err);
+      showToast('Erro ao atualizar taxa.', 'error');
+    } finally {
+      setIsSavingShipperComm(false);
+    }
+  };
 
   const cteGrossFreight = shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
     ? shipment.realProfitData.companyFreight
@@ -584,8 +1112,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number((baseInssPatronal * cprbPfRate).toFixed(2))
     : 0;
 
-  // 11. CIOT (0,20% s/ Frete do Motorista abatido o Pedágio)
-  const baseCiotFreight = Math.max(0, driverFreight - toll);
+  // Retenções de TAC / Motorista Pessoa Física (INSS e SEST/SENAT)
+  const tacDeductions = isShipmentPf ? calculateTacTaxDeductions(driverFreight, toll) : null;
+  const inssRetidoPf = tacDeductions?.inss || 0;
+  const sestSenatRetidoPf = tacDeductions?.sestSenat || 0;
+
+  // 11. CIOT (0,20% s/ Frete do Motorista abatido Pedágio; se PF deduz também INSS e SEST/SENAT)
+  const baseCiotFreight = isShipmentPf
+    ? Math.max(0, driverFreight - toll - inssRetidoPf - sestSenatRetidoPf)
+    : Math.max(0, driverFreight - toll);
   const ciotValue = Number((baseCiotFreight * 0.0020).toFixed(2));
 
   // 13. Custo Fixo (0,35% s/ Frete Bruto)
@@ -644,8 +1179,16 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number(((totalDiferencaFreteReais / freteLiquidoIcmsWithStay) * 100).toFixed(2))
     : 0;
 
-  // 15. Lucro Líquido Real Calculado (Deduções operacionais efetivas da transportadora)
-  const totalDeducoes = Number((
+  // 14.3 Custo Adicional / Registro de Prejuízo
+  const additionalCostValue = additionalCost?.value || 0;
+
+  // 14.4 Comissão do Embarcador (R$/ton configurável)
+  const shipperCommissionValue = (shipperCommEnabled && shipperCommRate > 0 && tonnage > 0)
+    ? Number((shipperCommRate * tonnage).toFixed(2))
+    : 0;
+
+  // 15. Deduções Operacionais Base (sem comissão de agência)
+  const totalBaseDeductionsWithoutAgency = Number((
     impostoFederalLiquido +
     icms +
     riskCost +
@@ -656,19 +1199,27 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     inssPatronalMotorista +
     salespersonCommission +
     comissaoComercial +
-    driverFreight
+    totalDriverFreight +
+    additionalCostValue +
+    shipperCommissionValue
   ).toFixed(2));
 
-  // Lucro Líquido Real Calculado (Deduções operacionais efetivas da transportadora - SEM somar o Crédito Gerado, que é mantido como informativo)
-  const netProfitCalculated = Number((cteGrossFreight - totalDeducoes).toFixed(2));
-  const realProfit = shipment.realProfitData?.netProfit !== undefined
-    ? shipment.realProfitData.netProfit
-    : netProfitCalculated;
+  // Lucro Operacional antes da comissão de agência
+  const operationalProfitBeforeAgency = Number((totalCompanyFreight - totalBaseDeductionsWithoutAgency).toFixed(2));
 
-  const totalDeducoesWithStay = Number((totalDeducoes - driverFreight + totalDriverFreight).toFixed(2));
+  // 14.5 Comissão de Agência: 30% sobre o Lucro Líquido Real da operação
+  const agencyCommissionValue = (agencyCommEnabled && operationalProfitBeforeAgency > 0)
+    ? Number((operationalProfitBeforeAgency * 0.30).toFixed(2))
+    : 0;
+
+  // Total Geral de Deduções com Estadias e Novos Módulos
+  const totalDeducoesWithStay = Number((totalBaseDeductionsWithoutAgency + agencyCommissionValue).toFixed(2));
+
+  // Lucro Líquido Real Final da Operação
   const totalRealProfit = Number((totalCompanyFreight - totalDeducoesWithStay).toFixed(2));
-  const marginPercent = cteGrossFreight > 0 ? ((realProfit / cteGrossFreight) * 100).toFixed(1) : '0.0';
+  const marginPercent = cteGrossFreight > 0 ? ((totalRealProfit / cteGrossFreight) * 100).toFixed(1) : '0.0';
   const totalMarginPercent = totalCompanyFreight > 0 ? ((totalRealProfit / totalCompanyFreight) * 100).toFixed(1) : '0.0';
+  const realProfit = totalRealProfit;
 
   return (
     <div className="w-full bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 shadow-xs text-slate-800 dark:text-slate-100 font-sans space-y-3.5">
@@ -1003,11 +1554,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <div className="text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400 font-mono truncate" title={demurrageDriverPaid > 0 ? `Base: ${formatBrl(driverFreight)} + Estadia: ${formatBrl(demurrageDriverPaid)}` : 'Frete contratado do motorista'}>
               {formatBrl(totalDriverFreight)}
             </div>
-            {demurrageDriverPaid > 0 && (
+            {toll > 0 ? (
+              <div className="text-[8px] text-rose-500/90 dark:text-rose-400/90 font-medium truncate" title={`Frete Motorista deduzindo pedágio (${formatBrl(totalDriverFreight)} - ${formatBrl(toll)} = ${formatBrl(Math.max(0, totalDriverFreight - toll))})`}>
+                Líq. Ped: {formatBrl(Math.max(0, totalDriverFreight - toll))}
+              </div>
+            ) : demurrageDriverPaid > 0 ? (
               <div className="text-[8px] text-rose-400 dark:text-rose-500 truncate">
                 Base {formatBrl(driverFreight)} + Est. {formatBrl(demurrageDriverPaid)}
               </div>
-            )}
+            ) : null}
             <span className="absolute -right-1.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs pointer-events-none select-none">=</span>
           </div>
 
@@ -1031,42 +1586,65 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       {/* LINHA 2: Composição das Deduções & Custos (Grid 2 Colunas) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider px-0.5">
-          <span className="flex items-center gap-1.5">
-            <Layers className="w-3 h-3 text-slate-400" />
-            Composição das Deduções
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5">
+              <Layers className="w-3 h-3 text-slate-400" />
+              Composição das Deduções
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowDeductions(!showDeductions)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/80 rounded-md transition-colors cursor-pointer capitalize shadow-2xs"
+              title={showDeductions ? 'Ocultar detalhes das deduções' : 'Exibir detalhes das deduções'}
+            >
+              {showDeductions ? (
+                <>
+                  <EyeOff className="w-3 h-3" />
+                  <span>Ocultar</span>
+                  <ChevronUp className="w-2.5 h-2.5" />
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3 h-3" />
+                  <span>Exibir</span>
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </>
+              )}
+            </button>
+          </div>
           <span className="text-[10px] font-normal text-slate-400 lowercase">
             total descontos: <strong className="font-mono text-rose-600 dark:text-rose-400 font-bold">{formatBrl(totalDeducoesWithStay)}</strong>
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        {showDeductions && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
           
           {/* Imposto Federal (Simples Nacional 3,40% / PIS/COFINS / Contribuições Federais) */}
-          <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border ${
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
             isEditingFederalTax
               ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
               : isFederalTaxCustom
                 ? 'border-amber-300 dark:border-amber-700/80 shadow-2xs'
                 : 'border-slate-200/90 dark:border-slate-700/80 shadow-2xs'
           } flex flex-col justify-between transition-all relative`}>
-            <div className="flex items-center justify-between gap-1 mb-1">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
               <div className="flex items-center gap-1 min-w-0">
-                <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
                 {isFederalTaxCustom && (
-                  <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 shrink-0">
+                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 shrink-0">
                     Manual
                   </span>
                 )}
                 {justSavedFederalTax && (
-                  <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
+                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
                     ✔ Salvo!
                   </span>
                 )}
               </div>
               
-              <div className="flex items-center gap-1 shrink-0">
-                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span className={`text-[8px] font-medium px-1 py-0.2 rounded ${
                   isExportCargo && !isFederalTaxCustom
                     ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
                     : isSimplesNacional && !isFederalTaxCustom
@@ -1074,7 +1652,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       : isFederalTaxCustom
                         ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
                         : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                } max-w-[130px] truncate`} title={
+                } max-w-[95px] truncate`} title={
                   isFederalTaxCustom
                     ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)}`
                     : isExportCargo 
@@ -1084,27 +1662,27 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
                 }>
                   {isFederalTaxCustom
-                    ? 'Valor Manual'
-                    : (isExportCargo ? 'Exportação (Isento)' : (isSimplesNacional ? '3,40% Simples Nac.' : (isShipmentPf ? '3,655% Frete Líq.' : '9,25% s/ Spread')))}
+                    ? 'Manual'
+                    : (isExportCargo ? 'Exportação' : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25% Spread')))}
                 </span>
 
                 {isAguardandoFiscal && !isEditingFederalTax && (
                   <button
                     type="button"
                     onClick={handleStartEditFederalTax}
-                    className="p-1 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-md transition-all cursor-pointer"
+                    className="p-0.5 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
                     title="Editar valor do Imposto Federal (Disponível em Ag. Fiscal)"
                   >
-                    <Pencil className="w-3 h-3" />
+                    <Pencil className="w-2.5 h-2.5" />
                   </button>
                 )}
               </div>
             </div>
 
             {isEditingFederalTax ? (
-              <div className="space-y-1.5 py-1">
+              <div className="space-y-1 py-0.5">
                 <div className="flex items-center gap-1">
-                  <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
                   <input
                     type="number"
                     step="0.01"
@@ -1118,7 +1696,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       if (e.key === 'Escape') setIsEditingFederalTax(false);
                     }}
                     disabled={isSavingFederalTax}
-                    className="w-full text-xs sm:text-sm font-bold font-mono px-2 py-1 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-2 focus:ring-blue-500/40"
+                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
                   />
                 </div>
                 
@@ -1128,20 +1706,20 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       type="button"
                       onClick={handleSaveFederalTax}
                       disabled={isSavingFederalTax}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
                       title="Salvar valor do Imposto Federal"
                     >
-                      {isSavingFederalTax ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                      {isSavingFederalTax ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
                       <span>Salvar</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setIsEditingFederalTax(false)}
                       disabled={isSavingFederalTax}
-                      className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[10px] font-medium rounded transition-all cursor-pointer"
+                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
                       title="Cancelar"
                     >
-                      <X className="w-2.5 h-2.5" />
+                      <X className="w-2 h-2" />
                     </button>
                   </div>
 
@@ -1150,7 +1728,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                       type="button"
                       onClick={handleRestoreDefaultFederalTax}
                       disabled={isSavingFederalTax}
-                      className="inline-flex items-center gap-0.5 text-[9px] text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 underline transition-all cursor-pointer"
+                      className="inline-flex items-center gap-0.5 text-[8px] text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 underline transition-all cursor-pointer"
                       title="Restaurar fórmula de cálculo automático"
                     >
                       <RotateCcw className="w-2 h-2" />
@@ -1162,21 +1740,21 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             ) : (
               <>
                 <div className="flex items-baseline justify-between gap-1">
-                  <div className={`text-xs sm:text-sm font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                  <div className={`text-xs font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
                     {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
                   </div>
                   {isAguardandoFiscal && (
                     <button
                       type="button"
                       onClick={handleStartEditFederalTax}
-                      className="text-[9px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                      className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
                     >
-                      <Pencil className="w-2.5 h-2.5" />
+                      <Pencil className="w-2 h-2" />
                       <span>editar</span>
                     </button>
                   )}
                 </div>
-                <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
                   isFederalTaxCustom
                     ? `Valor manual inserido em Ag. Fiscal. Cálculo padrão sugerido: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))}`
                     : isExportCargo 
@@ -1186,60 +1764,60 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
                 }>
                   {isFederalTaxCustom
-                    ? `Manual (Fórmula: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
-                    : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples Nac.: ${formatBrl(cteGrossFreight)} • 3,40%` : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)))}
+                    ? `Manual (Auto: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
+                    : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples: ${formatBrl(cteGrossFreight)} • 3,4%` : (isShipmentPf ? `PF: Líq. • 3,655%` : `PJ: Spread • 9,25%`)))}
                 </div>
               </>
             )}
           </div>
 
           {/* ICMS Destacado Completo */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate" title="Valor integral do ICMS destacado no CT-e">
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate" title="Valor integral do ICMS destacado no CT-e">
                 ICMS Destacado
               </span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0" title={`Alíquota de ${icmsPercentage}% destacada no CT-e`}>
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0" title={`Alíquota de ${icmsPercentage}% destacada no CT-e`}>
                 {icmsPercentage > 0 ? `${icmsPercentage}% CT-e` : 'Isento'}
               </span>
             </div>
-            <div className={`text-xs sm:text-sm font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className={`text-xs font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {icms > 0 ? `- ${formatBrl(icms)}` : 'R$ 0,00'}
             </div>
             {icmsBruto > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
-                Integral CT-e ({formatBrl(icmsBruto)})
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
+                Integral ({formatBrl(icmsBruto)})
               </div>
             )}
           </div>
 
           {/* Vale-Pedágio: (Informativo da Carta Frete / TAG) */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Vale-Pedágio:</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
-                Informativo (TAG)
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Vale-Pedágio:</span>
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
+                Informativo
               </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold font-mono text-amber-600 dark:text-amber-400">
+            <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
               {formatBrl(toll)}
             </div>
           </div>
 
           {/* Consulta GR (Modalidade de Consulta Realizada) */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Consulta GR:</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 shrink-0 max-w-[130px] truncate" title={effectiveRiskType || 'Pendente de Definição'}>
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Consulta GR:</span>
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 shrink-0 max-w-[95px] truncate" title={effectiveRiskType || 'Pendente de Definição'}>
                 {effectiveRiskType || 'Consulta'}
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-1">
-              <div className={`text-xs sm:text-sm font-bold font-mono ${riskCost > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+              <div className={`text-xs font-bold font-mono ${riskCost > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
                 {riskCost > 0 ? `- ${formatBrl(riskCost)}` : 'R$ 0,00'}
               </div>
               {effectiveReleaseCode ? (
-                <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 truncate max-w-[90px]" title={`Liberação: ${effectiveReleaseCode}`}>
+                <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 truncate max-w-[70px]" title={`Liberação: ${effectiveReleaseCode}`}>
                   {effectiveReleaseCode}
                 </span>
               ) : null}
@@ -1247,80 +1825,92 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           </div>
 
           {/* Seguro RCV */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Seguro RCV</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0">
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Seguro RCV</span>
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0">
                 R$ 5/veíc
               </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
+            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
               - {formatBrl(seguroRcv)}
             </div>
           </div>
 
           {/* Seguro Acidente + Roubo */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Acidente + Roubo</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
-                {isExportCargo ? '0,025% (NF+18%)' : '0,025% (NF)'}
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Acidente + Roubo</span>
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
+                {isExportCargo ? '0,025% Exp' : '0,025% NF'}
               </span>
             </div>
-            <div className={`text-xs sm:text-sm font-bold font-mono ${totalSeguroAcidenteRoubo > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className={`text-xs font-bold font-mono ${totalSeguroAcidenteRoubo > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {totalSeguroAcidenteRoubo > 0 ? `- ${formatBrl(totalSeguroAcidenteRoubo)}` : 'R$ 0,00'}
             </div>
             {insuranceBaseValue > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base de Seguro: ${formatBrl(insuranceBaseValue)}${isExportCargo ? ' (NF + 18%)' : ' (NF)'} x 0,025%`}>
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base de Seguro: ${formatBrl(insuranceBaseValue)}${isExportCargo ? ' (NF + 18%)' : ' (NF)'} x 0,025%`}>
                 Base {formatBrl(insuranceBaseValue)} • 0,025%
               </div>
             )}
           </div>
 
-          {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio) */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" title="0,20% sobre o frete do motorista abatido o valor do pedágio">
-                0,20% Mot.{toll > 0 ? ' - Ped.' : ''}
+          {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; se PF deduz também INSS e SEST/SENAT) */}
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
+              <span 
+                className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" 
+                title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete do motorista abatido o valor do pedágio (PJ)"}
+              >
+                {isShipmentPf ? '0,20% Mot. (PF)' : '0,20% Mot.'}
               </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
+            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
               - {formatBrl(ciotValue)}
             </div>
             {driverFreight > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`}>
-                {toll > 0 ? `0,20% s/ Mot.-Ped. (${formatBrl(baseCiotFreight)})` : `0,20% s/ Mot. (${formatBrl(driverFreight)})`}
+              <div 
+                className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" 
+                title={
+                  isShipmentPf
+                    ? `0,20% sobre frete (${formatBrl(driverFreight)}) - pedágio (${formatBrl(toll)}) - INSS (${formatBrl(inssRetidoPf)}) - SEST/SENAT (${formatBrl(sestSenatRetidoPf)}) = Base ${formatBrl(baseCiotFreight)}`
+                    : `0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`
+                }
+              >
+                {isShipmentPf 
+                  ? `0,20% s/ Líq. (Mot-Ped-INSS-SEST)` 
+                  : (toll > 0 ? `0,20% s/ Mot.-Ped.` : `0,20% s/ Mot.`)}
               </div>
             )}
           </div>
 
           {/* Custo Fixo */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">Custo Fixo</span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Custo Fixo</span>
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
                 0,35%
               </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
+            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
               - {formatBrl(custoFixoValue)}
             </div>
           </div>
 
           {/* INSS Patronal / CPRB (4% s/ (Frete Motorista - Pedágio) em embarques PF, Isento para PJ) */}
-          <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">INSS Patronal / CPRB</span>
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">INSS Patronal / CPRB</span>
+              <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
                 isShipmentPf 
                   ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
                   : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
               }`}>
-                {isShipmentPf ? '4% CPRB (PF)' : 'Isento (PJ)'}
+                {isShipmentPf ? '4% (PF)' : 'Isento (PJ)'}
               </span>
             </div>
-            <div className={`text-xs sm:text-sm font-bold font-mono ${
+            <div className={`text-xs font-bold font-mono ${
               isShipmentPf && inssPatronalMotorista > 0
                 ? 'text-rose-600 dark:text-rose-400' 
                 : 'text-emerald-600 dark:text-emerald-400 font-medium'
@@ -1328,19 +1918,19 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               {isShipmentPf && inssPatronalMotorista > 0 ? `- ${formatBrl(inssPatronalMotorista)}` : 'R$ 0,00'}
             </div>
             {isShipmentPf && inssPatronalMotorista > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`4,00% do INSS Patronal / CPRB sobre o frete motorista líquido de pedágio (${formatBrl(driverFreight)} - ${formatBrl(toll)} = ${formatBrl(baseInssPatronal)})`}>
-                4% s/ Frete Mot. - Pedágio ({formatBrl(baseInssPatronal)})
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`4,00% do INSS Patronal / CPRB sobre o frete motorista líquido de pedágio (${formatBrl(driverFreight)} - ${formatBrl(toll)} = ${formatBrl(baseInssPatronal)})`}>
+                4% s/ Frete Mot. - Pedágio
               </div>
             )}
           </div>
 
           {/* Comissão Vendedor */}
-          <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${salespersonCommission === 0 ? 'opacity-90' : ''}`}>
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate" title={salespersonName ? `Vendedor: ${salespersonName}` : 'Comissão Vendedor'}>
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${salespersonCommission === 0 ? 'opacity-90' : ''}`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate" title={salespersonName ? `Vendedor: ${salespersonName}` : 'Comissão Vendedor'}>
                 Comissão Vendedor
               </span>
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded shrink-0 max-w-[120px] truncate ${
+              <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 max-w-[95px] truncate ${
                 salespersonCommission > 0 
                   ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300' 
                   : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
@@ -1348,58 +1938,312 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 {salespersonCommission > 0 ? (salespersonName ? `${salespersonName.slice(0, 8)} • R$ ${salespersonRate.toFixed(2)}/t` : `R$ ${salespersonRate.toFixed(2)}/t`) : 'Isento'}
               </span>
             </div>
-            <div className={`text-xs sm:text-sm font-bold font-mono ${salespersonCommission > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className={`text-xs font-bold font-mono ${salespersonCommission > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {salespersonCommission > 0 ? `- ${formatBrl(salespersonCommission)}` : 'R$ 0,00'}
             </div>
             {salespersonCommission > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${tonnage.toFixed(2)} ton x R$ ${salespersonRate.toFixed(2)}/ton`}>
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${tonnage.toFixed(2)} ton x R$ ${salespersonRate.toFixed(2)}/ton`}>
                 {salespersonName ? `${salespersonName} • ` : ''}{tonnage.toFixed(2)}t x {formatBrl(salespersonRate)}/t
               </div>
             )}
           </div>
 
           {/* Frete Motorista */}
-          <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
-                <Truck className="w-3 h-3 text-slate-400 shrink-0" />
+          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
+                <Truck className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                 Frete Motorista
               </span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
                 R$ {driverRate.toLocaleString('pt-BR')}/t
               </span>
             </div>
-            <div className="text-xs sm:text-sm font-bold font-mono text-rose-600 dark:text-rose-400">
+            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
               - {formatBrl(totalDriverFreight)}
             </div>
-            {demurrageDriverPaid > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base: ${formatBrl(driverFreight)} • Estadia: ${formatBrl(demurrageDriverPaid)}`}>
+            {toll > 0 ? (
+              <div className="text-[8px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium" title={`Frete Motorista deduzindo pedágio: ${formatBrl(totalDriverFreight)} - ${formatBrl(toll)} = ${formatBrl(Math.max(0, totalDriverFreight - toll))}`}>
+                Líq. Pedágio: {formatBrl(Math.max(0, totalDriverFreight - toll))}
+              </div>
+            ) : demurrageDriverPaid > 0 ? (
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base: ${formatBrl(driverFreight)} • Estadia: ${formatBrl(demurrageDriverPaid)}`}>
                 Base {formatBrl(driverFreight)} • Est. {formatBrl(demurrageDriverPaid)}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Comissão do Comercial (0,20% sobre o Frete Bruto da Empresa) */}
-          <div className={`p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${comissaoComercial === 0 ? 'opacity-90' : ''}`}>
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${comissaoComercial === 0 ? 'opacity-90' : ''}`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">
                 Comissão Comercial
               </span>
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
+              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
                 0,20%
               </span>
             </div>
-            <div className={`text-xs sm:text-sm font-bold font-mono ${comissaoComercial > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className={`text-xs font-bold font-mono ${comissaoComercial > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {comissaoComercial > 0 ? `- ${formatBrl(comissaoComercial)}` : 'R$ 0,00'}
             </div>
             {cteGrossFreight > 0 && (
-              <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre Frete Bruto da Empresa (${formatBrl(cteGrossFreight)})`}>
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre Frete Bruto da Empresa (${formatBrl(cteGrossFreight)})`}>
                 0,20% s/ Bruto ({formatBrl(cteGrossFreight)})
               </div>
             )}
           </div>
 
-        </div>
+          {/* 13. Custo Adicional / Registro de Prejuízo */}
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
+            additionalCostValue > 0
+              ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/20'
+              : 'border-slate-200/90 dark:border-slate-700/80'
+          } shadow-2xs flex flex-col justify-between transition-all relative`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Custo Adicional / Registro de Prejuízo Imprevisto">
+                <AlertTriangle className={`w-2.5 h-2.5 ${additionalCostValue > 0 ? 'text-rose-500' : 'text-slate-400'} shrink-0`} />
+                Custo Adicional
+              </span>
+              {additionalCostValue > 0 ? (
+                <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 shrink-0 max-w-[85px] truncate" title={additionalCost?.category}>
+                  {additionalCost?.category || 'Prejuízo'}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddAdditionalCost('create')}
+                  className="text-[8px] font-bold px-1 py-0.2 rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950/60 dark:hover:text-rose-300 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-0.5"
+                  title="Lançar custo adicional ou prejuízo operacional"
+                >
+                  <Plus className="w-2 h-2" />
+                  <span>Lançar</span>
+                </button>
+              )}
+            </div>
+
+            <div className={`text-xs font-bold font-mono ${additionalCostValue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400 dark:text-slate-500 font-medium'}`}>
+              {additionalCostValue > 0 ? `- ${formatBrl(additionalCostValue)}` : 'R$ 0,00'}
+            </div>
+
+            {additionalCostValue > 0 ? (
+              <div className="flex items-center justify-between gap-1 mt-0.5 pt-0.5 border-t border-rose-100 dark:border-rose-950/60">
+                <button
+                  type="button"
+                  onClick={handleOpenViewAdditionalCost}
+                  className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer truncate max-w-[70px]"
+                  title="Visualizar justificativa e detalhes do ocorrido"
+                >
+                  Ver Detalhes
+                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddAdditionalCost('edit')}
+                    className="p-0.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded transition-colors cursor-pointer"
+                    title="Editar valor, categoria ou justificativa"
+                  >
+                    <Pencil className="w-2.5 h-2.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteAdditionalCost}
+                    className="p-0.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors cursor-pointer"
+                    title="Remover custo adicional"
+                  >
+                    <Trash2 className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title="Avaria, estadia não faturada, transbordo, multa">
+                Avaria, transbordo, multa...
+              </div>
+            )}
+          </div>
+
+          {/* 14. Comissionamento de Agência (% sobre Lucro Líquido Real) */}
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
+            agencyCommEnabled
+              ? 'border-purple-300 dark:border-purple-900/60 bg-purple-50/20 dark:bg-purple-950/20'
+              : 'border-slate-200/90 dark:border-slate-700/80'
+          } shadow-2xs flex flex-col justify-between transition-all relative`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão da Agência vinculada ao solicitante (30% sobre Lucro Líquido Real)">
+                <Building2 className={`w-2.5 h-2.5 ${agencyCommEnabled ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'} shrink-0`} />
+                Comissão Agência
+              </span>
+              
+              {/* Toggle Switch */}
+              <button
+                type="button"
+                onClick={handleToggleAgencyCommission}
+                disabled={isSavingAgencyComm}
+                className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                  agencyCommEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-600'
+                }`}
+                title={agencyCommEnabled ? 'Desativar comissão de agência' : 'Ativar comissão de 30% da agência sobre o Lucro Líquido Real'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    agencyCommEnabled ? 'translate-x-3' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-baseline justify-between gap-1">
+              <div className={`text-xs font-bold font-mono ${
+                agencyCommEnabled && agencyCommissionValue > 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-slate-400 dark:text-slate-500 font-medium'
+              }`}>
+                {agencyCommEnabled && agencyCommissionValue > 0 ? `- ${formatBrl(agencyCommissionValue)}` : 'R$ 0,00'}
+              </div>
+              <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
+                agencyCommEnabled
+                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300'
+                  : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+              }`}>
+                30% {agencyCommEnabled ? 'Ativo' : 'Off'}
+              </span>
+            </div>
+
+            <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+              agencyCommEnabled
+                ? `30% sobre Lucro Real Operacional (${formatBrl(operationalProfitBeforeAgency)}) creditado para ${responsibleAgencyName}`
+                : `Desativado. Quando ativo, debita 30% do lucro real para a agência (${responsibleAgencyName})`
+            }>
+              {agencyCommEnabled 
+                ? `30% s/ Lucro (${responsibleAgencyName})` 
+                : `30% s/ Lucro • ${responsibleAgencyName}`}
+            </div>
+          </div>
+
+          {/* 15. Comissionamento do Embarcador (Valor Variável por Tonelada) */}
+          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
+            shipperCommEnabled
+              ? 'border-blue-300 dark:border-blue-900/60 bg-blue-50/20 dark:bg-blue-950/20'
+              : 'border-slate-200/90 dark:border-slate-700/80'
+          } shadow-2xs flex flex-col justify-between transition-all relative`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão do Embarcador / Cliente por Tonelada">
+                <UserCheck className={`w-2.5 h-2.5 ${shipperCommEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'} shrink-0`} />
+                Comissão Embarcador
+              </span>
+
+              {/* Toggle Switch */}
+              <button
+                type="button"
+                onClick={handleToggleShipperCommission}
+                disabled={isSavingShipperComm}
+                className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                  shipperCommEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'
+                }`}
+                title={shipperCommEnabled ? 'Desativar comissão do embarcador' : 'Ativar comissão do embarcador por tonelada'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    shipperCommEnabled ? 'translate-x-3' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {shipperCommEnabled && isEditingShipperRate ? (
+              <div className="space-y-1 py-0.5">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$/t</span>
+                  <input
+                    type="number"
+                    step="0.50"
+                    min="0"
+                    autoFocus
+                    placeholder="1,00"
+                    value={shipperRateInput}
+                    onChange={(e) => setShipperRateInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveShipperRate();
+                      if (e.key === 'Escape') setIsEditingShipperRate(false);
+                    }}
+                    disabled={isSavingShipperComm}
+                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-1 pt-0.5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveShipperRate()}
+                      disabled={isSavingShipperComm}
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Check className="w-2 h-2" />
+                      <span>Salvar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingShipperRate(false)}
+                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                    >
+                      <X className="w-2 h-2" />
+                    </button>
+                  </div>
+                  {/* Presets Rápidos */}
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3].map(presetVal => (
+                      <button
+                        key={presetVal}
+                        type="button"
+                        onClick={() => handleSaveShipperRate(presetVal)}
+                        className="px-1 py-0.2 rounded bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-[8px] font-bold cursor-pointer"
+                      >
+                        {presetVal}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-baseline justify-between gap-1">
+                  <div className={`text-xs font-bold font-mono ${
+                    shipperCommEnabled && shipperCommissionValue > 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-slate-400 dark:text-slate-500 font-medium'
+                  }`}>
+                    {shipperCommEnabled && shipperCommissionValue > 0 ? `- ${formatBrl(shipperCommissionValue)}` : 'R$ 0,00'}
+                  </div>
+                  {shipperCommEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShipperRateInput(String(shipperCommRate));
+                        setIsEditingShipperRate(true);
+                      }}
+                      className="text-[8px] font-bold px-1 py-0.2 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 shrink-0 cursor-pointer flex items-center gap-0.5"
+                      title="Alterar valor da comissão por tonelada"
+                    >
+                      <span>R$ {shipperCommRate.toFixed(2)}/t</span>
+                      <Pencil className="w-2 h-2" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+                  shipperCommEnabled
+                    ? `${tonnage.toFixed(2)}t x ${formatBrl(shipperCommRate)}/t = ${formatBrl(shipperCommissionValue)} creditado ao embarcador (${clientBeneficiaryName})`
+                    : `Desativado • ${tonnage.toFixed(2)}t (${clientBeneficiaryName})`
+                }>
+                  {shipperCommEnabled
+                    ? `${tonnage.toFixed(2)}t x ${formatBrl(shipperCommRate)}/t (${clientBeneficiaryName})`
+                    : `R$/ton • ${clientBeneficiaryName}`}
+                </div>
+              </>
+            )}
+          </div>
+
+          </div>
+        )}
       </div>
 
       {/* LINHA 3: Card de Destaque - LUCRO LÍQUIDO REAL */}
@@ -1458,6 +2302,207 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           </div>
         </div>
       </div>
+
+      {/* MODAL: Lançamento e Detalhes de Custo Adicional / Prejuízo Operacional */}
+      {isAdditionalCostModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden text-slate-800 dark:text-slate-100">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-xl">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                    {additionalCostModalMode === 'view'
+                      ? 'Detalhes do Custo Adicional / Prejuízo'
+                      : additionalCostModalMode === 'edit'
+                        ? 'Editar Custo Adicional / Prejuízo'
+                        : 'Registrar Custo Adicional / Prejuízo Operacional'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Embarque: <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{shipment.id}</span> • Placa: <span className="font-mono font-bold">{shipment.horsePlate}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdditionalCostModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            {additionalCostModalMode === 'view' && additionalCost ? (
+              <div className="p-5 space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+                      Valor do Prejuízo
+                    </span>
+                    <span className="text-base font-black font-mono text-rose-600 dark:text-rose-400">
+                      - {formatBrl(additionalCost.value)}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+                      Classificação / Motivo
+                    </span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {additionalCost.category}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    Justificativa / Descrição do Ocorrido
+                  </span>
+                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                    {additionalCost.description}
+                  </p>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteAdditionalCost}
+                    disabled={isSavingAdditionalCost}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir Lançamento</span>
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddAdditionalCost('edit')}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAdditionalCostModalOpen(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSaveAdditionalCost();
+                }}
+                className="p-5 space-y-4 text-xs"
+              >
+                {/* Campo 1: Valor */}
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
+                    Valor do Prejuízo / Custo Extra (R$) <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative rounded-xl shadow-2xs">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold font-mono">
+                      R$
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="0,00"
+                      value={costFormValue}
+                      onChange={(e) => setCostFormValue(e.target.value)}
+                      disabled={isSavingAdditionalCost}
+                      className="w-full pl-10 pr-3 py-2 text-sm font-bold font-mono rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500 outline-hidden transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Campo 2: Categoria */}
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
+                    Motivo / Categoria <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={costFormCategory}
+                    onChange={(e) => setCostFormCategory(e.target.value)}
+                    disabled={isSavingAdditionalCost}
+                    className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500 outline-hidden transition-all cursor-pointer"
+                  >
+                    <option value="Avaria de Carga">📦 Avaria de Carga / Sinistro Parcial</option>
+                    <option value="Transbordo / Guincho">🚚 Transbordo / Socorro Mecânico / Guincho</option>
+                    <option value="Multa / Notificação">⚠️ Multa de Trânsito / Fiscal / Balança</option>
+                    <option value="Estadia Excedente">⏱️ Estadia Excedente Não Faturada</option>
+                    <option value="Atraso / Retenção Operacional">🛑 Atraso / Retenção Operacional</option>
+                    <option value="Pedágio Extra / Rota Não Prevista">🛣️ Pedágio Extra / Desvio de Rota</option>
+                    <option value="Outros Custos Imprevistos">📝 Outros Custos Imprevistos</option>
+                  </select>
+                </div>
+
+                {/* Campo 3: Justificativa */}
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-200 mb-1">
+                    Justificativa / Descrição do Ocorrido <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    placeholder="Descreva detalhadamente o evento causador do custo adicional ou prejuízo operacional..."
+                    value={costFormDescription}
+                    onChange={(e) => setCostFormDescription(e.target.value)}
+                    disabled={isSavingAdditionalCost}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500 outline-hidden transition-all resize-none"
+                  />
+                </div>
+
+                {/* Botões do Formulário */}
+                <div className="pt-2 flex items-center justify-between gap-2">
+                  {additionalCostModalMode === 'edit' ? (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAdditionalCost}
+                      disabled={isSavingAdditionalCost}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Excluir</span>
+                    </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAdditionalCostModalOpen(false)}
+                      disabled={isSavingAdditionalCost}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingAdditionalCost}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingAdditionalCost ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      <span>Salvar Custo Adicional</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
