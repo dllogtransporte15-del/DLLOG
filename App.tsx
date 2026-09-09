@@ -1255,6 +1255,16 @@ const App: React.FC = () => {
     const shipperRateConfigured = requestingUser.shipperCommissionRatePerTon || (data.embarcadorId ? users.find(u => u.id === data.embarcadorId)?.shipperCommissionRatePerTon : undefined);
     const isShipperCommAuto = Boolean(shipperRateConfigured && shipperRateConfigured > 0);
 
+    if (isAgenciadorRequester) {
+      (documentsUrlMap as any).agency_commission_enabled = true;
+      (documentsUrlMap as any).agency_commission_percentage = agencyRateConfigured;
+      (documentsUrlMap as any).agency_commission_agency_name = agencyNameAuto;
+    }
+    if (isShipperCommAuto) {
+      (documentsUrlMap as any).shipper_commission_enabled = true;
+      (documentsUrlMap as any).shipper_commission_rate_per_ton = shipperRateConfigured;
+    }
+
     const newShipment: Shipment = {
       id: newShipmentId,
       orderId: `ord_${newShipmentId}`,

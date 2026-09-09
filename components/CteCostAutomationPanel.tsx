@@ -144,23 +144,40 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   // --- MÓDULO 2: Comissão de Agência (30% sobre Lucro Líquido Real) ---
   const [agencyCommEnabled, setAgencyCommEnabled] = React.useState<boolean>(() => {
+    const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+    const isAgenciador = reqUser?.profile === UserProfile.Agenciador;
+    
+    if (isAgenciador) {
+      if (shipment.agencyCommissionEnabled !== undefined) return shipment.agencyCommissionEnabled;
+      if ((shipment.documents as any)?.agency_commission_enabled !== undefined) return Boolean((shipment.documents as any).agency_commission_enabled);
+      return true;
+    }
+
     if (shipment.agencyCommissionEnabled !== undefined) return shipment.agencyCommissionEnabled;
     if ((shipment.documents as any)?.agency_commission_enabled !== undefined) return Boolean((shipment.documents as any).agency_commission_enabled);
-    const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
-    if (reqUser?.profile === UserProfile.Agenciador) return true;
     return false;
   });
   const [isSavingAgencyComm, setIsSavingAgencyComm] = React.useState(false);
 
   React.useEffect(() => {
-    if (shipment.agencyCommissionEnabled !== undefined) {
-      setAgencyCommEnabled(shipment.agencyCommissionEnabled);
-    } else if ((shipment.documents as any)?.agency_commission_enabled !== undefined) {
-      setAgencyCommEnabled(Boolean((shipment.documents as any).agency_commission_enabled));
-    } else {
-      const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
-      if (reqUser?.profile === UserProfile.Agenciador) {
+    const reqUser = users?.find(u => u.id === shipment.embarcadorId || u.id === shipment.createdById);
+    const isAgenciador = reqUser?.profile === UserProfile.Agenciador;
+
+    if (isAgenciador) {
+      if (shipment.agencyCommissionEnabled !== undefined) {
+        setAgencyCommEnabled(shipment.agencyCommissionEnabled);
+      } else if ((shipment.documents as any)?.agency_commission_enabled !== undefined) {
+        setAgencyCommEnabled(Boolean((shipment.documents as any).agency_commission_enabled));
+      } else {
         setAgencyCommEnabled(true);
+      }
+    } else {
+      if (shipment.agencyCommissionEnabled !== undefined) {
+        setAgencyCommEnabled(shipment.agencyCommissionEnabled);
+      } else if ((shipment.documents as any)?.agency_commission_enabled !== undefined) {
+        setAgencyCommEnabled(Boolean((shipment.documents as any).agency_commission_enabled));
+      } else {
+        setAgencyCommEnabled(false);
       }
     }
   }, [shipment.agencyCommissionEnabled, shipment.documents, shipment.embarcadorId, shipment.createdById, users]);

@@ -283,17 +283,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);
       const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
 
-      const isAgencyEnabled = calculatedExpenses.agencyCommission > 0 || s.agencyCommissionEnabled === true || (s.documents as any)?.agency_commission_enabled === true;
-      const agencyPercentage = s.agencyCommissionPercentage ?? (s.documents as any)?.agency_commission_percentage ?? 30;
-      const effectiveDemurrageProfit = (isAgencyEnabled && demurrageProfit > 0)
-        ? Number((demurrageProfit * (1 - agencyPercentage / 100)).toFixed(2))
-        : demurrageProfit;
-
       const companyFreight = baseCompanyFreight + demurrageRevenue;
       const driverFreight = baseDriverFreight + demurrageDriverPaid;
       const freightDifference = companyFreight - driverFreight;
       const freightDifferenceMarginPercent = companyFreight > 0 ? (freightDifference / companyFreight) * 100 : 0;
-      const netProfit = Number((calculatedExpenses.netProfit + effectiveDemurrageProfit).toFixed(2));
+      const netProfit = Number((calculatedExpenses.netProfit + demurrageProfit).toFixed(2));
       const profitMarginPercent = companyFreight > 0 ? (netProfit / companyFreight) * 100 : 0;
 
       // Comprovante / Anexo de saldo ou despesas

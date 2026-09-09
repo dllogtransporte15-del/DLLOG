@@ -379,7 +379,7 @@ export function calculateShipmentExpenses(
     });
   }
 
-  // 14.2 Comissão do Embarcador (R$/ton configurável)
+  // 14.2 Comissão do Embarcador (Informativo - não deduz do Resultado (=))
   const isShipperCommEnabled = Boolean(
     shipment.shipperCommissionEnabled === true ||
     (shipment.documents as any)?.shipper_commission_enabled === true ||
@@ -402,15 +402,7 @@ export function calculateShipmentExpenses(
             ? Number(shipment.realProfitData.shipperCommission)
             : 0));
 
-  if (shipperCommission > 0) {
-    expenseItems.push({
-      name: `Comissão Embarcador (${shipperCommRate > 0 ? `R$ ${shipperCommRate.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/t` : 'Ativo'})`,
-      value: shipperCommission,
-      type: 'negative'
-    });
-  }
-
-  // 14.3 Comissão de Agência (30% sobre o Lucro Real da operação antes da comissão de agência)
+  // 14.3 Comissão de Agência (Informativo - não deduz do Resultado (=))
   const isAgencyCommEnabled = Boolean(
     shipment.agencyCommissionEnabled === true ||
     (shipment.documents as any)?.agency_commission_enabled === true ||
@@ -457,28 +449,6 @@ export function calculateShipmentExpenses(
     }
   }
 
-  // Subtotal das despesas operacionais base (antes de deduzir a comissão de agência)
-  const baseExpensesWithoutAgency = Number(
-    expenseItems.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0).toFixed(2)
-  );
-  const operationalProfitBeforeAgency = Number((companyFreight - (baseExpensesWithoutAgency + driverFreight)).toFixed(2));
-
-  const agencyCommission = (isAgencyCommEnabled && operationalProfitBeforeAgency > 0)
-    ? Number((operationalProfitBeforeAgency * (agencyCommPercentage / 100)).toFixed(2))
-    : (isAgencyCommEnabled && shipment.agencyCommissionValue !== undefined && shipment.agencyCommissionValue !== null
-        ? Number(shipment.agencyCommissionValue)
-        : (isAgencyCommEnabled && shipment.realProfitData?.agencyCommission !== undefined && shipment.realProfitData?.agencyCommission !== null
-            ? Number(shipment.realProfitData.agencyCommission)
-            : 0));
-
-  if (agencyCommission > 0) {
-    expenseItems.push({
-      name: `Comissão Agência (${agencyCommPercentage}% s/ Lucro Real)`,
-      value: agencyCommission,
-      type: 'negative'
-    });
-  }
-
   // Total das deduções operacionais (sem frete motorista)
   const totalExpenses = Number(
     expenseItems.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0).toFixed(2)
@@ -489,6 +459,14 @@ export function calculateShipmentExpenses(
 
   // Resultado / Lucro Líquido Real da Operação (SEM somar Crédito Fiscal Gerado, que é estritamente informativo)
   const netProfit = Number((companyFreight - totalDeducoesComFrete).toFixed(2));
+
+  const agencyCommission = (isAgencyCommEnabled && netProfit > 0)
+    ? Number((netProfit * (agencyCommPercentage / 100)).toFixed(2))
+    : (isAgencyCommEnabled && shipment.agencyCommissionValue !== undefined && shipment.agencyCommissionValue !== null
+        ? Number(shipment.agencyCommissionValue)
+        : (isAgencyCommEnabled && shipment.realProfitData?.agencyCommission !== undefined && shipment.realProfitData?.agencyCommission !== null
+            ? Number(shipment.realProfitData.agencyCommission)
+            : 0));
 
   // Margem Efetiva sobre Frete Bruto
   const profitMarginPercent = companyFreight > 0 
