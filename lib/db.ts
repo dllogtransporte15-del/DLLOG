@@ -529,115 +529,133 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
   return payload;
 };
 
-const toShipment = (row: any): Shipment => ({
-  id: row.id,
-  orderId: row.order_id,
-  cargoId: row.cargo_id,
-  driverName: row.driver_name,
-  driverContact: row.driver_contact,
-  driverCpf: row.driver_cpf,
-  embarcadorId: row.embarcador_id,
-  horsePlate: row.horse_plate,
-  trailer1Plate: row.trailer1_plate,
-  trailer2Plate: row.trailer2_plate,
-  trailer3Plate: row.trailer3_plate,
-  shipmentTonnage: Number(row.shipment_tonnage),
-  driverFreightValue: Number(row.driver_freight_value),
-  status: row.status,
-  scheduledDate: row.scheduled_date,
-  scheduledTime: row.scheduled_time,
-  arrivalTime: row.arrival_time,
-  documents: row.documents || {},
-  history: row.history || [],
-  createdAt: row.created_at,
-  createdById: row.created_by_id,
-  statusHistory: row.status_history || [],
-  anttOwnerIdentifier: row.antt_owner_identifier,
-  paymentMethod: row.payment_method || row.documents?.payment_method,
-  pixKey: row.pix_key || row.documents?.pix_key,
-  bankDetails: row.bank_details,
-  advancePercentage: row.advance_percentage !== null && row.advance_percentage !== undefined ? Number(row.advance_percentage) : (row.documents?.advance_percentage !== undefined ? Number(row.documents.advance_percentage) : undefined),
-  advanceValue: row.advance_value !== null ? Number(row.advance_value) : undefined,
-  tollValue: row.toll_value !== null ? Number(row.toll_value) : undefined,
-  vehicleTag: row.vehicle_tag,
-  companyFreightRateSnapshot: row.company_freight_rate_snapshot !== null ? Number(row.company_freight_rate_snapshot) : undefined,
-  driverFreightRateSnapshot: row.driver_freight_rate_snapshot !== null ? Number(row.driver_freight_rate_snapshot) : undefined,
-  freightCalculationType: row.freight_calculation_type || row.documents?.freight_calculation_type || undefined,
-  icmsValue: row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (row.documents?.icms_value !== undefined && row.documents?.icms_value !== null ? Number(row.documents.icms_value) : undefined),
-  route: row.route,
-  cancellationReason: row.cancellation_reason,
-  driverReferences: Array.isArray(row.driver_references) ? row.driver_references.join('\n') : (row.driver_references || ''),
-  ownerContact: row.owner_contact,
-  balanceToReceiveValue: row.balance_to_receive_value !== null ? Number(row.balance_to_receive_value) : undefined,
-  discountValue: row.discount_value !== null ? Number(row.discount_value) : undefined,
-  isBreakageWaived: row.is_breakage_waived !== null && row.is_breakage_waived !== undefined ? Boolean(row.is_breakage_waived) : (row.documents?.is_breakage_waived !== undefined ? Boolean(row.documents.is_breakage_waived) : undefined),
-  netBalanceValue: row.net_balance_value !== null ? Number(row.net_balance_value) : undefined,
-  unloadedTonnage: row.unloaded_tonnage !== null ? Number(row.unloaded_tonnage) : undefined,
-  vehicleSetType: row.vehicle_set_type,
-  vehicleBodyType: row.vehicle_body_type,
-  riskReleaseCode: row.risk_release_code || row.documents?.risk_release_code || undefined,
-  riskQueryType: row.risk_query_type || row.documents?.risk_query_type || undefined,
-  riskQueryCost: row.risk_query_cost !== null && row.risk_query_cost !== undefined ? Number(row.risk_query_cost) : (row.documents?.risk_query_cost !== undefined && row.documents?.risk_query_cost !== null ? Number(row.documents.risk_query_cost) : undefined),
-  anttModality: (row.antt_modality && row.antt_modality !== 'null') ? row.antt_modality : ((row.documents?.antt_modality && row.documents.antt_modality !== 'null') ? row.documents.antt_modality : undefined),
-  etcTaxRegime: (row.etc_tax_regime && row.etc_tax_regime !== 'null') ? row.etc_tax_regime : ((row.documents?.etc_tax_regime && row.documents.etc_tax_regime !== 'null') ? row.documents.etc_tax_regime : undefined),
-  driverFreightType: row.driver_freight_type || row.documents?.driver_freight_type || 'PJ',
-  cteNumber: row.cte_number || row.documents?.cte_number,
-  cteEmissionDate: row.cte_emission_date || row.documents?.cte_emission_date,
-  nfeNumber: row.nfe_number || row.documents?.nfe_number,
-  mdfeNumber: row.mdfe_number || row.documents?.mdfe_number,
-  realProfitData: row.real_profit_data || row.documents?.real_profit_data,
-  isFederalTaxManual: row.is_federal_tax_manual !== null && row.is_federal_tax_manual !== undefined
-    ? Boolean(row.is_federal_tax_manual)
-    : (row.documents?.is_federal_tax_manual !== undefined
-        ? Boolean(row.documents.is_federal_tax_manual)
-        : (row.real_profit_data?.isFederalTaxManual !== undefined
-            ? Boolean(row.real_profit_data.isFederalTaxManual)
-            : undefined)),
-  federalTax: row.federal_tax !== null && row.federal_tax !== undefined 
-    ? Number(row.federal_tax) 
-    : (row.documents?.federal_tax !== undefined && row.documents?.federal_tax !== null
-        ? Number(row.documents.federal_tax)
-        : (row.documents?.imposto_federal !== undefined && row.documents?.imposto_federal !== null
-            ? Number(row.documents.imposto_federal)
-            : (row.real_profit_data?.federalTax ?? row.documents?.real_profit_data?.federalTax ?? undefined))),
-  additionalCost: row.additional_cost || row.documents?.additional_cost || undefined,
-  additionalCostValue: row.additional_cost_value !== null && row.additional_cost_value !== undefined 
-    ? Number(row.additional_cost_value) 
-    : (row.documents?.additional_cost_value !== undefined ? Number(row.documents.additional_cost_value) : (row.documents?.additional_cost?.value !== undefined ? Number(row.documents.additional_cost.value) : undefined)),
-  additionalCostCategory: row.additional_cost_category || row.documents?.additional_cost_category || row.documents?.additional_cost?.category,
-  additionalCostDescription: row.additional_cost_description || row.documents?.additional_cost_description || row.documents?.additional_cost?.description,
-  agencyCommissionEnabled: row.agency_commission_enabled !== null && row.agency_commission_enabled !== undefined ? Boolean(row.agency_commission_enabled) : (row.documents?.agency_commission_enabled !== undefined ? Boolean(row.documents.agency_commission_enabled) : undefined),
-  agencyCommissionPercentage: row.agency_commission_percentage !== null && row.agency_commission_percentage !== undefined ? Number(row.agency_commission_percentage) : (row.documents?.agency_commission_percentage !== undefined ? Number(row.documents.agency_commission_percentage) : 30),
-  agencyCommissionValue: row.agency_commission_value !== null && row.agency_commission_value !== undefined ? Number(row.agency_commission_value) : (row.documents?.agency_commission_value !== undefined ? Number(row.documents.agency_commission_value) : undefined),
-  agencyCommissionAgencyName: row.agency_commission_agency_name || row.documents?.agency_commission_agency_name,
-  shipperCommissionEnabled: row.shipper_commission_enabled !== null && row.shipper_commission_enabled !== undefined ? Boolean(row.shipper_commission_enabled) : (row.documents?.shipper_commission_enabled !== undefined ? Boolean(row.documents.shipper_commission_enabled) : undefined),
-  shipperCommissionRatePerTon: row.shipper_commission_rate_per_ton !== null && row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : (row.documents?.shipper_commission_rate_per_ton !== undefined ? Number(row.documents.shipper_commission_rate_per_ton) : undefined),
-  shipperCommissionValue: row.shipper_commission_value !== null && row.shipper_commission_value !== undefined ? Number(row.shipper_commission_value) : (row.documents?.shipper_commission_value !== undefined ? Number(row.documents.shipper_commission_value) : undefined),
-});
+const toShipment = (row: any): Shipment => {
+  const docs = (row.documents && typeof row.documents === 'object') ? row.documents : {};
+  const realProfit = row.real_profit_data || docs.real_profit_data;
 
-const fromShipment = (s: Shipment) => ({
-  id: s.id,
-  order_id: s.orderId,
-  cargo_id: s.cargoId,
-  driver_name: s.driverName,
-  driver_contact: s.driverContact,
-  driver_cpf: s.driverCpf,
-  embarcador_id: s.embarcadorId,
-  horse_plate: s.horsePlate,
-  trailer1_plate: s.trailer1Plate,
-  trailer2_plate: s.trailer2Plate,
-  trailer3_plate: s.trailer3Plate,
-  shipment_tonnage: s.shipmentTonnage,
-  driver_freight_value: s.driverFreightValue,
-  status: s.status,
-  scheduled_date: s.scheduledDate,
-  scheduled_time: s.scheduledTime,
-  arrival_time: s.arrivalTime,
-  is_federal_tax_manual: s.isFederalTaxManual !== undefined ? s.isFederalTaxManual : (s.realProfitData?.isFederalTaxManual ?? null),
-  federal_tax: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
-  imposto_federal: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
-  real_profit_data: s.realProfitData ?? null,
-  documents: {
+  const isFederalTaxManual = row.is_federal_tax_manual !== null && row.is_federal_tax_manual !== undefined
+    ? Boolean(row.is_federal_tax_manual)
+    : (docs.is_federal_tax_manual !== undefined && docs.is_federal_tax_manual !== null
+        ? Boolean(docs.is_federal_tax_manual)
+        : (realProfit?.isFederalTaxManual !== undefined && realProfit?.isFederalTaxManual !== null
+            ? Boolean(realProfit.isFederalTaxManual)
+            : undefined));
+
+  const federalTax = row.federal_tax !== null && row.federal_tax !== undefined 
+    ? Number(row.federal_tax) 
+    : (docs.federal_tax !== undefined && docs.federal_tax !== null
+        ? Number(docs.federal_tax)
+        : (docs.imposto_federal !== undefined && docs.imposto_federal !== null
+            ? Number(docs.imposto_federal)
+            : (realProfit?.federalTax !== undefined && realProfit?.federalTax !== null
+                ? Number(realProfit.federalTax)
+                : undefined)));
+
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    cargoId: row.cargo_id,
+    driverName: row.driver_name,
+    driverContact: row.driver_contact,
+    driverCpf: row.driver_cpf,
+    embarcadorId: row.embarcador_id,
+    horsePlate: row.horse_plate,
+    trailer1Plate: row.trailer1_plate,
+    trailer2Plate: row.trailer2_plate,
+    trailer3Plate: row.trailer3_plate,
+    shipmentTonnage: Number(row.shipment_tonnage),
+    driverFreightValue: Number(row.driver_freight_value),
+    status: row.status,
+    scheduledDate: row.scheduled_date,
+    scheduledTime: row.scheduled_time,
+    arrivalTime: row.arrival_time,
+    documents: docs,
+    history: row.history || [],
+    createdAt: row.created_at,
+    createdById: row.created_by_id,
+    statusHistory: row.status_history || [],
+    anttOwnerIdentifier: row.antt_owner_identifier,
+    paymentMethod: row.payment_method || docs.payment_method,
+    pixKey: row.pix_key || docs.pix_key,
+    bankDetails: row.bank_details,
+    advancePercentage: row.advance_percentage !== null && row.advance_percentage !== undefined ? Number(row.advance_percentage) : (docs.advance_percentage !== undefined ? Number(docs.advance_percentage) : undefined),
+    advanceValue: row.advance_value !== null ? Number(row.advance_value) : undefined,
+    tollValue: row.toll_value !== null ? Number(row.toll_value) : undefined,
+    vehicleTag: row.vehicle_tag,
+    companyFreightRateSnapshot: row.company_freight_rate_snapshot !== null ? Number(row.company_freight_rate_snapshot) : undefined,
+    driverFreightRateSnapshot: row.driver_freight_rate_snapshot !== null ? Number(row.driver_freight_rate_snapshot) : undefined,
+    freightCalculationType: row.freight_calculation_type || docs.freight_calculation_type || undefined,
+    icmsValue: row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (docs.icms_value !== undefined && docs.icms_value !== null ? Number(docs.icms_value) : undefined),
+    route: row.route,
+    cancellationReason: row.cancellation_reason,
+    driverReferences: Array.isArray(row.driver_references) ? row.driver_references.join('\n') : (row.driver_references || ''),
+    ownerContact: row.owner_contact,
+    balanceToReceiveValue: row.balance_to_receive_value !== null ? Number(row.balance_to_receive_value) : undefined,
+    discountValue: row.discount_value !== null ? Number(row.discount_value) : undefined,
+    isBreakageWaived: row.is_breakage_waived !== null && row.is_breakage_waived !== undefined ? Boolean(row.is_breakage_waived) : (docs.is_breakage_waived !== undefined ? Boolean(docs.is_breakage_waived) : undefined),
+    netBalanceValue: row.net_balance_value !== null ? Number(row.net_balance_value) : undefined,
+    unloadedTonnage: row.unloaded_tonnage !== null ? Number(row.unloaded_tonnage) : undefined,
+    vehicleSetType: row.vehicle_set_type,
+    vehicleBodyType: row.vehicle_body_type,
+    riskReleaseCode: row.risk_release_code || docs.risk_release_code || undefined,
+    riskQueryType: row.risk_query_type || docs.risk_query_type || undefined,
+    riskQueryCost: row.risk_query_cost !== null && row.risk_query_cost !== undefined ? Number(row.risk_query_cost) : (docs.risk_query_cost !== undefined && docs.risk_query_cost !== null ? Number(docs.risk_query_cost) : undefined),
+    anttModality: (row.antt_modality && row.antt_modality !== 'null') ? row.antt_modality : ((docs.antt_modality && docs.antt_modality !== 'null') ? docs.antt_modality : undefined),
+    etcTaxRegime: (row.etc_tax_regime && row.etc_tax_regime !== 'null') ? row.etc_tax_regime : ((docs.etc_tax_regime && docs.etc_tax_regime !== 'null') ? docs.etc_tax_regime : undefined),
+    driverFreightType: row.driver_freight_type || docs.driver_freight_type || 'PJ',
+    cteNumber: row.cte_number || docs.cte_number,
+    cteEmissionDate: row.cte_emission_date || docs.cte_emission_date,
+    nfeNumber: row.nfe_number || docs.nfe_number,
+    mdfeNumber: row.mdfe_number || docs.mdfe_number,
+    realProfitData: realProfit,
+    isFederalTaxManual: isFederalTaxManual,
+    federalTax: federalTax,
+    additionalCost: row.additional_cost || docs.additional_cost || undefined,
+    additionalCostValue: row.additional_cost_value !== null && row.additional_cost_value !== undefined 
+      ? Number(row.additional_cost_value) 
+      : (docs.additional_cost_value !== undefined ? Number(docs.additional_cost_value) : (docs.additional_cost?.value !== undefined ? Number(docs.additional_cost.value) : undefined)),
+    additionalCostCategory: row.additional_cost_category || docs.additional_cost_category || docs.additional_cost?.category,
+    additionalCostDescription: row.additional_cost_description || docs.additional_cost_description || docs.additional_cost?.description,
+    agencyCommissionEnabled: row.agency_commission_enabled !== null && row.agency_commission_enabled !== undefined ? Boolean(row.agency_commission_enabled) : (docs.agency_commission_enabled !== undefined ? Boolean(docs.agency_commission_enabled) : undefined),
+    agencyCommissionPercentage: row.agency_commission_percentage !== null && row.agency_commission_percentage !== undefined ? Number(row.agency_commission_percentage) : (docs.agency_commission_percentage !== undefined ? Number(docs.agency_commission_percentage) : 30),
+    agencyCommissionValue: row.agency_commission_value !== null && row.agency_commission_value !== undefined ? Number(row.agency_commission_value) : (docs.agency_commission_value !== undefined ? Number(docs.agency_commission_value) : undefined),
+    agencyCommissionAgencyName: row.agency_commission_agency_name || docs.agency_commission_agency_name,
+    shipperCommissionEnabled: row.shipper_commission_enabled !== null && row.shipper_commission_enabled !== undefined ? Boolean(row.shipper_commission_enabled) : (docs.shipper_commission_enabled !== undefined ? Boolean(docs.shipper_commission_enabled) : undefined),
+    shipperCommissionRatePerTon: row.shipper_commission_rate_per_ton !== null && row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : (docs.shipper_commission_rate_per_ton !== undefined ? Number(docs.shipper_commission_rate_per_ton) : undefined),
+    shipperCommissionValue: row.shipper_commission_value !== null && row.shipper_commission_value !== undefined ? Number(row.shipper_commission_value) : (docs.shipper_commission_value !== undefined ? Number(docs.shipper_commission_value) : undefined),
+  };
+};
+
+const fromShipment = (s: Shipment) => {
+  const isFederalTaxManual = s.isFederalTaxManual !== undefined 
+    ? s.isFederalTaxManual 
+    : (s.realProfitData?.isFederalTaxManual !== undefined 
+        ? s.realProfitData.isFederalTaxManual 
+        : ((s.documents as any)?.is_federal_tax_manual !== undefined 
+            ? Boolean((s.documents as any).is_federal_tax_manual) 
+            : null));
+
+  const federalTax = s.federalTax !== undefined 
+    ? s.federalTax 
+    : (s.realProfitData?.federalTax !== undefined 
+        ? s.realProfitData.federalTax 
+        : ((s.documents as any)?.federal_tax !== undefined 
+            ? Number((s.documents as any).federal_tax) 
+            : ((s.documents as any)?.imposto_federal !== undefined 
+                ? Number((s.documents as any).imposto_federal) 
+                : null)));
+
+  const realProfitData = s.realProfitData 
+    ? {
+        ...s.realProfitData,
+        isFederalTaxManual: isFederalTaxManual !== null ? Boolean(isFederalTaxManual) : s.realProfitData.isFederalTaxManual,
+        federalTax: federalTax !== null ? Number(federalTax) : s.realProfitData.federalTax
+      } 
+    : (isFederalTaxManual !== null || federalTax !== null
+        ? { isFederalTaxManual: Boolean(isFederalTaxManual), federalTax: federalTax !== null ? Number(federalTax) : undefined }
+        : null);
+
+  const docs = {
     ...(s.documents || {}),
     risk_release_code: s.riskReleaseCode ?? null,
     risk_query_type: s.riskQueryType ?? null,
@@ -653,10 +671,10 @@ const fromShipment = (s: Shipment) => ({
     cte_emission_date: s.cteEmissionDate ?? null,
     nfe_number: s.nfeNumber ?? null,
     mdfe_number: s.mdfeNumber ?? null,
-    is_federal_tax_manual: s.isFederalTaxManual !== undefined ? s.isFederalTaxManual : (s.realProfitData?.isFederalTaxManual ?? null),
-    federal_tax: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
-    imposto_federal: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
-    real_profit_data: s.realProfitData ?? null,
+    is_federal_tax_manual: isFederalTaxManual,
+    federal_tax: federalTax,
+    imposto_federal: federalTax,
+    real_profit_data: realProfitData,
     freight_calculation_type: s.freightCalculationType ?? null,
     icms_value: s.icmsValue !== undefined ? s.icmsValue : null,
     additional_cost: s.additionalCost ?? null,
@@ -670,39 +688,57 @@ const fromShipment = (s: Shipment) => ({
     shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : null,
     shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : null,
     shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : null,
-  },
-  history: s.history,
-  created_at: s.createdAt,
-  created_by_id: s.createdById,
-  status_history: s.statusHistory,
-  antt_owner_identifier: s.anttOwnerIdentifier ?? null,
-  antt_modality: s.anttModality ?? null,
-  etc_tax_regime: s.etcTaxRegime ?? null,
-  payment_method: s.paymentMethod ?? null,
-  pix_key: s.pixKey ?? null,
-  bank_details: s.bankDetails ?? null,
-  advance_percentage: s.advancePercentage ?? null,
-  advance_value: s.advanceValue ?? null,
-  toll_value: s.tollValue ?? null,
-  vehicle_tag: s.vehicleTag ?? null,
-  company_freight_rate_snapshot: s.companyFreightRateSnapshot ?? null,
-  driver_freight_rate_snapshot: s.driverFreightRateSnapshot ?? null,
-  driver_freight_type: s.driverFreightType || 'PJ',
-  route: s.route ?? null,
-  cancellation_reason: s.cancellationReason ?? null,
-  driver_references: s.driverReferences ? s.driverReferences.split('\n').filter(Boolean) : [],
-  owner_contact: s.ownerContact ?? null,
-  balance_to_receive_value: s.balanceToReceiveValue ?? null,
-  discount_value: s.discountValue ?? null,
-  net_balance_value: s.netBalanceValue ?? null,
-  unloaded_tonnage: s.unloadedTonnage ?? null,
-  branch_id: s.branchId || null,
-  vehicle_set_type: s.vehicleSetType ?? null,
-  vehicle_body_type: s.vehicleBodyType ?? null,
-  risk_release_code: s.riskReleaseCode ?? null,
-  risk_query_type: s.riskQueryType ?? null,
-  risk_query_cost: s.riskQueryCost !== undefined ? s.riskQueryCost : null,
-});
+  };
+
+  return {
+    id: s.id,
+    order_id: s.orderId,
+    cargo_id: s.cargoId,
+    driver_name: s.driverName,
+    driver_contact: s.driverContact,
+    driver_cpf: s.driverCpf,
+    embarcador_id: s.embarcadorId,
+    horse_plate: s.horsePlate,
+    trailer1_plate: s.trailer1Plate,
+    trailer2_plate: s.trailer2Plate,
+    trailer3_plate: s.trailer3Plate,
+    shipment_tonnage: s.shipmentTonnage,
+    driver_freight_value: s.driverFreightValue,
+    status: s.status,
+    scheduled_date: s.scheduledDate,
+    scheduled_time: s.scheduledTime,
+    arrival_time: s.arrivalTime,
+    documents: docs,
+    history: s.history,
+    created_at: s.createdAt,
+    created_by_id: s.createdById,
+    status_history: s.statusHistory,
+    antt_owner_identifier: s.anttOwnerIdentifier ?? null,
+    antt_modality: s.anttModality ?? null,
+    etc_tax_regime: s.etcTaxRegime ?? null,
+    payment_method: s.paymentMethod ?? null,
+    pix_key: s.pixKey ?? null,
+    bank_details: s.bankDetails ?? null,
+    advance_percentage: s.advancePercentage ?? null,
+    advance_value: s.advanceValue ?? null,
+    toll_value: s.tollValue ?? null,
+    vehicle_tag: s.vehicleTag ?? null,
+    company_freight_rate_snapshot: s.companyFreightRateSnapshot ?? null,
+    driver_freight_rate_snapshot: s.driverFreightRateSnapshot ?? null,
+    driver_freight_type: s.driverFreightType || 'PJ',
+    route: s.route ?? null,
+    cancellation_reason: s.cancellationReason ?? null,
+    driver_references: s.driverReferences ? (Array.isArray(s.driverReferences) ? s.driverReferences : s.driverReferences.split('\n').filter(Boolean)) : [],
+    owner_contact: s.ownerContact ?? null,
+    balance_to_receive_value: s.balanceToReceiveValue ?? null,
+    discount_value: s.discountValue ?? null,
+    net_balance_value: s.netBalanceValue ?? null,
+    unloaded_tonnage: s.unloadedTonnage ?? null,
+    branch_id: s.branchId || null,
+    vehicle_set_type: s.vehicleSetType ?? null,
+    vehicle_body_type: s.vehicleBodyType ?? null,
+  };
+};
 
 export const toUser = (row: any): User => {
   const perms = typeof row.permissions === 'object' && row.permissions ? row.permissions : {};
@@ -1377,7 +1413,7 @@ async function executeShipmentOperationWithFallback(
 ): Promise<void> {
   let currentPayload = { ...initialPayload };
   let attempts = 0;
-  const maxAttempts = 6;
+  const maxAttempts = 25;
 
   while (attempts < maxAttempts) {
     attempts++;

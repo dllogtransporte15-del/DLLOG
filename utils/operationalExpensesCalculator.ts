@@ -169,10 +169,16 @@ export function calculateShipmentExpenses(
 
   const manualFederalTax = isFederalTaxManual
     ? ((shipment.realProfitData?.federalTax !== undefined && shipment.realProfitData.federalTax !== null)
-        ? shipment.realProfitData.federalTax
+        ? Number(shipment.realProfitData.federalTax)
         : ((shipment.federalTax !== undefined && shipment.federalTax !== null)
-            ? shipment.federalTax
-            : undefined))
+            ? Number(shipment.federalTax)
+            : ((shipment.documents as any)?.federal_tax !== undefined && (shipment.documents as any)?.federal_tax !== null
+                ? Number((shipment.documents as any).federal_tax)
+                : ((shipment.documents as any)?.imposto_federal !== undefined && (shipment.documents as any)?.imposto_federal !== null
+                    ? Number((shipment.documents as any).imposto_federal)
+                    : ((shipment.documents as any)?.real_profit_data?.federalTax !== undefined && (shipment.documents as any)?.real_profit_data?.federalTax !== null
+                        ? Number((shipment.documents as any).real_profit_data.federalTax)
+                        : undefined)))))
     : undefined;
 
   const impostoFederal = manualFederalTax !== undefined
