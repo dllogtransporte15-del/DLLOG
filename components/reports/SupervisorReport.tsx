@@ -240,9 +240,11 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return counts;
   }, [activeCommissionUsers, nonMatrizBranches]);
 
-  // Calcular comissão de agenciamento por Agenciador Líder (consolidando equipe)
-  const userAgencyCommissionMap = useMemo(() => {
-    const map = new Map<string, number>();
+  // Mapear Lucro Real Total, Comissão de Agenciamento e Contagem de Embarques por Agenciador Líder (consolidando equipe de operadores)
+  const { userAgencyProfitMap, userAgencyCommissionMap, userAgencyShipmentCountMap } = useMemo(() => {
+    const commMap = new Map<string, number>();
+    const profitMap = new Map<string, number>();
+    const countMap = new Map<string, number>();
     
     shipments.forEach(s => {
       if (s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
@@ -253,8 +255,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
       const opProfit = expenses.netProfit + demurrageProfit;
 
-      // Identificar o Agenciador Líder responsável por este frete
-      let targetLeaderId = getLeaderIdForUser(s.embarcadorId) || getLeaderIdForUser(s.createdById);
+      // Identificar o Agenciador Líder responsável por este frete (direto ou via operador vinculado)
+      let targetLeaderId = getLeaderIdForUser(s.embarcadorId) || 
+                           getLeaderIdForUser(s.createdById) || 
+                           (cargo?.createdById ? getLeaderIdForUser(cargo.createdById) : undefined);
 
       if (!targetLeaderId && s.agencyCommissionAgencyName) {
         const matchedUser = users.find(u => 
@@ -266,10 +270,16 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         }
       }
 
-      const leaderUser = targetLeaderId ? userMap.get(targetLeaderId) : null;
+      if (!targetLeaderId) return;
+
+      const leaderUser = userMap.get(targetLeaderId);
       const isAgencyEnabled = s.agencyCommissionEnabled || Boolean(leaderUser);
 
-      if (!isAgencyEnabled || !targetLeaderId) return;
+      if (!isAgencyEnabled) return;
+
+      // Soma do Lucro Real de cada embarque do agenciador e seus operadores vinculados
+      profitMap.set(targetLeaderId, (profitMap.get(targetLeaderId) || 0) + opProfit);
+      countMap.set(targetLeaderId, (countMap.get(targetLeaderId) || 0) + 1);
 
       let val = s.agencyCommissionValue;
       if (val === undefined || val === null) {
@@ -281,11 +291,15 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       const agencyValNum = Number(val) || 0;
 
       if (agencyValNum > 0 || isAgencyEnabled) {
-        map.set(targetLeaderId, (map.get(targetLeaderId) || 0) + agencyValNum);
+        commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + agencyValNum);
       }
     });
 
-    return map;
+    return { 
+      userAgencyCommissionMap: commMap, 
+      userAgencyProfitMap: profitMap, 
+      userAgencyShipmentCountMap: countMap 
+    };
   }, [shipments, cargoMap, stays, users, userMap]);
 
   // Total geral de comissões de agenciamento em todos os fretes
@@ -428,13 +442,21 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   const isActive = user.hasCommercialCommission === true || user.profile === UserProfile.GerenteComercial || isAgenciador;
 
                   const totalAgencyShipmentComm = userAgencyCommissionMap.get(user.id) || 0;
+                  const totalAgencyShipmentProfit = userAgencyProfitMap.get(user.id) || 0;
+                  const agencyShipmentCount = userAgencyShipmentCountMap.get(user.id) || 0;
 
                   const userFixed = user.commercialFixedSalary !== undefined 
                     ? user.commercialFixedSalary 
                     : (isAgenciador ? 0 : DEFAULT_FIXED);
 
-                  const userMatrizRate = user.commercialMatrizRate ?? (isAgenciador ? 0 : DEFAULT_MATRIZ_RATE);
-                  const userFiliaisRate = user.commercialFiliaisRate ?? (isAgenciador ? 0 : DEFAULT_FILIAIS_RATE);
+                  const userMatrizRate = user.commercialMatrizRate !== undefined 
+                    ? user.commercialMatrizRate 
+                    : (isAgenciador ? 0 : DEFAULT_MATRIZ_RATE);
+
+                  const userFiliaisRate = user.commercialFiliaisRate !== undefined 
+                    ? user.commercialFiliaisRate 
+                    : (isAgenciador ? 0 : DEFAULT_FILIAIS_RATE);
+
                   const calcMode = user.commercialCalculationMode || 'bruto';
                   const isAgencyMode = user.commercialIsAgencyMode || isAgenciador;
 
@@ -561,14 +583,14 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                             <span className="font-bold text-purple-600 dark:text-purple-400">
                               Agenciamento ({user.agencyCommissionPercentage ?? 30}%)
                             </span>
-                            <div className="text-[11px] text-gray-500 font-bold">
+                            <div className="text-[11px] text-gray-900 dark:text-gray-100 font-bold">
                               {totalAgencyShipmentComm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </div>
-                            <div className="text-[10px] text-gray-400">
-                              s/ Lucro Real Líquido
+                            <div className="text-[10px] text-gray-400 font-sans">
+                              Comissão s/ Lucro Real Líquido
                             </div>
                             {effectiveMatrizRate > 0 && (
-                              <div className="text-[10px] text-blue-500">
+                              <div className="text-[10px] text-blue-500 font-sans">
                                 + Matriz ({effectiveMatrizRate.toFixed(2)}%): {matrizForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                               </div>
                             )}
@@ -586,9 +608,22 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                       {/* TOTAL A RECEBER */}
                       <td className="p-4 text-right font-mono font-black text-sm">
                         {isActive ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                            {totalForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </span>
+                          isAgenciador ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                                {totalAgencyShipmentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </span>
+                              <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 font-sans font-medium">
+                                Lucro Real ({agencyShipmentCount} {agencyShipmentCount === 1 ? 'embarque' : 'embarques'})
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-end">
+                              <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                                {totalForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </span>
+                            </div>
+                          )
                         ) : (
                           <span className="text-gray-400">R$ 0,00</span>
                         )}
