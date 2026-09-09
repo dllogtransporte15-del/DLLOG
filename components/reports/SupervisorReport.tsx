@@ -182,18 +182,23 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   const comissaoFiliaisDefault = totalFiliaisGross * (DEFAULT_FILIAIS_RATE / 100);
   const comissaoTotalCalculadaDefault = DEFAULT_FIXED + comissaoMatrizDefault + comissaoFiliaisDefault;
 
-  // Filtrar usuários comerciais
+  // Filtrar usuários comerciais e agenciadores
   const commercialUsers = useMemo(() => {
     return users.filter(u => 
       u.hasCommercialCommission === true || 
       u.profile === UserProfile.GerenteComercial || 
       u.profile === UserProfile.Comercial ||
-      u.profile === UserProfile.Supervisor
+      u.profile === UserProfile.Supervisor ||
+      u.profile === UserProfile.Agenciador
     );
   }, [users]);
 
   const activeCommissionUsers = useMemo(() => {
-    return commercialUsers.filter(u => u.hasCommercialCommission === true || u.profile === UserProfile.GerenteComercial);
+    return commercialUsers.filter(u => 
+      u.hasCommercialCommission === true || 
+      u.profile === UserProfile.GerenteComercial ||
+      u.profile === UserProfile.Agenciador
+    );
   }, [commercialUsers]);
 
   // Mapear contagem de usuários por agência / filial para divisão da comissão no modo Agência
@@ -212,9 +217,54 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return counts;
   }, [activeCommissionUsers, nonMatrizBranches]);
 
+  // Calcular comissão de agenciamento por agenciador/usuário
+  const userAgencyCommissionMap = useMemo(() => {
+    const map = new Map<string, number>();
+    
+    shipments.forEach(s => {
+      if (s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
+      
+      const cargo = cargoMap.get(s.cargoId);
+      const expenses = calculateShipmentExpenses(s, cargo);
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
+      const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+      const opProfit = expenses.netProfit + demurrageProfit;
+
+      let val = s.agencyCommissionValue;
+      if (val === undefined || val === null) {
+        const pct = s.agencyCommissionPercentage !== undefined ? s.agencyCommissionPercentage : 30;
+        val = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
+      }
+      const agencyValNum = Number(val) || 0;
+
+      if (agencyValNum > 0 || s.agencyCommissionEnabled) {
+        // Associar ao criador ou agenciador correspondente
+        if (s.createdById) {
+          map.set(s.createdById, (map.get(s.createdById) || 0) + agencyValNum);
+        }
+        // Também mapear por nome da agência se coincidir com o nome do usuário
+        if (s.agencyCommissionAgencyName) {
+          const matchedUser = users.find(u => u.name.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase());
+          if (matchedUser && matchedUser.id !== s.createdById) {
+            map.set(matchedUser.id, (map.get(matchedUser.id) || 0) + agencyValNum);
+          }
+        }
+      }
+    });
+
+    return map;
+  }, [shipments, cargoMap, stays, users]);
+
+  // Total geral de comissões de agenciamento em todos os fretes
+  const totalGlobalAgencyCommission = useMemo(() => {
+    let sum = 0;
+    userAgencyCommissionMap.forEach(val => { sum += val; });
+    return sum;
+  }, [userAgencyCommissionMap]);
+
   const toggleCommissionForUser = (user: User) => {
     if (!onSaveUser) return;
-    const nextState = !(user.hasCommercialCommission || user.profile === UserProfile.GerenteComercial);
+    const nextState = !(user.hasCommercialCommission || user.profile === UserProfile.GerenteComercial || user.profile === UserProfile.Agenciador);
     onSaveUser({
       ...user,
       hasCommercialCommission: nextState
@@ -222,13 +272,14 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   };
 
   const handleOpenEditBase = (user: User) => {
+    const isAgenciador = user.profile === UserProfile.Agenciador;
     setEditingUserForBase(user);
-    setFixedSalaryInput(user.commercialFixedSalary ?? DEFAULT_FIXED);
-    setMatrizRateInput(user.commercialMatrizRate ?? DEFAULT_MATRIZ_RATE);
-    setFiliaisRateInput(user.commercialFiliaisRate ?? DEFAULT_FILIAIS_RATE);
+    setFixedSalaryInput(user.commercialFixedSalary ?? (isAgenciador ? 0 : DEFAULT_FIXED));
+    setMatrizRateInput(user.commercialMatrizRate ?? (isAgenciador ? 0 : DEFAULT_MATRIZ_RATE));
+    setFiliaisRateInput(user.commercialFiliaisRate ?? (isAgenciador ? 0 : DEFAULT_FILIAIS_RATE));
     setSelectedBranchesInput(user.commercialSelectedBranchIds || nonMatrizBranches.map(b => b.id));
     setCalculationModeInput(user.commercialCalculationMode || 'bruto');
-    setIsAgencyModeInput(user.commercialIsAgencyMode || false);
+    setIsAgencyModeInput(user.commercialIsAgencyMode || isAgenciador);
     setAgencyShareInput(user.commercialAgencySharePercent);
   };
 
@@ -266,7 +317,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
             <Briefcase className="w-7 h-7 text-blue-400" />
-            Relatório Comercial
+            Relatório Comercial & Agenciamento
           </h2>
         </div>
         <div className="flex items-center gap-3">
@@ -296,23 +347,23 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         />
 
         <StatCard 
-          title="Comissão Total p/ Gerente" 
-          subtitle="Fixo R$ 5.000 + 0,20% Matriz + 0,10% Filiais"
-          value={comissaoTotalCalculadaDefault} 
+          title="Comissão Total Comercial & Agências" 
+          subtitle={`Comissões Gerência + Agenciamentos (${totalGlobalAgencyCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`}
+          value={comissaoTotalCalculadaDefault + totalGlobalAgencyCommission} 
           icon={<ShieldCheck className="w-6 h-6 text-emerald-500 dark:text-emerald-400"/>} 
           subtitleColor="text-emerald-600 dark:text-emerald-300 font-bold"
         />
       </div>
 
-      {/* TABELA DE COMERCIAIS */}
+      {/* TABELA DE COMERCIAIS E AGENCIADORES */}
       <div className="bg-white dark:bg-gray-800/90 rounded-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80 overflow-hidden">
         <div className="p-5 border-b border-gray-200 dark:border-gray-700/80 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-              Equipe Comercial e Gerentes
+              Equipe Comercial, Agenciadores e Gerentes
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Ative comissões, configure a modalidade agência (divisão de comissão) e filiais para cada membro.
+              Ative comissões, configure a modalidade agência (divisão de comissão) e filiais para cada membro comercial ou agenciador.
             </p>
           </div>
           <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-bold text-xs rounded-full">
@@ -340,13 +391,19 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">
                 {commercialUsers.map(user => {
-                  const isActive = user.hasCommercialCommission === true || user.profile === UserProfile.GerenteComercial;
+                  const isAgenciador = user.profile === UserProfile.Agenciador;
+                  const isActive = user.hasCommercialCommission === true || user.profile === UserProfile.GerenteComercial || isAgenciador;
 
-                  const userFixed = user.commercialFixedSalary ?? DEFAULT_FIXED;
-                  const userMatrizRate = user.commercialMatrizRate ?? DEFAULT_MATRIZ_RATE;
-                  const userFiliaisRate = user.commercialFiliaisRate ?? DEFAULT_FILIAIS_RATE;
+                  const totalAgencyShipmentComm = userAgencyCommissionMap.get(user.id) || 0;
+
+                  const userFixed = user.commercialFixedSalary !== undefined 
+                    ? user.commercialFixedSalary 
+                    : (isAgenciador ? 0 : DEFAULT_FIXED);
+
+                  const userMatrizRate = user.commercialMatrizRate ?? (isAgenciador ? 0 : DEFAULT_MATRIZ_RATE);
+                  const userFiliaisRate = user.commercialFiliaisRate ?? (isAgenciador ? 0 : DEFAULT_FILIAIS_RATE);
                   const calcMode = user.commercialCalculationMode || 'bruto';
-                  const isAgencyMode = user.commercialIsAgencyMode || false;
+                  const isAgencyMode = user.commercialIsAgencyMode || isAgenciador;
 
                   // Filiais selecionadas para este usuário
                   const userSelectedBranchIds = user.commercialSelectedBranchIds || nonMatrizBranches.map(b => b.id);
@@ -358,7 +415,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
                   // Fator de divisão da agência
                   let shareFactor = 1;
-                  if (isAgencyMode) {
+                  if (isAgencyMode && !isAgenciador) {
                     if (user.commercialAgencySharePercent !== undefined && user.commercialAgencySharePercent > 0) {
                       shareFactor = user.commercialAgencySharePercent / 100;
                     } else {
@@ -377,20 +434,26 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   const effectiveMatrizRate = userMatrizRate * (isAgencyMode ? shareFactor : 1);
                   const effectiveFiliaisRate = userFiliaisRate * (isAgencyMode ? shareFactor : 1);
 
-                  const matrizForUser = isActive ? targetMatrizRevenue * (effectiveMatrizRate / 100) : 0;
-                  const filiaisForUser = isActive ? userFiliaisRevenue * (effectiveFiliaisRate / 100) : 0;
-                  const totalForUser = isActive ? (userFixed + matrizForUser + filiaisForUser) : 0;
+                  const matrizForUser = (isActive && effectiveMatrizRate > 0) ? targetMatrizRevenue * (effectiveMatrizRate / 100) : 0;
+                  const filiaisForUser = (isActive && effectiveFiliaisRate > 0) ? userFiliaisRevenue * (effectiveFiliaisRate / 100) : 0;
+                  const totalForUser = isActive ? (userFixed + matrizForUser + filiaisForUser + totalAgencyShipmentComm) : 0;
 
                   return (
                     <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold shrink-0">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0 ${
+                            isAgenciador 
+                              ? 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400'
+                              : 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
+                          }`}>
                             <UsersIcon className="w-4 h-4" />
                           </div>
                           <div>
                             <div className="font-bold text-gray-900 dark:text-white text-sm">{user.name}</div>
-                            <div className="text-[11px] text-gray-500 dark:text-gray-400">{user.email} • <span className="font-semibold text-blue-500">{user.profile}</span></div>
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                              {user.email} • <span className={`font-semibold ${isAgenciador ? 'text-purple-600 dark:text-purple-400' : 'text-blue-500'}`}>{user.profile}</span>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -398,7 +461,11 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                       {/* MODALIDADE E TIPO DE BASE */}
                       <td className="p-4 font-bold space-y-1">
                         <div className="flex flex-col gap-1 items-start">
-                          {isAgencyMode ? (
+                          {isAgenciador ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 text-[10px] uppercase font-extrabold border border-purple-300 dark:border-purple-800">
+                              <Users className="w-3 h-3" /> Agenciador (30%)
+                            </span>
+                          ) : isAgencyMode ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 text-[10px] uppercase font-extrabold border border-purple-300 dark:border-purple-800">
                               <Users className="w-3 h-3" /> Agência ({ (shareFactor * 100).toFixed(0) }% pool)
                             </span>
@@ -443,9 +510,23 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                         )}
                       </td>
 
-                      {/* COM. MATRIZ (%) */}
+                      {/* COM. MATRIZ / AGENCIAMENTO (%) */}
                       <td className="p-4 font-mono">
-                        {isActive ? (
+                        {isAgenciador ? (
+                          <div>
+                            <span className="font-bold text-purple-600 dark:text-purple-400">
+                              Agenciamento (30%)
+                            </span>
+                            <div className="text-[11px] text-gray-500 font-bold">
+                              {totalAgencyShipmentComm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                            {effectiveMatrizRate > 0 && (
+                              <div className="text-[10px] text-blue-500">
+                                + Matriz ({effectiveMatrizRate.toFixed(2)}%): {matrizForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </div>
+                            )}
+                          </div>
+                        ) : isActive ? (
                           <div>
                             <span className="font-bold text-blue-600 dark:text-blue-400">
                               ({isAgencyMode ? effectiveMatrizRate.toFixed(2) : userMatrizRate.toFixed(2)}%)
