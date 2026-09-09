@@ -348,7 +348,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           isOpen={isAttachmentModalOpen}
           onClose={handleCloseAttachmentModal}
           onSave={handleSaveAttachment}
-          shipment={selectedShipment}
+          shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
           cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}

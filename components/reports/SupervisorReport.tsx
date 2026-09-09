@@ -199,6 +199,9 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   // Filtrar usuários comerciais e agenciadores líderes (agenciadores de embarque consolidam sob o líder)
   const commercialUsers = useMemo(() => {
     return users.filter(u => {
+      if (u.profile === UserProfile.Demonstracao || (u.profile as string) === 'Demo' || u.name?.toUpperCase().includes('DEMO')) {
+        return false;
+      }
       // Agenciador de Embarque não aparece como linha individual na tabela principal
       if (u.profile === UserProfile.Agenciador && u.agencyRole === 'embarque') {
         return false;

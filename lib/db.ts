@@ -586,6 +586,13 @@ const toShipment = (row: any): Shipment => ({
   nfeNumber: row.nfe_number || row.documents?.nfe_number,
   mdfeNumber: row.mdfe_number || row.documents?.mdfe_number,
   realProfitData: row.real_profit_data || row.documents?.real_profit_data,
+  isFederalTaxManual: row.is_federal_tax_manual !== null && row.is_federal_tax_manual !== undefined
+    ? Boolean(row.is_federal_tax_manual)
+    : (row.documents?.is_federal_tax_manual !== undefined
+        ? Boolean(row.documents.is_federal_tax_manual)
+        : (row.real_profit_data?.isFederalTaxManual !== undefined
+            ? Boolean(row.real_profit_data.isFederalTaxManual)
+            : undefined)),
   federalTax: row.federal_tax !== null && row.federal_tax !== undefined 
     ? Number(row.federal_tax) 
     : (row.documents?.federal_tax !== undefined && row.documents?.federal_tax !== null
@@ -626,6 +633,10 @@ const fromShipment = (s: Shipment) => ({
   scheduled_date: s.scheduledDate,
   scheduled_time: s.scheduledTime,
   arrival_time: s.arrivalTime,
+  is_federal_tax_manual: s.isFederalTaxManual !== undefined ? s.isFederalTaxManual : (s.realProfitData?.isFederalTaxManual ?? null),
+  federal_tax: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
+  imposto_federal: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
+  real_profit_data: s.realProfitData ?? null,
   documents: {
     ...(s.documents || {}),
     risk_release_code: s.riskReleaseCode ?? null,
@@ -642,6 +653,7 @@ const fromShipment = (s: Shipment) => ({
     cte_emission_date: s.cteEmissionDate ?? null,
     nfe_number: s.nfeNumber ?? null,
     mdfe_number: s.mdfeNumber ?? null,
+    is_federal_tax_manual: s.isFederalTaxManual !== undefined ? s.isFederalTaxManual : (s.realProfitData?.isFederalTaxManual ?? null),
     federal_tax: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
     imposto_federal: s.federalTax !== undefined ? s.federalTax : (s.realProfitData?.federalTax ?? null),
     real_profit_data: s.realProfitData ?? null,

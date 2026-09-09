@@ -1083,7 +1083,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             isOpen={isAttachmentModalOpen}
             onClose={handleCloseAttachmentModal}
             onSave={handleSaveAttachment}
-            shipment={selectedShipmentForAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
             cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
@@ -1159,7 +1159,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             isOpen={isAttachmentModalOpen}
             onClose={handleCloseAttachmentModal}
             onSave={handleSaveAttachment}
-            shipment={selectedShipmentForAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
             cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
@@ -1235,7 +1235,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             isOpen={isAttachmentModalOpen}
             onClose={handleCloseAttachmentModal}
             onSave={handleSaveAttachment}
-            shipment={selectedShipmentForAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
             cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
@@ -1311,7 +1311,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             isOpen={isAttachmentModalOpen}
             onClose={handleCloseAttachmentModal}
             onSave={handleSaveAttachment}
-            shipment={selectedShipmentForAttachment}
+            shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
             cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
@@ -1917,7 +1917,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           isOpen={isAttachmentModalOpen}
           onClose={handleCloseAttachmentModal}
           onSave={handleSaveAttachment}
-          shipment={selectedShipmentForAttachment}
+          shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
           currentUser={currentUser}
           cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}

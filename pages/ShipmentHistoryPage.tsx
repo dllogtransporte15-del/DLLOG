@@ -225,7 +225,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             isOpen={isAttachmentModalOpen}
             onClose={() => setAttachmentModalOpen(false)}
             onSave={handleSaveAttachment}
-            shipment={selectedShipment}
+            shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
             cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
             documentName="Documento"
             currentUser={currentUser}

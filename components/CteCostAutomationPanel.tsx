@@ -303,38 +303,59 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     return parseFloat(cleanStr);
   };
 
-  // Imposto Federal editável em Ag. Fiscal
-  const initialCustomFederalTax = shipment.realProfitData?.federalTax !== undefined 
-    ? shipment.realProfitData.federalTax 
-    : (shipment.federalTax !== undefined 
-        ? shipment.federalTax 
-        : ((shipment.documents as any)?.federal_tax !== undefined 
-            ? Number((shipment.documents as any).federal_tax) 
-            : ((shipment.documents as any)?.imposto_federal !== undefined 
-                ? Number((shipment.documents as any).imposto_federal) 
-                : undefined)));
+  // Imposto Federal editável
+  const isShipmentFederalTaxManual = Boolean(
+    shipment.isFederalTaxManual === true ||
+    shipment.realProfitData?.isFederalTaxManual === true ||
+    (shipment.documents as any)?.is_federal_tax_manual === true
+  );
+
+  const initialCustomFederalTax = isShipmentFederalTaxManual
+    ? (shipment.realProfitData?.federalTax !== undefined 
+        ? shipment.realProfitData.federalTax 
+        : (shipment.federalTax !== undefined 
+            ? shipment.federalTax 
+            : ((shipment.documents as any)?.federal_tax !== undefined 
+                ? Number((shipment.documents as any).federal_tax) 
+                : ((shipment.documents as any)?.imposto_federal !== undefined 
+                    ? Number((shipment.documents as any).imposto_federal) 
+                    : undefined))))
+    : undefined;
 
   const [customFederalTax, setCustomFederalTax] = React.useState<number | undefined>(initialCustomFederalTax);
+  const [isManualFederalTax, setIsManualFederalTax] = React.useState<boolean>(isShipmentFederalTaxManual);
   const [isEditingFederalTax, setIsEditingFederalTax] = React.useState(false);
   const [federalTaxInput, setFederalTaxInput] = React.useState<string>('');
   const [isSavingFederalTax, setIsSavingFederalTax] = React.useState(false);
   const [justSavedFederalTax, setJustSavedFederalTax] = React.useState(false);
 
   React.useEffect(() => {
-    const currentVal = shipment.realProfitData?.federalTax !== undefined 
-      ? shipment.realProfitData.federalTax 
-      : (shipment.federalTax !== undefined 
-          ? shipment.federalTax 
-          : ((shipment.documents as any)?.federal_tax !== undefined 
-              ? Number((shipment.documents as any).federal_tax) 
-              : ((shipment.documents as any)?.imposto_federal !== undefined 
-                  ? Number((shipment.documents as any).imposto_federal) 
-                  : undefined)));
-    setCustomFederalTax(currentVal);
-  }, [shipment.realProfitData?.federalTax, shipment.federalTax, shipment.documents]);
+    const isManual = Boolean(
+      shipment.isFederalTaxManual === true ||
+      shipment.realProfitData?.isFederalTaxManual === true ||
+      (shipment.documents as any)?.is_federal_tax_manual === true
+    );
+    setIsManualFederalTax(isManual);
+    if (isManual) {
+      const currentVal = shipment.realProfitData?.federalTax !== undefined 
+        ? shipment.realProfitData.federalTax 
+        : (shipment.federalTax !== undefined 
+            ? shipment.federalTax 
+            : ((shipment.documents as any)?.federal_tax !== undefined 
+                ? Number((shipment.documents as any).federal_tax) 
+                : ((shipment.documents as any)?.imposto_federal !== undefined 
+                    ? Number((shipment.documents as any).imposto_federal) 
+                    : undefined)));
+      setCustomFederalTax(currentVal);
+    } else {
+      setCustomFederalTax(undefined);
+    }
+  }, [shipment.isFederalTaxManual, shipment.realProfitData?.isFederalTaxManual, shipment.realProfitData?.federalTax, shipment.federalTax, shipment.documents]);
 
   const handleStartEditFederalTax = () => {
-    const currentNum = customFederalTax !== undefined ? customFederalTax : (impostoFederalLiquido > 0 ? impostoFederalLiquido : 0);
+    const currentNum = (isManualFederalTax && customFederalTax !== undefined) 
+      ? customFederalTax 
+      : (impostoFederalLiquido > 0 ? impostoFederalLiquido : 0);
     setFederalTaxInput(currentNum > 0 ? String(currentNum) : '');
     setIsEditingFederalTax(true);
   };
@@ -347,6 +368,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       
       // Atualiza estado local imediatamente para refletir no painel
       setCustomFederalTax(validNum);
+      setIsManualFederalTax(true);
       setIsEditingFederalTax(false);
       setJustSavedFederalTax(true);
       setTimeout(() => setJustSavedFederalTax(false), 3000);
@@ -356,39 +378,42 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
         userId: 'sistema',
         timestamp: new Date().toISOString(),
-        description: `Imposto Federal editado manualmente no status Ag. Fiscal: de "${formatBrl(oldTax)}" para "${formatBrl(validNum)}".`
+        description: `Imposto Federal editado manualmente: de "${formatBrl(oldTax)}" para "${formatBrl(validNum)}".`
       };
 
       const updatedHistory = [...(shipment.history || []), historyEntry];
       const updatedRealProfitData = {
         ...(shipment.realProfitData || {}),
         federalTax: validNum,
+        isFederalTaxManual: true,
       };
 
       const updatedDocs = {
         ...(shipment.documents || {}),
         imposto_federal: validNum,
         federal_tax: validNum,
+        is_federal_tax_manual: true,
         real_profit_data: updatedRealProfitData
       };
 
       const updatedShipment: Shipment = {
         ...shipment,
+        isFederalTaxManual: true,
         federalTax: validNum,
         realProfitData: updatedRealProfitData as any,
         history: updatedHistory,
         documents: updatedDocs
       };
 
+      await upsertShipment(updatedShipment);
       if (onUpdateShipmentData) {
         await onUpdateShipmentData(shipment.id, {
+          isFederalTaxManual: true,
           federalTax: validNum,
           realProfitData: updatedRealProfitData as any,
           history: updatedHistory,
           documents: updatedDocs
         });
-      } else {
-        await upsertShipment(updatedShipment);
       }
 
       showToast(`Imposto Federal atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
@@ -404,13 +429,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     setIsSavingFederalTax(true);
     try {
       setCustomFederalTax(undefined);
+      setIsManualFederalTax(false);
       setIsEditingFederalTax(false);
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
         userId: 'sistema',
         timestamp: new Date().toISOString(),
-        description: `Imposto Federal restaurado para o cálculo automático do sistema no status Ag. Fiscal.`
+        description: `Imposto Federal restaurado para o cálculo automático do sistema.`
       };
 
       const updatedHistory = [...(shipment.history || []), historyEntry];
@@ -418,6 +444,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         ...(shipment.realProfitData || {}),
       };
       delete (updatedRealProfitData as any).federalTax;
+      delete (updatedRealProfitData as any).isFederalTaxManual;
 
       const updatedDocs = {
         ...(shipment.documents || {}),
@@ -425,24 +452,26 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       };
       delete (updatedDocs as any).imposto_federal;
       delete (updatedDocs as any).federal_tax;
+      delete (updatedDocs as any).is_federal_tax_manual;
 
       const updatedShipment: Shipment = {
         ...shipment,
+        isFederalTaxManual: false,
         federalTax: undefined,
         realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
         documents: updatedDocs,
         history: updatedHistory,
       };
 
+      await upsertShipment(updatedShipment);
       if (onUpdateShipmentData) {
         await onUpdateShipmentData(shipment.id, {
+          isFederalTaxManual: false,
           federalTax: undefined,
           realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
           documents: updatedDocs,
           history: updatedHistory,
         });
-      } else {
-        await upsertShipment(updatedShipment);
       }
 
       showToast('Imposto Federal restaurado para o cálculo automático do sistema!', 'success');
@@ -1047,12 +1076,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : calculatedExportCredit;
 
   // 6. Débito PIS COFINS
-  const autoOrRealFederalTax = customFederalTax !== undefined
+  const isFederalTaxCustom = Boolean(isManualFederalTax && customFederalTax !== undefined);
+
+  const autoOrRealFederalTax = isFederalTaxCustom
     ? customFederalTax
-    : (autoFederalTax || shipment.realProfitData?.federalTax || shipment.federalTax);
-  const federalPisCofinsDebito = (isExportCargo && customFederalTax === undefined)
+    : undefined;
+
+  const federalPisCofinsDebito = isExportCargo
     ? 0
-    : ((autoOrRealFederalTax !== undefined && autoOrRealFederalTax > 0)
+    : ((autoOrRealFederalTax !== undefined && autoOrRealFederalTax >= 0)
         ? autoOrRealFederalTax
         : (baseFreteEmpresaLiqIcms > 0 ? Number((baseFreteEmpresaLiqIcms * (suspensionPercentage > 0 ? tributavelRatio : 1) * 0.0925).toFixed(2)) : 0));
 
@@ -1072,15 +1104,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   }
 
   // Imposto Federal Líquido Efetivo a Recolher
-  const impostoFederalLiquido = (isExportCargo && customFederalTax === undefined)
-    ? 0
-    : (customFederalTax !== undefined
-        ? customFederalTax
-        : ((autoOrRealFederalTax !== undefined && autoOrRealFederalTax > 0) 
-            ? autoOrRealFederalTax 
-            : impostoFederalMercadoInterno));
-
-  const isFederalTaxCustom = customFederalTax !== undefined;
+  const impostoFederalLiquido = isFederalTaxCustom
+    ? customFederalTax!
+    : (isExportCargo ? 0 : impostoFederalMercadoInterno);
 
   // 9. GR (Gerenciadora de Risco - Modalidade de Consulta Realizada)
   let historyRiskType: string | undefined;
@@ -1653,33 +1679,29 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               
               <div className="flex items-center gap-0.5 shrink-0">
                 <span className={`text-[8px] font-medium px-1 py-0.2 rounded ${
-                  isExportCargo && !isFederalTaxCustom
+                  isExportCargo
                     ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                    : isSimplesNacional && !isFederalTaxCustom
+                    : isSimplesNacional
                       ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                      : isFederalTaxCustom
-                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                        : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                 } max-w-[95px] truncate`} title={
                   isFederalTaxCustom
-                    ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)}`
+                    ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)} (Base cálculo: ${isExportCargo ? 'Exportação' : (isSimplesNacional ? 'Simples Nacional 3,40%' : (isShipmentPf ? 'PF 3,655%' : 'PJ Spread 9,25%'))})`
                     : isExportCargo 
                       ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' 
                       : isSimplesNacional
                         ? `Simples Nacional (Anexo III): 3,40% sobre Frete Empresa Bruto (${formatBrl(cteGrossFreight)})`
                         : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
                 }>
-                  {isFederalTaxCustom
-                    ? 'Manual'
-                    : (isExportCargo ? 'Exportação' : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25% Spread')))}
+                  {isExportCargo ? 'Exportação' : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25% Spread'))}
                 </span>
 
-                {isAguardandoFiscal && !isEditingFederalTax && (
+                {!isEditingFederalTax && (
                   <button
                     type="button"
                     onClick={handleStartEditFederalTax}
                     className="p-0.5 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
-                    title="Editar valor do Imposto Federal (Disponível em Ag. Fiscal)"
+                    title="Editar valor do Imposto Federal"
                   >
                     <Pencil className="w-2.5 h-2.5" />
                   </button>
@@ -1751,20 +1773,19 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   <div className={`text-xs font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
                     {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
                   </div>
-                  {isAguardandoFiscal && (
-                    <button
-                      type="button"
-                      onClick={handleStartEditFederalTax}
-                      className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
-                    >
-                      <Pencil className="w-2 h-2" />
-                      <span>editar</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleStartEditFederalTax}
+                    className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                    title="Editar valor do Imposto Federal"
+                  >
+                    <Pencil className="w-2 h-2" />
+                    <span>editar</span>
+                  </button>
                 </div>
                 <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
                   isFederalTaxCustom
-                    ? `Valor manual inserido em Ag. Fiscal. Cálculo padrão sugerido: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))}`
+                    ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)}. Cálculo automático sugerido: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))}`
                     : isExportCargo 
                       ? 'Exportação: Receita desonerada de PIS/COFINS' 
                       : isSimplesNacional

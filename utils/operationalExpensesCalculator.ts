@@ -161,13 +161,23 @@ export function calculateShipmentExpenses(
     impostoFederalMercadoInterno = impostoFederalPjSpread;
   }
 
-  const impostoFederal = isExportCargo
-    ? 0
-    : (shipment.realProfitData?.federalTax !== undefined && shipment.realProfitData.federalTax > 0
+  const isFederalTaxManual = Boolean(
+    shipment.isFederalTaxManual === true ||
+    shipment.realProfitData?.isFederalTaxManual === true ||
+    (shipment.documents as any)?.is_federal_tax_manual === true
+  );
+
+  const manualFederalTax = isFederalTaxManual
+    ? ((shipment.realProfitData?.federalTax !== undefined && shipment.realProfitData.federalTax !== null)
         ? shipment.realProfitData.federalTax
-        : (shipment.federalTax !== undefined && shipment.federalTax > 0
+        : ((shipment.federalTax !== undefined && shipment.federalTax !== null)
             ? shipment.federalTax
-            : impostoFederalMercadoInterno));
+            : undefined))
+    : undefined;
+
+  const impostoFederal = manualFederalTax !== undefined
+    ? manualFederalTax
+    : (isExportCargo ? 0 : impostoFederalMercadoInterno);
 
   // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
   const toll = shipment.tollValue || shipment.realProfitData?.toll || 0;

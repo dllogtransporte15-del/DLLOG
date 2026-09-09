@@ -483,7 +483,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           isOpen={isAttachmentModalOpen}
           onClose={handleCloseAttachmentModal}
           onSave={handleSaveAttachment}
-          shipment={selectedShipment}
+          shipment={allShipments.find(s => s.id === selectedShipment.id) || selectedShipment}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
           cargo={loads.find(c => c.id === selectedShipment.cargoId)}

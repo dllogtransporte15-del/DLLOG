@@ -437,6 +437,7 @@ export interface RealProfitData {
   toll?: number;
   icmsDifference?: number;
   federalTax?: number;
+  isFederalTaxManual?: boolean;
   inssPatronal?: number;
   insuranceDifference?: number;
   insuranceAcidente?: number; // 0,0125% do valor da NF
@@ -507,6 +508,7 @@ export interface Shipment {
   freightCalculationType?: FreightCalculationType;
   icmsValue?: number;
   federalTax?: number;
+  isFederalTaxManual?: boolean;
   driverFreightType?: 'PJ' | 'PF';
   route?: string;
   isExport?: boolean;

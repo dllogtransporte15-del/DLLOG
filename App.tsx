@@ -1971,7 +1971,7 @@ const App: React.FC = () => {
       'horsePlate', 'trailer1Plate', 'trailer2Plate', 'trailer3Plate', 
       'vehicleTag', 'vehicleSetType', 'vehicleBodyType',
       'shipmentTonnage', 'bankDetails', 'driverReferences', 'ownerContact', 'anttOwnerIdentifier',
-      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber', 'federalTax',
+      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber', 'federalTax', 'isFederalTaxManual',
       'riskQueryType', 'riskQueryCost', 'riskReleaseCode',
       'advancePercentage', 'paymentMethod', 'pixKey'
     ];
@@ -2023,6 +2023,7 @@ const App: React.FC = () => {
       ...(data.riskQueryType !== undefined ? { risk_query_type: data.riskQueryType } : {}),
       ...(data.riskQueryCost !== undefined ? { risk_query_cost: data.riskQueryCost } : {}),
       ...(data.riskReleaseCode !== undefined ? { risk_release_code: data.riskReleaseCode } : {}),
+      ...(data.isFederalTaxManual !== undefined ? { is_federal_tax_manual: data.isFederalTaxManual } : {}),
       ...(data.federalTax !== undefined ? { federal_tax: data.federalTax, imposto_federal: data.federalTax } : {}),
       ...(data.realProfitData !== undefined ? { real_profit_data: data.realProfitData } : {}),
     };

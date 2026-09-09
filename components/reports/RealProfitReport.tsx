@@ -1166,7 +1166,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             }
             setEditingShipmentForAttachment(null);
           }}
-          shipment={editingShipmentForAttachment}
+          shipment={shipments.find(s => s.id === editingShipmentForAttachment.id) || editingShipmentForAttachment}
           cargo={cargoMap.get(editingShipmentForAttachment.cargoId)}
           documentName="Comprovante de Pagamento de Saldo"
           currentUser={currentUser}
