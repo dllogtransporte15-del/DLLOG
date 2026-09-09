@@ -182,15 +182,38 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   const comissaoFiliaisDefault = totalFiliaisGross * (DEFAULT_FILIAIS_RATE / 100);
   const comissaoTotalCalculadaDefault = DEFAULT_FIXED + comissaoMatrizDefault + comissaoFiliaisDefault;
 
-  // Filtrar usuários comerciais e agenciadores
+  // Mapeamento de usuários para resolução rápida do líder da agência
+  const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
+
+  // Função auxiliar para obter o ID do Agenciador Líder responsável por um usuário
+  const getLeaderIdForUser = (userId?: string): string | undefined => {
+    if (!userId) return undefined;
+    const user = userMap.get(userId);
+    if (!user) return undefined;
+    if (user.profile === UserProfile.Agenciador) {
+      if (user.agencyRole === 'embarque' && user.agencyLeaderId) {
+        return user.agencyLeaderId;
+      }
+      return user.id;
+    }
+    return undefined;
+  };
+
+  // Filtrar usuários comerciais e agenciadores líderes (agenciadores de embarque consolidam sob o líder)
   const commercialUsers = useMemo(() => {
-    return users.filter(u => 
-      u.hasCommercialCommission === true || 
-      u.profile === UserProfile.GerenteComercial || 
-      u.profile === UserProfile.Comercial ||
-      u.profile === UserProfile.Supervisor ||
-      u.profile === UserProfile.Agenciador
-    );
+    return users.filter(u => {
+      // Agenciador de Embarque não aparece como linha individual na tabela principal
+      if (u.profile === UserProfile.Agenciador && u.agencyRole === 'embarque') {
+        return false;
+      }
+      return (
+        u.hasCommercialCommission === true || 
+        u.profile === UserProfile.GerenteComercial || 
+        u.profile === UserProfile.Comercial ||
+        u.profile === UserProfile.Supervisor ||
+        u.profile === UserProfile.Agenciador
+      );
+    });
   }, [users]);
 
   const activeCommissionUsers = useMemo(() => {
@@ -217,7 +240,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return counts;
   }, [activeCommissionUsers, nonMatrizBranches]);
 
-  // Calcular comissão de agenciamento por agenciador/usuário
+  // Calcular comissão de agenciamento por Agenciador Líder (consolidando equipe)
   const userAgencyCommissionMap = useMemo(() => {
     const map = new Map<string, number>();
     
@@ -230,30 +253,40 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
       const opProfit = expenses.netProfit + demurrageProfit;
 
+      // Identificar o Agenciador Líder responsável por este frete
+      let targetLeaderId = getLeaderIdForUser(s.embarcadorId) || getLeaderIdForUser(s.createdById);
+
+      if (!targetLeaderId && s.agencyCommissionAgencyName) {
+        const matchedUser = users.find(u => 
+          u.name.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase() ||
+          s.agencyCommissionAgencyName?.toLowerCase().includes(u.name.toLowerCase())
+        );
+        if (matchedUser) {
+          targetLeaderId = getLeaderIdForUser(matchedUser.id);
+        }
+      }
+
+      const leaderUser = targetLeaderId ? userMap.get(targetLeaderId) : null;
+      const isAgencyEnabled = s.agencyCommissionEnabled || Boolean(leaderUser);
+
+      if (!isAgencyEnabled || !targetLeaderId) return;
+
       let val = s.agencyCommissionValue;
       if (val === undefined || val === null) {
-        const pct = s.agencyCommissionPercentage !== undefined ? s.agencyCommissionPercentage : 30;
+        const pct = s.agencyCommissionPercentage !== undefined 
+          ? s.agencyCommissionPercentage 
+          : (leaderUser?.agencyCommissionPercentage ?? 30);
         val = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
       }
       const agencyValNum = Number(val) || 0;
 
-      if (agencyValNum > 0 || s.agencyCommissionEnabled) {
-        // Associar ao criador ou agenciador correspondente
-        if (s.createdById) {
-          map.set(s.createdById, (map.get(s.createdById) || 0) + agencyValNum);
-        }
-        // Também mapear por nome da agência se coincidir com o nome do usuário
-        if (s.agencyCommissionAgencyName) {
-          const matchedUser = users.find(u => u.name.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase());
-          if (matchedUser && matchedUser.id !== s.createdById) {
-            map.set(matchedUser.id, (map.get(matchedUser.id) || 0) + agencyValNum);
-          }
-        }
+      if (agencyValNum > 0 || isAgencyEnabled) {
+        map.set(targetLeaderId, (map.get(targetLeaderId) || 0) + agencyValNum);
       }
     });
 
     return map;
-  }, [shipments, cargoMap, stays, users]);
+  }, [shipments, cargoMap, stays, users, userMap]);
 
   // Total geral de comissões de agenciamento em todos os fretes
   const totalGlobalAgencyCommission = useMemo(() => {
@@ -451,8 +484,19 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                           </div>
                           <div>
                             <div className="font-bold text-gray-900 dark:text-white text-sm">{user.name}</div>
-                            <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                              {user.email} • <span className={`font-semibold ${isAgenciador ? 'text-purple-600 dark:text-purple-400' : 'text-blue-500'}`}>{user.profile}</span>
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1 flex-wrap">
+                              <span>{user.email} •</span>
+                              <span className={`font-semibold ${isAgenciador ? 'text-purple-600 dark:text-purple-400' : 'text-blue-500'}`}>
+                                {isAgenciador ? 'Agenciador Líder' : user.profile}
+                              </span>
+                              {isAgenciador && (() => {
+                                const teamCount = users.filter(u => u.profile === UserProfile.Agenciador && u.agencyRole === 'embarque' && u.agencyLeaderId === user.id).length;
+                                return teamCount > 0 ? (
+                                  <span className="text-[10px] bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 px-1.5 py-0.2 rounded font-bold" title={`Equipe com ${teamCount} agenciador(es) de embarque vinculados`}>
+                                    +{teamCount} {teamCount === 1 ? 'operador' : 'operadores'}
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -463,7 +507,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                         <div className="flex flex-col gap-1 items-start">
                           {isAgenciador ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 text-[10px] uppercase font-extrabold border border-purple-300 dark:border-purple-800">
-                              <Users className="w-3 h-3" /> Agenciador (30%)
+                              <Users className="w-3 h-3" /> Agenciador ({user.agencyCommissionPercentage ?? 30}%)
                             </span>
                           ) : isAgencyMode ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 text-[10px] uppercase font-extrabold border border-purple-300 dark:border-purple-800">
@@ -515,10 +559,13 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                         {isAgenciador ? (
                           <div>
                             <span className="font-bold text-purple-600 dark:text-purple-400">
-                              Agenciamento (30%)
+                              Agenciamento ({user.agencyCommissionPercentage ?? 30}%)
                             </span>
                             <div className="text-[11px] text-gray-500 font-bold">
                               {totalAgencyShipmentComm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                            <div className="text-[10px] text-gray-400">
+                              s/ Lucro Real Líquido
                             </div>
                             {effectiveMatrizRate > 0 && (
                               <div className="text-[10px] text-blue-500">

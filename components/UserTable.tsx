@@ -7,6 +7,7 @@ import { Building2, Smartphone, PhoneOff } from 'lucide-react';
 
 interface UserTableProps {
   users: User[];
+  allUsers?: User[];
   onEdit?: (user: User) => void;
   onDelete?: (userId: string) => void;
   clients?: Client[];
@@ -14,7 +15,7 @@ interface UserTableProps {
   onToggleDriverRequests?: (user: User) => void;
 }
 
-const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
+const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
   const getWhatsAppUrl = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     const finalDigits = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
@@ -24,6 +25,8 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients,
   const isInternal = (profile?: UserProfile | string) => {
     return profile !== UserProfile.Cliente && profile !== UserProfile.Motorista;
   };
+
+  const fullUserList = allUsers || users;
 
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -48,7 +51,12 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients,
             </tr>
           </thead>
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {users.map((user) => (
+            {users.map((user) => {
+              const agencyLeader = user.profile === UserProfile.Agenciador && user.agencyRole === 'embarque' && user.agencyLeaderId
+                ? fullUserList.find(u => u.id === user.agencyLeaderId)
+                : null;
+
+              return (
               <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                 <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
@@ -84,9 +92,15 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients,
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-medium text-gray-900 dark:text-white">{user.profile}</span>
                       {user.profile === UserProfile.Agenciador && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
-                          Agência 30%
-                        </span>
+                        user.agencyRole === 'embarque' ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300">
+                            Agenciador Embarque
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
+                            Agenciador Líder ({user.agencyCommissionPercentage ?? 30}%)
+                          </span>
+                        )
                       )}
                       {user.shipperCommissionRatePerTon !== undefined && user.shipperCommissionRatePerTon > 0 && (
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300" title={`Comissão do Embarcador: R$ ${user.shipperCommissionRatePerTon.toFixed(2)} por tonelada`}>
@@ -94,6 +108,11 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients,
                         </span>
                       )}
                     </div>
+                    {user.profile === UserProfile.Agenciador && user.agencyRole === 'embarque' && (
+                      <span className="text-[10px] text-purple-700 dark:text-purple-300 font-medium truncate max-w-[170px]" title={agencyLeader ? `Vinculado ao Líder: ${agencyLeader.name}` : 'Sem líder vinculado'}>
+                        ↳ Líder: {agencyLeader ? agencyLeader.name : 'Não vinculado'}
+                      </span>
+                    )}
                     {user.profile === UserProfile.Cliente && user.clientId && (
                       <span className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 font-medium truncate max-w-[160px]" title={clients?.find(c => c.id === user.clientId)?.nomeFantasia || clients?.find(c => c.id === user.clientId)?.razaoSocial}>
                         <Building2 className="w-3 h-3 flex-shrink-0" />
@@ -155,7 +174,8 @@ const UserTable: React.FC<UserTableProps> = ({ users, onEdit, onDelete, clients,
                   </td>
                 )}
               </tr>
-            ))}
+            );
+          })}
             {users.length === 0 && (
               <tr>
                 <td colSpan={((onEdit || onDelete) ? 7 : 6) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">

@@ -120,6 +120,13 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, onEdit, onDelete }) 
                           {client.razaoSocial}
                         </div>
                       )}
+                      {client.salespersonName && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                            👤 {client.salespersonName} {client.salespersonCommissionPerTon ? `• R$ ${Number(client.salespersonCommissionPerTon).toFixed(2)}/t` : ''}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-3.5 align-middle">
                       <div className="flex flex-wrap items-center gap-1.5">

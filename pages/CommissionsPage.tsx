@@ -31,7 +31,7 @@ const CommissionsPage: React.FC<CommissionsPageProps> = ({ shipments, cargos, us
       case 'embarcador':
         return <ShipperReport shipments={shipments} cargos={cargos} clients={clients} users={users} currentUser={null} />;
       case 'vendedor-externo':
-        return <ExternalSalespersonReport shipments={shipments} cargos={cargos} />;
+        return <ExternalSalespersonReport shipments={shipments} cargos={cargos} clients={clients} />;
       default:
         return null;
     }

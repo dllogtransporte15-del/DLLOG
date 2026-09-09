@@ -153,7 +153,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       dailySchedule: [],
       observations: '',
       attachments: [],
-      salespersonCommissionPerTon: 0,
+      salespersonName: firstClient?.salespersonName || '',
+      salespersonCommissionPerTon: firstClient?.salespersonCommissionPerTon || 0,
       branchId: currentUser.branchId,
       schedulingSystemUrl: '',
       schedulingUser: '',
@@ -300,9 +301,21 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
             setShowSalesperson(!!editableLoad.salespersonName);
         } else {
             const { scheduledVolume, loadedVolume, ...initialState } = getInitialState();
-            setLoad({ ...initialState, createdById: currentUser.id, allowedUserIds: internalUsers.map(u => u.id) });
+            const initClient = clients.find(c => c.id === initialState.clientId);
+            const initSalesperson = initClient?.salespersonName || initialState.salespersonName || '';
+            const initCommission = initClient?.salespersonCommissionPerTon !== undefined && initClient.salespersonCommissionPerTon > 0
+              ? initClient.salespersonCommissionPerTon
+              : (initialState.salespersonCommissionPerTon || 0);
+
+            setLoad({
+              ...initialState,
+              salespersonName: initSalesperson,
+              salespersonCommissionPerTon: initCommission,
+              createdById: currentUser.id,
+              allowedUserIds: internalUsers.map(u => u.id)
+            });
             setHasMultiLeg(false);
-            setShowSalesperson(false);
+            setShowSalesperson(Boolean(initSalesperson));
         }
     }
     prevIsOpen.current = isOpen;
@@ -754,19 +767,30 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                           onChange={(e) => {
                             const newClientId = e.target.value;
                             const selClient = clients.find(c => c.id === newClientId);
+                            const clientSalesperson = selClient?.salespersonName || '';
+                            const clientCommission = selClient?.salespersonCommissionPerTon || 0;
+                            
                             setLoad(prev => ({
                               ...prev,
                               clientId: newClientId,
                               clientCnpj: selClient?.cnpj || '',
-                              clientBranchId: ''
+                              clientBranchId: '',
+                              salespersonName: clientSalesperson || prev.salespersonName || '',
+                              salespersonCommissionPerTon: clientSalesperson
+                                ? clientCommission
+                                : (prev.salespersonCommissionPerTon || 0)
                             }));
+
+                            if (clientSalesperson) {
+                              setShowSalesperson(true);
+                            }
                           }} 
                           className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 focus:border-transparent transition-all shadow-xs font-medium" 
                           required
                         >
                             {clients.map(c => (
                               <option key={c.id} value={c.id}>
-                                {c.nomeFantasia || c.razaoSocial} {c.secondaryCnpjs && c.secondaryCnpjs.length > 0 ? `(${c.secondaryCnpjs.length + 1} CNPJs)` : `(${c.cnpj})`}
+                                {c.nomeFantasia || c.razaoSocial} {c.secondaryCnpjs && c.secondaryCnpjs.length > 0 ? `(${c.secondaryCnpjs.length + 1} CNPJs)` : `(${c.cnpj})`} {c.salespersonName ? `[Vendedor: ${c.salespersonName}]` : ''}
                               </option>
                             ))}
                         </select>
@@ -788,11 +812,24 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                 if (val.startsWith('branch_')) {
                                   const branchId = val.replace('branch_', '');
                                   const foundBranch = branches.find(b => b.id === branchId);
+                                  const branchSalesperson = foundBranch?.salespersonName || selectedClient?.salespersonName || '';
+                                  const branchCommission = (foundBranch?.salespersonCommissionPerTon !== undefined && foundBranch?.salespersonCommissionPerTon > 0)
+                                    ? foundBranch.salespersonCommissionPerTon
+                                    : (selectedClient?.salespersonCommissionPerTon || 0);
+
                                   setLoad(prev => ({
                                     ...prev,
                                     clientBranchId: branchId,
-                                    clientCnpj: foundBranch?.cnpj || ''
+                                    clientCnpj: foundBranch?.cnpj || '',
+                                    ...(branchSalesperson ? {
+                                      salespersonName: branchSalesperson,
+                                      salespersonCommissionPerTon: branchCommission
+                                    } : {})
                                   }));
+
+                                  if (branchSalesperson) {
+                                    setShowSalesperson(true);
+                                  }
                                 } else {
                                   setLoad(prev => ({
                                     ...prev,

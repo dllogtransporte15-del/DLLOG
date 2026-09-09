@@ -178,6 +178,8 @@ const toClient = (row: any): Client => ({
   paymentTerm: typeof row.payment_term === 'number' ? row.payment_term : (parseInt(row.payment_term, 10) || 0),
   requiresExternalOrder: !!row.requires_external_order,
   requiresScheduling: !!row.requires_scheduling,
+  salespersonName: row.salesperson_name || '',
+  salespersonCommissionPerTon: row.salesperson_commission_per_ton !== undefined && row.salesperson_commission_per_ton !== null ? Number(row.salesperson_commission_per_ton) : 0,
 });
 
 const fromClient = (c: Client | Omit<Client, 'id'>) => ({
@@ -194,6 +196,8 @@ const fromClient = (c: Client | Omit<Client, 'id'>) => ({
   payment_term: c.paymentTerm !== undefined && c.paymentTerm !== null ? String(c.paymentTerm) : '0',
   requires_external_order: c.requiresExternalOrder ?? false,
   requires_scheduling: c.requiresScheduling ?? false,
+  salesperson_name: c.salespersonName || null,
+  salesperson_commission_per_ton: c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon !== null ? Number(c.salespersonCommissionPerTon) : 0,
 });
 
 const toOwner = (row: any): Owner => ({
@@ -715,6 +719,9 @@ export const toUser = (row: any): User => {
     commercialAgencySharePercent: perms.commercialAgencySharePercent ?? undefined,
     availableForDriverRequests: perms.availableForDriverRequests ?? row.available_for_driver_requests ?? true,
     shipperCommissionRatePerTon: perms.shipperCommissionRatePerTon !== undefined ? Number(perms.shipperCommissionRatePerTon) : (row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : undefined),
+    agencyCommissionPercentage: perms.agencyCommissionPercentage !== undefined ? Number(perms.agencyCommissionPercentage) : (row.agency_commission_percentage !== undefined ? Number(row.agency_commission_percentage) : undefined),
+    agencyRole: perms.agencyRole ?? row.agency_role ?? (row.profile === 'Agenciador' ? 'lider' : undefined),
+    agencyLeaderId: perms.agencyLeaderId ?? row.agency_leader_id ?? undefined,
   };
 };
 
@@ -734,6 +741,9 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
     commercialAgencySharePercent: u.commercialAgencySharePercent,
     availableForDriverRequests: u.availableForDriverRequests !== undefined ? u.availableForDriverRequests : true,
     shipperCommissionRatePerTon: u.shipperCommissionRatePerTon,
+    agencyCommissionPercentage: u.agencyCommissionPercentage,
+    agencyRole: u.agencyRole,
+    agencyLeaderId: u.agencyLeaderId,
   };
 
   return {
@@ -922,16 +932,57 @@ export const saveClientBranches = async (branchesMap: Record<string, ClientBranc
   } catch {}
 };
 
+export const fetchClientExtraConfig = async (): Promise<Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (data?.permissions?.client_extra_config) {
+      return data.permissions.client_extra_config;
+    }
+  } catch (err) {
+    console.warn('[DB] Error loading client extra config:', err);
+  }
+  try {
+    const local = localStorage.getItem('transcunha_client_extra_config');
+    if (local) return JSON.parse(local);
+  } catch {}
+  return {};
+};
+
+export const saveClientExtraConfig = async (configMap: Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>): Promise<void> => {
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      client_extra_config: configMap
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving client extra config:', err);
+  }
+  try {
+    localStorage.setItem('transcunha_client_extra_config', JSON.stringify(configMap));
+  } catch {}
+};
+
 export async function fetchClients(): Promise<Client[]> {
   try {
-    const [data, branchesMap] = await Promise.all([
+    const [data, branchesMap, extraConfigMap] = await Promise.all([
       fetchAllRows('clients', 'nome_fantasia'),
-      fetchClientBranches()
+      fetchClientBranches(),
+      fetchClientExtraConfig()
     ]);
-    return data.map(toClient).map(c => ({
-      ...c,
-      secondaryCnpjs: branchesMap[c.id] || []
-    }));
+    return data.map(toClient).map(c => {
+      const extra = extraConfigMap[c.id] || {};
+      return {
+        ...c,
+        salespersonName: c.salespersonName || extra.salespersonName || '',
+        salespersonCommissionPerTon: (c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon > 0)
+          ? c.salespersonCommissionPerTon
+          : (extra.salespersonCommissionPerTon || 0),
+        secondaryCnpjs: branchesMap[c.id] || []
+      };
+    });
   } catch (error) {
     return handleAuthError(error, []);
   }
@@ -1231,8 +1282,42 @@ export async function deleteRiskQueryOption(id: string): Promise<void> {
 // ─────────────────────────────────────────────
 
 export async function upsertClient(client: Client): Promise<void> {
-  const { error } = await supabase.from('clients').upsert(fromClient(client));
-  if (error) throw error;
+  const payload = fromClient(client);
+  let upsertError: any = null;
+  try {
+    const { error } = await supabase.from('clients').upsert(payload);
+    if (error) {
+      upsertError = error;
+      const safePayload = { ...payload };
+      delete (safePayload as any).salesperson_name;
+      delete (safePayload as any).salesperson_commission_per_ton;
+      const { error: retryError } = await supabase.from('clients').upsert(safePayload);
+      if (retryError) throw retryError;
+    }
+  } catch (err) {
+    if (upsertError) {
+      const safePayload = { ...payload };
+      delete (safePayload as any).salesperson_name;
+      delete (safePayload as any).salesperson_commission_per_ton;
+      const { error: retryError } = await supabase.from('clients').upsert(safePayload);
+      if (retryError) throw retryError;
+    } else {
+      throw err;
+    }
+  }
+
+  // Persist extra config fallback
+  try {
+    const extraConfigMap = await fetchClientExtraConfig();
+    extraConfigMap[client.id] = {
+      salespersonName: client.salespersonName || '',
+      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0
+    };
+    await saveClientExtraConfig(extraConfigMap);
+  } catch (err) {
+    console.warn('[DB] Error persisting client extra config in upsertClient:', err);
+  }
+
   if (client.secondaryCnpjs !== undefined) {
     try {
       const branchesMap = await fetchClientBranches();

@@ -239,6 +239,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
 
       <UserTable 
         users={filteredUsers} 
+        allUsers={users}
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         clients={clients}
@@ -253,6 +254,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
         userToEdit={userToEdit}
         clients={clients}
         branches={branches}
+        users={users}
         defaultProfile={defaultProfileForNewUser}
       />
       

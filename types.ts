@@ -64,6 +64,9 @@ export interface User {
   commercialAgencySharePercent?: number;
   availableForDriverRequests?: boolean;
   shipperCommissionRatePerTon?: number;
+  agencyCommissionPercentage?: number;
+  agencyRole?: 'lider' | 'embarque';
+  agencyLeaderId?: string;
   customPermissions?: { [key in Page]?: CrudPermissions };
 }
 
@@ -93,6 +96,8 @@ export interface ClientBranchCnpj {
   paymentTerm?: number;
   requiresExternalOrder?: boolean;
   requiresScheduling?: boolean;
+  salespersonName?: string;
+  salespersonCommissionPerTon?: number;
 }
 
 export interface Client {
@@ -110,6 +115,8 @@ export interface Client {
   requiresExternalOrder: boolean;
   requiresScheduling: boolean;
   secondaryCnpjs?: ClientBranchCnpj[];
+  salespersonName?: string;
+  salespersonCommissionPerTon?: number;
 }
 
 export enum OwnerType {

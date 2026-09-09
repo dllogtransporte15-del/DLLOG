@@ -131,7 +131,11 @@ import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('trancunha_currentUser');
+    try {
+      localStorage.removeItem('trancunha_currentUser');
+      localStorage.removeItem('trancunha_user_email');
+    } catch {}
+    const saved = sessionStorage.getItem('trancunha_currentUser');
     try {
       return saved ? JSON.parse(saved) : null;
     } catch {
@@ -281,14 +285,14 @@ const App: React.FC = () => {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, [profilePermissions?.system_settings?.pwa_enabled]);
 
-  // Persistência local do usuário logado
+  // Persistência da sessão (apenas enquanto a janela/navegador estiver aberta)
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('trancunha_currentUser', JSON.stringify(currentUser));
-      localStorage.setItem('trancunha_user_email', currentUser.email);
+      sessionStorage.setItem('trancunha_currentUser', JSON.stringify(currentUser));
+      sessionStorage.setItem('trancunha_user_email', currentUser.email);
     } else {
-      localStorage.removeItem('trancunha_currentUser');
-      localStorage.removeItem('trancunha_user_email');
+      sessionStorage.removeItem('trancunha_currentUser');
+      sessionStorage.removeItem('trancunha_user_email');
     }
   }, [currentUser]);
 
@@ -460,18 +464,14 @@ const App: React.FC = () => {
     console.log('[Auth] Iniciando verificação de sessão...');
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const savedUserEmail = localStorage.getItem('trancunha_user_email') || session?.user?.email;
+      const savedUserEmail = sessionStorage.getItem('trancunha_user_email');
 
       if (savedUserEmail) {
-        if (localStorage.getItem('trancunha_user_email') && session?.user?.email && localStorage.getItem('trancunha_user_email') !== session?.user?.email) {
-          console.warn('[Auth] Mismatch detected between localStorage and Supabase session.');
-        }
         console.log('[Auth] Recuperando perfil para:', savedUserEmail);
 
-        // Verifica se o usuário salvo no localStorage já é um motorista
+        // Verifica se o usuário salvo na sessão já é um motorista
         let savedUser: User | null = null;
-        try { savedUser = JSON.parse(localStorage.getItem('trancunha_currentUser') || 'null'); } catch { savedUser = null; }
+        try { savedUser = JSON.parse(sessionStorage.getItem('trancunha_currentUser') || 'null'); } catch { savedUser = null; }
         const isMotoristaSession = savedUser?.profile === UserProfile.Motorista;
 
         if (isMotoristaSession) {
@@ -541,7 +541,7 @@ const App: React.FC = () => {
           setCurrentUser(null);
         }
       } else {
-        console.log('[Auth] Nenhuma sessão encontrada.');
+        console.log('[Auth] Nenhuma sessão encontrada na aba atual.');
         setCurrentUser(null);
       }
     } catch (err) {
@@ -582,8 +582,10 @@ const App: React.FC = () => {
 
   // --- AUTH HANDLERS ---
   const handleLogin = (user: User) => {
-    localStorage.setItem('trancunha_user_email', user.email);
-    localStorage.setItem('trancunha_currentUser', JSON.stringify(user));
+    sessionStorage.setItem('trancunha_user_email', user.email);
+    sessionStorage.setItem('trancunha_currentUser', JSON.stringify(user));
+    localStorage.removeItem('trancunha_user_email');
+    localStorage.removeItem('trancunha_currentUser');
     setCurrentUser(user);
     if (user.profile === UserProfile.Motorista) {
       setCurrentPage('operational-loads');
@@ -593,7 +595,10 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    sessionStorage.removeItem('trancunha_user_email');
+    sessionStorage.removeItem('trancunha_currentUser');
     localStorage.removeItem('trancunha_user_email');
+    localStorage.removeItem('trancunha_currentUser');
     setCurrentUser(null);
     setCurrentPage('dashboard');
   };
@@ -1227,12 +1232,22 @@ const App: React.FC = () => {
     if (data.bankDetails) historyMsg += ` Dados bancários preenchidos.`;
 
     // Identificação de comissão automática:
-    // 1. Agenciador: ativação automática de 30% de comissão de agência
+    // 1. Agenciador: ativação automática de comissão de agência vinculada ao Líder da Agência
     const requestingUser = users.find(u => u.id === data.embarcadorId) || currentUser;
     const isAgenciadorRequester = requestingUser.profile === UserProfile.Agenciador || currentUser.profile === UserProfile.Agenciador;
-    const agencyNameAuto = requestingUser.branchId 
-      ? `Agência ${requestingUser.branchId} (${requestingUser.name})` 
-      : requestingUser.name;
+    
+    const activeAgenciador = requestingUser.profile === UserProfile.Agenciador 
+      ? requestingUser 
+      : (currentUser.profile === UserProfile.Agenciador ? currentUser : null);
+
+    const agencyLeader = (activeAgenciador && activeAgenciador.agencyRole === 'embarque' && activeAgenciador.agencyLeaderId)
+      ? users.find(u => u.id === activeAgenciador.agencyLeaderId)
+      : activeAgenciador;
+
+    const agencyRateConfigured = agencyLeader?.agencyCommissionPercentage ?? 30;
+    const agencyNameAuto = agencyLeader
+      ? (agencyLeader.branchId ? `Agência ${agencyLeader.branchId} (${agencyLeader.name})` : agencyLeader.name)
+      : (requestingUser.branchId ? `Agência ${requestingUser.branchId} (${requestingUser.name})` : requestingUser.name);
 
     // 2. Embarcador com taxa R$/ton configurada: ativação automática da comissão do embarcador
     const shipperRateConfigured = requestingUser.shipperCommissionRatePerTon || (data.embarcadorId ? users.find(u => u.id === data.embarcadorId)?.shipperCommissionRatePerTon : undefined);
@@ -1272,7 +1287,7 @@ const App: React.FC = () => {
       anttModality: data.anttModality,
       etcTaxRegime: data.etcTaxRegime,
       agencyCommissionEnabled: isAgenciadorRequester ? true : undefined,
-      agencyCommissionPercentage: isAgenciadorRequester ? 30 : undefined,
+      agencyCommissionPercentage: isAgenciadorRequester ? agencyRateConfigured : undefined,
       agencyCommissionAgencyName: isAgenciadorRequester ? agencyNameAuto : undefined,
       shipperCommissionEnabled: isShipperCommAuto ? true : undefined,
       shipperCommissionRatePerTon: isShipperCommAuto ? shipperRateConfigured : undefined,

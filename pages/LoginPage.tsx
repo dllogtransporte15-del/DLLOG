@@ -203,8 +203,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         };
 
         console.log('[LoginPage] Login motorista bem-sucedido:', userProfile.name);
-        localStorage.setItem('trancunha_user_email', userProfile.email);
-        localStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
+        sessionStorage.setItem('trancunha_user_email', userProfile.email);
+        sessionStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
+        try {
+          localStorage.removeItem('trancunha_user_email');
+          localStorage.removeItem('trancunha_currentUser');
+        } catch {}
         onLogin(userProfile);
 
       } else {
@@ -246,8 +250,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         }
 
         console.log('[LoginPage] Login bem-sucedido:', userProfile.name);
-        localStorage.setItem('trancunha_user_email', userProfile.email);
-        localStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
+        sessionStorage.setItem('trancunha_user_email', userProfile.email);
+        sessionStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
+        try {
+          localStorage.removeItem('trancunha_user_email');
+          localStorage.removeItem('trancunha_currentUser');
+        } catch {}
         onLogin(userProfile);
       }
     } catch (err: any) {
@@ -431,8 +439,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
       };
 
       setSuccessMessage('Cadastro realizado com sucesso! Entrando...');
-      localStorage.setItem('trancunha_user_email', formattedCpf);
-      localStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
+      sessionStorage.setItem('trancunha_user_email', formattedCpf);
+      sessionStorage.setItem('trancunha_currentUser', JSON.stringify(userProfile));
+      try {
+        localStorage.removeItem('trancunha_user_email');
+        localStorage.removeItem('trancunha_currentUser');
+      } catch {}
       
       setTimeout(() => {
         onLogin(userProfile);

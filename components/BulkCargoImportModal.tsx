@@ -389,6 +389,7 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
       const cargosToInsert: Omit<Cargo, 'id'>[] = validCargos.map((p) => {
         // Regra de corte das 16h para programação diária
         const dailySchedule = generateDailySchedule(p.totalVolume || 40);
+        const parentClient = clients.find(cl => cl.id === p.clientId);
 
         return {
           sequenceId: 0, // Será recalculado atomicamente no salvamento
@@ -412,6 +413,8 @@ export const BulkCargoImportModal: React.FC<BulkCargoImportModalProps> = ({
           requiresScheduling: false,
           type: CargoType.Spot,
           status: CargoStatus.EmAndamento,
+          salespersonName: parentClient?.salespersonName || '',
+          salespersonCommissionPerTon: parentClient?.salespersonCommissionPerTon || 0,
           createdAt: new Date().toISOString(),
           createdById: currentUserId,
           history: [

@@ -6,7 +6,7 @@ import { BriefcaseIcon } from '../components/icons/BriefcaseIcon';
 import { ShipIcon } from '../components/icons/ShipIcon';
 import { UsersIcon } from '../components/icons/UsersIcon';
 import { ClockIcon } from '../components/icons/ClockIcon';
-import { Filter, X, Calendar, DollarSign, Package, CheckCircle, Building2, TrendingUp, Receipt } from 'lucide-react';
+import { Filter, X, Calendar, DollarSign, Package, CheckCircle, Building2, TrendingUp, Receipt, Layers } from 'lucide-react';
 import SalespersonReport from '../components/reports/SalespersonReport';
 import SupervisorReport from '../components/reports/SupervisorReport';
 import ShipperReport from '../components/reports/ShipperReport';
@@ -17,6 +17,7 @@ import BranchReport from '../components/reports/BranchReport';
 import StayFinancialReport from '../components/reports/StayFinancialReport';
 import DemandForecastReport from '../components/reports/DemandForecastReport';
 import RealProfitReport from '../components/reports/RealProfitReport';
+import OthersReport from '../components/reports/OthersReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
 import { getShipmentCte, getShipmentEffectiveDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd } from '../utils';
@@ -40,7 +41,7 @@ interface ReportsPageProps {
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
 }
 
-type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real';
+type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real' | 'outros';
 
 const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], drivers = [], vehicles = [], products = [], companyLogo, onSaveUser, onUpdateAttachment, onBatchUpdateShipments }) => {
   const [activeReport, setActiveReport] = useState<ActiveReport>('comercial');
@@ -322,7 +323,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       case 'clientes':
         return <ClientReport shipments={filteredShipments} cargos={cargos} clients={clients} stays={stays} companyLogo={companyLogo} currentUser={currentUser} />;
       case 'vendedores':
-        return <ExternalSalespersonReport shipments={filteredShipments} cargos={cargos} />;
+        return <ExternalSalespersonReport shipments={filteredShipments} cargos={cargos} clients={clients} />;
       case 'tempo-operacao':
         return <OperationalTimingReport shipments={filteredShipments} />;
       case 'filiais':
@@ -358,6 +359,21 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
             onBatchUpdateShipments={onBatchUpdateShipments}
           />
         );
+      case 'outros':
+        return (
+          <OthersReport
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            users={users}
+            currentUser={currentUser}
+            branches={branches}
+            stays={stays}
+            companyLogo={companyLogo}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        );
       default:
         return null;
     }
@@ -381,6 +397,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         { id: 'filiais', label: 'Filiais', icon: Building2 },
         { id: 'estadias', label: 'Financeiro Estadias', icon: DollarSign },
         { id: 'previsao-demandas', label: 'Previsão de Demandas', icon: TrendingUp },
+        { id: 'outros', label: 'Outros', icon: Layers },
       ] : []),
   ];
 
@@ -439,7 +456,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         </div>
 
         {/* Barra de Filtros para os Relatórios que utilizam filtros globais */}
-        {activeReport !== 'lucro-real' && (
+        {activeReport !== 'lucro-real' && activeReport !== 'outros' && (
           <div className="pt-2.5 border-t border-gray-100 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
               <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900/80 px-2.5 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner text-xs">
@@ -459,7 +476,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
           </div>
         )}
 
-        {showFilters && activeReport !== 'lucro-real' && (
+        {showFilters && activeReport !== 'lucro-real' && activeReport !== 'outros' && (
             <div className="p-4 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/40 rounded-xl animate-fade-in">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
                     <MultiSelectDropdown label="Status do Embarque" options={statusOptions} selectedValues={filterStatus} onChange={setFilterStatus} placeholder="Todos..." />
@@ -487,7 +504,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       </div>
 
       {/* GLOBAL KPIs SECTION (para relatórios gerais) */}
-      {activeReport !== 'lucro-real' && (
+      {activeReport !== 'lucro-real' && activeReport !== 'outros' && (
         isCliente ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
              <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">

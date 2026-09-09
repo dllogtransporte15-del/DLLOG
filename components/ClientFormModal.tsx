@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { Client, ClientBranchCnpj } from '../types';
 import { PaymentMethod } from '../types';
 import { autoFormatInput } from '../utils/formatters';
-import { Building2, Plus, Trash2, Edit2, Check, X, MapPin, Phone, Mail, ShieldAlert, Sparkles } from 'lucide-react';
+import { Building2, Plus, Trash2, Edit2, Check, X, MapPin, Phone, Mail, ShieldAlert, Sparkles, UserPlus } from 'lucide-react';
 
 interface ClientFormModalProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ interface ClientFormModalProps {
 
 const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSave, clientToEdit }) => {
   const [activeTab, setActiveTab] = useState<'main' | 'branches'>('main');
+  const [showSalesperson, setShowSalesperson] = useState(false);
   
   const [client, setClient] = useState<Omit<Client, 'id'>>({
     razaoSocial: '',
@@ -27,6 +28,8 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
     paymentTerm: 30,
     requiresExternalOrder: false,
     requiresScheduling: false,
+    salespersonName: '',
+    salespersonCommissionPerTon: 0,
     secondaryCnpjs: [],
   });
 
@@ -47,14 +50,19 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
     paymentTerm: 30,
     requiresExternalOrder: false,
     requiresScheduling: false,
+    salespersonName: '',
+    salespersonCommissionPerTon: 0,
   });
 
   useEffect(() => {
     if (clientToEdit) {
       setClient({
         ...clientToEdit,
+        salespersonName: clientToEdit.salespersonName || '',
+        salespersonCommissionPerTon: clientToEdit.salespersonCommissionPerTon || 0,
         secondaryCnpjs: clientToEdit.secondaryCnpjs || [],
       });
+      setShowSalesperson(Boolean(clientToEdit.salespersonName || (clientToEdit.salespersonCommissionPerTon && clientToEdit.salespersonCommissionPerTon > 0)));
     } else {
       setClient({
         razaoSocial: '',
@@ -69,8 +77,11 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
         paymentTerm: 30,
         requiresExternalOrder: false,
         requiresScheduling: false,
+        salespersonName: '',
+        salespersonCommissionPerTon: 0,
         secondaryCnpjs: [],
       });
+      setShowSalesperson(false);
     }
     setActiveTab('main');
     setIsAddingBranch(false);
@@ -426,6 +437,87 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                     </label>
                   </div>
                 </div>
+              </div>
+
+              {/* Vendedor Vinculado & Comissão por Tonelada */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-white uppercase tracking-wide">
+                      Vendedor & Comissão por Tonelada
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Vincule um vendedor para que todas as cargas geradas com este cliente herdem a comissão automaticamente.
+                    </p>
+                  </div>
+                  {!showSalesperson && (
+                    <button 
+                      type="button" 
+                      onClick={() => setShowSalesperson(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/60 rounded-xl transition-all shadow-2xs cursor-pointer"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      <span>Adicionar Vendedor</span>
+                    </button>
+                  )}
+                </div>
+
+                {showSalesperson && (
+                  <div className="p-4 border border-emerald-200/80 dark:border-emerald-800/60 rounded-xl bg-emerald-50/30 dark:bg-emerald-950/20 shadow-xs space-y-3 animate-fadeIn">
+                    <div className="flex justify-between items-center pb-2 border-b border-emerald-100 dark:border-emerald-900/40">
+                      <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        Dados do Vendedor do Cliente
+                      </span>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setShowSalesperson(false);
+                          setClient(prev => ({ ...prev, salespersonName: '', salespersonCommissionPerTon: 0 }));
+                        }}
+                        className="text-xs font-bold text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 cursor-pointer"
+                      >
+                        Remover Vendedor
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          Nome do Vendedor
+                        </label>
+                        <input 
+                          name="salespersonName" 
+                          value={client.salespersonName || ''} 
+                          onChange={handleChange} 
+                          placeholder="Ex: João da Silva" 
+                          className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                          Comissão por Tonelada (R$/Ton)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-sm font-bold text-gray-400">R$</span>
+                          <input 
+                            name="salespersonCommissionPerTon" 
+                            value={client.salespersonCommissionPerTon !== undefined && client.salespersonCommissionPerTon !== null && client.salespersonCommissionPerTon !== 0 ? client.salespersonCommissionPerTon : (client.salespersonCommissionPerTon === 0 ? '' : '')} 
+                            onChange={handleChange} 
+                            type="number" 
+                            step="0.01"
+                            placeholder="0,00" 
+                            className="w-full pl-9 pr-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm font-mono font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                      💡 Ao salvar, todas as novas cargas geradas tendo este cliente como tomador/pagador herdarão este vendedor e comissão automaticamente.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
