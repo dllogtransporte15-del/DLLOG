@@ -26,7 +26,7 @@ interface ShipperStat {
 const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, cargos, users, currentUser }) => {
   const canViewCommission = React.useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
+    return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const getWhatsAppLink = (shipperId: string): string | null => {

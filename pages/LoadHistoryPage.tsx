@@ -82,7 +82,7 @@ const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, produ
         dailyBalanceDate={dailyBalanceDate}
         onDailyBalanceDateChange={setDailyBalanceDate}
         onShowHistory={handleShowHistory}
-        onReactivate={currentUser.profile !== UserProfile.Embarcador ? onReactivateLoad : undefined}
+        onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onReactivateLoad : undefined}
         onShowDetails={handleShowDetails}
         onDelete={onDeleteLoad}
         currentUser={currentUser}

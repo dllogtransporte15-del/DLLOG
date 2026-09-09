@@ -352,7 +352,9 @@ const App: React.FC = () => {
       currentUser.profile === UserProfile.Diretor ||
       currentUser.profile === UserProfile.Comercial ||
       currentUser.profile === UserProfile.Supervisor ||
-      currentUser.profile === UserProfile.Cliente;
+      currentUser.profile === UserProfile.Cliente ||
+      currentUser.profile === UserProfile.Demonstracao ||
+      (currentUser.profile as string) === 'Demo';
 
     if (!isAllowedProfile) {
       document.title = "Transcunha Logística";
@@ -772,8 +774,8 @@ const App: React.FC = () => {
     if (!currentUser) return [];
 
     return cargos.filter(c => {
-      // 1. Admin always sees all loads
-      if (currentUser.profile === UserProfile.Admin) return true;
+      // 1. Admin and Demo always see all loads
+      if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') return true;
 
       // 2. Motorista profile: sees all non-suspended loads
       if (currentUser.profile === UserProfile.Motorista) {
@@ -845,8 +847,8 @@ const App: React.FC = () => {
       return shipments.filter(s => visibleCargoIds.has(s.cargoId));
     }
 
-    // Admin sees all shipments
-    if (currentUser.profile === UserProfile.Admin) {
+    // Admin & Demo see all shipments
+    if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') {
       return shipments;
     }
 

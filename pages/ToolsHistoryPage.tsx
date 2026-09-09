@@ -77,7 +77,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (!currentUser) return;
     
     // Check if user is an administrator/manager who should see everything
-    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Demonstracao].includes(currentUser.profile);
     
     const [staysData, quotesData, clientsData] = await Promise.all([
       isAdmin ? getAllToolStays() : getToolStays(currentUser.id),

@@ -191,8 +191,8 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             onEdit={canUpdate ? handleEditLoad : undefined}
             onClose={(canDelete || currentUser.profile === UserProfile.Supervisor) ? handleCloseLoad : undefined}
             onShowHistory={handleShowHistory}
-            onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
-            onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
+            onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onReactivateLoad : undefined}
+            onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onSuspendLoad : undefined}
             onEditSchedule={canUpdate ? handleEditSchedule : undefined}
             onShowDetails={handleShowDetails}
             onShowShipments={handleShowShipments}

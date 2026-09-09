@@ -389,8 +389,8 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onCreateShipment={canCreateShipment ? handleOpenNewShipmentModal : undefined} 
         onEdit={canUpdateLoad ? handleEditLoad : undefined}
         onShowHistory={handleShowHistory}
-        onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
-        onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
+        onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onReactivateLoad : undefined}
+        onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onSuspendLoad : undefined}
         onShowDetails={handleShowCargoDetails}
         onShowShipments={handleShowShipments}
         onDelete={onDeleteLoad}

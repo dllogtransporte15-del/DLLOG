@@ -30,6 +30,7 @@ export const INITIAL_PERMISSIONS: ProfilePermissions = {
   [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages, true),
   [UserProfile.Motorista]: createPermissions(['operational-loads', 'shipment-history'], true),
   [UserProfile.GerenciadoraDeRisco]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'reports', 'drivers', 'vehicles', 'loads', 'clients', 'products', 'owners', 'embarcadores', 'risk-management', 'risk-query-types']),
+  [UserProfile.Demonstracao]: createPermissions(allPages, true),
 };
 
 if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.Fiscal]!['shipments']) {
@@ -65,6 +66,11 @@ export const can = (
 ): boolean => {
   if (!user) return false;
   
+  // Demonstracao / Demo user can ONLY read (all pages), never create, update or delete
+  if (user.profile === UserProfile.Demonstracao || (user.profile as string) === 'Demo' || (user.profile as string) === 'Demonstração') {
+    return action === 'read';
+  }
+
   // Admin can do everything, always.
   if (user.profile === UserProfile.Admin) return true;
 

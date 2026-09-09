@@ -102,7 +102,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isFiscal = user.profile === UserProfile.Fiscal;
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
     const isFinanceiro = user.profile === UserProfile.Financeiro;
-    const isAdminOrDiretor = user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor;
+    const isAdminOrDiretor = user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor || user.profile === UserProfile.Demonstracao;
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
     if (isEmbarcador || isAdminOrDiretor) {

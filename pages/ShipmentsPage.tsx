@@ -256,6 +256,10 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     const defaultResponse = { allowed: true, reason: '' };
     if (!currentUser) return { allowed: false, reason: 'Usuário não autenticado.' };
 
+    if (currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') {
+      return { allowed: false, reason: 'Usuário em modo demonstração possui acesso apenas de visualização.' };
+    }
+
     const currentStatus = shipment.status;
     const userProfile = currentUser.profile;
 

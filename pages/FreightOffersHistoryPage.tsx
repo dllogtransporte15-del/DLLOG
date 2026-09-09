@@ -77,7 +77,7 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
       }
       if (filterOrigin && !offer.origin.toLowerCase().includes(filterOrigin.toLowerCase())) return false;
       if (filterDestination && !offer.destination.toLowerCase().includes(filterDestination.toLowerCase())) return false;
-      if (currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Cliente && offer.driverId) return false;
+      if (currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Cliente && currentUser?.profile !== UserProfile.Admin && currentUser?.profile !== UserProfile.Demonstracao && offer.driverId) return false;
       return true;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [freightOffers, filterStatus, filterClientId, filterCnpj, filterOrigin, filterDestination, currentUser, clients]);

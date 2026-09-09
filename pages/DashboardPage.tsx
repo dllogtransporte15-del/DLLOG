@@ -571,7 +571,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const canViewRanking = useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile);
+    return [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const dashboardStats = useMemo(() => {
@@ -592,7 +592,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     });
 
     const monthlyCommission = monthlyEffectiveTonnage * 2;
-    const canViewCommission = currentUser && [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
+    const canViewCommission = currentUser && [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
 
     return {
       monthlyEffectiveTonnage,
@@ -697,12 +697,13 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [cargos, shipments, allShipments, currentUser, clients]);
 
-  // View mode switcher for Admin / Diretor
+  // View mode switcher for Admin / Diretor / Demo
   const canSwitchView = useMemo(() => {
     if (!currentUser) return false;
     return [
       UserProfile.Admin,
       UserProfile.Diretor,
+      UserProfile.Demonstracao,
     ].includes(currentUser.profile);
   }, [currentUser]);
 
@@ -1619,7 +1620,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     o.driverId === currentUser?.id && o.status === FreightOfferStatus.Pendente
   );
 
-  const canViewOffers = currentUser && [UserProfile.Admin, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor].includes(currentUser.profile);
+  const canViewOffers = currentUser && [UserProfile.Admin, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   const isMotorista = currentUser?.profile === UserProfile.Motorista;
 
   return (

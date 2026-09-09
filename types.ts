@@ -29,6 +29,7 @@ export const INTERNAL_PROFILES: UserProfile[] = [
   UserProfile.GerenciadoraDeRisco,
   UserProfile.Embarcador,
   UserProfile.Agenciador,
+  UserProfile.Demonstracao,
 ];
 
 
