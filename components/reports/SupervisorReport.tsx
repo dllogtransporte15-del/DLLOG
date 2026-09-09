@@ -249,6 +249,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     shipments.forEach(s => {
       if (s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
       
+      const cteVal = getShipmentCte(s);
+      const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');
+      if (!hasCte) return;
+
       const cargo = cargoMap.get(s.cargoId);
       const expenses = calculateShipmentExpenses(s, cargo);
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
@@ -291,19 +295,13 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       countMap.set(targetLeaderId, (countMap.get(targetLeaderId) || 0) + 1);
 
       // Comissão de agenciamento (se aplicável ao perfil agenciador ou frete com comissão habilitada)
-      const isAgencyEnabled = s.agencyCommissionEnabled || Boolean(leaderUser?.profile === UserProfile.Agenciador);
+      const isAgencyEnabled = s.agencyCommissionEnabled !== false && (s.agencyCommissionEnabled === true || Boolean(leaderUser?.profile === UserProfile.Agenciador));
       if (isAgencyEnabled) {
-        let val = s.agencyCommissionValue;
-        if (val === undefined || val === null) {
-          const pct = s.agencyCommissionPercentage !== undefined 
-            ? s.agencyCommissionPercentage 
-            : (leaderUser?.agencyCommissionPercentage ?? 30);
-          val = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
-        }
-        const agencyValNum = Number(val) || 0;
-        if (agencyValNum > 0 || isAgencyEnabled) {
-          commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + agencyValNum);
-        }
+        const pct = s.agencyCommissionPercentage !== undefined 
+          ? s.agencyCommissionPercentage 
+          : (leaderUser?.agencyCommissionPercentage ?? 30);
+        const calculatedVal = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
+        commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + calculatedVal);
       }
     });
 
@@ -455,7 +453,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   const matrizForUser = (isActive && effectiveMatrizRate > 0) ? targetMatrizRevenue * (effectiveMatrizRate / 100) : 0;
                   const filiaisForUser = (isActive && effectiveFiliaisRate > 0) ? userFiliaisRevenue * (effectiveFiliaisRate / 100) : 0;
                   const totalCommissionsForUser = isAgenciador 
-                    ? totalAgencyShipmentComm + matrizForUser 
+                    ? (totalAgencyShipmentComm + (user.hasCommercialCommission ? matrizForUser : 0))
                     : (matrizForUser + filiaisForUser);
                   const totalForUser = isActive ? (userFixed + totalCommissionsForUser) : 0;
 

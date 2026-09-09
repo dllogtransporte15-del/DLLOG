@@ -128,18 +128,20 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
 
       const netProfit = Number((expenses.netProfit + demurrageProfit).toFixed(2));
-      const isEffective = isCteApplicableForStatus(s.status) || s.status === ShipmentStatus.Finalizado;
+      const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');
+      const isEffective = (isCteApplicableForStatus(s.status) || s.status === ShipmentStatus.Finalizado) && hasCte && s.status !== ShipmentStatus.Cancelado && (s.status as string) !== 'Cancelado';
       const isNegativeNetProfit = isEffective && netProfit < -0.01;
       const lossFromNetProfit = isNegativeNetProfit ? Math.abs(netProfit) : 0;
 
-      // 2. Apurar Crédito de Imposto (Exportação / Tributos)
+      // 2. Apurar Crédito de Imposto (Exportação / Tributos) - estritamente de embarques efetivados com CT-e
       const isExport = (cargo as any)?.destinationType === 'Exportação' || (cargo as any)?.isExport === true || (s as any)?.destinationType === 'Exportação' || (s.documents as any)?.is_export === true;
       
       const autoOrRealCredit = s.realProfitData?.generatedCredit ?? (s.documents as any)?.generated_credit;
-      const creditValue = (autoOrRealCredit !== undefined && autoOrRealCredit > 0)
+      const rawCredit = (autoOrRealCredit !== undefined && autoOrRealCredit > 0)
         ? Number(autoOrRealCredit)
         : Number(expenses.generatedCredit || 0);
 
+      const creditValue = isEffective ? rawCredit : 0;
       const hasTaxCredit = creditValue > 0;
 
       // 3. Apurar Custo Adicional / Prejuízo (Manual ou Lucro Líquido Real Negativo)

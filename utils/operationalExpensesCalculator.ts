@@ -44,6 +44,8 @@ export interface CalculatedOperationalExpenses {
   custoFixo: number;
   comissaoComercial: number;
   salespersonCommission: number;
+  shipperCommission: number;
+  agencyCommission: number;
   riskCost: number;
   generatedCredit: number;
   expenseItems: OperationalExpenseItem[];
@@ -377,6 +379,50 @@ export function calculateShipmentExpenses(
     });
   }
 
+  // 14.2 Comissão do Embarcador (R$/ton configurável)
+  const isShipperCommEnabled = Boolean(
+    shipment.shipperCommissionEnabled === true ||
+    (shipment.documents as any)?.shipper_commission_enabled === true ||
+    shipment.realProfitData?.shipperCommissionEnabled === true
+  );
+
+  const shipperCommRate = shipment.shipperCommissionRatePerTon !== undefined && shipment.shipperCommissionRatePerTon !== null
+    ? Number(shipment.shipperCommissionRatePerTon)
+    : ((shipment.documents as any)?.shipper_commission_rate_per_ton !== undefined && (shipment.documents as any)?.shipper_commission_rate_per_ton !== null
+        ? Number((shipment.documents as any).shipper_commission_rate_per_ton)
+        : (shipment.realProfitData?.shipperCommissionRatePerTon !== undefined && shipment.realProfitData?.shipperCommissionRatePerTon !== null
+            ? Number(shipment.realProfitData.shipperCommissionRatePerTon)
+            : 0));
+
+  const shipperCommission = (isShipperCommEnabled && shipperCommRate > 0 && tonnage > 0)
+    ? Number((shipperCommRate * tonnage).toFixed(2))
+    : (isShipperCommEnabled && shipment.shipperCommissionValue !== undefined && shipment.shipperCommissionValue !== null
+        ? Number(shipment.shipperCommissionValue)
+        : (isShipperCommEnabled && shipment.realProfitData?.shipperCommission !== undefined && shipment.realProfitData?.shipperCommission !== null
+            ? Number(shipment.realProfitData.shipperCommission)
+            : 0));
+
+  if (shipperCommission > 0) {
+    expenseItems.push({
+      name: `Comissão Embarcador (${shipperCommRate > 0 ? `R$ ${shipperCommRate.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/t` : 'Ativo'})`,
+      value: shipperCommission,
+      type: 'negative'
+    });
+  }
+
+  // 14.3 Comissão de Agência (30% sobre o Lucro Real da operação antes da comissão de agência)
+  const isAgencyCommEnabled = Boolean(
+    shipment.agencyCommissionEnabled === true ||
+    (shipment.documents as any)?.agency_commission_enabled === true ||
+    shipment.realProfitData?.agencyCommissionEnabled === true
+  );
+
+  const agencyCommPercentage = shipment.agencyCommissionPercentage !== undefined && shipment.agencyCommissionPercentage !== null
+    ? Number(shipment.agencyCommissionPercentage)
+    : ((shipment.documents as any)?.agency_commission_percentage !== undefined && (shipment.documents as any)?.agency_commission_percentage !== null
+        ? Number((shipment.documents as any).agency_commission_percentage)
+        : 30);
+
   // Despesas adicionais que já estavam no realProfitData
   const existingItems = shipment.realProfitData?.expenseItems || [];
   for (const item of existingItems) {
@@ -393,12 +439,44 @@ export function calculateShipmentExpenses(
       lower.includes('custo fixo') ||
       lower.includes('comissão comercial') ||
       lower.includes('comissao comercial') ||
+      lower.includes('comissão vendedor') ||
+      lower.includes('comissao vendedor') ||
+      lower.includes('comissão embarcador') ||
+      lower.includes('comissao embarcador') ||
+      lower.includes('comissão agência') ||
+      lower.includes('comissao agencia') ||
+      lower.includes('comissão de agência') ||
+      lower.includes('comissao de agencia') ||
+      lower.includes('agenciamento') ||
+      lower.includes('agenciador') ||
       lower.includes('gr') ||
       lower.includes('gerenciadora');
 
     if (!isDuplicate && Number(item.value) > 0) {
       expenseItems.push(item);
     }
+  }
+
+  // Subtotal das despesas operacionais base (antes de deduzir a comissão de agência)
+  const baseExpensesWithoutAgency = Number(
+    expenseItems.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0).toFixed(2)
+  );
+  const operationalProfitBeforeAgency = Number((companyFreight - (baseExpensesWithoutAgency + driverFreight)).toFixed(2));
+
+  const agencyCommission = (isAgencyCommEnabled && operationalProfitBeforeAgency > 0)
+    ? Number((operationalProfitBeforeAgency * (agencyCommPercentage / 100)).toFixed(2))
+    : (isAgencyCommEnabled && shipment.agencyCommissionValue !== undefined && shipment.agencyCommissionValue !== null
+        ? Number(shipment.agencyCommissionValue)
+        : (isAgencyCommEnabled && shipment.realProfitData?.agencyCommission !== undefined && shipment.realProfitData?.agencyCommission !== null
+            ? Number(shipment.realProfitData.agencyCommission)
+            : 0));
+
+  if (agencyCommission > 0) {
+    expenseItems.push({
+      name: `Comissão Agência (${agencyCommPercentage}% s/ Lucro Real)`,
+      value: agencyCommission,
+      type: 'negative'
+    });
   }
 
   // Total das deduções operacionais (sem frete motorista)
@@ -438,6 +516,8 @@ export function calculateShipmentExpenses(
     custoFixo,
     comissaoComercial,
     salespersonCommission,
+    shipperCommission,
+    agencyCommission,
     riskCost,
     generatedCredit,
     expenseItems,
