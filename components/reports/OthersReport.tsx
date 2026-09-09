@@ -127,7 +127,13 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);
       const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
 
-      const netProfit = Number((expenses.netProfit + demurrageProfit).toFixed(2));
+      const isAgencyEnabled = expenses.agencyCommission > 0 || s.agencyCommissionEnabled === true || (s.documents as any)?.agency_commission_enabled === true;
+      const agencyPercentage = s.agencyCommissionPercentage ?? (s.documents as any)?.agency_commission_percentage ?? 30;
+      const effectiveDemurrageProfit = (isAgencyEnabled && demurrageProfit > 0)
+        ? Number((demurrageProfit * (1 - agencyPercentage / 100)).toFixed(2))
+        : demurrageProfit;
+
+      const netProfit = Number((expenses.netProfit + effectiveDemurrageProfit).toFixed(2));
       const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');
       const isEffective = (isCteApplicableForStatus(s.status) || s.status === ShipmentStatus.Finalizado) && hasCte && s.status !== ShipmentStatus.Cancelado && (s.status as string) !== 'Cancelado';
       const isNegativeNetProfit = isEffective && netProfit < -0.01;
