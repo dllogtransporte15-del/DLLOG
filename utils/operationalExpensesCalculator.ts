@@ -293,11 +293,29 @@ export function calculateShipmentExpenses(
   const baseCompanyFreightNoToll = Math.max(0, companyFreight - toll);
   const baseDriverFreightNoToll = Math.max(0, driverFreight - toll);
   const exportCreditRate = isShipmentPf ? 0.0652834 : 0.065136;
+  const isCreditManual = Boolean(
+    shipment.isGeneratedCreditManual === true ||
+    shipment.realProfitData?.isGeneratedCreditManual === true ||
+    (shipment.documents as any)?.is_generated_credit_manual === true
+  );
+  const manualCreditVal = isCreditManual
+    ? (shipment.realProfitData?.generatedCredit !== undefined 
+        ? shipment.realProfitData.generatedCredit 
+        : (shipment.generatedCredit !== undefined 
+            ? shipment.generatedCredit 
+            : ((shipment.documents as any)?.generated_credit !== undefined 
+                ? Number((shipment.documents as any).generated_credit) 
+                : ((shipment.documents as any)?.credito_gerado !== undefined 
+                    ? Number((shipment.documents as any).credito_gerado) 
+                    : undefined))))
+    : undefined;
   const autoCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
   const calculatedCredit = (isExportCargo && baseCompanyFreightNoToll > 0)
     ? Number((baseCompanyFreightNoToll * exportCreditRate).toFixed(2))
     : (isExportCargo && baseDriverFreightNoToll > 0 ? Number((baseDriverFreightNoToll * exportCreditRate).toFixed(2)) : 0);
-  const generatedCredit = (autoCredit !== undefined && autoCredit > 0) ? autoCredit : calculatedCredit;
+  const generatedCredit = isCreditManual && manualCreditVal !== undefined 
+    ? manualCreditVal 
+    : ((autoCredit !== undefined && autoCredit > 0) ? autoCredit : (isExportCargo ? calculatedCredit : 0));
 
   // 15. Montagem discriminada dos itens de despesa operacionais
   const expenseItems: OperationalExpenseItem[] = [];

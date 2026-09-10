@@ -1132,6 +1132,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                     stays={stays}
                     users={users}
                     clients={clients}
+                    currentUser={currentUser}
                     onUpdateShipmentData={async (shipmentId, data) => {
                       if (onUpdateShipmentData) {
                         await onUpdateShipmentData(shipmentId, data);

@@ -1301,6 +1301,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             riskReleaseCode={riskReleaseCode}
             users={users}
             clients={clients}
+            currentUser={currentUser}
             onUpdateShipmentData={onUpdateShipmentData}
           />
         </div>

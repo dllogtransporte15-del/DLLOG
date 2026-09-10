@@ -263,8 +263,8 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     if (userProfile === UserProfile.Admin) return defaultResponse;
 
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial].includes(userProfile)) return defaultResponse;
-        return { allowed: false, reason: 'Apenas Comercial, Fiscal, Diretor, Supervisor, Embarcador ou Admin podem avançar este status.' };
+        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Agenciador].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'Apenas Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Admin podem avançar este status.' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoSeguradora) {

@@ -49,6 +49,7 @@ interface CteCostAutomationPanelProps {
   stays?: StayRecord[];
   users?: User[];
   clients?: Client[];
+  currentUser?: User | null;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
 }
 
@@ -62,11 +63,14 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   stays,
   users,
   clients,
+  currentUser,
   onUpdateShipmentData,
 }) => {
   const { showToast } = useToast();
   const formatBrl = (val: number | undefined | null) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
+  const isEmbarcadorOrAgenciador = currentUser?.profile === UserProfile.Embarcador || currentUser?.profile === UserProfile.Agenciador;
 
   // Determinação inicial do enquadramento tributário
   const defaultInitialRegime = shipment.etcTaxRegime || 
@@ -497,6 +501,186 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       showToast('Erro ao restaurar cálculo automático.', 'error');
     } finally {
       setIsSavingFederalTax(false);
+    }
+  };
+
+  // Crédito Gerado editável
+  const isShipmentGeneratedCreditManual = Boolean(
+    shipment.isGeneratedCreditManual === true ||
+    shipment.realProfitData?.isGeneratedCreditManual === true ||
+    (shipment.documents as any)?.is_generated_credit_manual === true
+  );
+
+  const initialCustomGeneratedCredit = isShipmentGeneratedCreditManual
+    ? (shipment.realProfitData?.generatedCredit !== undefined 
+        ? shipment.realProfitData.generatedCredit 
+        : (shipment.generatedCredit !== undefined 
+            ? shipment.generatedCredit 
+            : ((shipment.documents as any)?.generated_credit !== undefined 
+                ? Number((shipment.documents as any).generated_credit) 
+                : ((shipment.documents as any)?.credito_gerado !== undefined 
+                    ? Number((shipment.documents as any).credito_gerado) 
+                    : undefined))))
+    : undefined;
+
+  const [customGeneratedCredit, setCustomGeneratedCredit] = React.useState<number | undefined>(initialCustomGeneratedCredit);
+  const [isManualGeneratedCredit, setIsManualGeneratedCredit] = React.useState<boolean>(isShipmentGeneratedCreditManual);
+  const [isEditingGeneratedCredit, setIsEditingGeneratedCredit] = React.useState(false);
+  const [generatedCreditInput, setGeneratedCreditInput] = React.useState<string>('');
+  const [isSavingGeneratedCredit, setIsSavingGeneratedCredit] = React.useState(false);
+  const [justSavedGeneratedCredit, setJustSavedGeneratedCredit] = React.useState(false);
+
+  React.useEffect(() => {
+    const isManual = Boolean(
+      shipment.isGeneratedCreditManual === true ||
+      shipment.realProfitData?.isGeneratedCreditManual === true ||
+      (shipment.documents as any)?.is_generated_credit_manual === true
+    );
+    setIsManualGeneratedCredit(isManual);
+    if (isManual) {
+      const currentVal = shipment.realProfitData?.generatedCredit !== undefined 
+        ? shipment.realProfitData.generatedCredit 
+        : (shipment.generatedCredit !== undefined 
+            ? shipment.generatedCredit 
+            : ((shipment.documents as any)?.generated_credit !== undefined 
+                ? Number((shipment.documents as any).generated_credit) 
+                : ((shipment.documents as any)?.credito_gerado !== undefined 
+                    ? Number((shipment.documents as any).credito_gerado) 
+                    : undefined)));
+      setCustomGeneratedCredit(currentVal);
+    } else {
+      setCustomGeneratedCredit(undefined);
+    }
+  }, [shipment.isGeneratedCreditManual, shipment.realProfitData?.isGeneratedCreditManual, shipment.realProfitData?.generatedCredit, shipment.generatedCredit, shipment.documents]);
+
+  const handleStartEditGeneratedCredit = () => {
+    const currentNum = (isManualGeneratedCredit && customGeneratedCredit !== undefined) 
+      ? customGeneratedCredit 
+      : (pisCofinsCredit > 0 ? pisCofinsCredit : 0);
+    setGeneratedCreditInput(currentNum > 0 ? String(currentNum) : '');
+    setIsEditingGeneratedCredit(true);
+  };
+
+  const handleSaveGeneratedCredit = async () => {
+    setIsSavingGeneratedCredit(true);
+    try {
+      const parsedVal = parseCurrencyInput(generatedCreditInput);
+      const validNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : Number(parsedVal.toFixed(2));
+      
+      // Atualiza estado local imediatamente para refletir no painel
+      setCustomGeneratedCredit(validNum);
+      setIsManualGeneratedCredit(true);
+      setIsEditingGeneratedCredit(false);
+      setJustSavedGeneratedCredit(true);
+      setTimeout(() => setJustSavedGeneratedCredit(false), 3000);
+
+      const oldCredit = pisCofinsCredit;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Crédito Gerado editado manualmente: de "${formatBrl(oldCredit)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        generatedCredit: validNum,
+        isGeneratedCreditManual: true,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        credito_gerado: validNum,
+        generated_credit: validNum,
+        is_generated_credit_manual: true,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        isGeneratedCreditManual: true,
+        generatedCredit: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          isGeneratedCreditManual: true,
+          generatedCredit: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Crédito Gerado atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar Crédito Gerado:', err);
+      showToast('Erro ao salvar Crédito Gerado.', 'error');
+    } finally {
+      setIsSavingGeneratedCredit(false);
+    }
+  };
+
+  const handleRestoreDefaultGeneratedCredit = async () => {
+    setIsSavingGeneratedCredit(true);
+    try {
+      setCustomGeneratedCredit(undefined);
+      setIsManualGeneratedCredit(false);
+      setIsEditingGeneratedCredit(false);
+
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: 'sistema',
+        timestamp: new Date().toISOString(),
+        description: `Crédito Gerado restaurado para o cálculo automático do sistema.`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+      };
+      delete (updatedRealProfitData as any).generatedCredit;
+      delete (updatedRealProfitData as any).isGeneratedCreditManual;
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        real_profit_data: Object.keys(updatedRealProfitData).length > 0 ? updatedRealProfitData : undefined,
+      };
+      delete (updatedDocs as any).credito_gerado;
+      delete (updatedDocs as any).generated_credit;
+      delete (updatedDocs as any).is_generated_credit_manual;
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        isGeneratedCreditManual: false,
+        generatedCredit: undefined,
+        realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
+        documents: updatedDocs,
+        history: updatedHistory,
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          isGeneratedCreditManual: false,
+          generatedCredit: undefined,
+          realProfitData: Object.keys(updatedRealProfitData).length > 0 ? (updatedRealProfitData as any) : undefined,
+          documents: updatedDocs,
+          history: updatedHistory,
+        });
+      }
+
+      showToast('Crédito Gerado restaurado para o cálculo automático do sistema!', 'success');
+    } catch (err) {
+      console.error('Erro ao restaurar Crédito Gerado:', err);
+      showToast('Erro ao restaurar cálculo automático.', 'error');
+    } finally {
+      setIsSavingGeneratedCredit(false);
     }
   };
 
@@ -1084,13 +1268,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   // 5. Crédito Gerado (Gerado EXCLUSIVAMENTE quando a carga for de exportação)
   // Regra PF: BC_Servico = (cteGrossFreight - toll) * 6,52834% (Manutenção de Crédito de Exportação)
   // Regra PJ: BC_Credito = (cteGrossFreight - toll) * 6,5136% (Manutenção de Crédito de Exportação)
-  const autoOrRealCredit = isExportCargo ? shipment.realProfitData?.generatedCredit : 0;
+  const isGeneratedCreditCustom = Boolean(isManualGeneratedCredit && customGeneratedCredit !== undefined);
   const calculatedExportCredit = (isExportCargo && baseFreteEmpresa > 0)
     ? Number((baseFreteEmpresa * creditRate).toFixed(2))
     : (isExportCargo && baseFreteMotorista > 0 ? Number((baseFreteMotorista * creditRate).toFixed(2)) : 0);
-  const pisCofinsCredit = (autoOrRealCredit !== undefined && autoOrRealCredit > 0)
-    ? autoOrRealCredit
-    : calculatedExportCredit;
+  const pisCofinsCredit = isGeneratedCreditCustom
+    ? customGeneratedCredit!
+    : (isExportCargo ? calculatedExportCredit : 0);
 
   // 6. Débito PIS COFINS
   const isFederalTaxCustom = Boolean(isManualFederalTax && customFederalTax !== undefined);
@@ -1553,30 +1737,138 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         </div>
 
         {/* Box 3: Crédito Gerado (Informativo Fiscal - Gerado apenas se for Exportação) */}
-        <div className={`bg-white dark:bg-slate-800/90 rounded-xl border p-2.5 shadow-2xs ${
-          isExportCargo 
-            ? 'border-emerald-200 dark:border-emerald-900/40' 
-            : 'border-slate-200 dark:border-slate-800 opacity-80'
-        }`}>
-          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
-            <span className="uppercase tracking-wider">Crédito Gerado</span>
-            <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
-              Informativo
-            </span>
+        <div className={`p-2.5 bg-white dark:bg-slate-800/90 rounded-xl border ${
+          isEditingGeneratedCredit
+            ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
+            : isGeneratedCreditCustom
+              ? 'border-emerald-300 dark:border-emerald-700/80 shadow-2xs'
+              : isExportCargo 
+                ? 'border-emerald-200 dark:border-emerald-900/40 shadow-2xs' 
+                : 'border-slate-200 dark:border-slate-800 opacity-80 shadow-2xs'
+        } flex flex-col justify-between transition-all relative`}>
+          <div className="flex items-center justify-between gap-1 mb-0.5">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">Crédito Gerado</span>
+              {isGeneratedCreditCustom && (
+                <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0">
+                  Manual
+                </span>
+              )}
+              {justSavedGeneratedCredit && (
+                <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
+                  ✔ Salvo!
+                </span>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
+                Informativo
+              </span>
+
+              {!isEditingGeneratedCredit && (
+                <button
+                  type="button"
+                  onClick={handleStartEditGeneratedCredit}
+                  className="p-0.5 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded transition-all cursor-pointer"
+                  title="Editar valor do Crédito Gerado"
+                >
+                  <Pencil className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
           </div>
-          <div className={`text-sm sm:text-base font-bold font-mono ${
-            isExportCargo ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
-          }`}>
-            {formatBrl(pisCofinsCredit)}
-          </div>
-          <div 
-            className={`text-[10px] font-medium truncate mt-0.5 ${
-              isExportCargo ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
-            }`} 
-            title={isExportCargo ? `Exportação PJ • Crédito Fiscal PIS/COFINS informativo (${formatBrl(pisCofinsCredit)})` : 'Gera crédito fiscal apenas quando a carga for de exportação'}
-          >
-            {isExportCargo ? `${creditRatePercentLabel} (Info)` : 'Apenas Exportação'}
-          </div>
+
+          {isEditingGeneratedCredit ? (
+            <div className="space-y-1 py-0.5">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  autoFocus
+                  placeholder="0,00"
+                  value={generatedCreditInput}
+                  onChange={(e) => setGeneratedCreditInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveGeneratedCredit();
+                    if (e.key === 'Escape') setIsEditingGeneratedCredit(false);
+                  }}
+                  disabled={isSavingGeneratedCredit}
+                  className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-emerald-400 bg-emerald-50/40 dark:bg-slate-700 dark:border-emerald-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-emerald-500/40"
+                />
+              </div>
+              
+              <div className="flex items-center justify-between gap-1 pt-0.5">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveGeneratedCredit}
+                    disabled={isSavingGeneratedCredit}
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                    title="Salvar valor do Crédito Gerado"
+                  >
+                    {isSavingGeneratedCredit ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
+                    <span>Salvar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingGeneratedCredit(false)}
+                    disabled={isSavingGeneratedCredit}
+                    className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                    title="Cancelar"
+                  >
+                    <X className="w-2 h-2" />
+                  </button>
+                </div>
+
+                {isGeneratedCreditCustom && (
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultGeneratedCredit}
+                    disabled={isSavingGeneratedCredit}
+                    className="inline-flex items-center gap-0.5 text-[8px] text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 underline transition-all cursor-pointer"
+                    title="Restaurar fórmula de cálculo automático"
+                  >
+                    <RotateCcw className="w-2 h-2" />
+                    <span>Auto</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className={`text-sm sm:text-base font-bold font-mono ${
+                isExportCargo || isGeneratedCreditCustom ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
+              }`}>
+                {formatBrl(pisCofinsCredit)}
+              </div>
+              <div className="flex items-center justify-between">
+                <div 
+                  className={`text-[10px] font-medium truncate ${
+                    isExportCargo || isGeneratedCreditCustom ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
+                  }`} 
+                  title={
+                    isGeneratedCreditCustom
+                      ? `Valor manual informado: ${formatBrl(pisCofinsCredit)} (Cálculo padrão: ${creditRatePercentLabel})`
+                      : (isExportCargo ? `Exportação PJ • Crédito Fiscal PIS/COFINS informativo (${formatBrl(pisCofinsCredit)})` : 'Gera crédito fiscal apenas quando a carga for de exportação')
+                  }
+                >
+                  {isGeneratedCreditCustom ? 'Valor Manual' : (isExportCargo ? `${creditRatePercentLabel} (Info)` : 'Apenas Exportação')}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleStartEditGeneratedCredit}
+                  className="text-[8px] text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium ml-1 shrink-0"
+                  title="Editar valor manualmente"
+                >
+                  <Pencil className="w-2 h-2" />
+                  Editar
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -1653,597 +1945,599 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         </div>
       </div>
 
-      {/* LINHA 2: Composição das Deduções & Custos (Grid 2 Colunas) */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider px-0.5">
-          <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1.5">
-              <Layers className="w-3 h-3 text-slate-400" />
-              Composição das Deduções
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowDeductions(!showDeductions)}
-              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/80 rounded-md transition-colors cursor-pointer capitalize shadow-2xs"
-              title={showDeductions ? 'Ocultar detalhes das deduções' : 'Exibir detalhes das deduções'}
-            >
-              {showDeductions ? (
-                <>
-                  <EyeOff className="w-3 h-3" />
-                  <span>Ocultar</span>
-                  <ChevronUp className="w-2.5 h-2.5" />
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3 h-3" />
-                  <span>Exibir</span>
-                  <ChevronDown className="w-2.5 h-2.5" />
-                </>
-              )}
-            </button>
-          </div>
-          <span className="text-[10px] font-normal text-slate-400 lowercase">
-            total descontos: <strong className="font-mono text-rose-600 dark:text-rose-400 font-bold">{formatBrl(totalDeducoesWithStay)}</strong>
-          </span>
-        </div>
-
-        {showDeductions && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
-          
-          {/* Imposto Federal (Simples Nacional 3,40% / PIS/COFINS / Contribuições Federais) */}
-          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
-            isEditingFederalTax
-              ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
-              : isFederalTaxCustom
-                ? 'border-amber-300 dark:border-amber-700/80 shadow-2xs'
-                : 'border-slate-200/90 dark:border-slate-700/80 shadow-2xs'
-          } flex flex-col justify-between transition-all relative`}>
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
-                {isFederalTaxCustom && (
-                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 shrink-0">
-                    Manual
-                  </span>
+      {/* LINHA 2: Composição das Deduções & Custos (Grid 2 Colunas) - Oculto para Embarcador e Agenciador */}
+      {!isEmbarcadorOrAgenciador && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider px-0.5">
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5">
+                <Layers className="w-3 h-3 text-slate-400" />
+                Composição das Deduções
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDeductions(!showDeductions)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800/80 rounded-md transition-colors cursor-pointer capitalize shadow-2xs"
+                title={showDeductions ? 'Ocultar detalhes das deduções' : 'Exibir detalhes das deduções'}
+              >
+                {showDeductions ? (
+                  <>
+                    <EyeOff className="w-3 h-3" />
+                    <span>Ocultar</span>
+                    <ChevronUp className="w-2.5 h-2.5" />
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    <span>Exibir</span>
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </>
                 )}
-                {justSavedFederalTax && (
-                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
-                    ✔ Salvo!
-                  </span>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-0.5 shrink-0">
-                <span className={`text-[8px] font-medium px-1 py-0.2 rounded ${
-                  isExportCargo
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                    : isSimplesNacional
-                      ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                } max-w-[95px] truncate`} title={
-                  isFederalTaxCustom
-                    ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)} (Base cálculo: ${isExportCargo ? 'Exportação' : (isSimplesNacional ? 'Simples Nacional 3,40%' : (isShipmentPf ? 'PF 3,655%' : 'PJ Spread 9,25%'))})`
-                    : isExportCargo 
-                      ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' 
-                      : isSimplesNacional
-                        ? `Simples Nacional (Anexo III): 3,40% sobre Frete Empresa Bruto (${formatBrl(cteGrossFreight)})`
-                        : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
-                }>
-                  {isExportCargo ? 'Exportação' : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25% Spread'))}
-                </span>
-
-                {!isEditingFederalTax && (
-                  <button
-                    type="button"
-                    onClick={handleStartEditFederalTax}
-                    className="p-0.5 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
-                    title="Editar valor do Imposto Federal"
-                  >
-                    <Pencil className="w-2.5 h-2.5" />
-                  </button>
-                )}
-              </div>
+              </button>
             </div>
+            <span className="text-[10px] font-normal text-slate-400 lowercase">
+              total descontos: <strong className="font-mono text-rose-600 dark:text-rose-400 font-bold">{formatBrl(totalDeducoesWithStay)}</strong>
+            </span>
+          </div>
 
-            {isEditingFederalTax ? (
-              <div className="space-y-1 py-0.5">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    autoFocus
-                    placeholder="0,00"
-                    value={federalTaxInput}
-                    onChange={(e) => setFederalTaxInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveFederalTax();
-                      if (e.key === 'Escape') setIsEditingFederalTax(false);
-                    }}
-                    disabled={isSavingFederalTax}
-                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
-                  />
+          {showDeductions && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+            
+            {/* Imposto Federal (Simples Nacional 3,40% / PIS/COFINS / Contribuições Federais) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
+              isEditingFederalTax
+                ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md'
+                : isFederalTaxCustom
+                  ? 'border-amber-300 dark:border-amber-700/80 shadow-2xs'
+                  : 'border-slate-200/90 dark:border-slate-700/80 shadow-2xs'
+            } flex flex-col justify-between transition-all relative`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
+                  {isFederalTaxCustom && (
+                    <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 shrink-0">
+                      Manual
+                    </span>
+                  )}
+                  {justSavedFederalTax && (
+                    <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
+                      ✔ Salvo!
+                    </span>
+                  )}
                 </div>
                 
-                <div className="flex items-center justify-between gap-1 pt-0.5">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={handleSaveFederalTax}
-                      disabled={isSavingFederalTax}
-                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
-                      title="Salvar valor do Imposto Federal"
-                    >
-                      {isSavingFederalTax ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
-                      <span>Salvar</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingFederalTax(false)}
-                      disabled={isSavingFederalTax}
-                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
-                      title="Cancelar"
-                    >
-                      <X className="w-2 h-2" />
-                    </button>
-                  </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <span className={`text-[8px] font-medium px-1 py-0.2 rounded ${
+                    isExportCargo
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                      : isSimplesNacional
+                        ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                        : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                  } max-w-[95px] truncate`} title={
+                    isFederalTaxCustom
+                      ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)} (Base cálculo: ${isExportCargo ? 'Exportação' : (isSimplesNacional ? 'Simples Nacional 3,40%' : (isShipmentPf ? 'PF 3,655%' : 'PJ Spread 9,25%'))})`
+                      : isExportCargo 
+                        ? 'Exportação: Isenção / Alíquota zero de PIS/COFINS na saída' 
+                        : isSimplesNacional
+                          ? `Simples Nacional (Anexo III): 3,40% sobre Frete Empresa Bruto (${formatBrl(cteGrossFreight)})`
+                          : (isShipmentPf ? `PF Mercado Interno: 3,655% sobre Frete Líquido (${formatBrl(freteLiquidoIcms)})` : `PJ Mercado Interno: 9,25% sobre o Spread Comercial / Diferença (${formatBrl(diferencaFreteReais)})`)
+                  }>
+                    {isExportCargo ? 'Exportação' : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25% Spread'))}
+                  </span>
 
-                  {isFederalTaxCustom && (
+                  {!isEditingFederalTax && (
                     <button
                       type="button"
-                      onClick={handleRestoreDefaultFederalTax}
-                      disabled={isSavingFederalTax}
-                      className="inline-flex items-center gap-0.5 text-[8px] text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 underline transition-all cursor-pointer"
-                      title="Restaurar fórmula de cálculo automático"
+                      onClick={handleStartEditFederalTax}
+                      className="p-0.5 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded transition-all cursor-pointer"
+                      title="Editar valor do Imposto Federal"
                     >
-                      <RotateCcw className="w-2 h-2" />
-                      <span>Auto</span>
+                      <Pencil className="w-2.5 h-2.5" />
                     </button>
                   )}
                 </div>
               </div>
-            ) : (
-              <>
-                <div className="flex items-baseline justify-between gap-1">
-                  <div className={`text-xs font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
+
+              {isEditingFederalTax ? (
+                <div className="space-y-1 py-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      autoFocus
+                      placeholder="0,00"
+                      value={federalTaxInput}
+                      onChange={(e) => setFederalTaxInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveFederalTax();
+                        if (e.key === 'Escape') setIsEditingFederalTax(false);
+                      }}
+                      disabled={isSavingFederalTax}
+                      className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
+                    />
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleStartEditFederalTax}
-                    className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
-                    title="Editar valor do Imposto Federal"
-                  >
-                    <Pencil className="w-2 h-2" />
-                    <span>editar</span>
-                  </button>
+                  
+                  <div className="flex items-center justify-between gap-1 pt-0.5">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveFederalTax}
+                        disabled={isSavingFederalTax}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Salvar valor do Imposto Federal"
+                      >
+                        {isSavingFederalTax ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
+                        <span>Salvar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingFederalTax(false)}
+                        disabled={isSavingFederalTax}
+                        className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                        title="Cancelar"
+                      >
+                        <X className="w-2 h-2" />
+                      </button>
+                    </div>
+
+                    {isFederalTaxCustom && (
+                      <button
+                        type="button"
+                        onClick={handleRestoreDefaultFederalTax}
+                        disabled={isSavingFederalTax}
+                        className="inline-flex items-center gap-0.5 text-[8px] text-slate-500 hover:text-amber-600 dark:text-slate-400 dark:hover:text-amber-400 underline transition-all cursor-pointer"
+                        title="Restaurar fórmula de cálculo automático"
+                      >
+                        <RotateCcw className="w-2 h-2" />
+                        <span>Auto</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
-                  isFederalTaxCustom
-                    ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)}. Cálculo automático sugerido: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))}`
-                    : isExportCargo 
-                      ? 'Exportação: Receita desonerada de PIS/COFINS' 
-                      : isSimplesNacional
-                        ? `Simples Nacional: Frete Empresa Bruto ${formatBrl(cteGrossFreight)} • 3,40% = ${formatBrl(impostoFederalSimples)}`
-                        : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
-                }>
-                  {isFederalTaxCustom
-                    ? `Manual (Auto: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
-                    : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples: ${formatBrl(cteGrossFreight)} • 3,4%` : (isShipmentPf ? `PF: Líq. • 3,655%` : `PJ: Spread • 9,25%`)))}
-                </div>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between gap-1">
+                    <div className={`text-xs font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleStartEditFederalTax}
+                      className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                      title="Editar valor do Imposto Federal"
+                    >
+                      <Pencil className="w-2 h-2" />
+                      <span>editar</span>
+                    </button>
+                  </div>
+                  <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+                    isFederalTaxCustom
+                      ? `Valor manual informado: ${formatBrl(impostoFederalLiquido)}. Cálculo automático sugerido: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))}`
+                      : isExportCargo 
+                        ? 'Exportação: Receita desonerada de PIS/COFINS' 
+                        : isSimplesNacional
+                          ? `Simples Nacional: Frete Empresa Bruto ${formatBrl(cteGrossFreight)} • 3,40% = ${formatBrl(impostoFederalSimples)}`
+                          : (isShipmentPf ? `PF: Frete Líq. ${formatBrl(freteLiquidoIcms)} • 3,655%` : `PJ: Spread ${formatBrl(diferencaFreteReais)} • 9,25%`)
+                  }>
+                    {isFederalTaxCustom
+                      ? `Manual (Auto: ${formatBrl(isSimplesNacional ? impostoFederalSimples : (isShipmentPf ? impostoFederalPf : impostoFederalPjSpread))})`
+                      : (isExportCargo ? 'Exportação: R$ 0,00' : (isSimplesNacional ? `Simples: ${formatBrl(cteGrossFreight)} • 3,4%` : (isShipmentPf ? `PF: Líq. • 3,655%` : `PJ: Spread • 9,25%`)))}
+                  </div>
+                </>
+              )}
+            </div>
 
-          {/* ICMS Destacado Completo */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate" title="Valor integral do ICMS destacado no CT-e">
-                ICMS Destacado
-              </span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0" title={`Alíquota de ${icmsPercentage}% destacada no CT-e`}>
-                {icmsPercentage > 0 ? `${icmsPercentage}% CT-e` : 'Isento'}
-              </span>
-            </div>
-            <div className={`text-xs font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-              {icms > 0 ? `- ${formatBrl(icms)}` : 'R$ 0,00'}
-            </div>
-            {icmsBruto > 0 && (
-              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
-                Integral ({formatBrl(icmsBruto)})
-              </div>
-            )}
-          </div>
-
-          {/* Vale-Pedágio: (Informativo da Carta Frete / TAG) */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Vale-Pedágio:</span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
-                Informativo
-              </span>
-            </div>
-            <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
-              {formatBrl(toll)}
-            </div>
-          </div>
-
-          {/* Consulta GR (Modalidade de Consulta Realizada) */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Consulta GR:</span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 shrink-0 max-w-[95px] truncate" title={effectiveRiskType || 'Pendente de Definição'}>
-                {effectiveRiskType || 'Consulta'}
-              </span>
-            </div>
-            <div className="flex items-baseline justify-between gap-1">
-              <div className={`text-xs font-bold font-mono ${riskCost > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                {riskCost > 0 ? `- ${formatBrl(riskCost)}` : 'R$ 0,00'}
-              </div>
-              {effectiveReleaseCode ? (
-                <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 truncate max-w-[70px]" title={`Liberação: ${effectiveReleaseCode}`}>
-                  {effectiveReleaseCode}
+            {/* ICMS Destacado Completo */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate" title="Valor integral do ICMS destacado no CT-e">
+                  ICMS Destacado
                 </span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0" title={`Alíquota de ${icmsPercentage}% destacada no CT-e`}>
+                  {icmsPercentage > 0 ? `${icmsPercentage}% CT-e` : 'Isento'}
+                </span>
+              </div>
+              <div className={`text-xs font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {icms > 0 ? `- ${formatBrl(icms)}` : 'R$ 0,00'}
+              </div>
+              {icmsBruto > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
+                  Integral ({formatBrl(icmsBruto)})
+                </div>
+              )}
+            </div>
+
+            {/* Vale-Pedágio: (Informativo da Carta Frete / TAG) */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Vale-Pedágio:</span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
+                  Informativo
+                </span>
+              </div>
+              <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
+                {formatBrl(toll)}
+              </div>
+            </div>
+
+            {/* Consulta GR (Modalidade de Consulta Realizada) */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Consulta GR:</span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 shrink-0 max-w-[95px] truncate" title={effectiveRiskType || 'Pendente de Definição'}>
+                  {effectiveRiskType || 'Consulta'}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-1">
+                <div className={`text-xs font-bold font-mono ${riskCost > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {riskCost > 0 ? `- ${formatBrl(riskCost)}` : 'R$ 0,00'}
+                </div>
+                {effectiveReleaseCode ? (
+                  <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 truncate max-w-[70px]" title={`Liberação: ${effectiveReleaseCode}`}>
+                    {effectiveReleaseCode}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Seguro RCV */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Seguro RCV</span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0">
+                  R$ 5/veíc
+                </span>
+              </div>
+              <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
+                - {formatBrl(seguroRcv)}
+              </div>
+            </div>
+
+            {/* Seguro Acidente + Roubo */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Acidente + Roubo</span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
+                  {isExportCargo ? '0,025% Exp' : '0,025% NF'}
+                </span>
+              </div>
+              <div className={`text-xs font-bold font-mono ${totalSeguroAcidenteRoubo > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {totalSeguroAcidenteRoubo > 0 ? `- ${formatBrl(totalSeguroAcidenteRoubo)}` : 'R$ 0,00'}
+              </div>
+              {insuranceBaseValue > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base de Seguro: ${formatBrl(insuranceBaseValue)}${isExportCargo ? ' (NF + 18%)' : ' (NF)'} x 0,025%`}>
+                  Base {formatBrl(insuranceBaseValue)} • 0,025%
+                </div>
+              )}
+            </div>
+
+            {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; se PF deduz também INSS e SEST/SENAT) */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
+                <span 
+                  className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" 
+                  title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete do motorista abatido o valor do pedágio (PJ)"}
+                >
+                  {isShipmentPf ? '0,20% Mot. (PF)' : '0,20% Mot.'}
+                </span>
+              </div>
+              <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
+                - {formatBrl(ciotValue)}
+              </div>
+              {driverFreight > 0 && (
+                <div 
+                  className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" 
+                  title={
+                    isShipmentPf
+                      ? `0,20% sobre frete (${formatBrl(driverFreight)}) - pedágio (${formatBrl(toll)}) - INSS (${formatBrl(inssRetidoPf)}) - SEST/SENAT (${formatBrl(sestSenatRetidoPf)}) = Base ${formatBrl(baseCiotFreight)}`
+                      : `0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`
+                  }
+                >
+                  {isShipmentPf 
+                    ? `0,20% s/ Líq. (Mot-Ped-INSS-SEST)` 
+                    : (toll > 0 ? `0,20% s/ Mot.-Ped.` : `0,20% s/ Mot.`)}
+                </div>
+              )}
+            </div>
+
+            {/* Custo Fixo */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Custo Fixo</span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                  0,35%
+                </span>
+              </div>
+              <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
+                - {formatBrl(custoFixoValue)}
+              </div>
+            </div>
+
+            {/* INSS Patronal / CPRB (4% s/ (Frete Motorista - Pedágio) em embarques PF, Isento para PJ) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">INSS Patronal / CPRB</span>
+                <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
+                  isShipmentPf 
+                    ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
+                    : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                  {isShipmentPf ? '4% (PF)' : 'Isento (PJ)'}
+                </span>
+              </div>
+              <div className={`text-xs font-bold font-mono ${
+                isShipmentPf && inssPatronalMotorista > 0
+                  ? 'text-rose-600 dark:text-rose-400' 
+                  : 'text-emerald-600 dark:text-emerald-400 font-medium'
+              }`}>
+                {isShipmentPf && inssPatronalMotorista > 0 ? `- ${formatBrl(inssPatronalMotorista)}` : 'R$ 0,00'}
+              </div>
+              {isShipmentPf && inssPatronalMotorista > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`4,00% do INSS Patronal / CPRB sobre o frete motorista líquido de pedágio (${formatBrl(driverFreight)} - ${formatBrl(toll)} = ${formatBrl(baseInssPatronal)})`}>
+                  4% s/ Frete Mot. - Pedágio
+                </div>
+              )}
+            </div>
+
+            {/* Comissão Vendedor */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${salespersonCommission === 0 ? 'opacity-90' : ''}`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate" title={salespersonName ? `Vendedor: ${salespersonName}` : 'Comissão Vendedor'}>
+                  Comissão Vendedor
+                </span>
+                <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 max-w-[95px] truncate ${
+                  salespersonCommission > 0 
+                    ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300' 
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`} title={salespersonCommission > 0 ? (salespersonName ? `${salespersonName} (R$ ${salespersonRate.toFixed(2)}/t)` : `R$ ${salespersonRate.toFixed(2)}/t`) : 'Sem comissão'}>
+                  {salespersonCommission > 0 ? (salespersonName ? `${salespersonName.slice(0, 8)} • R$ ${salespersonRate.toFixed(2)}/t` : `R$ ${salespersonRate.toFixed(2)}/t`) : 'Isento'}
+                </span>
+              </div>
+              <div className={`text-xs font-bold font-mono ${salespersonCommission > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {salespersonCommission > 0 ? `- ${formatBrl(salespersonCommission)}` : 'R$ 0,00'}
+              </div>
+              {salespersonCommission > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${tonnage.toFixed(2)} ton x R$ ${salespersonRate.toFixed(2)}/ton`}>
+                  {salespersonName ? `${salespersonName} • ` : ''}{tonnage.toFixed(2)}t x {formatBrl(salespersonRate)}/t
+                </div>
+              )}
+            </div>
+
+            {/* Frete Motorista */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
+                  <Truck className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                  Frete Motorista
+                </span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                  R$ {driverRate.toLocaleString('pt-BR')}/t
+                </span>
+              </div>
+              <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
+                - {formatBrl(totalDriverFreight)}
+              </div>
+              {toll > 0 ? (
+                <div className="text-[8px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium" title={`Frete Motorista deduzindo pedágio: ${formatBrl(totalDriverFreight)} - ${formatBrl(toll)} = ${formatBrl(Math.max(0, totalDriverFreight - toll))}`}>
+                  Líq. Pedágio: {formatBrl(Math.max(0, totalDriverFreight - toll))}
+                </div>
+              ) : demurrageDriverPaid > 0 ? (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base: ${formatBrl(driverFreight)} • Estadia: ${formatBrl(demurrageDriverPaid)}`}>
+                  Base {formatBrl(driverFreight)} • Est. {formatBrl(demurrageDriverPaid)}
+                </div>
               ) : null}
             </div>
-          </div>
 
-          {/* Seguro RCV */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Seguro RCV</span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0">
-                R$ 5/veíc
-              </span>
-            </div>
-            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
-              - {formatBrl(seguroRcv)}
-            </div>
-          </div>
-
-          {/* Seguro Acidente + Roubo */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Acidente + Roubo</span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 shrink-0" title={`0,0125% Acidente + 0,0125% Roubo = 0,025% sobre a Base de Seguro (${formatBrl(insuranceBaseValue)})${isExportCargo ? ' (NF + 18% para Exportação)' : ' (NF Integral)'}`}>
-                {isExportCargo ? '0,025% Exp' : '0,025% NF'}
-              </span>
-            </div>
-            <div className={`text-xs font-bold font-mono ${totalSeguroAcidenteRoubo > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-              {totalSeguroAcidenteRoubo > 0 ? `- ${formatBrl(totalSeguroAcidenteRoubo)}` : 'R$ 0,00'}
-            </div>
-            {insuranceBaseValue > 0 && (
-              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base de Seguro: ${formatBrl(insuranceBaseValue)}${isExportCargo ? ' (NF + 18%)' : ' (NF)'} x 0,025%`}>
-                Base {formatBrl(insuranceBaseValue)} • 0,025%
+            {/* Comissão do Comercial (0,20% sobre o Frete Bruto da Empresa) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${comissaoComercial === 0 ? 'opacity-90' : ''}`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+                  Comissão Comercial
+                </span>
+                <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
+                  0,20%
+                </span>
               </div>
-            )}
-          </div>
-
-          {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; se PF deduz também INSS e SEST/SENAT) */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
-              <span 
-                className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" 
-                title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete do motorista abatido o valor do pedágio (PJ)"}
-              >
-                {isShipmentPf ? '0,20% Mot. (PF)' : '0,20% Mot.'}
-              </span>
-            </div>
-            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
-              - {formatBrl(ciotValue)}
-            </div>
-            {driverFreight > 0 && (
-              <div 
-                className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" 
-                title={
-                  isShipmentPf
-                    ? `0,20% sobre frete (${formatBrl(driverFreight)}) - pedágio (${formatBrl(toll)}) - INSS (${formatBrl(inssRetidoPf)}) - SEST/SENAT (${formatBrl(sestSenatRetidoPf)}) = Base ${formatBrl(baseCiotFreight)}`
-                    : `0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`
-                }
-              >
-                {isShipmentPf 
-                  ? `0,20% s/ Líq. (Mot-Ped-INSS-SEST)` 
-                  : (toll > 0 ? `0,20% s/ Mot.-Ped.` : `0,20% s/ Mot.`)}
+              <div className={`text-xs font-bold font-mono ${comissaoComercial > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {comissaoComercial > 0 ? `- ${formatBrl(comissaoComercial)}` : 'R$ 0,00'}
               </div>
-            )}
-          </div>
-
-          {/* Custo Fixo */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Custo Fixo</span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
-                0,35%
-              </span>
+              {cteGrossFreight > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre Frete Bruto da Empresa (${formatBrl(cteGrossFreight)})`}>
+                  0,20% s/ Bruto ({formatBrl(cteGrossFreight)})
+                </div>
+              )}
             </div>
-            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
-              - {formatBrl(custoFixoValue)}
-            </div>
-          </div>
-
-          {/* INSS Patronal / CPRB (4% s/ (Frete Motorista - Pedágio) em embarques PF, Isento para PJ) */}
-          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">INSS Patronal / CPRB</span>
-              <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
-                isShipmentPf 
-                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
-                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-              }`}>
-                {isShipmentPf ? '4% (PF)' : 'Isento (PJ)'}
-              </span>
-            </div>
-            <div className={`text-xs font-bold font-mono ${
-              isShipmentPf && inssPatronalMotorista > 0
-                ? 'text-rose-600 dark:text-rose-400' 
-                : 'text-emerald-600 dark:text-emerald-400 font-medium'
-            }`}>
-              {isShipmentPf && inssPatronalMotorista > 0 ? `- ${formatBrl(inssPatronalMotorista)}` : 'R$ 0,00'}
-            </div>
-            {isShipmentPf && inssPatronalMotorista > 0 && (
-              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`4,00% do INSS Patronal / CPRB sobre o frete motorista líquido de pedágio (${formatBrl(driverFreight)} - ${formatBrl(toll)} = ${formatBrl(baseInssPatronal)})`}>
-                4% s/ Frete Mot. - Pedágio
-              </div>
-            )}
-          </div>
-
-          {/* Comissão Vendedor */}
-          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${salespersonCommission === 0 ? 'opacity-90' : ''}`}>
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate" title={salespersonName ? `Vendedor: ${salespersonName}` : 'Comissão Vendedor'}>
-                Comissão Vendedor
-              </span>
-              <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 max-w-[95px] truncate ${
-                salespersonCommission > 0 
-                  ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300' 
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-              }`} title={salespersonCommission > 0 ? (salespersonName ? `${salespersonName} (R$ ${salespersonRate.toFixed(2)}/t)` : `R$ ${salespersonRate.toFixed(2)}/t`) : 'Sem comissão'}>
-                {salespersonCommission > 0 ? (salespersonName ? `${salespersonName.slice(0, 8)} • R$ ${salespersonRate.toFixed(2)}/t` : `R$ ${salespersonRate.toFixed(2)}/t`) : 'Isento'}
-              </span>
-            </div>
-            <div className={`text-xs font-bold font-mono ${salespersonCommission > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-              {salespersonCommission > 0 ? `- ${formatBrl(salespersonCommission)}` : 'R$ 0,00'}
-            </div>
-            {salespersonCommission > 0 && (
-              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${tonnage.toFixed(2)} ton x R$ ${salespersonRate.toFixed(2)}/ton`}>
-                {salespersonName ? `${salespersonName} • ` : ''}{tonnage.toFixed(2)}t x {formatBrl(salespersonRate)}/t
-              </div>
-            )}
-          </div>
-
-          {/* Frete Motorista */}
-          <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
-                <Truck className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                Frete Motorista
-              </span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
-                R$ {driverRate.toLocaleString('pt-BR')}/t
-              </span>
-            </div>
-            <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
-              - {formatBrl(totalDriverFreight)}
-            </div>
-            {toll > 0 ? (
-              <div className="text-[8px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium" title={`Frete Motorista deduzindo pedágio: ${formatBrl(totalDriverFreight)} - ${formatBrl(toll)} = ${formatBrl(Math.max(0, totalDriverFreight - toll))}`}>
-                Líq. Pedágio: {formatBrl(Math.max(0, totalDriverFreight - toll))}
-              </div>
-            ) : demurrageDriverPaid > 0 ? (
-              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Base: ${formatBrl(driverFreight)} • Estadia: ${formatBrl(demurrageDriverPaid)}`}>
-                Base {formatBrl(driverFreight)} • Est. {formatBrl(demurrageDriverPaid)}
-              </div>
-            ) : null}
-          </div>
-
-          {/* Comissão do Comercial (0,20% sobre o Frete Bruto da Empresa) */}
-          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${comissaoComercial === 0 ? 'opacity-90' : ''}`}>
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">
-                Comissão Comercial
-              </span>
-              <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 shrink-0" title="0,20% sobre o valor bruto do frete empresa do embarque">
-                0,20%
-              </span>
-            </div>
-            <div className={`text-xs font-bold font-mono ${comissaoComercial > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
-              {comissaoComercial > 0 ? `- ${formatBrl(comissaoComercial)}` : 'R$ 0,00'}
-            </div>
-            {cteGrossFreight > 0 && (
-              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`0,20% sobre Frete Bruto da Empresa (${formatBrl(cteGrossFreight)})`}>
-                0,20% s/ Bruto ({formatBrl(cteGrossFreight)})
-              </div>
-            )}
-          </div>
 
 
 
-          {/* 14. Comissionamento de Agência (% sobre Lucro Líquido Real) */}
-          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
-            agencyCommEnabled
-              ? 'border-purple-300 dark:border-purple-900/60 bg-purple-50/20 dark:bg-purple-950/20'
-              : 'border-slate-200/90 dark:border-slate-700/80'
-          } shadow-2xs flex flex-col justify-between transition-all relative`}>
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão da Agência vinculada ao solicitante (30% sobre Lucro Líquido Real)">
-                <Building2 className={`w-2.5 h-2.5 ${agencyCommEnabled ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'} shrink-0`} />
-                Comissão Agência
-              </span>
-              
-              {/* Toggle Switch */}
-              <button
-                type="button"
-                onClick={handleToggleAgencyCommission}
-                disabled={isSavingAgencyComm}
-                className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
-                  agencyCommEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-600'
-                }`}
-                title={agencyCommEnabled ? 'Desativar comissão de agência' : 'Ativar comissão de 30% da agência sobre o Lucro Líquido Real'}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                    agencyCommEnabled ? 'translate-x-3' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div className="flex items-baseline justify-between gap-1">
-              <div className={`text-xs font-bold font-mono ${
-                agencyCommEnabled && agencyCommissionValue > 0
-                  ? 'text-rose-600 dark:text-rose-400'
-                  : 'text-slate-400 dark:text-slate-500 font-medium'
-              }`}>
-                {agencyCommEnabled && agencyCommissionValue > 0 ? `- ${formatBrl(agencyCommissionValue)}` : 'R$ 0,00'}
-              </div>
-              <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
-                agencyCommEnabled
-                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300'
-                  : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-              }`}>
-                {effectiveAgencyPercentage}% {agencyCommEnabled ? 'Ativo' : 'Off'}
-              </span>
-            </div>
-
-            <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+            {/* 14. Comissionamento de Agência (% sobre Lucro Líquido Real) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
               agencyCommEnabled
-                ? `${effectiveAgencyPercentage}% sobre Lucro Real Operacional (${formatBrl(operationalProfitBeforeAgency)}) creditado para ${responsibleAgencyName}`
-                : `Desativado. Quando ativo, debita ${effectiveAgencyPercentage}% do lucro real para a agência (${responsibleAgencyName})`
-            }>
-              {agencyCommEnabled 
-                ? `${effectiveAgencyPercentage}% s/ Lucro (${responsibleAgencyName})` 
-                : `${effectiveAgencyPercentage}% s/ Lucro • ${responsibleAgencyName}`}
-            </div>
-          </div>
-
-          {/* 15. Comissionamento do Embarcador (Valor Variável por Tonelada) */}
-          <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
-            shipperCommEnabled
-              ? 'border-blue-300 dark:border-blue-900/60 bg-blue-50/20 dark:bg-blue-950/20'
-              : 'border-slate-200/90 dark:border-slate-700/80'
-          } shadow-2xs flex flex-col justify-between transition-all relative`}>
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão do Embarcador / Cliente por Tonelada">
-                <UserCheck className={`w-2.5 h-2.5 ${shipperCommEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'} shrink-0`} />
-                Comissão Embarcador
-              </span>
-
-              {/* Toggle Switch */}
-              <button
-                type="button"
-                onClick={handleToggleShipperCommission}
-                disabled={isSavingShipperComm}
-                className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
-                  shipperCommEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'
-                }`}
-                title={shipperCommEnabled ? 'Desativar comissão do embarcador' : 'Ativar comissão do embarcador por tonelada'}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                    shipperCommEnabled ? 'translate-x-3' : 'translate-x-0'
+                ? 'border-purple-300 dark:border-purple-900/60 bg-purple-50/20 dark:bg-purple-950/20'
+                : 'border-slate-200/90 dark:border-slate-700/80'
+            } shadow-2xs flex flex-col justify-between transition-all relative`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão da Agência vinculada ao solicitante (30% sobre Lucro Líquido Real)">
+                  <Building2 className={`w-2.5 h-2.5 ${agencyCommEnabled ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'} shrink-0`} />
+                  Comissão Agência
+                </span>
+                
+                {/* Toggle Switch */}
+                <button
+                  type="button"
+                  onClick={handleToggleAgencyCommission}
+                  disabled={isSavingAgencyComm}
+                  className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                    agencyCommEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-600'
                   }`}
-                />
-              </button>
+                  title={agencyCommEnabled ? 'Desativar comissão de agência' : 'Ativar comissão de 30% da agência sobre o Lucro Líquido Real'}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      agencyCommEnabled ? 'translate-x-3' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-baseline justify-between gap-1">
+                <div className={`text-xs font-bold font-mono ${
+                  agencyCommEnabled && agencyCommissionValue > 0
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-slate-400 dark:text-slate-500 font-medium'
+                }`}>
+                  {agencyCommEnabled && agencyCommissionValue > 0 ? `- ${formatBrl(agencyCommissionValue)}` : 'R$ 0,00'}
+                </div>
+                <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
+                  agencyCommEnabled
+                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                }`}>
+                  {effectiveAgencyPercentage}% {agencyCommEnabled ? 'Ativo' : 'Off'}
+                </span>
+              </div>
+
+              <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+                agencyCommEnabled
+                  ? `${effectiveAgencyPercentage}% sobre Lucro Real Operacional (${formatBrl(operationalProfitBeforeAgency)}) creditado para ${responsibleAgencyName}`
+                  : `Desativado. Quando ativo, debita ${effectiveAgencyPercentage}% do lucro real para a agência (${responsibleAgencyName})`
+              }>
+                {agencyCommEnabled 
+                  ? `${effectiveAgencyPercentage}% s/ Lucro (${responsibleAgencyName})` 
+                  : `${effectiveAgencyPercentage}% s/ Lucro • ${responsibleAgencyName}`}
+              </div>
             </div>
 
-            {shipperCommEnabled && isEditingShipperRate ? (
-              <div className="space-y-1 py-0.5">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$/t</span>
-                  <input
-                    type="number"
-                    step="0.50"
-                    min="0"
-                    autoFocus
-                    placeholder="1,00"
-                    value={shipperRateInput}
-                    onChange={(e) => setShipperRateInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveShipperRate();
-                      if (e.key === 'Escape') setIsEditingShipperRate(false);
-                    }}
-                    disabled={isSavingShipperComm}
-                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
+            {/* 15. Comissionamento do Embarcador (Valor Variável por Tonelada) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border ${
+              shipperCommEnabled
+                ? 'border-blue-300 dark:border-blue-900/60 bg-blue-50/20 dark:bg-blue-950/20'
+                : 'border-slate-200/90 dark:border-slate-700/80'
+            } shadow-2xs flex flex-col justify-between transition-all relative`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Comissão do Embarcador / Cliente por Tonelada">
+                  <UserCheck className={`w-2.5 h-2.5 ${shipperCommEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'} shrink-0`} />
+                  Comissão Embarcador
+                </span>
+
+                {/* Toggle Switch */}
+                <button
+                  type="button"
+                  onClick={handleToggleShipperCommission}
+                  disabled={isSavingShipperComm}
+                  className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                    shipperCommEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'
+                  }`}
+                  title={shipperCommEnabled ? 'Desativar comissão do embarcador' : 'Ativar comissão do embarcador por tonelada'}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      shipperCommEnabled ? 'translate-x-3' : 'translate-x-0'
+                    }`}
                   />
-                </div>
-                <div className="flex items-center justify-between gap-1 pt-0.5">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSaveShipperRate()}
-                      disabled={isSavingShipperComm}
-                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <Check className="w-2 h-2" />
-                      <span>Salvar</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingShipperRate(false)}
-                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
-                    >
-                      <X className="w-2 h-2" />
-                    </button>
-                  </div>
-                  {/* Presets Rápidos */}
-                  <div className="flex items-center gap-0.5">
-                    {[1, 2, 3].map(presetVal => (
-                      <button
-                        key={presetVal}
-                        type="button"
-                        onClick={() => handleSaveShipperRate(presetVal)}
-                        className="px-1 py-0.2 rounded bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-[8px] font-bold cursor-pointer"
-                      >
-                        {presetVal}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                </button>
               </div>
-            ) : (
-              <>
-                <div className="flex items-baseline justify-between gap-1">
-                  <div className={`text-xs font-bold font-mono ${
-                    shipperCommEnabled && shipperCommissionValue > 0
-                      ? 'text-rose-600 dark:text-rose-400'
-                      : 'text-slate-400 dark:text-slate-500 font-medium'
-                  }`}>
-                    {shipperCommEnabled && shipperCommissionValue > 0 ? `- ${formatBrl(shipperCommissionValue)}` : 'R$ 0,00'}
-                  </div>
-                  {shipperCommEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShipperRateInput(String(shipperCommRate));
-                        setIsEditingShipperRate(true);
+
+              {shipperCommEnabled && isEditingShipperRate ? (
+                <div className="space-y-1 py-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$/t</span>
+                    <input
+                      type="number"
+                      step="0.50"
+                      min="0"
+                      autoFocus
+                      placeholder="1,00"
+                      value={shipperRateInput}
+                      onChange={(e) => setShipperRateInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveShipperRate();
+                        if (e.key === 'Escape') setIsEditingShipperRate(false);
                       }}
-                      className="text-[8px] font-bold px-1 py-0.2 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 shrink-0 cursor-pointer flex items-center gap-0.5"
-                      title="Alterar valor da comissão por tonelada"
-                    >
-                      <span>R$ {shipperCommRate.toFixed(2)}/t</span>
-                      <Pencil className="w-2 h-2" />
-                    </button>
-                  )}
+                      disabled={isSavingShipperComm}
+                      className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-blue-400 bg-blue-50/40 dark:bg-slate-700 dark:border-blue-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-1 pt-0.5">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveShipperRate()}
+                        disabled={isSavingShipperComm}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <Check className="w-2 h-2" />
+                        <span>Salvar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingShipperRate(false)}
+                        className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                      >
+                        <X className="w-2 h-2" />
+                      </button>
+                    </div>
+                    {/* Presets Rápidos */}
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3].map(presetVal => (
+                        <button
+                          key={presetVal}
+                          type="button"
+                          onClick={() => handleSaveShipperRate(presetVal)}
+                          className="px-1 py-0.2 rounded bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-[8px] font-bold cursor-pointer"
+                        >
+                          {presetVal}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between gap-1">
+                    <div className={`text-xs font-bold font-mono ${
+                      shipperCommEnabled && shipperCommissionValue > 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-slate-400 dark:text-slate-500 font-medium'
+                    }`}>
+                      {shipperCommEnabled && shipperCommissionValue > 0 ? `- ${formatBrl(shipperCommissionValue)}` : 'R$ 0,00'}
+                    </div>
+                    {shipperCommEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShipperRateInput(String(shipperCommRate));
+                          setIsEditingShipperRate(true);
+                        }}
+                        className="text-[8px] font-bold px-1 py-0.2 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 shrink-0 cursor-pointer flex items-center gap-0.5"
+                        title="Alterar valor da comissão por tonelada"
+                      >
+                        <span>R$ {shipperCommRate.toFixed(2)}/t</span>
+                        <Pencil className="w-2 h-2" />
+                      </button>
+                    )}
+                  </div>
 
-                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
-                  shipperCommEnabled
-                    ? `${tonnage.toFixed(2)}t x ${formatBrl(shipperCommRate)}/t = ${formatBrl(shipperCommissionValue)} creditado ao embarcador (${clientBeneficiaryName})`
-                    : `Desativado • ${tonnage.toFixed(2)}t (${clientBeneficiaryName})`
-                }>
-                  {shipperCommEnabled
-                    ? `${tonnage.toFixed(2)}t x ${formatBrl(shipperCommRate)}/t (${clientBeneficiaryName})`
-                    : `R$/ton • ${clientBeneficiaryName}`}
-                </div>
-              </>
-            )}
-          </div>
+                  <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
+                    shipperCommEnabled
+                      ? `${tonnage.toFixed(2)}t x ${formatBrl(shipperCommRate)}/t = ${formatBrl(shipperCommissionValue)} creditado ao embarcador (${clientBeneficiaryName})`
+                      : `Desativado • ${tonnage.toFixed(2)}t (${clientBeneficiaryName})`
+                  }>
+                    {shipperCommEnabled
+                      ? `${tonnage.toFixed(2)}t x ${formatBrl(shipperCommRate)}/t (${clientBeneficiaryName})`
+                      : `R$/ton • ${clientBeneficiaryName}`}
+                  </div>
+                </>
+              )}
+            </div>
 
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* LINHA 3: Card de Destaque - LUCRO LÍQUIDO REAL */}
       <div>

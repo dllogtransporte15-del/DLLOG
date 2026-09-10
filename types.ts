@@ -449,6 +449,7 @@ export interface RealProfitData {
   otherCosts?: number;
   dailyRateDifference?: number;
   generatedCredit?: number;
+  isGeneratedCreditManual?: boolean;
   processedAt?: string;
   attachmentUrl?: string;
   rawOcrText?: string;
@@ -509,6 +510,8 @@ export interface Shipment {
   icmsValue?: number;
   federalTax?: number;
   isFederalTaxManual?: boolean;
+  generatedCredit?: number;
+  isGeneratedCreditManual?: boolean;
   driverFreightType?: 'PJ' | 'PF';
   route?: string;
   isExport?: boolean;

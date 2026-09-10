@@ -1613,8 +1613,8 @@ const App: React.FC = () => {
 
     // Check permissions based on the current status
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Comercial, Fiscal, Diretor, Supervisor, Embarcador ou Administrador podem realizar esta ação.';
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin, UserProfile.Agenciador].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Administrador podem realizar esta ação.';
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
         isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.Financeiro].includes(currentUser.profile);
         alertMessage = 'Apenas o perfil Gerenciadora de Risco, Embarcador ou Administrador do Sistema pode avançar embarques neste status.';

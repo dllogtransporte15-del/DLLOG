@@ -551,6 +551,24 @@ const toShipment = (row: any): Shipment => {
                 ? Number(realProfit.federalTax)
                 : undefined)));
 
+  const isGeneratedCreditManual = row.is_generated_credit_manual !== null && row.is_generated_credit_manual !== undefined
+    ? Boolean(row.is_generated_credit_manual)
+    : (docs.is_generated_credit_manual !== undefined && docs.is_generated_credit_manual !== null
+        ? Boolean(docs.is_generated_credit_manual)
+        : (realProfit?.isGeneratedCreditManual !== undefined && realProfit?.isGeneratedCreditManual !== null
+            ? Boolean(realProfit.isGeneratedCreditManual)
+            : undefined));
+
+  const generatedCredit = row.generated_credit !== null && row.generated_credit !== undefined
+    ? Number(row.generated_credit)
+    : (docs.generated_credit !== undefined && docs.generated_credit !== null
+        ? Number(docs.generated_credit)
+        : (docs.credito_gerado !== undefined && docs.credito_gerado !== null
+            ? Number(docs.credito_gerado)
+            : (realProfit?.generatedCredit !== undefined && realProfit?.generatedCredit !== null
+                ? Number(realProfit.generatedCredit)
+                : undefined)));
+
   return {
     id: row.id,
     orderId: row.order_id,
@@ -610,6 +628,8 @@ const toShipment = (row: any): Shipment => {
     realProfitData: realProfit,
     isFederalTaxManual: isFederalTaxManual,
     federalTax: federalTax,
+    isGeneratedCreditManual: isGeneratedCreditManual,
+    generatedCredit: generatedCredit,
     additionalCost: row.additional_cost || docs.additional_cost || undefined,
     additionalCostValue: row.additional_cost_value !== null && row.additional_cost_value !== undefined 
       ? Number(row.additional_cost_value) 
@@ -645,14 +665,39 @@ const fromShipment = (s: Shipment) => {
                 ? Number((s.documents as any).imposto_federal) 
                 : null)));
 
+  const isGeneratedCreditManual = s.isGeneratedCreditManual !== undefined
+    ? s.isGeneratedCreditManual
+    : (s.realProfitData?.isGeneratedCreditManual !== undefined
+        ? s.realProfitData.isGeneratedCreditManual
+        : ((s.documents as any)?.is_generated_credit_manual !== undefined
+            ? Boolean((s.documents as any).is_generated_credit_manual)
+            : null));
+
+  const generatedCredit = s.generatedCredit !== undefined
+    ? s.generatedCredit
+    : (s.realProfitData?.generatedCredit !== undefined
+        ? s.realProfitData.generatedCredit
+        : ((s.documents as any)?.generated_credit !== undefined
+            ? Number((s.documents as any).generated_credit)
+            : ((s.documents as any)?.credito_gerado !== undefined
+                ? Number((s.documents as any).credito_gerado)
+                : null)));
+
   const realProfitData = s.realProfitData 
     ? {
         ...s.realProfitData,
         isFederalTaxManual: isFederalTaxManual !== null ? Boolean(isFederalTaxManual) : s.realProfitData.isFederalTaxManual,
-        federalTax: federalTax !== null ? Number(federalTax) : s.realProfitData.federalTax
+        federalTax: federalTax !== null ? Number(federalTax) : s.realProfitData.federalTax,
+        isGeneratedCreditManual: isGeneratedCreditManual !== null ? Boolean(isGeneratedCreditManual) : s.realProfitData.isGeneratedCreditManual,
+        generatedCredit: generatedCredit !== null ? Number(generatedCredit) : s.realProfitData.generatedCredit
       } 
-    : (isFederalTaxManual !== null || federalTax !== null
-        ? { isFederalTaxManual: Boolean(isFederalTaxManual), federalTax: federalTax !== null ? Number(federalTax) : undefined }
+    : (isFederalTaxManual !== null || federalTax !== null || isGeneratedCreditManual !== null || generatedCredit !== null
+        ? { 
+            isFederalTaxManual: Boolean(isFederalTaxManual), 
+            federalTax: federalTax !== null ? Number(federalTax) : undefined,
+            isGeneratedCreditManual: Boolean(isGeneratedCreditManual),
+            generatedCredit: generatedCredit !== null ? Number(generatedCredit) : undefined
+          }
         : null);
 
   const docs = {
@@ -674,6 +719,9 @@ const fromShipment = (s: Shipment) => {
     is_federal_tax_manual: isFederalTaxManual,
     federal_tax: federalTax,
     imposto_federal: federalTax,
+    is_generated_credit_manual: isGeneratedCreditManual,
+    generated_credit: generatedCredit,
+    credito_gerado: generatedCredit,
     real_profit_data: realProfitData,
     freight_calculation_type: s.freightCalculationType ?? null,
     icms_value: s.icmsValue !== undefined ? s.icmsValue : null,
