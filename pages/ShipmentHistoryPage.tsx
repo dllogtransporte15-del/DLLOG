@@ -45,6 +45,8 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
   const [filterCte, setFilterCte] = useState('');
   const [filterNfe, setFilterNfe] = useState('');
   const [filterMdfe, setFilterMdfe] = useState('');
+  const [filterId, setFilterId] = useState('');
+  const [filterSolicitante, setFilterSolicitante] = useState('');
 
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
 
@@ -90,6 +92,22 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             else if (marginOperator === '<') matchesMargin = margin < val;
         }
 
+        let matchesId = true;
+        if (filterId.trim()) {
+          const q = filterId.trim().toLowerCase();
+          const idMatch = shipment.id.toLowerCase().includes(q);
+          const cargo = cargoMap.get(shipment.cargoId);
+          const cargoSeqMatch = cargo?.sequenceId ? String(cargo.sequenceId).toLowerCase().includes(q) : false;
+          matchesId = idMatch || cargoSeqMatch;
+        }
+
+        let matchesSolicitante = true;
+        if (filterSolicitante.trim()) {
+          const embarcadorUser = users.find(u => u.id === shipment.embarcadorId);
+          const embarcadorName = embarcadorUser?.name || '';
+          matchesSolicitante = shipment.embarcadorId === filterSolicitante || embarcadorName.toLowerCase().includes(filterSolicitante.trim().toLowerCase());
+        }
+
         let matchesCte = true;
         if (filterCte.trim()) {
           const cteVal = getShipmentCte(shipment);
@@ -103,9 +121,9 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         let matchesMdfe = true;
         if (filterMdfe.trim()) matchesMdfe = !!(shipment.mdfeNumber?.toLowerCase().includes(filterMdfe.trim().toLowerCase()));
         
-        return matchesStatus && matchesDate && matchesMargin && matchesCte && matchesNfe && matchesMdfe;
+        return matchesStatus && matchesDate && matchesMargin && matchesId && matchesSolicitante && matchesCte && matchesNfe && matchesMdfe;
     });
-  }, [shipments, activeStatus, startDate, endDate, marginOperator, marginValue, cargoMap, filterCte, filterNfe, filterMdfe]);
+  }, [shipments, activeStatus, startDate, endDate, marginOperator, marginValue, cargoMap, filterId, filterSolicitante, filterCte, filterNfe, filterMdfe, users]);
 
   const cancellationReasonData = useMemo(() => {
     const cancelledShipments = shipments.filter(s => s.status === ShipmentStatus.Cancelado);
@@ -190,6 +208,11 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         onFilterNfeChange={setFilterNfe}
         filterMdfe={filterMdfe}
         onFilterMdfeChange={setFilterMdfe}
+        filterId={filterId}
+        onFilterIdChange={setFilterId}
+        filterSolicitante={filterSolicitante}
+        onFilterSolicitanteChange={setFilterSolicitante}
+        users={users}
       />
       <ShipmentTable 
         shipments={filteredShipments} 

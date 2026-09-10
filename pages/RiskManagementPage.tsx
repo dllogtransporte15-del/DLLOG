@@ -216,6 +216,8 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
       })
       .map(s => {
         const cargo = cargoMap.get(s.cargoId);
+        const product = cargo?.productId ? productMap.get(cargo.productId) : undefined;
+        const requiresRisk = product ? product.requiresRiskManagement !== false : ((cargo as any)?.requiresRiskManagement !== false);
         const client = cargo ? clientMap.get(cargo.clientId) : undefined;
         
         const cleanCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
@@ -224,10 +226,18 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         const cleanPlate = s.horsePlate ? s.horsePlate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
         const vehicle = vehicleMap.get(cleanPlate);
 
+        const isPreCadastroOrSeguradora = s.status === ShipmentStatus.PreCadastro || 
+          s.status === ShipmentStatus.AguardandoSeguradora || 
+          (s.status as string) === 'Ag. Cadastro' || 
+          (s.status as string) === 'Aguardando Cadastro' ||
+          (s.status as string) === 'Ag. Seguradora';
+
         // Query type and cost
-        let queryType = s.riskQueryType || (s.status === ShipmentStatus.AguardandoSeguradora ? 'Pendente de Definição' : 'Cadastro Geral + Biometria');
+        let queryType = s.riskQueryType || ((isPreCadastroOrSeguradora || !requiresRisk) ? 'Pendente de Definição' : 'Cadastro Geral + Biometria');
         let queryCost = 0;
-        if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
+        if (!requiresRisk || isPreCadastroOrSeguradora) {
+          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
+        } else if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
           queryCost = Number(s.riskQueryCost);
         } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType)) {
           queryCost = costMapFromOptions.get(s.riskQueryType)!;
@@ -237,10 +247,10 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           queryCost = RISK_QUERY_COST_MAP[s.riskQueryType];
         } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()] !== undefined) {
           queryCost = RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()];
-        } else if (s.status === ShipmentStatus.AguardandoSeguradora) {
-          queryCost = 0;
+        } else if (s.riskReleaseCode) {
+          queryCost = costMapFromOptions.get(queryType) ?? 6.50;
         } else {
-          queryCost = costMapFromOptions.get(queryType) ?? 31.50;
+          queryCost = 0;
         }
 
         // Release status

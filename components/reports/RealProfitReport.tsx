@@ -28,7 +28,6 @@ import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isS
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
-import { SyncDocumentsModal } from '../SyncDocumentsModal';
 import type { StayRecord } from '../../utils/toolStorage';
 
 interface RealProfitReportProps {
@@ -673,16 +672,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             )}
           </button>
 
-          {onBatchUpdateShipments && (
-            <button
-              type="button"
-              onClick={() => setIsSyncModalOpen(true)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              Sincronizar Documentos
-            </button>
-          )}
+
 
           <button
             type="button"
@@ -1191,15 +1181,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         />
       )}
 
-      {/* MODAL DE SINCRONIZAÇÃO EM LOTE DE DOCUMENTOS */}
-      {isSyncModalOpen && onBatchUpdateShipments && (
-        <SyncDocumentsModal
-          isOpen={isSyncModalOpen}
-          onClose={() => setIsSyncModalOpen(false)}
-          shipments={shipments}
-          onBatchUpdateShipments={onBatchUpdateShipments}
-        />
-      )}
+
     </div>
   );
 };

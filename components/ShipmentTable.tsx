@@ -12,7 +12,7 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, Building, Pencil, Check, Loader2, ExternalLink, Paperclip } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip } from 'lucide-react';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
 import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
 import { openDocumentInNewTab } from '../utils/documentViewer';
@@ -223,8 +223,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   }, []);
 
   const [showFilters, setShowFilters] = useState(false);
+  const [filterId, setFilterId] = useState<string>('');
   const [filterPlate, setFilterPlate] = useState<string[]>([]);
   const [filterName, setFilterName] = useState<string[]>([]);
+  const [filterSolicitante, setFilterSolicitante] = useState<string[]>([]);
   const [filterOrigin, setFilterOrigin] = useState<string[]>([]);
   const [filterDest, setFilterDest] = useState<string[]>([]);
   const [filterClient, setFilterClient] = useState<string[]>([]);
@@ -232,29 +234,6 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   const [editingCteId, setEditingCteId] = useState<string | null>(null);
   const [editingCteValue, setEditingCteValue] = useState<string>('');
   const [editingCteDateValue, setEditingCteDateValue] = useState<string>('');
-
-  const [isSyncingCtes, setIsSyncingCtes] = useState(false);
-  const [syncProgress, setSyncProgress] = useState('');
-
-  const handleSyncCtes = async () => {
-    setIsSyncingCtes(true);
-    setSyncProgress('Iniciando...');
-    try {
-      const { updated, skipped } = await backfillShipmentFiscalNumbers((done, total) => {
-        setSyncProgress(`${done}/${total}`);
-      }, true);
-      if (updated > 0) {
-        window.location.reload();
-      } else {
-        alert(`Sincronização concluída: Todos os CT-es já estão atualizados (${skipped} analisados).`);
-      }
-    } catch (err) {
-      console.warn('[SyncCtes] Erro ao sincronizar CT-es:', err);
-    } finally {
-      setIsSyncingCtes(false);
-      setSyncProgress('');
-    }
-  };
 
   const handleSaveCte = (shipmentId: string) => {
     if (onUpdateShipmentData) {
@@ -323,6 +302,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   // Filter options
   const plateOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.horsePlate))).filter(Boolean).sort(), [shipments]);
   const nameOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.driverName))).filter(Boolean).sort(), [shipments]);
+  const solicitanteOptions = useMemo(() => Array.from(new Set(shipments.map(s => getEmbarcadorName(s.embarcadorId)))).filter(n => n && n !== 'N/A').sort(), [shipments, users]);
   const originOptions = useMemo(() => Array.from(new Set(shipments.map(s => getCargoInfo(s.cargoId)?.origin || ''))).filter(Boolean).sort(), [shipments, cargos]);
   const destOptions = useMemo(() => Array.from(new Set(shipments.map(s => getCargoInfo(s.cargoId)?.destination || ''))).filter(Boolean).sort(), [shipments, cargos]);
   const clientOptions = useMemo(() => Array.from(new Set(shipments.map(s => getClientName(getCargoInfo(s.cargoId)?.clientId || '')))).filter(Boolean).sort(), [shipments, cargos, clients]);
@@ -330,16 +310,23 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   const filteredShipments = useMemo(() => {
     return shipments.filter(shipment => {
         const cargo = getCargoInfo(shipment.cargoId);
+        if (filterId.trim()) {
+          const q = filterId.trim().toLowerCase();
+          const idMatch = shipment.id.toLowerCase().includes(q);
+          const cargoSeqMatch = cargo?.sequenceId ? String(cargo.sequenceId).toLowerCase().includes(q) : false;
+          if (!idMatch && !cargoSeqMatch) return false;
+        }
         if (filterPlate.length > 0 && !filterPlate.includes(shipment.horsePlate)) return false;
         if (filterName.length > 0 && !filterName.includes(shipment.driverName)) return false;
+        if (filterSolicitante.length > 0 && !filterSolicitante.includes(getEmbarcadorName(shipment.embarcadorId))) return false;
         if (filterOrigin.length > 0 && !filterOrigin.includes(cargo?.origin || '')) return false;
         if (filterDest.length > 0 && !filterDest.includes(cargo?.destination || '')) return false;
         if (filterClient.length > 0 && !filterClient.includes(getClientName(cargo?.clientId || ''))) return false;
         return true;
     });
-  }, [shipments, filterPlate, filterName, filterOrigin, filterDest, filterClient, cargos, clients]);
+  }, [shipments, filterId, filterPlate, filterName, filterSolicitante, filterOrigin, filterDest, filterClient, cargos, clients, users]);
 
-  const activeFiltersCount = (filterPlate.length > 0 ? 1 : 0) + (filterName.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0);
+  const activeFiltersCount = (filterId.trim() ? 1 : 0) + (filterPlate.length > 0 ? 1 : 0) + (filterName.length > 0 ? 1 : 0) + (filterSolicitante.length > 0 ? 1 : 0) + (filterOrigin.length > 0 ? 1 : 0) + (filterDest.length > 0 ? 1 : 0) + (filterClient.length > 0 ? 1 : 0);
 
   const [sortKey, setSortKey] = useState<string>('default');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -361,8 +348,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       let valB = '';
       const cargoA = getCargoInfo(a.cargoId);
       const cargoB = getCargoInfo(b.cargoId);
-      if (sortKey === 'driver') { valA = a.driverName || ''; valB = b.driverName || ''; }
+      if (sortKey === 'id') { valA = a.id || ''; valB = b.id || ''; }
+      else if (sortKey === 'driver') { valA = a.driverName || ''; valB = b.driverName || ''; }
       else if (sortKey === 'plate') { valA = a.horsePlate || ''; valB = b.horsePlate || ''; }
+      else if (sortKey === 'solicitante') { valA = getEmbarcadorName(a.embarcadorId); valB = getEmbarcadorName(b.embarcadorId); }
       else if (sortKey === 'origin') { valA = cargoA?.origin || ''; valB = cargoB?.origin || ''; }
       else if (sortKey === 'destination') { valA = cargoA?.destination || ''; valB = cargoB?.destination || ''; }
       else if (sortKey === 'client') { valA = getClientName(cargoA?.clientId || ''); valB = getClientName(cargoB?.clientId || ''); }
@@ -371,13 +360,15 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       const cmp = valA.localeCompare(valB, 'pt-BR', { numeric: true });
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filteredShipments, sortKey, sortDir]);
+  }, [filteredShipments, sortKey, sortDir, cargos, clients, users]);
 
   const paginatedShipments = sortedShipments.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
 
   const clearFilters = () => {
+    setFilterId('');
     setFilterPlate([]);
     setFilterName([]);
+    setFilterSolicitante([]);
     setFilterOrigin([]);
     setFilterDest([]);
     setFilterClient([]);
@@ -458,6 +449,27 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 <span>Filtros Avançados {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
             </button>
 
+            {/* Filtro por ID */}
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filtrar por ID..."
+                value={filterId}
+                onChange={e => setFilterId(e.target.value)}
+                className="pl-8 pr-7 py-1.5 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-32 sm:w-36 transition-all shadow-sm"
+              />
+              {filterId && (
+                <button
+                  onClick={() => setFilterId('')}
+                  className="absolute right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  title="Limpar filtro de ID"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
             {onFilterCteChange && (
               <div className="relative flex items-center">
                 <FileText className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
@@ -479,17 +491,6 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 )}
               </div>
             )}
-
-            <button
-              type="button"
-              onClick={handleSyncCtes}
-              disabled={isSyncingCtes}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border bg-blue-50/40 text-blue-700 hover:bg-blue-100/80 dark:bg-blue-900/20 dark:text-blue-300 border-blue-200 dark:border-blue-800/60 transition-all shadow-sm cursor-pointer disabled:opacity-50"
-              title="Lê todos os PDFs e XMLs de CT-es anexados a embarques e extrai automaticamente a data/hora de emissão para exibição"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${isSyncingCtes ? 'animate-spin' : ''}`} />
-              <span>{isSyncingCtes ? `Lendo CT-es... (${syncProgress})` : 'Sincronizar CT-es Anexados'}</span>
-            </button>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">
             {filteredShipments.length !== shipments.length ? `${filteredShipments.length} de ` : ''}{shipments.length} embarques listados
@@ -498,9 +499,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
         {showFilters && (
             <div className="p-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-800/40">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                     <MultiSelectDropdown label="Placa" icon={Truck} options={plateOptions} selectedValues={filterPlate} onChange={setFilterPlate} placeholder="Todas as Placas..." />
                     <MultiSelectDropdown label="Motorista" icon={UserIcon} options={nameOptions} selectedValues={filterName} onChange={setFilterName} placeholder="Todos os Motoristas..." />
+                    <MultiSelectDropdown label="Solicitante" icon={UserCheck} options={solicitanteOptions} selectedValues={filterSolicitante} onChange={setFilterSolicitante} placeholder="Todos os Solicitantes..." />
                     <MultiSelectDropdown label="Cidade de Origem" icon={MapPin} options={originOptions} selectedValues={filterOrigin} onChange={setFilterOrigin} placeholder="Todas as Origens..." />
                     <MultiSelectDropdown label="Cidade de Destino" icon={MapPin} options={destOptions} selectedValues={filterDest} onChange={setFilterDest} placeholder="Todos os Destinos..." />
                     <MultiSelectDropdown label="Cliente" icon={Building} options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos os Clientes..." />
@@ -518,8 +520,10 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             className="px-3 py-1 text-xs font-semibold border border-blue-200 dark:border-blue-800/60 rounded-lg bg-blue-50/40 dark:bg-blue-900/20 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none shadow-sm"
                         >
                             <option value="default">Padrão (sem ordenação)</option>
+                            <option value="id">ID do Embarque</option>
                             <option value="driver">Motorista</option>
                             <option value="plate">Placa</option>
+                            <option value="solicitante">Solicitante</option>
                             <option value="origin">Cidade de Origem</option>
                             <option value="destination">Cidade de Destino</option>
                             <option value="client">Cliente</option>

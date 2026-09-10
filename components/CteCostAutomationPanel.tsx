@@ -1126,6 +1126,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : (isExportCargo ? 0 : impostoFederalMercadoInterno);
 
   // 9. GR (Gerenciadora de Risco - Modalidade de Consulta Realizada)
+  const isRiskRequired = Boolean(
+    (cargo as any)?.requiresRiskManagement !== false &&
+    (shipment as any)?.requiresRiskManagement !== false &&
+    (cargo as any)?.product?.requiresRiskManagement !== false
+  );
+
   let historyRiskType: string | undefined;
   let historyReleaseCode: string | undefined;
   let historyRiskCost: number | undefined;
@@ -1148,13 +1154,26 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const effectiveRiskType = riskQueryType || shipment.riskQueryType || historyRiskType;
   const effectiveReleaseCode = riskReleaseCode || shipment.riskReleaseCode || historyReleaseCode;
   
-  const riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null)
-    ? Number(shipment.riskQueryCost)
-    : (historyRiskCost !== undefined && historyRiskCost !== null
-        ? historyRiskCost
-        : (effectiveRiskType 
-            ? (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50)
-            : (shipment.status === ShipmentStatus.AguardandoSeguradora ? 0 : 6.50)));
+  const isPreCadastroOrSeguradora = shipment.status === ShipmentStatus.PreCadastro || 
+    shipment.status === ShipmentStatus.AguardandoSeguradora || 
+    (shipment.status as string) === 'Ag. Cadastro' || 
+    (shipment.status as string) === 'Aguardando Cadastro' ||
+    (shipment.status as string) === 'Ag. Seguradora';
+
+  let riskCost = 0;
+  if (!isRiskRequired) {
+    riskCost = 0;
+  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0) {
+    riskCost = Number(shipment.riskQueryCost);
+  } else if (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0) {
+    riskCost = historyRiskCost;
+  } else if (effectiveRiskType) {
+    riskCost = (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50);
+  } else if (effectiveReleaseCode && !isPreCadastroOrSeguradora) {
+    riskCost = 6.50;
+  } else {
+    riskCost = 0;
+  }
 
   // 10. INSS Patronal / CPRB: PF = 4% sobre (Frete Motorista - Pedágio); PJ = R$ 0,00 (Isento)
   const cprbPfRate = 0.04; // 4%

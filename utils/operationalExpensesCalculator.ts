@@ -241,6 +241,12 @@ export function calculateShipmentExpenses(
     : 0;
 
   // 14. Gerenciadora de Risco (GR)
+  const isRiskRequired = Boolean(
+    (cargo as any)?.requiresRiskManagement !== false &&
+    (shipment as any)?.requiresRiskManagement !== false &&
+    (cargo as any)?.product?.requiresRiskManagement !== false
+  );
+
   let historyRiskType: string | undefined;
   let historyRiskCost: number | undefined;
 
@@ -259,13 +265,27 @@ export function calculateShipmentExpenses(
   }
 
   const effectiveRiskType = shipment.riskQueryType || historyRiskType;
-  const riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0)
-    ? Number(shipment.riskQueryCost)
-    : (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0
-        ? historyRiskCost
-        : (effectiveRiskType 
-            ? (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50) 
-            : (shipment.status === ShipmentStatus.AguardandoSeguradora ? 0 : 6.50)));
+  
+  const isPreCadastroOrSeguradora = shipment.status === ShipmentStatus.PreCadastro || 
+    shipment.status === ShipmentStatus.AguardandoSeguradora || 
+    (shipment.status as string) === 'Ag. Cadastro' || 
+    (shipment.status as string) === 'Aguardando Cadastro' ||
+    (shipment.status as string) === 'Ag. Seguradora';
+
+  let riskCost = 0;
+  if (!isRiskRequired) {
+    riskCost = 0;
+  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0) {
+    riskCost = Number(shipment.riskQueryCost);
+  } else if (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0) {
+    riskCost = historyRiskCost;
+  } else if (effectiveRiskType) {
+    riskCost = (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50);
+  } else if (shipment.riskReleaseCode && !isPreCadastroOrSeguradora) {
+    riskCost = 6.50;
+  } else {
+    riskCost = 0;
+  }
 
   // 14.1 Crédito Gerado (Exportação):
   // - PF (TAC / Terceiro PF): 6,52834% s/ BC Serviço (ICMS 12% * 54,39%)

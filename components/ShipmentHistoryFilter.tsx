@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { ShipmentStatus } from '../types';
-import type { Shipment, Cargo } from '../types';
-import { FileText, X } from 'lucide-react';
+import type { Shipment, Cargo, User } from '../types';
+import { FileText, X, Search, UserCheck } from 'lucide-react';
 import { StayRecord } from '../utils/toolStorage';
 import { isStayForShipment } from '../utils';
 
@@ -26,6 +26,11 @@ interface ShipmentHistoryFilterProps {
   onFilterNfeChange?: (val: string) => void;
   filterMdfe?: string;
   onFilterMdfeChange?: (val: string) => void;
+  filterId?: string;
+  onFilterIdChange?: (val: string) => void;
+  filterSolicitante?: string;
+  onFilterSolicitanteChange?: (val: string) => void;
+  users?: User[];
 }
 
 const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({ 
@@ -48,8 +53,25 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
   onFilterNfeChange,
   filterMdfe = '',
   onFilterMdfeChange,
+  filterId = '',
+  onFilterIdChange,
+  filterSolicitante = '',
+  onFilterSolicitanteChange,
+  users = [],
 }) => {
   const cargoMap = React.useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
+
+  const getEmbarcadorName = (embarcadorId: string): string => {
+    return users.find(u => u.id === embarcadorId)?.name || 'N/A';
+  };
+
+  const solicitantesList = React.useMemo(() => {
+    const list = Array.from(new Set(shipments.map(s => {
+      const u = users.find(usr => usr.id === s.embarcadorId);
+      return u ? { id: u.id, name: u.name } : null;
+    }))).filter((item): item is { id: string; name: string } => !!item && !!item.name);
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [shipments, users]);
 
   const calculateMargin = (s: Shipment) => {
     const cargo = cargoMap.get(s.cargoId);
@@ -89,6 +111,52 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
   return (
     <div className="mb-6 space-y-4">
       <div className="flex flex-wrap items-end gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+        {/* Filtro por ID */}
+        {onFilterIdChange && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">ID:</label>
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+              <input 
+                type="text" 
+                placeholder="Buscar ID..."
+                value={filterId} 
+                onChange={(e) => onFilterIdChange(e.target.value)}
+                className="pl-8 pr-7 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all dark:text-white w-32 sm:w-36"
+              />
+              {filterId && (
+                <button
+                  onClick={() => onFilterIdChange('')}
+                  className="absolute right-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  title="Limpar filtro de ID"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Filtro por Solicitante */}
+        {onFilterSolicitanteChange && (
+          <div className="flex flex-col gap-1.5 min-w-[180px]">
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1 flex items-center gap-1">
+              <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+              Solicitante:
+            </label>
+            <select
+              value={filterSolicitante}
+              onChange={(e) => onFilterSolicitanteChange(e.target.value)}
+              className="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all dark:text-white"
+            >
+              <option value="">Todos os Solicitantes</option>
+              {solicitantesList.map(sol => (
+                <option key={sol.id} value={sol.id}>{sol.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">De:</label>
           <input 
@@ -131,6 +199,8 @@ const ShipmentHistoryFilter: React.FC<ShipmentHistoryFilterProps> = ({
 
         <button 
           onClick={() => {
+            if (onFilterIdChange) onFilterIdChange('');
+            if (onFilterSolicitanteChange) onFilterSolicitanteChange('');
             onStartDateChange('');
             onEndDateChange('');
             onMarginOperatorChange('');

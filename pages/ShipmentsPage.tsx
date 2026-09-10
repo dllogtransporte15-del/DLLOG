@@ -16,12 +16,10 @@ import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product
 
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
 import { can } from '../auth';
-import { tryAcquireShipmentLock, releaseShipmentLock } from '../lib/db';
-import { FileText, X, RefreshCw } from 'lucide-react';
+import { FileText, X } from 'lucide-react';
 import { getShipmentCte, isCteApplicableForStatus } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
-import { SyncDocumentsModal } from '../components/SyncDocumentsModal';
 
 interface ShipmentsPageProps {
   shipments: Shipment[];
@@ -90,7 +88,6 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const [isEditPriceModalOpen, setEditPriceModalOpen] = useState(false);
   const [isCancelModalOpen, setCancelModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isCadastroAnttModalOpen, setCadastroAnttModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isEditScheduledDateTimeModalOpen, setEditScheduledDateTimeModalOpen] = useState(false);
@@ -286,19 +283,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
 
   return (
     <>
-      <Header title="Embarques">
-        {onBatchUpdateShipments && (
-          <button
-            type="button"
-            onClick={() => setIsSyncModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all shadow-xs cursor-pointer"
-            title="Lê e atualiza dados de CT-e, Nota Fiscal, MDF-e e Carta Frete de todos os embarques"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-            <span>Sincronizar Documentos</span>
-          </button>
-        )}
-      </Header>
+      <Header title="Embarques" />
       <ShipmentStatusFilter 
         shipments={shipments} 
         activeStatus={activeStatus} 
@@ -454,15 +439,6 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         />
       )}
 
-      {/* MODAL DE SINCRONIZAÇÃO EM LOTE */}
-      {isSyncModalOpen && onBatchUpdateShipments && (
-        <SyncDocumentsModal
-          isOpen={isSyncModalOpen}
-          onClose={() => setIsSyncModalOpen(false)}
-          shipments={shipments}
-          onBatchUpdateShipments={onBatchUpdateShipments}
-        />
-      )}
     </>
   );
 };
