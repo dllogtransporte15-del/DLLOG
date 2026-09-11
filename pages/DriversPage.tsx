@@ -326,8 +326,6 @@ const DriversPage: React.FC<DriversPageProps> = ({
           onEdit={canUpdate ? handleEditDriver : undefined} 
           onDelete={canDelete ? handleDeleteDriver : undefined} 
           onShowHistory={handleShowHistory}
-          shipments={shipments}
-          cargos={cargos}
         />
       </div>
 
