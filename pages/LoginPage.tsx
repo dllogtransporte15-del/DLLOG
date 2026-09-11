@@ -460,7 +460,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
 
   return (
     <div 
-      className="relative min-h-screen w-full bg-[#070c18] text-slate-100 flex flex-col justify-between overflow-x-hidden select-none font-sans"
+      className="relative min-h-screen w-full bg-[#070c18] text-slate-100 flex flex-col justify-between overflow-x-hidden font-sans"
       style={{ zoom: 0.81 }}
     >
       {/* Background Grid Pattern & Ambient Glows */}

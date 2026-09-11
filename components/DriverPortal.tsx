@@ -416,7 +416,7 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#090D16] text-slate-100 font-sans pb-24 select-none">
+    <div className="flex flex-col min-h-screen bg-[#090D16] text-slate-100 font-sans pb-24">
       
       {/* TOP HEADER */}
       <header className="sticky top-0 z-30 bg-[#0E1526]/95 backdrop-blur border-b border-slate-800/80 px-4 py-3 flex items-center justify-between shadow-lg">

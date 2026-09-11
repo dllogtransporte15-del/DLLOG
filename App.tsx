@@ -3146,7 +3146,7 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="relative flex flex-col h-screen bg-[#f8fafc] dark:bg-[#070c18] text-slate-800 dark:text-slate-100 overflow-hidden font-sans select-none portal-theme-bg"
+      className="relative flex flex-col h-screen bg-[#f8fafc] dark:bg-[#070c18] text-slate-800 dark:text-slate-100 overflow-hidden font-sans portal-theme-bg"
       style={{ '--theme-bg': themeImage ? `url("${themeImage.replace(/"/g, '\\"')}")` : 'none' } as React.CSSProperties}
     >
       {/* Background Grid Pattern & Ambient Lighting (Model identical to Login Page) */}
