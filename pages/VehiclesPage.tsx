@@ -172,7 +172,7 @@ const VehiclesPage: React.FC<VehiclesPageProps> = ({
       
       <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".csv"/>
 
-      <div style={{ zoom: 0.8 }}>
+      <div>
         <VehicleFilter 
           owners={owners} 
           filters={filters} 

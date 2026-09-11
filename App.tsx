@@ -154,6 +154,32 @@ const App: React.FC = () => {
   const [offerForNewShipment, setOfferForNewShipment] = useState<FreightOffer | null>(null);
   const [isSelectEmbarcadorModalOpen, setIsSelectEmbarcadorModalOpen] = useState(false);
   const [selectedCargoForRequest, setSelectedCargoForRequest] = useState<Cargo | null>(null);
+
+  // Theme Mode ('dark' or 'light')
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('trancunha_theme_mode');
+    if (saved === 'dark' || saved === 'light') return saved;
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+    return 'dark';
+  });
+
+  const handleThemeModeChange = (mode: 'dark' | 'light') => {
+    setThemeMode(mode);
+    localStorage.setItem('trancunha_theme_mode', mode);
+    if (mode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  useEffect(() => {
+    if (themeMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [themeMode]);
   
   // Use custom hook for all database-related state and logic
   const {
@@ -3047,7 +3073,7 @@ const App: React.FC = () => {
         <Route path="/financial" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
         <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
         <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} />} />
-        <Route path="/appearance" element={<AppearancePage currentLogo={companyLogo} onSaveLogo={handleSaveLogo} currentTheme={themeImage} onSaveTheme={handleSaveThemeImage} />} />
+        <Route path="/appearance" element={<AppearancePage currentLogo={companyLogo} onSaveLogo={handleSaveLogo} currentTheme={themeImage} onSaveTheme={handleSaveThemeImage} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />} />
         <Route path="/system-monitor" element={<SystemMonitorPage currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} />} />
         <Route path="/shipment-history" element={<ShipmentHistoryPage shipments={visibleShipments} cargos={cargos} drivers={drivers} users={users} currentUser={currentUser} clients={clients} products={products} vehicles={vehicles} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onUpdateAttachment={handleUpdateShipmentAttachment} stays={stays} riskQueryOptions={riskQueryOptions} />} />
         <Route path="/load-history" element={<LoadHistoryPage loads={closedLoads} clients={clients} products={products} users={users} currentUser={currentUser} shipments={shipments} onDeleteLoad={handleDeleteCargo} onReactivateLoad={handleReactivateLoad} />} />
@@ -3120,9 +3146,29 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="flex flex-col h-screen bg-light-bg dark:bg-dark-bg text-gray-800 dark:text-gray-200 portal-theme-bg"
+      className="relative flex flex-col h-screen bg-[#f8fafc] dark:bg-[#070c18] text-slate-800 dark:text-slate-100 overflow-hidden font-sans select-none portal-theme-bg"
       style={{ '--theme-bg': themeImage ? `url("${themeImage.replace(/"/g, '\\"')}")` : 'none' } as React.CSSProperties}
     >
+      {/* Background Grid Pattern & Ambient Lighting (Model identical to Login Page) */}
+      {!themeImage && (
+        <>
+          <div 
+            className="absolute inset-0 pointer-events-none z-0"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px)
+              `,
+              backgroundSize: '48px 48px'
+            }}
+          />
+          {/* Soft Radial Ambient Lighting */}
+          <div className="absolute top-0 left-1/4 w-[600px] h-[500px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none z-0" />
+          <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[140px] pointer-events-none z-0" />
+          <div className="absolute top-1/2 right-10 w-[350px] h-[350px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none z-0" />
+        </>
+      )}
+
       <TopNavBar
         user={currentUser}
         onLogout={handleLogout}
@@ -3140,11 +3186,13 @@ const App: React.FC = () => {
         products={products}
         vehicles={vehicles}
         users={users}
+        themeMode={themeMode}
+        onThemeModeChange={handleThemeModeChange}
         onAcceptOrderRequest={handleAcceptOrderRequestFromNotification}
         onRefuseOrderRequest={handleRefuseOrderRequestFromNotification}
         onSaveFreightOffer={handleSaveFreightOffer}
       />
-      <main className="flex-1 overflow-y-auto" style={{ zoom: 0.8 }}>
+      <main className="relative z-10 flex-1 overflow-y-auto" style={{ zoom: 0.72 }}>
         <div className={isOperationalPage ? "px-6 py-8" : "container mx-auto px-6 py-8"}>
             {renderPage()}
         </div>

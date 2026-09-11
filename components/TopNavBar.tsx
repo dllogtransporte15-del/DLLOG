@@ -21,7 +21,7 @@ import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -44,6 +44,8 @@ interface TopNavBarProps {
   products?: Product[];
   vehicles?: Vehicle[];
   users?: User[];
+  themeMode?: 'dark' | 'light';
+  onThemeModeChange?: (mode: 'dark' | 'light') => void;
   onAcceptOrderRequest?: (offer: FreightOffer) => void | Promise<void>;
   onRefuseOrderRequest?: (offer: FreightOffer, reason?: string) => void | Promise<void>;
   onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void> | void;
@@ -127,6 +129,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   products,
   vehicles,
   users,
+  themeMode = 'dark',
+  onThemeModeChange,
   onAcceptOrderRequest,
   onRefuseOrderRequest,
   onSaveFreightOffer
@@ -190,9 +194,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // Check if click was outside the desktop dropdowns
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        // AND not inside the mobile menu
         if (!mobileMenuRef.current || !mobileMenuRef.current.contains(event.target as Node)) {
           setOpenDropdown(null);
         }
@@ -212,20 +214,33 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   }
 
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-md sticky top-0 z-40 border-b dark:border-gray-700">
-      <div className="container mx-auto px-6">
+    <header className="bg-white/95 dark:bg-[#0b1328]/90 shadow-lg shadow-blue-950/20 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-slate-700/60 relative">
+      {/* Top Border Glow (Same as Login Card) */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-80 pointer-events-none" />
+
+      <div className="container mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-18 sm:h-20">
-          {/* Logo e Nome da Empresa */}
-          <div className="flex items-center flex-shrink-0 mr-4">
+          
+          {/* Logo e Nome da Empresa + Status Online */}
+          <div className="flex items-center gap-3 flex-shrink-0 mr-3">
             <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-12 sm:h-14 md:h-15 w-auto object-contain max-w-[220px] transition-all" />
+                    <img src={companyLogo} alt="Logo" className="h-11 sm:h-13 md:h-14 w-auto object-contain max-w-[200px] transition-all filter drop-shadow-[0_2px_10px_rgba(11,102,228,0.3)]" />
                 ) : (
                     <h1 className="text-xl md:text-2xl font-black text-primary dark:text-white tracking-tighter uppercase">
-                      TRANS<span className="text-accent">CUNHA</span>
+                      TRANS<span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">CUNHA</span>
                     </h1>
                 )}
             </a>
+
+            {/* Badge Status Online */}
+            <div className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/60 shadow-inner backdrop-blur-md">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 tracking-wider uppercase">Online</span>
+            </div>
           </div>
 
           {/* Navegação Principal */}
@@ -237,24 +252,26 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                         <div className="relative" key={item.id} ref={item.id === openDropdown ? dropdownRef : null}>
                             <button
                                 onClick={() => handleDropdownToggle(item.id)}
-                                className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                                    isActive ? 'text-primary dark:text-blue-400 bg-primary/10 dark:bg-primary/20 shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                className={`flex items-center px-3.5 py-2 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                                    isActive 
+                                      ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40' 
+                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
                                 <span>{item.label}</span>
                                 <ChevronDownIcon className={`w-4 h-4 ml-1 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
                             </button>
                             {openDropdown === item.id && (
-                                <div className="absolute mt-2 w-56 origin-top-left bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 py-1">
+                                <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
                                     {item.children.map(child => {
                                       if (child.children) {
                                         return (
-                                          <div key={child.id} className="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-t border-gray-100 dark:border-gray-700 mt-1 first:mt-0 first:border-0">
+                                          <div key={child.id} className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 dark:border-slate-800 mt-1 first:mt-0 first:border-0">
                                             {child.label}
-                                            <div className="mt-1 normal-case font-normal text-sm">
+                                            <div className="mt-1 normal-case font-normal text-sm space-y-0.5">
                                               {child.children.map(grandChild => (
                                                 <a key={grandChild.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(grandChild.id as Page); }}
-                                                   className={`flex items-center gap-3 px-2 py-1.5 rounded-md ${currentPage === grandChild.id ? 'text-primary dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'} hover:bg-gray-100 dark:hover:bg-gray-700`}
+                                                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${currentPage === grandChild.id ? 'text-white bg-blue-600 shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'}`}
                                                 >
                                                    <grandChild.icon className="w-4 h-4" />
                                                    {grandChild.label}
@@ -266,7 +283,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                                       }
                                       return (
                                         <a key={child.id} href="#" onClick={(e) => { e.preventDefault(); handlePageSelect(child.id as Page); }}
-                                           className={`flex items-center gap-3 px-4 py-2 text-sm ${currentPage === child.id ? 'text-primary dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'} hover:bg-gray-100 dark:hover:bg-gray-700`}
+                                           className={`flex items-center gap-3 px-3.5 py-2 mx-1 rounded-xl text-sm font-medium transition-all ${currentPage === child.id ? 'text-white bg-blue-600 shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80'}`}
                                         >
                                            <child.icon className="w-4 h-4" />
                                            {child.label}
@@ -280,20 +297,52 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 }
                 return (
                     <a href="#" key={item.id} onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
-                       className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                           isActive ? 'text-primary dark:text-blue-400 bg-primary/10 dark:bg-primary/20 shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                       className={`px-3.5 py-2 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                           isActive 
+                             ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40' 
+                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                        }`}
                     >{item.label}</a>
                 )
             })}
           </nav>
 
-          {/* Ícones e Menu do Usuário */}
-          <div className="flex items-center space-x-4">
+          {/* Ícones, Seletor de Fundo e Menu do Usuário */}
+          <div className="flex items-center space-x-3">
              {user.profile === UserProfile.Motorista && (
                 <DriverLocationTracker user={user} />
              )}
              
+             {/* Seletor de Fundo: Escuro / Claro */}
+             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-700/70 shadow-inner">
+               <button
+                 type="button"
+                 title="Ativar Fundo Claro"
+                 onClick={() => onThemeModeChange && onThemeModeChange('light')}
+                 className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                   themeMode === 'light'
+                     ? 'bg-white text-blue-600 shadow-sm'
+                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                 }`}
+               >
+                 <Sun className="w-3.5 h-3.5 text-amber-500" />
+                 <span className="hidden md:inline text-[11px]">Claro</span>
+               </button>
+               <button
+                 type="button"
+                 title="Ativar Fundo Escuro"
+                 onClick={() => onThemeModeChange && onThemeModeChange('dark')}
+                 className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                   themeMode === 'dark'
+                     ? 'bg-gradient-to-r from-blue-600 to-sky-600 text-white shadow-md shadow-blue-900/40'
+                     : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                 }`}
+               >
+                 <Moon className="w-3.5 h-3.5 text-sky-300" />
+                 <span className="hidden md:inline text-[11px]">Escuro</span>
+               </button>
+             </div>
+
               <NotificationBell
                 user={user}
                 shipments={shipments}
@@ -313,31 +362,31 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
               />
 
             <div className="relative" ref={openDropdown === 'user' ? dropdownRef : null}>
-              <button onClick={() => handleDropdownToggle('user')} className="flex items-center space-x-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
-                <div className="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center font-bold shadow-md">
+              <button onClick={() => handleDropdownToggle('user')} className="flex items-center space-x-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-sky-400 text-white flex items-center justify-center font-bold shadow-md text-xs">
                   {user.name.charAt(0)}
                 </div>
                 <div className="hidden lg:block text-left">
-                    <p className="text-sm font-semibold text-gray-800 dark:text-white truncate">{user.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.profile}</p>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white truncate max-w-[120px]">{user.name}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user.profile}</p>
                 </div>
-                 <ChevronDownIcon className={`hidden lg:block w-4 h-4 text-gray-500 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
+                 <ChevronDownIcon className={`hidden lg:block w-4 h-4 text-slate-500 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
               </button>
               {openDropdown === 'user' && (
-                <div className="absolute mt-2 w-48 right-0 origin-top-right bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 py-1">
-                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                        <LogOutIcon className="w-4 h-4" />
-                        Sair
+                <div className="absolute mt-2 w-48 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all">
+                        <LogOutIcon className="w-4 h-4 text-red-400" />
+                        <span>Sair do Sistema</span>
                     </button>
                 </div>
               )}
             </div>
 
             {/* Mobile Menu Button */}
-            <div className="lg:hidden flex items-center ml-2">
+            <div className="lg:hidden flex items-center ml-1">
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
+                className="inline-flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 focus:outline-none transition-all"
               >
                 <span className="sr-only">Abrir menu</span>
                 {isMobileMenuOpen ? (

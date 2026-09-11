@@ -14,7 +14,15 @@
     <script>
       (function() {
         function applyTheme() {
-          const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const saved = localStorage.getItem('trancunha_theme_mode');
+          let isDark = true;
+          if (saved === 'light') {
+            isDark = false;
+          } else if (saved === 'dark') {
+            isDark = true;
+          } else if (window.matchMedia) {
+            isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          }
           if (isDark) {
             document.documentElement.classList.add('dark');
           } else {
@@ -23,7 +31,11 @@
         }
         applyTheme();
         if (window.matchMedia) {
-          window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+          window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+            if (!localStorage.getItem('trancunha_theme_mode')) {
+              applyTheme();
+            }
+          });
         }
       })();
       if (window.tailwind) {

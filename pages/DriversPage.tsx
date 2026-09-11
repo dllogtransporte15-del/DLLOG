@@ -312,7 +312,7 @@ const DriversPage: React.FC<DriversPageProps> = ({
       
       <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".csv,.xls,.xlsx"/>
 
-      <div style={{ zoom: 0.8 }}>
+      <div>
         <DriverFilter 
           drivers={drivers}
           owners={owners} 
@@ -326,6 +326,8 @@ const DriversPage: React.FC<DriversPageProps> = ({
           onEdit={canUpdate ? handleEditDriver : undefined} 
           onDelete={canDelete ? handleDeleteDriver : undefined} 
           onShowHistory={handleShowHistory}
+          shipments={shipments}
+          cargos={cargos}
         />
       </div>
 
