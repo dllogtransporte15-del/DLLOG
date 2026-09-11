@@ -137,7 +137,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
   };
 
   const handleSaveBranch = () => {
-    if (!branchForm.cnpj.trim()) {
+    if (!branchForm.cnpj || !branchForm.cnpj.trim()) {
       alert('Informe o CNPJ da filial.');
       return;
     }
@@ -148,7 +148,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
       const updated = currentBranches.map(b => b.id === editingBranchId ? { ...branchForm, id: editingBranchId } : b);
       setClient(prev => ({ ...prev, secondaryCnpjs: updated }));
     } else {
-      const newBranch = {
+      const newBranch: ClientBranchCnpj = {
         ...branchForm,
         id: branchForm.id || `branch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
       };
@@ -157,6 +157,14 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
 
     setIsAddingBranch(false);
     setEditingBranchId(null);
+  };
+
+  const handleBranchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSaveBranch();
+    }
   };
 
   const handleRemoveBranch = (id: string) => {
@@ -170,13 +178,34 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    let finalSecondaryCnpjs = client.secondaryCnpjs ? [...client.secondaryCnpjs] : [];
+
+    // Se o usuário estiver com o formulário de filial aberto e preencheu o CNPJ, inclui automaticamente
+    if (isAddingBranch && branchForm.cnpj && branchForm.cnpj.trim()) {
+      if (editingBranchId) {
+        finalSecondaryCnpjs = finalSecondaryCnpjs.map(b => b.id === editingBranchId ? { ...branchForm, id: editingBranchId } : b);
+      } else {
+        const newBranch: ClientBranchCnpj = {
+          ...branchForm,
+          id: branchForm.id || `branch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+        };
+        finalSecondaryCnpjs.push(newBranch);
+      }
+    }
+
+    const payloadToSave = {
+      ...client,
+      secondaryCnpjs: finalSecondaryCnpjs
+    };
+
     if (clientToEdit) {
       onSave({
-        ...client,
+        ...payloadToSave,
         id: clientToEdit.id,
       });
     } else {
-      onSave(client);
+      onSave(payloadToSave);
     }
   };
 
@@ -569,6 +598,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="cnpj"
                         value={branchForm.cnpj}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder="00.000.000/0002-00"
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm font-mono font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                         required
@@ -583,6 +613,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="nomeFantasia"
                         value={branchForm.nomeFantasia || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder="Ex: Filial Catalão, Unidade 02"
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                       />
@@ -596,6 +627,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="razaoSocial"
                         value={branchForm.razaoSocial || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder={client.razaoSocial || 'Razão Social'}
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                       />
@@ -609,6 +641,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="city"
                         value={branchForm.city || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder="Cidade da Filial"
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                       />
@@ -622,6 +655,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="state"
                         value={branchForm.state || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder="UF"
                         maxLength={2}
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm font-bold uppercase text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
@@ -636,6 +670,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="address"
                         value={branchForm.address || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder="Endereço da unidade"
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                       />
@@ -649,6 +684,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="phone"
                         value={branchForm.phone || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         placeholder="(00) 00000-0000"
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                       />
@@ -662,6 +698,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         name="email"
                         value={branchForm.email || ''}
                         onChange={handleBranchChange}
+                        onKeyDown={handleBranchKeyDown}
                         type="email"
                         placeholder="filial@empresa.com.br"
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"

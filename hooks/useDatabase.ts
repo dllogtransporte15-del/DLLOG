@@ -363,6 +363,13 @@ export function useDatabase(currentUser: User | null) {
             if (dbRiskOptions && dbRiskOptions.length > 0) {
               setRiskQueryOptions(dbRiskOptions);
             }
+            if (dbPermissions && (dbPermissions as any).client_branches) {
+              const bMap = (dbPermissions as any).client_branches;
+              setClients(prev => prev.map(c => ({
+                ...c,
+                secondaryCnpjs: bMap[c.id] !== undefined ? bMap[c.id] : (c.secondaryCnpjs || [])
+              })));
+            }
             break;
           }
           case 'app_settings': {

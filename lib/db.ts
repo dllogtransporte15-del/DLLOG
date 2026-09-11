@@ -1013,19 +1013,23 @@ export const fetchClientBranches = async (): Promise<Record<string, ClientBranch
 
 export const saveClientBranches = async (branchesMap: Record<string, ClientBranchCnpj[]>): Promise<void> => {
   try {
+    localStorage.setItem('transcunha_client_branches', JSON.stringify(branchesMap));
+  } catch {}
+
+  try {
     const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
     const current = data?.permissions || {};
     const updated = {
       ...current,
-      client_branches: branchesMap
+      client_branches: {
+        ...(current.client_branches || {}),
+        ...branchesMap
+      }
     };
     await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
   } catch (err) {
     console.warn('[DB] Error saving client branches:', err);
   }
-  try {
-    localStorage.setItem('transcunha_client_branches', JSON.stringify(branchesMap));
-  } catch {}
 };
 
 export const fetchClientExtraConfig = async (): Promise<Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>> => {
@@ -1378,6 +1382,30 @@ export async function deleteRiskQueryOption(id: string): Promise<void> {
 // ─────────────────────────────────────────────
 
 export async function upsertClient(client: Client): Promise<void> {
+  // 1. Persist branches first so any concurrent fetch reads the updated list
+  if (client.secondaryCnpjs !== undefined) {
+    try {
+      const branchesMap = await fetchClientBranches();
+      branchesMap[client.id] = client.secondaryCnpjs;
+      await saveClientBranches(branchesMap);
+    } catch (err) {
+      console.warn('[DB] Error persisting client branches in upsertClient:', err);
+    }
+  }
+
+  // 2. Persist extra config fallback
+  try {
+    const extraConfigMap = await fetchClientExtraConfig();
+    extraConfigMap[client.id] = {
+      salespersonName: client.salespersonName || '',
+      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0
+    };
+    await saveClientExtraConfig(extraConfigMap);
+  } catch (err) {
+    console.warn('[DB] Error persisting client extra config in upsertClient:', err);
+  }
+
+  // 3. Upsert client row in Supabase
   const payload = fromClient(client);
   let upsertError: any = null;
   try {
@@ -1399,28 +1427,6 @@ export async function upsertClient(client: Client): Promise<void> {
       if (retryError) throw retryError;
     } else {
       throw err;
-    }
-  }
-
-  // Persist extra config fallback
-  try {
-    const extraConfigMap = await fetchClientExtraConfig();
-    extraConfigMap[client.id] = {
-      salespersonName: client.salespersonName || '',
-      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0
-    };
-    await saveClientExtraConfig(extraConfigMap);
-  } catch (err) {
-    console.warn('[DB] Error persisting client extra config in upsertClient:', err);
-  }
-
-  if (client.secondaryCnpjs !== undefined) {
-    try {
-      const branchesMap = await fetchClientBranches();
-      branchesMap[client.id] = client.secondaryCnpjs;
-      await saveClientBranches(branchesMap);
-    } catch (err) {
-      console.warn('[DB] Error persisting client branches in upsertClient:', err);
     }
   }
 }
