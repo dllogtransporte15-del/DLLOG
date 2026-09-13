@@ -70,7 +70,17 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const formatBrl = (val: number | undefined | null) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 
-  const isEmbarcadorOrAgenciador = currentUser?.profile === UserProfile.Embarcador || currentUser?.profile === UserProfile.Agenciador;
+  const isRestrictedProfile = 
+    currentUser?.profile === UserProfile.Embarcador || 
+    currentUser?.profile === UserProfile.Agenciador ||
+    currentUser?.profile === UserProfile.Cliente ||
+    currentUser?.profile === UserProfile.Motorista ||
+    (currentUser?.profile as string) === 'Embarcador' ||
+    (currentUser?.profile as string) === 'Agenciador' ||
+    (currentUser?.profile as string) === 'Cliente' ||
+    (currentUser?.profile as string) === 'Motorista';
+
+  const isEmbarcadorOrAgenciador = isRestrictedProfile;
 
   // Determinação inicial do enquadramento tributário
   const defaultInitialRegime = shipment.etcTaxRegime || 
@@ -1474,6 +1484,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const marginPercent = cteGrossFreight > 0 ? ((totalRealProfit / cteGrossFreight) * 100).toFixed(1) : '0.0';
   const totalMarginPercent = totalCompanyFreight > 0 ? ((totalRealProfit / totalCompanyFreight) * 100).toFixed(1) : '0.0';
   const realProfit = totalRealProfit;
+
+  if (isRestrictedProfile) {
+    return null;
+  }
 
   return (
     <div className="w-full bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 sm:p-4 shadow-xs text-slate-800 dark:text-slate-100 font-sans space-y-3.5">

@@ -588,7 +588,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             </DetailItem>
                         )}
                         
-                        {staysList.length > 0 && currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && (
+                        {staysList.length > 0 && currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && currentUser?.profile !== UserProfile.Cliente && (
                             <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700">
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Resumo de Estadias</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

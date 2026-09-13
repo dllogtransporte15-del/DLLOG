@@ -267,7 +267,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'timeline' | 'documents'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'documents'>(currentUser?.profile === UserProfile.Cliente ? 'documents' : 'timeline');
   const [selectedDocForDetails, setSelectedDocForDetails] = useState<{
     fileOrUrl: File | string;
     docType: string;
@@ -303,6 +303,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setError('');
+      setActiveTab(currentUser.profile === UserProfile.Cliente ? 'documents' : 'timeline');
       setSingleFiles([]);
       setMultiFiles({});
       setBankDetails(shipment.bankDetails || '');
@@ -978,7 +979,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const rawDocEntries = Object.entries(shipment.documents || {}).filter(([key, val]) => isValidDocumentEntry(key, val));
 
   const documentsToShow = isClientUser
-    ? rawDocEntries.filter(([docType]) => allowedDocsForClient.includes(docType))
+    ? rawDocEntries.filter(([docType]) => 
+        allowedDocsForClient.includes(docType) && 
+        docType.toLowerCase().trim() !== 'carta frete' && 
+        !docType.toLowerCase().includes('carta frete')
+      )
     : rawDocEntries;
 
   const requiresBankDetails = shipment.status === ShipmentStatus.AguardandoNota && !shipment.bankDetails;
@@ -1065,7 +1070,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const embarcadorUser = users?.find(u => u.id === shipment.embarcadorId);
   const embarcadorName = embarcadorUser?.name || shipment.embarcadorId || 'Não especificado';
 
-  const canViewCompanyFreight = !isClientUser && currentUser.profile !== UserProfile.Motorista;
+  const canViewCompanyFreight = currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Embarcador;
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (shipment.shipmentTonnage ? shipment.driverFreightValue / shipment.shipmentTonnage : 0);
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const totalDriverFreight = shipment.driverFreightValue || (driverRate * (shipment.shipmentTonnage || 0));
@@ -1136,36 +1141,40 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             </div>
 
             {/* Frete Motorista / ton */}
-            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
-              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-between gap-1 mb-1">
-                <span className="flex items-center gap-1">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Frete Mtr / ton
-                </span>
-                <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${shipment.driverFreightType === 'PF'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                  }`}>
-                  {shipment.driverFreightType || 'PJ'}
-                </span>
+            {!isClientUser && (
+              <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+                <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-between gap-1 mb-1">
+                  <span className="flex items-center gap-1">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Frete Mtr / ton
+                  </span>
+                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${shipment.driverFreightType === 'PF'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                    }`}>
+                    {shipment.driverFreightType || 'PJ'}
+                  </span>
+                </div>
+                <div className="font-black text-emerald-400 text-xs flex items-baseline gap-1.5">
+                  <span>{formatCurrency(driverRate)}</span>
+                  <span className={`text-[10px] font-bold ${shipment.driverFreightType === 'PF' ? 'text-amber-400' : 'text-indigo-300'
+                    }`}>
+                    ({shipment.driverFreightType || 'PJ'})
+                  </span>
+                </div>
               </div>
-              <div className="font-black text-emerald-400 text-xs flex items-baseline gap-1.5">
-                <span>{formatCurrency(driverRate)}</span>
-                <span className={`text-[10px] font-bold ${shipment.driverFreightType === 'PF' ? 'text-amber-400' : 'text-indigo-300'
-                  }`}>
-                  ({shipment.driverFreightType || 'PJ'})
-                </span>
-              </div>
-            </div>
+            )}
 
             {/* Total Frete Motorista */}
-            <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
-              <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Total Frete Mtr
+            {!isClientUser && (
+              <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
+                <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Total Frete Mtr
+                </div>
+                <div className="font-black text-white text-xs">
+                  {formatCurrency(totalDriverFreight)}
+                </div>
               </div>
-              <div className="font-black text-white text-xs">
-                {formatCurrency(totalDriverFreight)}
-              </div>
-            </div>
+            )}
 
             {/* Frete Empresa / ton */}
             {canViewCompanyFreight && (
@@ -1240,72 +1249,33 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         </div>
 
         {/* Card de Informações Financeiras & Pagamento */}
-        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div>
-            <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Forma de Pagamento:</span>
-            <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">
-              {shipment.paymentMethod || 'PIX - E-FRETE'}
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Porcentagem de Adiantamento:</span>
-            <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-              {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">
-              {shipment.paymentMethod === 'DEPOSITO EM CONTA' ? 'Dados Bancários:' : 'Chave Pix / Dados:'}
-            </span>
-            <span className="font-semibold text-gray-800 dark:text-gray-200 truncate block">
-              {shipment.paymentMethod === 'DEPOSITO EM CONTA' ? (shipment.bankDetails || 'Não informados') : (shipment.pixKey || shipment.bankDetails || 'Não informada')}
-            </span>
-          </div>
-        </div>
-
-        {/* Navegação de Abas: Linha do Tempo das Etapas vs Documentos & Painel CT-e */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-5 border-b border-gray-200 dark:border-gray-700 pb-3">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('timeline')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                activeTab === 'timeline'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20 ring-2 ring-indigo-400/30'
-                  : 'bg-gray-100 dark:bg-gray-700/70 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
-            >
-              <ListOrdered className="w-4 h-4" />
-              <span>Etapas de Cada Status (Linha do Tempo)</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
-                activeTab === 'timeline' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
-              }`}>
-                10 Etapas
+        {!isClientUser && (
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div>
+              <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Forma de Pagamento:</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">
+                {shipment.paymentMethod || 'PIX - E-FRETE'}
               </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('documents')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                activeTab === 'documents'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20 ring-2 ring-indigo-400/30'
-                  : 'bg-gray-100 dark:bg-gray-700/70 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Documentos Anexados & Painel CT-e</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
-                activeTab === 'documents' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
-              }`}>
-                {documentsToShow.length} {documentsToShow.length === 1 ? 'categoria' : 'categorias'}
+            </div>
+            <div>
+              <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">Porcentagem de Adiantamento:</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
               </span>
-            </button>
+            </div>
+            <div>
+              <span className="text-gray-500 dark:text-gray-400 font-medium block mb-0.5">
+                {shipment.paymentMethod === 'DEPOSITO EM CONTA' ? 'Dados Bancários:' : 'Chave Pix / Dados:'}
+              </span>
+              <span className="font-semibold text-gray-800 dark:text-gray-200 truncate block">
+                {shipment.paymentMethod === 'DEPOSITO EM CONTA' ? (shipment.bankDetails || 'Não informados') : (shipment.pixKey || shipment.bankDetails || 'Não informada')}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Conteúdo da Aba 1: Linha do Tempo das Etapas */}
-        {activeTab === 'timeline' && (
+        {/* Linha do Tempo das Etapas do Embarque no Topo da Janela (Oculto para Cliente) */}
+        {!isClientUser && (
           <div className="mb-6">
             <ShipmentStagesTimeline
               shipment={shipment}
@@ -1314,14 +1284,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               products={products}
               clients={clients}
               riskQueryOptions={riskQueryOptions}
+              currentUser={currentUser}
               onInspectFile={(fileOrUrl, docType, docName) => setSelectedDocForDetails({ fileOrUrl, docType, docName })}
             />
           </div>
         )}
 
-        {/* Conteúdo da Aba 2: Documentos Consolidados & Painel de Automação de Custos */}
-        {activeTab === 'documents' && (
-          <>
+        {/* Documentos Consolidados & Painel de Automação de Custos */}
+        <>
             {/* Bloco 1: Documentos Anexados (Linha Horizontal) */}
             <div className="mb-6 border rounded-xl dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
               <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 border-b dark:border-gray-600 font-bold text-gray-800 dark:text-gray-100 flex items-center justify-between">
@@ -1351,21 +1321,28 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               </div>
             </div>
 
-            {/* Bloco 2: Automatização do CT-e Custos & Margem (Embaixo) */}
-            <div className="mb-6">
-              <CteCostAutomationPanel
-                shipment={shipment}
-                cargo={cargo}
-                tollValue={tollValue}
-                loadedTonnage={loadedTonnage}
-                riskQueryType={riskQueryType}
-                riskReleaseCode={riskReleaseCode}
-                users={users}
-                clients={clients}
-                currentUser={currentUser}
-                onUpdateShipmentData={onUpdateShipmentData}
-              />
-            </div>
+            {/* Bloco 2: Automatização do CT-e Custos & Margem (Embaixo) - Oculto para Embarcador, Agenciador e Cliente */}
+            {currentUser?.profile !== UserProfile.Embarcador && 
+             currentUser?.profile !== UserProfile.Agenciador && 
+             currentUser?.profile !== UserProfile.Cliente &&
+             (currentUser?.profile as string) !== 'Embarcador' && 
+             (currentUser?.profile as string) !== 'Agenciador' && 
+             (currentUser?.profile as string) !== 'Cliente' && (
+              <div className="mb-6">
+                <CteCostAutomationPanel
+                  shipment={shipment}
+                  cargo={cargo}
+                  tollValue={tollValue}
+                  loadedTonnage={loadedTonnage}
+                  riskQueryType={riskQueryType}
+                  riskReleaseCode={riskReleaseCode}
+                  users={users}
+                  clients={clients}
+                  currentUser={currentUser}
+                  onUpdateShipmentData={onUpdateShipmentData}
+                />
+              </div>
+            )}
 
             {/* Números de Documentos Fiscais Extraídos */}
             {(shipment.cteNumber || shipment.nfeNumber || shipment.mdfeNumber) && (
@@ -1394,7 +1371,6 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               </div>
             )}
           </>
-        )}
 
         {!isClientUser ? (
           <div className="border-t dark:border-gray-700 pt-4">

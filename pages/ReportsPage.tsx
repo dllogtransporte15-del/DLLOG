@@ -349,6 +349,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       case 'previsao-demandas':
         return <DemandForecastReport cargos={cargos} clients={clients} shipments={shipments} companyLogo={companyLogo} />;
       case 'lucro-real':
+        if (isCliente) return null;
         return (
           <RealProfitReport
             shipments={shipments}

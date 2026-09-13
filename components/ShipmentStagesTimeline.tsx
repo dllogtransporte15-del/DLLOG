@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shipment, ShipmentStatus, User, Cargo, Product, Client, RiskQueryOption } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, Product, Client, RiskQueryOption } from '../types';
 import { 
   CheckCircle2, Clock, AlertCircle, XCircle, FileText, Eye, 
   ExternalLink, User as UserIcon, Calendar, ShieldCheck, Scale, 
@@ -15,6 +15,7 @@ interface ShipmentStagesTimelineProps {
   products?: Product[];
   clients?: Client[];
   riskQueryOptions?: RiskQueryOption[];
+  currentUser?: User | null;
   onInspectFile?: (fileOrUrl: string | File, docType: string, docName: string) => void;
 }
 
@@ -141,10 +142,44 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   products = [],
   clients = [],
   riskQueryOptions = [],
+  currentUser,
   onInspectFile,
 }) => {
+  const isClientUser = currentUser?.profile === UserProfile.Cliente || (currentUser?.profile as string) === 'Cliente';
+
+  const visibleStageDefinitions = React.useMemo(() => {
+    if (isClientUser) {
+      return STAGES_DEFINITIONS.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo).map((s, idx) => ({
+        ...s,
+        stepNumber: idx + 1,
+        description: s.status === ShipmentStatus.Finalizado 
+          ? 'Embarque finalizado e entrega concluída com sucesso.' 
+          : (s.status === ShipmentStatus.AguardandoFiscal
+              ? 'Emissão do CT-e, MDF-e e documentos fiscais da viagem.'
+              : s.description),
+        associatedDocTypes: s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
+      }));
+    }
+    return STAGES_DEFINITIONS;
+  }, [isClientUser]);
+
+  // Inicializa a aba ativa com o status atual do embarque
+  const initialActiveStage = React.useMemo(() => {
+    const found = visibleStageDefinitions.find(s => s.status === shipment.status);
+    return found ? found.status : (visibleStageDefinitions[0]?.status || ShipmentStatus.PreCadastro);
+  }, [shipment.status, visibleStageDefinitions]);
+
+  const [activeStageTab, setActiveStageTab] = useState<ShipmentStatus>(initialActiveStage);
+  const [viewMode, setViewMode] = useState<'tabs' | 'list'>('tabs');
   const [expandedStage, setExpandedStage] = useState<ShipmentStatus | null>(null);
   const [filterMode, setFilterMode] = useState<'all' | 'completed' | 'active'>('all');
+
+  // Atualiza a aba ativa caso o status do embarque mude externamente
+  React.useEffect(() => {
+    if (visibleStageDefinitions.some(s => s.status === shipment.status)) {
+      setActiveStageTab(shipment.status);
+    }
+  }, [shipment.status, visibleStageDefinitions]);
 
   const formatCurrency = (val?: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -217,10 +252,10 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     return map;
   }, [shipment.statusHistory, shipment.createdAt, shipment.createdById]);
 
-  // Documentos válidos indexados por docType
+  // Documentos organizados por etapa
   const documentsByStage = React.useMemo(() => {
-    const map: { [stageKey: string]: { docType: string; url: string; fileName: string }[] } = {};
-    const rawDocs = shipment.documents || {};
+    const map: { [key: string]: { docType: string; url: string; fileName: string }[] } = {};
+    const docsObj = shipment.documents || {};
 
     const ignoredDocKeys = new Set([
       'pix_key', 'cte_number', 'payment_method', 'risk_query_cost', 
@@ -230,15 +265,16 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
       'unloaded_tonnage', 'loaded_tonnage'
     ]);
 
-    Object.entries(rawDocs).forEach(([docType, val]) => {
+    Object.entries(docsObj).forEach(([docType, val]) => {
       if (ignoredDocKeys.has(docType.toLowerCase().trim()) || docType.startsWith('_')) return;
+      if (isClientUser && docType.toLowerCase().includes('carta frete')) return;
       const urls = (Array.isArray(val) ? val : (typeof val === 'string' ? [val] : [])).filter(u => typeof u === 'string' && u.trim() !== '');
       if (urls.length === 0) return;
 
       // Encontra a etapa correspondente
-      const targetStage = STAGES_DEFINITIONS.find(stage => 
+      const targetStage = visibleStageDefinitions.find(stage => 
         stage.associatedDocTypes.some(t => t.toLowerCase() === docType.toLowerCase())
-      ) || STAGES_DEFINITIONS[4]; // Default para etapa fiscal se não mapeado
+      ) || visibleStageDefinitions[4] || visibleStageDefinitions[0];
 
       if (!map[targetStage.status]) {
         map[targetStage.status] = [];
@@ -257,16 +293,19 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     });
 
     return map;
-  }, [shipment.documents]);
+  }, [shipment.documents, isClientUser, visibleStageDefinitions]);
+
+  const totalStagesCount = visibleStageDefinitions.length;
 
   // Contagem de etapas concluídas
   const completedStagesCount = React.useMemo(() => {
-    if (shipment.status === ShipmentStatus.Finalizado) return 10;
+    if (shipment.status === ShipmentStatus.Finalizado) return totalStagesCount;
     if (isCanceled) return 0;
-    return Math.max(0, currentStatusIndex);
-  }, [shipment.status, isCanceled, currentStatusIndex]);
+    const activeIdx = visibleStageDefinitions.findIndex(s => s.status === shipment.status);
+    return activeIdx !== -1 ? activeIdx : Math.max(0, currentStatusIndex);
+  }, [shipment.status, isCanceled, currentStatusIndex, totalStagesCount, visibleStageDefinitions]);
 
-  const completionPercentage = Math.round((completedStagesCount / 10) * 100);
+  const completionPercentage = Math.round((completedStagesCount / totalStagesCount) * 100);
 
   const getStageState = (stageStatus: ShipmentStatus, stageIndex: number) => {
     if (isCanceled) {
@@ -288,17 +327,33 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     return 'pending';
   };
 
-  const filteredStages = STAGES_DEFINITIONS.filter((stage, index) => {
+  const filteredStages = visibleStageDefinitions.filter((stage, index) => {
     const state = getStageState(stage.status, index);
     if (filterMode === 'completed') return state === 'completed';
     if (filterMode === 'active') return state === 'active' || state === 'pending';
     return true;
   });
 
+  // Identifica o índice da aba atual para navegação Anterior/Próxima
+  const currentActiveTabIndex = visibleStageDefinitions.findIndex(s => s.status === activeStageTab);
+  const selectedStageData = visibleStageDefinitions[currentActiveTabIndex >= 0 ? currentActiveTabIndex : 0];
+
+  const handlePrevStage = () => {
+    if (currentActiveTabIndex > 0) {
+      setActiveStageTab(visibleStageDefinitions[currentActiveTabIndex - 1].status);
+    }
+  };
+
+  const handleNextStage = () => {
+    if (currentActiveTabIndex < visibleStageDefinitions.length - 1) {
+      setActiveStageTab(visibleStageDefinitions[currentActiveTabIndex + 1].status);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Barra de Progresso e Visão Geral do Fluxo */}
-      <div className="bg-slate-900/90 text-white p-4 rounded-2xl border border-slate-700/80 shadow-lg">
+      <div className="bg-slate-900/95 text-white p-4 rounded-2xl border border-slate-700/80 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/30">
@@ -308,7 +363,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 Linha do Tempo das Etapas do Embarque
                 <span className="text-[11px] font-semibold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
-                  {completedStagesCount} de 10 etapas concluídas
+                  {completedStagesCount} de {totalStagesCount} etapas concluídas
                 </span>
               </h3>
               <p className="text-[11px] text-slate-400">
@@ -317,48 +372,85 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Progresso</span>
-              <span className={`text-sm font-black ${completionPercentage === 100 ? 'text-emerald-400' : 'text-blue-400'}`}>
-                {completionPercentage}%
-              </span>
-            </div>
-            <div className="w-20 bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700">
-              <div
-                className={`h-full transition-all duration-500 rounded-full ${
-                  completionPercentage === 100
-                    ? 'bg-emerald-500'
-                    : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+          <div className="flex items-center gap-3">
+            {/* Seletor de Modo de Visualização */}
+            <div className="flex items-center bg-slate-800 p-0.5 rounded-xl border border-slate-700 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => setViewMode('tabs')}
+                className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'tabs'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white'
                 }`}
-                style={{ width: `${Math.max(5, completionPercentage)}%` }}
-              />
+                title="Visualização otimizada por abas individuais"
+              >
+                Abas (Otimizado)
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'list'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Visualizar todas as etapas em lista completa"
+              >
+                Ver Todas
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 pl-2 border-l border-slate-700/80">
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Progresso</span>
+                <span className={`text-sm font-black ${completionPercentage === 100 ? 'text-emerald-400' : 'text-blue-400'}`}>
+                  {completionPercentage}%
+                </span>
+              </div>
+              <div className="w-16 bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700">
+                <div
+                  className={`h-full transition-all duration-500 rounded-full ${
+                    completionPercentage === 100
+                      ? 'bg-emerald-500'
+                      : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                  }`}
+                  style={{ width: `${Math.max(5, completionPercentage)}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Stepper Horizontal Interativo */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-1.5 pt-2 border-t border-slate-800">
-          {STAGES_DEFINITIONS.map((stage, idx) => {
+        {/* Stepper / Abas Horizontais Interativas */}
+        <div className={`grid grid-cols-2 sm:grid-cols-5 ${visibleStageDefinitions.length === 10 ? 'lg:grid-cols-10' : 'lg:grid-cols-9'} gap-1.5 pt-2 border-t border-slate-800`}>
+          {visibleStageDefinitions.map((stage, idx) => {
             const state = getStageState(stage.status, idx);
-            const isSelected = expandedStage === stage.status;
-            const historyEntry = historyMap[stage.status];
+            const isTabActive = activeStageTab === stage.status;
+            const isExpanded = expandedStage === stage.status;
 
             return (
               <button
                 key={stage.status}
                 type="button"
-                onClick={() => setExpandedStage(isSelected ? null : stage.status)}
-                className={`flex flex-col items-center text-center p-2 rounded-xl transition-all cursor-pointer border ${
-                  state === 'completed'
+                onClick={() => {
+                  setActiveStageTab(stage.status);
+                  if (viewMode === 'list') {
+                    setExpandedStage(isExpanded ? null : stage.status);
+                  }
+                }}
+                className={`flex flex-col items-center text-center p-2 rounded-xl transition-all cursor-pointer border relative ${
+                  viewMode === 'tabs' && isTabActive
+                    ? 'bg-indigo-950/80 border-indigo-400 text-white ring-2 ring-indigo-400/80 shadow-lg shadow-indigo-950'
+                    : state === 'completed'
                     ? 'bg-emerald-950/40 border-emerald-500/40 hover:bg-emerald-900/50 text-emerald-300'
                     : state === 'active'
-                    ? 'bg-blue-900/60 border-blue-400 hover:bg-blue-800/80 text-blue-200 ring-2 ring-blue-500/30 shadow-md shadow-blue-950'
+                    ? 'bg-blue-900/60 border-blue-400 hover:bg-blue-800/80 text-blue-200 ring-1 ring-blue-400/30'
                     : state === 'canceled'
                     ? 'bg-red-950/40 border-red-500/40 hover:bg-red-900/50 text-red-300'
                     : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800 text-slate-400'
-                } ${isSelected ? 'ring-2 ring-indigo-400 shadow-md' : ''}`}
-                title={`Clique para ver detalhes da etapa: ${stage.title}`}
+                }`}
+                title={`Clique para alternar para a etapa: ${stage.title}`}
               >
                 <div className="flex items-center gap-1 mb-1">
                   <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
@@ -379,62 +471,92 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                 <span className="text-[9px] font-medium opacity-70 mt-0.5 truncate max-w-[85px]">
                   {state === 'completed' ? 'Concluído' : state === 'active' ? 'Em Aberto' : state === 'canceled' ? 'Cancelado' : 'Pendente'}
                 </span>
+
+                {/* Marcador triangular indicando a aba ativa */}
+                {viewMode === 'tabs' && isTabActive && (
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-indigo-500 rotate-45 rounded-2xs" />
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* Filtros de Visualização */}
-        <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-800 text-xs">
+        {/* Barra de Controles e Legenda */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-800 text-xs">
           <div className="flex items-center gap-1 text-[11px] text-slate-400">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> Concluído
             <span className="inline-block w-2 h-2 rounded-full bg-blue-400 ml-2"></span> Atual
             <span className="inline-block w-2 h-2 rounded-full bg-slate-500 ml-2"></span> Pendente
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setFilterMode('all')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                filterMode === 'all'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Todas as Etapas
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterMode('completed')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                filterMode === 'completed'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Concluídas ({completedStagesCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterMode('active')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                filterMode === 'active'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Ativa / Pendentes ({10 - completedStagesCount})
-            </button>
-          </div>
+          {viewMode === 'tabs' ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePrevStage}
+                disabled={currentActiveTabIndex <= 0}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <span>← Etapa Anterior</span>
+              </button>
+              <span className="text-[11px] font-mono font-bold text-indigo-300">
+                {currentActiveTabIndex + 1} de {visibleStageDefinitions.length}
+              </span>
+              <button
+                type="button"
+                onClick={handleNextStage}
+                disabled={currentActiveTabIndex >= visibleStageDefinitions.length - 1}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <span>Próxima Etapa →</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setFilterMode('all')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                  filterMode === 'all'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                Todas as Etapas
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('completed')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                  filterMode === 'completed'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                Concluídas ({completedStagesCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode('active')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                  filterMode === 'active'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                Ativa / Pendentes ({visibleStageDefinitions.length - completedStagesCount})
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Lista de Cards de Cada Etapa */}
+      {/* Conteúdo das Etapas: Modo Abas (Única) vs Modo Lista (Todas) */}
       <div className="space-y-3">
-        {filteredStages.map((stage, index) => {
-          const state = getStageState(stage.status, STAGES_DEFINITIONS.indexOf(stage));
-          const isExpanded = expandedStage === stage.status || (expandedStage === null && (state === 'active' || state === 'completed'));
+        {(viewMode === 'tabs' ? [selectedStageData].filter(Boolean) : filteredStages).map((stage, index) => {
+          const originalIdx = visibleStageDefinitions.findIndex(s => s.status === stage.status);
+          const state = getStageState(stage.status, originalIdx >= 0 ? originalIdx : index);
+          const isExpanded = viewMode === 'tabs' || expandedStage === stage.status || (expandedStage === null && (state === 'active' || state === 'completed'));
           const historyEntry = historyMap[stage.status];
           const docs = documentsByStage[stage.status] || [];
           const stageUserName = historyEntry?.userId ? getUserName(historyEntry.userId) : (stage.status === ShipmentStatus.PreCadastro && shipment.createdById ? getUserName(shipment.createdById) : null);
@@ -588,12 +710,14 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                           {shipment.riskQueryType || 'Consulta Padrão'}
                         </span>
                       </div>
-                      <div className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Custo Registrado da GR</span>
-                        <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
-                          {formatCurrency(shipment.riskQueryCost !== undefined ? shipment.riskQueryCost : 6.50)}
-                        </span>
-                      </div>
+                      {!isClientUser && (
+                        <div className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                          <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Custo Registrado da GR</span>
+                          <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
+                            {formatCurrency(shipment.riskQueryCost !== undefined ? shipment.riskQueryCost : 6.50)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -628,12 +752,14 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                           {shipment.nfeValue ? formatCurrency(shipment.nfeValue) : (shipment.realProfitData?.invoiceValue ? formatCurrency(shipment.realProfitData.invoiceValue) : 'Averbada')}
                         </span>
                       </div>
-                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Chave PIX / Dados Pagamento</span>
-                        <span className="font-mono font-medium text-gray-800 dark:text-gray-200 block truncate" title={shipment.pixKey || shipment.bankDetails || '---'}>
-                          {shipment.pixKey || shipment.bankDetails || 'PIX - E-FRETE'}
-                        </span>
-                      </div>
+                      {!isClientUser && (
+                        <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Chave PIX / Dados Pagamento</span>
+                          <span className="font-mono font-medium text-gray-800 dark:text-gray-200 block truncate" title={shipment.pixKey || shipment.bankDetails || '---'}>
+                            {shipment.pixKey || shipment.bankDetails || 'PIX - E-FRETE'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -659,39 +785,51 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                       <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
                         <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Documentos da Viagem</span>
                         <span className="font-bold text-gray-800 dark:text-gray-200 block">
-                          Carta Frete & Contrato Anexados
+                          {isClientUser ? 'Documentos Fiscais Emitidos' : 'Carta Frete & Contrato Anexados'}
                         </span>
                       </div>
                     </div>
                   )}
 
                   {stage.status === ShipmentStatus.AguardandoAdiantamento && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">% Adiantamento</span>
-                        <span className="font-black text-sm text-emerald-600 dark:text-emerald-400 block">
-                          {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 80}%
+                    isClientUser ? (
+                      <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs flex items-center justify-between">
+                        <div>
+                          <span className="font-bold text-emerald-900 dark:text-emerald-100 block">Viagem Liberada</span>
+                          <span className="text-[11px] text-emerald-700 dark:text-emerald-300">Veículo em trânsito com liberação operacional confirmada.</span>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-lg font-bold text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          Liberado ✓
                         </span>
                       </div>
-                      <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                        <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Adiantamento em Conta</span>
-                        <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
-                          {formatCurrency(shipment.advanceValue)}
-                        </span>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                        <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">% Adiantamento</span>
+                          <span className="font-black text-sm text-emerald-600 dark:text-emerald-400 block">
+                            {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 80}%
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
+                          <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Adiantamento em Conta</span>
+                          <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
+                            {formatCurrency(shipment.advanceValue)}
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Vale-Pedágio (Tag)</span>
+                          <span className="font-black text-sm text-gray-900 dark:text-white block">
+                            {formatCurrency(shipment.tollValue)}
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                          <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Total Liberado na Saída</span>
+                          <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
+                            {formatCurrency((Number(shipment.advanceValue) || 0) + (Number(shipment.tollValue) || 0))}
+                          </span>
+                        </div>
                       </div>
-                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Vale-Pedágio (Tag)</span>
-                        <span className="font-black text-sm text-gray-900 dark:text-white block">
-                          {formatCurrency(shipment.tollValue)}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Total Liberado na Saída</span>
-                        <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
-                          {formatCurrency((Number(shipment.advanceValue) || 0) + (Number(shipment.tollValue) || 0))}
-                        </span>
-                      </div>
-                    </div>
+                    )
                   )}
 
                   {stage.status === ShipmentStatus.AguardandoAgendamento && (
@@ -737,7 +875,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                     </div>
                   )}
 
-                  {stage.status === ShipmentStatus.AguardandoPagamentoSaldo && (
+                  {!isClientUser && stage.status === ShipmentStatus.AguardandoPagamentoSaldo && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
                       <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
                         <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Saldo Bruto</span>
@@ -761,31 +899,53 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                   )}
 
                   {stage.status === ShipmentStatus.Finalizado && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                      <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
-                        <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Faturamento Empresa</span>
-                        <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
-                          {formatCurrency(shipment.realProfitData?.companyFreight || (cargo?.companyFreightValuePerTon ? cargo.companyFreightValuePerTon * (shipment.shipmentTonnage || 0) : 0))}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Custo Motorista</span>
-                        <span className="font-black text-sm text-gray-900 dark:text-white block">
-                          {formatCurrency(shipment.driverFreightValue)}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Lucro Líquido Real</span>
-                        <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
-                          {formatCurrency(shipment.realProfitData?.netProfit)}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Margem de Lucro</span>
-                        <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
-                          {shipment.realProfitData?.profitMarginPercent !== undefined ? `${shipment.realProfitData.profitMarginPercent.toFixed(1)}%` : '---'}
-                        </span>
-                      </div>
+                    <div className={`grid gap-2.5 text-xs ${isClientUser ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
+                      {isClientUser ? (
+                        <>
+                          <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
+                            <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Valor Total do Frete</span>
+                            <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
+                              {formatCurrency(shipment.realProfitData?.companyFreight || (cargo?.companyFreightValuePerTon ? cargo.companyFreightValuePerTon * (shipment.shipmentTonnage || 0) : 0))}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+                            <div>
+                              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Status da Entrega</span>
+                              <span className="font-black text-sm text-emerald-950 dark:text-emerald-100 block">Concluída com Sucesso</span>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                              Finalizado ✓
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
+                            <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Faturamento Empresa</span>
+                            <span className="font-black text-sm text-blue-950 dark:text-blue-100 block">
+                              {formatCurrency(shipment.realProfitData?.companyFreight || (cargo?.companyFreightValuePerTon ? cargo.companyFreightValuePerTon * (shipment.shipmentTonnage || 0) : 0))}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Custo Motorista</span>
+                            <span className="font-black text-sm text-gray-900 dark:text-white block">
+                              {formatCurrency(shipment.driverFreightValue)}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Lucro Líquido Real</span>
+                            <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
+                              {formatCurrency(shipment.realProfitData?.netProfit)}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-emerald-50/60 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Margem de Lucro</span>
+                            <span className="font-black text-sm text-emerald-900 dark:text-emerald-100 block">
+                              {shipment.realProfitData?.profitMarginPercent !== undefined ? `${shipment.realProfitData.profitMarginPercent.toFixed(1)}%` : '---'}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
 
