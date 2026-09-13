@@ -49,6 +49,7 @@ interface TopNavBarProps {
   onAcceptOrderRequest?: (offer: FreightOffer) => void | Promise<void>;
   onRefuseOrderRequest?: (offer: FreightOffer, reason?: string) => void | Promise<void>;
   onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void> | void;
+  onOpenUpdates?: () => void;
 }
 
 interface NavItem {
@@ -133,7 +134,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   onThemeModeChange,
   onAcceptOrderRequest,
   onRefuseOrderRequest,
-  onSaveFreightOffer
+  onSaveFreightOffer,
+  onOpenUpdates
 }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -218,23 +220,23 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
       {/* Top Border Glow (Same as Login Card) */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-80 pointer-events-none" />
 
-      <div className="container mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between h-18 sm:h-20">
+      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 lg:px-6">
+        <div className="flex items-center justify-between h-16 sm:h-18 lg:h-20 gap-4">
           
-          {/* Logo e Nome da Empresa + Status Online */}
-          <div className="flex items-center gap-3 flex-shrink-0 mr-3">
+          {/* Logo e Nome da Empresa + Status Online (Lado Esquerdo) */}
+          <div className="flex items-center gap-2.5 lg:gap-3 shrink-0">
             <a href="#" onClick={(e) => { e.preventDefault(); handlePageSelect('dashboard')}} className="flex items-center py-1">
                 {companyLogo ? (
-                    <img src={companyLogo} alt="Logo" className="h-11 sm:h-13 md:h-14 w-auto object-contain max-w-[200px] transition-all filter drop-shadow-[0_2px_10px_rgba(11,102,228,0.3)]" />
+                    <img src={companyLogo} alt="Logo" className="h-9 sm:h-11 md:h-12 w-auto object-contain max-w-[140px] sm:max-w-[180px] transition-all filter drop-shadow-[0_2px_10px_rgba(11,102,228,0.3)]" />
                 ) : (
-                    <h1 className="text-xl md:text-2xl font-black text-primary dark:text-white tracking-tighter uppercase">
+                    <h1 className="text-lg md:text-xl xl:text-2xl font-black text-primary dark:text-white tracking-tighter uppercase whitespace-nowrap">
                       TRANS<span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">CUNHA</span>
                     </h1>
                 )}
             </a>
 
             {/* Badge Status Online */}
-            <div className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/60 shadow-inner backdrop-blur-md">
+            <div className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700/60 shadow-inner backdrop-blur-md shrink-0">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -243,8 +245,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
             </div>
           </div>
 
-          {/* Navegação Principal */}
-          <nav className="hidden lg:flex items-center space-x-1">
+          {/* Navegação Principal (Centralizada) */}
+          <nav className="hidden lg:flex items-center justify-center space-x-1 xl:space-x-2 flex-1 min-w-0 px-2">
             {filteredNavItems.map((item) => {
                 const isActive = currentPage === item.id || isParentOfCurrentPage(item);
                 if(item.children) {
@@ -252,14 +254,14 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                         <div className="relative" key={item.id} ref={item.id === openDropdown ? dropdownRef : null}>
                             <button
                                 onClick={() => handleDropdownToggle(item.id)}
-                                className={`flex items-center px-3.5 py-2 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                                className={`flex items-center px-3 xl:px-4 py-2 text-xs xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                                     isActive 
-                                      ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40' 
+                                      ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40 scale-[1.02]' 
                                       : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                                 }`}
                             >
                                 <span>{item.label}</span>
-                                <ChevronDownIcon className={`w-4 h-4 ml-1 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
+                                <ChevronDownIcon className={`w-3.5 h-3.5 xl:w-4 xl:h-4 ml-1 transition-transform ${openDropdown === item.id ? 'rotate-180' : ''}`} />
                             </button>
                             {openDropdown === item.id && (
                                 <div className="absolute mt-2 w-60 origin-top-left bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
@@ -297,9 +299,9 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 }
                 return (
                     <a href="#" key={item.id} onClick={(e) => { e.preventDefault(); handlePageSelect(item.id as Page); }}
-                       className={`px-3.5 py-2 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                       className={`px-3 xl:px-4 py-2 text-xs xl:text-sm font-bold rounded-xl transition-all duration-200 whitespace-nowrap cursor-pointer ${
                            isActive 
-                             ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40' 
+                             ? 'bg-gradient-to-r from-blue-600 via-primary to-blue-700 text-white shadow-md shadow-blue-900/40 scale-[1.02]' 
                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                        }`}
                     >{item.label}</a>
@@ -307,74 +309,98 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
             })}
           </nav>
 
-          {/* Ícones, Seletor de Fundo e Menu do Usuário */}
-          <div className="flex items-center space-x-3">
+          {/* Ícones, Seletor de Fundo e Menu do Usuário (Lado Direito) */}
+          <div className="flex items-center justify-end gap-2 xl:gap-3 shrink-0">
              {user.profile === UserProfile.Motorista && (
                 <DriverLocationTracker user={user} />
              )}
              
              {/* Seletor de Fundo: Escuro / Claro */}
-             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-700/70 shadow-inner">
+             <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-700/70 shadow-inner shrink-0">
                <button
                  type="button"
                  title="Ativar Fundo Claro"
                  onClick={() => onThemeModeChange && onThemeModeChange('light')}
-                 className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                    themeMode === 'light'
                      ? 'bg-white text-blue-600 shadow-sm'
                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                  }`}
                >
-                 <Sun className="w-3.5 h-3.5 text-amber-500" />
-                 <span className="hidden md:inline text-[11px]">Claro</span>
+                 <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                 <span className="hidden 2xl:inline text-[11px]">Claro</span>
                </button>
                <button
                  type="button"
                  title="Ativar Fundo Escuro"
                  onClick={() => onThemeModeChange && onThemeModeChange('dark')}
-                 className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                 className={`p-1.5 xl:px-2 xl:py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                    themeMode === 'dark'
                      ? 'bg-gradient-to-r from-blue-600 to-sky-600 text-white shadow-md shadow-blue-900/40'
                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
                  }`}
                >
-                 <Moon className="w-3.5 h-3.5 text-sky-300" />
-                 <span className="hidden md:inline text-[11px]">Escuro</span>
+                 <Moon className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                 <span className="hidden 2xl:inline text-[11px]">Escuro</span>
                </button>
              </div>
 
-              <NotificationBell
-                user={user}
-                shipments={shipments}
-                freightOffers={freightOffers}
-                cargos={cargos}
-                drivers={drivers}
-                clients={clients}
-                products={products}
-                vehicles={vehicles}
-                users={users}
-                tickets={tickets}
-                onOpenTickets={onOpenTickets}
-                onNavigateTo={(page) => setCurrentPage(page)}
-                onAcceptOrderRequest={onAcceptOrderRequest}
-                onRefuseOrderRequest={onRefuseOrderRequest}
-                onSaveFreightOffer={onSaveFreightOffer}
-              />
+              {/* Botão de Novidades / Atualizações do Sistema */}
+              <button
+                type="button"
+                onClick={onOpenUpdates}
+                title="Novidades e Atualizações do Sistema"
+                className="p-1.5 xl:px-2.5 xl:py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
+                <span className="hidden 2xl:inline text-[11px]">Novidades</span>
+              </button>
 
-            <div className="relative" ref={openDropdown === 'user' ? dropdownRef : null}>
-              <button onClick={() => handleDropdownToggle('user')} className="flex items-center space-x-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-sky-400 text-white flex items-center justify-center font-bold shadow-md text-xs">
+              <div className="shrink-0">
+                <NotificationBell
+                  user={user}
+                  shipments={shipments}
+                  freightOffers={freightOffers}
+                  cargos={cargos}
+                  drivers={drivers}
+                  clients={clients}
+                  products={products}
+                  vehicles={vehicles}
+                  users={users}
+                  tickets={tickets}
+                  onOpenTickets={onOpenTickets}
+                  onNavigateTo={(page) => setCurrentPage(page)}
+                  onAcceptOrderRequest={onAcceptOrderRequest}
+                  onRefuseOrderRequest={onRefuseOrderRequest}
+                  onSaveFreightOffer={onSaveFreightOffer}
+                />
+              </div>
+
+            <div className="relative shrink-0" ref={openDropdown === 'user' ? dropdownRef : null}>
+              <button onClick={() => handleDropdownToggle('user')} className="flex items-center gap-1.5 xl:gap-2 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all shrink-0 cursor-pointer">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-sky-400 text-white flex items-center justify-center font-bold shadow-md text-xs shrink-0">
                   {user.name.charAt(0)}
                 </div>
-                <div className="hidden lg:block text-left">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-white truncate max-w-[120px]">{user.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user.profile}</p>
+                <div className="hidden lg:block text-left min-w-0">
+                    <p className="text-xs xl:text-sm font-semibold text-slate-800 dark:text-white truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.name}</p>
+                    <p className="text-[10px] xl:text-xs text-slate-500 dark:text-slate-400 truncate max-w-[85px] xl:max-w-[130px] leading-tight">{user.profile}</p>
                 </div>
-                 <ChevronDownIcon className={`hidden lg:block w-4 h-4 text-slate-500 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
+                 <ChevronDownIcon className={`hidden lg:block w-3.5 h-3.5 xl:w-4 xl:h-4 text-slate-500 shrink-0 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
               </button>
               {openDropdown === 'user' && (
-                <div className="absolute mt-2 w-48 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
-                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all">
+                <div className="absolute mt-2 w-52 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                    <button 
+                      onClick={() => {
+                        handleDropdownToggle('user');
+                        onOpenUpdates && onOpenUpdates();
+                      }} 
+                      className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer"
+                    >
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <span>Novidades da Versão</span>
+                    </button>
+                    <div className="h-px bg-slate-200 dark:bg-slate-700/60 my-1"></div>
+                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer">
                         <LogOutIcon className="w-4 h-4 text-red-400" />
                         <span>Sair do Sistema</span>
                     </button>

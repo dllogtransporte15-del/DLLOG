@@ -45,6 +45,8 @@ import TicketModal from './components/TicketModal';
 import PasswordChangeModal from './components/PasswordChangeModal';
 import DriverPortal from './components/DriverPortal';
 import NewShipmentModal from './components/NewShipmentModal';
+import SystemUpdateModal from './components/SystemUpdateModal';
+import { shouldShowUpdateModal } from './utils/systemUpdates';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
@@ -206,6 +208,18 @@ const App: React.FC = () => {
   } = useDatabase(currentUser);
 
   const { showToast } = useToast();
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?.id && !isLoading) {
+      if (shouldShowUpdateModal(currentUser.id)) {
+        const timer = setTimeout(() => {
+          setIsUpdateModalOpen(true);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [currentUser?.id, isLoading]);
 
   const handleSaveRiskQueryOption = async (optionData: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => {
     try {
@@ -3190,6 +3204,7 @@ const App: React.FC = () => {
         onAcceptOrderRequest={handleAcceptOrderRequestFromNotification}
         onRefuseOrderRequest={handleRefuseOrderRequestFromNotification}
         onSaveFreightOffer={handleSaveFreightOffer}
+        onOpenUpdates={() => setIsUpdateModalOpen(true)}
       />
       <main className="relative z-10 flex-1 overflow-y-auto" style={{ zoom: 0.72 }}>
         <div className={isOperationalPage ? "px-6 py-8" : "container mx-auto px-6 py-8"}>
@@ -3247,6 +3262,11 @@ const App: React.FC = () => {
           onCancel={handleLogout}
         />
       )}
+      <SystemUpdateModal 
+        isOpen={isUpdateModalOpen} 
+        onClose={() => setIsUpdateModalOpen(false)} 
+        currentUser={currentUser} 
+      />
     </div>
   );
 };
