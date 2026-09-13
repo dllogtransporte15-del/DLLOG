@@ -5,10 +5,11 @@ import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../ser
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
+import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
 import { calculateAdvanceAndBalance, calculateTacTaxDeductions } from '../utils/freightCalculation';
 import { calculateFreightBalance } from '../utils/freightBalanceCalculator';
 
@@ -266,6 +267,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'documents'>('timeline');
   const [selectedDocForDetails, setSelectedDocForDetails] = useState<{
     fileOrUrl: File | string;
     docType: string;
@@ -1261,76 +1263,137 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           </div>
         </div>
 
-        {/* Bloco 1: Documentos Anexados (Linha Horizontal) */}
-        <div className="mb-6 border rounded-xl dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
-          <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 border-b dark:border-gray-600 font-bold text-gray-800 dark:text-gray-100 flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-500" />
-              Documentos Anexados
-            </span>
-            <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-              {documentsToShow.length} {documentsToShow.length === 1 ? 'categoria' : 'categorias'}
-            </span>
+        {/* Navegação de Abas: Linha do Tempo das Etapas vs Documentos & Painel CT-e */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-5 border-b border-gray-200 dark:border-gray-700 pb-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('timeline')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                activeTab === 'timeline'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20 ring-2 ring-indigo-400/30'
+                  : 'bg-gray-100 dark:bg-gray-700/70 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+            >
+              <ListOrdered className="w-4 h-4" />
+              <span>Etapas de Cada Status (Linha do Tempo)</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                activeTab === 'timeline' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
+              }`}>
+                10 Etapas
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('documents')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                activeTab === 'documents'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20 ring-2 ring-indigo-400/30'
+                  : 'bg-gray-100 dark:bg-gray-700/70 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Documentos Anexados & Painel CT-e</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                activeTab === 'documents' ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
+              }`}>
+                {documentsToShow.length} {documentsToShow.length === 1 ? 'categoria' : 'categorias'}
+              </span>
+            </button>
           </div>
-          <div className="p-4 space-y-4">
-            {creationDocuments.length > 0 && (
-              <div>
-                <h4 className="font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 border-b pb-1">
-                  Arquivos Iniciais
-                </h4>
-                {renderDocumentList(creationDocuments)}
+        </div>
+
+        {/* Conteúdo da Aba 1: Linha do Tempo das Etapas */}
+        {activeTab === 'timeline' && (
+          <div className="mb-6">
+            <ShipmentStagesTimeline
+              shipment={shipment}
+              cargo={cargo}
+              users={users}
+              products={products}
+              clients={clients}
+              riskQueryOptions={riskQueryOptions}
+              onInspectFile={(fileOrUrl, docType, docName) => setSelectedDocForDetails({ fileOrUrl, docType, docName })}
+            />
+          </div>
+        )}
+
+        {/* Conteúdo da Aba 2: Documentos Consolidados & Painel de Automação de Custos */}
+        {activeTab === 'documents' && (
+          <>
+            {/* Bloco 1: Documentos Anexados (Linha Horizontal) */}
+            <div className="mb-6 border rounded-xl dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
+              <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 border-b dark:border-gray-600 font-bold text-gray-800 dark:text-gray-100 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-500" />
+                  Documentos Anexados
+                </span>
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  {documentsToShow.length} {documentsToShow.length === 1 ? 'categoria' : 'categorias'}
+                </span>
+              </div>
+              <div className="p-4 space-y-4">
+                {creationDocuments.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 border-b pb-1">
+                      Arquivos Iniciais
+                    </h4>
+                    {renderDocumentList(creationDocuments)}
+                  </div>
+                )}
+                <div>
+                  <h4 className="font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 border-b pb-1">
+                    Troca de Status
+                  </h4>
+                  {statusDocuments.length > 0 ? renderDocumentList(statusDocuments) : <p className="text-sm italic text-gray-400">Nenhum documento anexado.</p>}
+                </div>
+              </div>
+            </div>
+
+            {/* Bloco 2: Automatização do CT-e Custos & Margem (Embaixo) */}
+            <div className="mb-6">
+              <CteCostAutomationPanel
+                shipment={shipment}
+                cargo={cargo}
+                tollValue={tollValue}
+                loadedTonnage={loadedTonnage}
+                riskQueryType={riskQueryType}
+                riskReleaseCode={riskReleaseCode}
+                users={users}
+                clients={clients}
+                currentUser={currentUser}
+                onUpdateShipmentData={onUpdateShipmentData}
+              />
+            </div>
+
+            {/* Números de Documentos Fiscais Extraídos */}
+            {(shipment.cteNumber || shipment.nfeNumber || shipment.mdfeNumber) && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+                <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">📄 Números de Documentos Fiscais</p>
+                <div className="flex flex-wrap gap-2">
+                  {(shipment.cteNumber && isCteApplicableForStatus(shipment.status)) && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 rounded-full text-xs font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                      CT-e nº {shipment.cteNumber} {shipment.cteEmissionDate ? `(${shipment.cteEmissionDate})` : ''}
+                    </span>
+                  )}
+                  {shipment.nfeNumber && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 rounded-full text-xs font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                      NF-e nº {shipment.nfeNumber}
+                    </span>
+                  )}
+                  {shipment.mdfeNumber && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700 text-violet-800 dark:text-violet-200 rounded-full text-xs font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-violet-500 inline-block"></span>
+                      MDF-e nº {shipment.mdfeNumber}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
-            <div>
-              <h4 className="font-semibold text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 border-b pb-1">
-                Troca de Status
-              </h4>
-              {statusDocuments.length > 0 ? renderDocumentList(statusDocuments) : <p className="text-sm italic text-gray-400">Nenhum documento anexado.</p>}
-            </div>
-          </div>
-        </div>
-
-        {/* Bloco 2: Automatização do CT-e Custos & Margem (Embaixo) */}
-        <div className="mb-6">
-          <CteCostAutomationPanel
-            shipment={shipment}
-            cargo={cargo}
-            tollValue={tollValue}
-            loadedTonnage={loadedTonnage}
-            riskQueryType={riskQueryType}
-            riskReleaseCode={riskReleaseCode}
-            users={users}
-            clients={clients}
-            currentUser={currentUser}
-            onUpdateShipmentData={onUpdateShipmentData}
-          />
-        </div>
-
-        {/* Números de Documentos Fiscais Extraídos */}
-        {(shipment.cteNumber || shipment.nfeNumber || shipment.mdfeNumber) && (
-          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl">
-            <p className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">📄 Números de Documentos Fiscais</p>
-            <div className="flex flex-wrap gap-2">
-              {(shipment.cteNumber && isCteApplicableForStatus(shipment.status)) && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 rounded-full text-xs font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-                  CT-e nº {shipment.cteNumber} {shipment.cteEmissionDate ? `(${shipment.cteEmissionDate})` : ''}
-                </span>
-              )}
-              {shipment.nfeNumber && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 rounded-full text-xs font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                  NF-e nº {shipment.nfeNumber}
-                </span>
-              )}
-              {shipment.mdfeNumber && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700 text-violet-800 dark:text-violet-200 rounded-full text-xs font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-violet-500 inline-block"></span>
-                  MDF-e nº {shipment.mdfeNumber}
-                </span>
-              )}
-            </div>
-          </div>
+          </>
         )}
 
         {!isClientUser ? (

@@ -107,7 +107,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
     if (isEmbarcador || isAdminOrDiretor) {
       freightOffers.forEach(offer => {
-        if (offer.status !== FreightOfferStatus.Pendente) return;
+        if (offer.status !== FreightOfferStatus.Pendente || !offer.driverId) return;
 
         const cargo = offer.cargoId ? cargoMap.get(offer.cargoId) : undefined;
         const driver = driverMap.get(offer.driverId || '');

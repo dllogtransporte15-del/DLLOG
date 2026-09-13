@@ -1,12 +1,11 @@
 import React, { useMemo } from 'react';
 import type { Shipment, User, Cargo, Branch } from '../../types';
 import { ShipmentStatus, UserProfile } from '../../types';
-import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { getShipmentCte, isCteApplicableForStatus, isStayForShipment } from '../../utils';
-import { Building2, CheckCircle2, XCircle, TrendingUp, ShieldCheck, Briefcase, Percent, Users } from 'lucide-react';
+import { Building2, CheckCircle2, XCircle, TrendingUp, ShieldCheck, Briefcase, Percent, Users, UserCheck } from 'lucide-react';
 
 interface CommercialReportProps {
   shipments: Shipment[];
@@ -24,12 +23,14 @@ const StatCard: React.FC<{
   subtitle?: string; 
   icon: React.ReactElement; 
   subtitleColor?: string;
+  isCurrency?: boolean;
 }> = ({ 
   title, 
   value, 
   subtitle, 
   icon,
-  subtitleColor = "text-blue-600 dark:text-blue-400"
+  subtitleColor = "text-blue-600 dark:text-blue-400",
+  isCurrency = true
 }) => {
   return (
     <div className="flex flex-col justify-between p-5 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm transition-all hover:shadow-md">
@@ -37,7 +38,7 @@ const StatCard: React.FC<{
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider leading-snug">{title}</p>
           <p className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white mt-1.5">
-            {value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            {isCurrency ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : `${value} ${value === 1 ? 'embarque' : 'embarques'}`}
           </p>
         </div>
         <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-600/50 flex items-center justify-center shrink-0">
@@ -59,13 +60,39 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   users, 
   branches = [], 
   stays = [],
-  onSaveUser,
   currentUser
 }) => {
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
   const branchMap = useMemo(() => new Map(branches.map(b => [b.id, b])), [branches]);
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
+
+  // Contexto do Usuário Logado
+  const isCurrentUserAgenciador = currentUser?.profile === UserProfile.Agenciador;
+
+  // Se o usuário logado for agenciador de embarque, ele tem um líder; se for líder, ele é o próprio líder
+  const effectiveLeaderId = useMemo(() => {
+    if (!currentUser) return undefined;
+    if (currentUser.profile === UserProfile.Agenciador && currentUser.agencyRole === 'embarque' && currentUser.agencyLeaderId) {
+      return currentUser.agencyLeaderId;
+    }
+    return currentUser.id;
+  }, [currentUser]);
+
+  const leaderUser = useMemo(() => {
+    if (!effectiveLeaderId) return currentUser;
+    return userMap.get(effectiveLeaderId) || currentUser;
+  }, [effectiveLeaderId, userMap, currentUser]);
+
+  // Operadores de embarque vinculados a este líder
+  const teamOperators = useMemo(() => {
+    if (!effectiveLeaderId) return [];
+    return users.filter(u => 
+      u.profile === UserProfile.Agenciador && 
+      u.agencyRole === 'embarque' && 
+      u.agencyLeaderId === effectiveLeaderId
+    );
+  }, [effectiveLeaderId, users]);
 
   // Identificar filial Matriz e demais filiais
   const matrizBranch = useMemo(() => {
@@ -196,13 +223,13 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return user.id;
   };
 
-  // Filtrar usuários comerciais e agenciadores líderes (agenciadores de embarque consolidam sob o líder)
+  // Filtrar usuários comerciais e agenciadores líderes
   const commercialUsers = useMemo(() => {
     return users.filter(u => {
       if (u.profile === UserProfile.Demonstracao || (u.profile as string) === 'Demo' || u.name?.toUpperCase().includes('DEMO')) {
         return false;
       }
-      // Agenciador de Embarque não aparece como linha individual na tabela principal
+      // Agenciador de Embarque não aparece como linha individual na tabela principal de agências
       if (u.profile === UserProfile.Agenciador && u.agencyRole === 'embarque') {
         return false;
       }
@@ -224,6 +251,15 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     );
   }, [commercialUsers]);
 
+  // Lista de usuários comerciais visíveis na tabela principal
+  const displayedCommercialUsers = useMemo(() => {
+    if (isCurrentUserAgenciador) {
+      // Agenciador vê apenas o seu próprio registro (líder) consolidado com sua agência
+      return commercialUsers.filter(u => u.id === effectiveLeaderId || u.id === currentUser?.id);
+    }
+    return commercialUsers;
+  }, [commercialUsers, isCurrentUserAgenciador, effectiveLeaderId, currentUser]);
+
   // Mapear contagem de usuários por agência / filial para divisão da comissão no modo Agência
   const agencyMemberCountsMap = useMemo(() => {
     const counts = new Map<string, number>();
@@ -240,11 +276,22 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return counts;
   }, [activeCommissionUsers, nonMatrizBranches]);
 
-  // Mapear Lucro Real Total, Comissão de Agenciamento e Contagem de Embarques por Agência/Agenciador Líder (consolidando equipe de operadores)
-  const { userAgencyProfitMap, userAgencyCommissionMap, userAgencyShipmentCountMap } = useMemo(() => {
+  // Mapear Lucro Real Total, Comissão de Agenciamento e Contagem de Embarques por Agência/Agenciador Líder e por Operador Individual
+  const { 
+    userAgencyProfitMap, 
+    userAgencyCommissionMap, 
+    userAgencyShipmentCountMap,
+    memberProfitMap,
+    memberCommissionMap,
+    memberShipmentCountMap
+  } = useMemo(() => {
     const commMap = new Map<string, number>();
     const profitMap = new Map<string, number>();
     const countMap = new Map<string, number>();
+
+    const memProfit = new Map<string, number>();
+    const memComm = new Map<string, number>();
+    const memCount = new Map<string, number>();
     
     shipments.forEach(s => {
       if (s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
@@ -288,101 +335,167 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
       if (!targetLeaderId) return;
 
-      const leaderUser = userMap.get(targetLeaderId);
+      const leader = userMap.get(targetLeaderId);
 
-      // Soma do Lucro Real de cada embarque do agenciador/agência e seus operadores vinculados
+      // Soma do Lucro Real e Contagem da Agência Líder
       profitMap.set(targetLeaderId, (profitMap.get(targetLeaderId) || 0) + opProfit);
       countMap.set(targetLeaderId, (countMap.get(targetLeaderId) || 0) + 1);
 
-      // Comissão de agenciamento (se aplicável ao perfil agenciador ou frete com comissão habilitada)
-      const isAgencyEnabled = s.agencyCommissionEnabled !== false && (s.agencyCommissionEnabled === true || Boolean(leaderUser?.profile === UserProfile.Agenciador));
+      // Comissão de agenciamento
+      const isAgencyEnabled = s.agencyCommissionEnabled !== false && (s.agencyCommissionEnabled === true || Boolean(leader?.profile === UserProfile.Agenciador));
+      let calculatedCommVal = 0;
       if (isAgencyEnabled) {
         const pct = s.agencyCommissionPercentage !== undefined 
           ? s.agencyCommissionPercentage 
-          : (leaderUser?.agencyCommissionPercentage ?? 30);
-        const calculatedVal = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
-        commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + calculatedVal);
+          : (leader?.agencyCommissionPercentage ?? 30);
+        calculatedCommVal = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
+        commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + calculatedCommVal);
+      }
+
+      // Registro individual para o membro/operador que fez o embarque
+      const directOperatorId = s.embarcadorId || s.createdById || cargo?.createdById;
+      if (directOperatorId) {
+        memProfit.set(directOperatorId, (memProfit.get(directOperatorId) || 0) + opProfit);
+        memCount.set(directOperatorId, (memCount.get(directOperatorId) || 0) + 1);
+        if (calculatedCommVal > 0) {
+          memComm.set(directOperatorId, (memComm.get(directOperatorId) || 0) + calculatedCommVal);
+        }
       }
     });
 
     return { 
       userAgencyCommissionMap: commMap, 
       userAgencyProfitMap: profitMap, 
-      userAgencyShipmentCountMap: countMap 
+      userAgencyShipmentCountMap: countMap,
+      memberProfitMap: memProfit,
+      memberCommissionMap: memComm,
+      memberShipmentCountMap: memCount
     };
   }, [shipments, cargoMap, stays, users, userMap]);
 
-  // Total geral de comissões de agenciamento em todos os fretes
+  // Total geral de comissões de agenciamento em todos os fretes (para visão executiva)
   const totalGlobalAgencyCommission = useMemo(() => {
     let sum = 0;
     userAgencyCommissionMap.forEach(val => { sum += val; });
     return sum;
   }, [userAgencyCommissionMap]);
 
+  // Valores consolidados para o Agenciador logado
+  const currentAgencyShipmentCount = effectiveLeaderId ? (userAgencyShipmentCountMap.get(effectiveLeaderId) || 0) : 0;
+  const currentAgencyProfit = effectiveLeaderId ? (userAgencyProfitMap.get(effectiveLeaderId) || 0) : 0;
+  const currentAgencyCommission = effectiveLeaderId ? (userAgencyCommissionMap.get(effectiveLeaderId) || 0) : 0;
+
   return (
     <div className="space-y-6">
       {/* HEADER TITLE */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-900/40 via-slate-900 to-slate-900 p-6 rounded-2xl border border-blue-800/40 shadow-sm">
+      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl border shadow-sm ${
+        isCurrentUserAgenciador 
+          ? 'bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-900 border-purple-800/40'
+          : 'bg-gradient-to-r from-blue-900/40 via-slate-900 to-slate-900 border-blue-800/40'
+      }`}>
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Briefcase className="w-7 h-7 text-blue-400" />
-            Relatório Comercial & Agenciamento
+            <Briefcase className={`w-7 h-7 ${isCurrentUserAgenciador ? 'text-purple-400' : 'text-blue-400'}`} />
+            {isCurrentUserAgenciador ? 'Meu Relatório Comercial & Agenciamento' : 'Relatório Comercial & Agenciamento'}
           </h2>
+          <p className="text-xs text-gray-400 mt-1">
+            {isCurrentUserAgenciador 
+              ? `Visualização restrita ao resultado da sua agência e equipe vinculada (${leaderUser?.name || currentUser?.name}).`
+              : 'Desempenho consolidado de faturamento, comissões ativas e lucro real por membro comercial e agenciador.'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-blue-950/80 px-4 py-2 rounded-xl border border-blue-700/50 text-xs font-semibold text-blue-200">
-            <Building2 className="w-4 h-4 text-blue-400" />
-            <span>Matriz Principal: <b>{matrizBranch?.name || 'MATRIZ'}</b></span>
-          </div>
+          {isCurrentUserAgenciador ? (
+            <div className="flex items-center gap-2 bg-purple-950/80 px-4 py-2 rounded-xl border border-purple-700/50 text-xs font-semibold text-purple-200">
+              <Users className="w-4 h-4 text-purple-400" />
+              <span>Agência: <b>{leaderUser?.name}</b> ({leaderUser?.agencyCommissionPercentage ?? 30}%)</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-blue-950/80 px-4 py-2 rounded-xl border border-blue-700/50 text-xs font-semibold text-blue-200">
+              <Building2 className="w-4 h-4 text-blue-400" />
+              <span>Matriz Principal: <b>{matrizBranch?.name || 'MATRIZ'}</b></span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* STAT CARDS KPI */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard 
-          title="Faturamento Matriz" 
-          subtitle={`Comissão (0,20%): ${comissaoMatrizDefault.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`}
-          value={fatBrutoMatriz} 
-          icon={<Building2 className="w-6 h-6 text-blue-500 dark:text-blue-400"/>} 
-          subtitleColor="text-blue-600 dark:text-blue-300 font-bold"
-        />
+      {isCurrentUserAgenciador ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatCard 
+            title="Embarques da Agência / Equipe" 
+            subtitle={teamOperators.length > 0 ? `Consolidando Líder + ${teamOperators.length} operador(es)` : 'Total de embarques com CTE'}
+            value={currentAgencyShipmentCount} 
+            isCurrency={false}
+            icon={<Briefcase className="w-6 h-6 text-purple-500 dark:text-purple-400"/>} 
+            subtitleColor="text-purple-600 dark:text-purple-300 font-bold"
+          />
 
-        <StatCard 
-          title="Faturamento Filiais" 
-          subtitle={`Comissão (0,10%): ${comissaoFiliaisDefault.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`}
-          value={totalFiliaisGross} 
-          icon={<TrendingUp className="w-6 h-6 text-indigo-500 dark:text-indigo-400"/>} 
-          subtitleColor="text-indigo-600 dark:text-indigo-300 font-bold"
-        />
+          <StatCard 
+            title="Lucro Real Total Gerado" 
+            subtitle="Base de cálculo da comissão de agenciamento"
+            value={currentAgencyProfit} 
+            icon={<TrendingUp className="w-6 h-6 text-emerald-500 dark:text-emerald-400"/>} 
+            subtitleColor="text-emerald-600 dark:text-emerald-300 font-bold"
+          />
 
-        <StatCard 
-          title="Comissão Total Comercial & Agências" 
-          subtitle={`Comissões Gerência + Agenciamentos (${totalGlobalAgencyCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`}
-          value={comissaoTotalCalculadaDefault + totalGlobalAgencyCommission} 
-          icon={<ShieldCheck className="w-6 h-6 text-emerald-500 dark:text-emerald-400"/>} 
-          subtitleColor="text-emerald-600 dark:text-emerald-300 font-bold"
-        />
-      </div>
+          <StatCard 
+            title="Comissão a Receber" 
+            subtitle={`Taxa de comissão: ${leaderUser?.agencyCommissionPercentage ?? 30}% sobre o lucro real`}
+            value={currentAgencyCommission} 
+            icon={<ShieldCheck className="w-6 h-6 text-emerald-500 dark:text-emerald-400"/>} 
+            subtitleColor="text-emerald-600 dark:text-emerald-300 font-bold"
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatCard 
+            title="Faturamento Matriz" 
+            subtitle={`Comissão (0,20%): ${comissaoMatrizDefault.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`}
+            value={fatBrutoMatriz} 
+            icon={<Building2 className="w-6 h-6 text-blue-500 dark:text-blue-400"/>} 
+            subtitleColor="text-blue-600 dark:text-blue-300 font-bold"
+          />
 
-      {/* TABELA DE COMERCIAIS E AGENCIADORES */}
+          <StatCard 
+            title="Faturamento Filiais" 
+            subtitle={`Comissão (0,10%): ${comissaoFiliaisDefault.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`}
+            value={totalFiliaisGross} 
+            icon={<TrendingUp className="w-6 h-6 text-indigo-500 dark:text-indigo-400"/>} 
+            subtitleColor="text-indigo-600 dark:text-indigo-300 font-bold"
+          />
+
+          <StatCard 
+            title="Comissão Total Comercial & Agências" 
+            subtitle={`Comissões Gerência + Agenciamentos (${totalGlobalAgencyCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`}
+            value={comissaoTotalCalculadaDefault + totalGlobalAgencyCommission} 
+            icon={<ShieldCheck className="w-6 h-6 text-emerald-500 dark:text-emerald-400"/>} 
+            subtitleColor="text-emerald-600 dark:text-emerald-300 font-bold"
+          />
+        </div>
+      )}
+
+      {/* TABELA DE RESULTADOS DO COMERCIAL / AGENCIADOR */}
       <div className="bg-white dark:bg-gray-800/90 rounded-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80 overflow-hidden">
         <div className="p-5 border-b border-gray-200 dark:border-gray-700/80 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-              Equipe Comercial, Agenciadores e Gerentes
+              {isCurrentUserAgenciador ? 'Resultado Consolidado da Agência' : 'Equipe Comercial, Agenciadores e Gerentes'}
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Desempenho consolidado de faturamento, comissões ativas e lucro real por membro comercial e agenciador.
+              {isCurrentUserAgenciador
+                ? 'Desempenho consolidado de faturamento, lucro real e comissão da agência.'
+                : 'Desempenho consolidado de faturamento, comissões ativas e lucro real por membro comercial e agenciador.'}
             </p>
           </div>
           <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-bold text-xs rounded-full">
-            {activeCommissionUsers.length} comissão(ões) ativa(s)
+            {isCurrentUserAgenciador ? '1 agência ativa' : `${activeCommissionUsers.length} comissão(ões) ativa(s)`}
           </span>
         </div>
 
-        {commercialUsers.length === 0 ? (
+        {displayedCommercialUsers.length === 0 ? (
           <div className="p-8 text-center text-gray-500 dark:text-gray-400 font-medium">
-            Nenhum usuário comercial encontrado.
+            Nenhum resultado de agenciamento ou comissão encontrado.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -398,7 +511,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">
-                {commercialUsers.map(user => {
+                {displayedCommercialUsers.map(user => {
                   const isAgenciador = user.profile === UserProfile.Agenciador;
                   const isActive = user.hasCommercialCommission === true || user.profile === UserProfile.GerenteComercial || isAgenciador;
 
@@ -423,7 +536,6 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
                   // Filiais selecionadas para este usuário
                   const userSelectedBranchIds = user.commercialSelectedBranchIds || nonMatrizBranches.map(b => b.id);
-                  const selectedBranchCount = userSelectedBranchIds.length;
 
                   // Calcular membros da agência para divisão da comissão
                   const agencyKey = userSelectedBranchIds.sort().join('|') || (user.branchId || 'default');
@@ -609,6 +721,70 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
           </div>
         )}
       </div>
+
+      {/* TABELA DE OPERADORES DA EQUIPE (SE HOUVER) */}
+      {isCurrentUserAgenciador && teamOperators.length > 0 && (
+        <div className="bg-white dark:bg-gray-800/90 rounded-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80 overflow-hidden animate-fade-in">
+          <div className="p-5 border-b border-gray-200 dark:border-gray-700/80 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                Operadores Vinculados à Agência ({teamOperators.length})
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Detalhamento dos operadores de embarque que integram sua equipe e cujos resultados consolidam na sua agência.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 font-bold text-xs rounded-full border border-purple-300 dark:border-purple-800">
+              {teamOperators.length} operador(es) ativo(s)
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-300 uppercase font-semibold">
+                <tr>
+                  <th className="p-4">Operador</th>
+                  <th className="p-4">Papel / Função</th>
+                  <th className="p-4 text-center">Embarques com CTE</th>
+                  <th className="p-4 text-right">Lucro Real Gerado</th>
+                  <th className="p-4 text-right">Comissão Gerada</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">
+                {teamOperators.map(op => {
+                  const opCount = memberShipmentCountMap.get(op.id) || 0;
+                  const opProfit = memberProfitMap.get(op.id) || 0;
+                  const opComm = memberCommissionMap.get(op.id) || 0;
+
+                  return (
+                    <tr key={op.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <td className="p-4">
+                        <div className="font-bold text-gray-900 dark:text-white text-sm">{op.name}</div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400">{op.email}</div>
+                      </td>
+                      <td className="p-4">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 text-[10px] uppercase font-bold border border-purple-300 dark:border-purple-800">
+                          Agenciador de Embarque
+                        </span>
+                      </td>
+                      <td className="p-4 text-center font-bold text-sm">
+                        {opCount} {opCount === 1 ? 'embarque' : 'embarques'}
+                      </td>
+                      <td className="p-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {opProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="p-4 text-right font-mono font-black text-purple-600 dark:text-purple-400">
+                        {opComm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

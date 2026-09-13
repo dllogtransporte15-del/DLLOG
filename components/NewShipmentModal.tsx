@@ -161,7 +161,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setAnttModality(initialAntt || '');
       setAnttOwnerIdentifier(lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (driverInDb?.cpf || lastShipment?.driverCpf || '') : ''));
       setCnpjSearchResult(null);
-      setEtcTaxRegime((lastShipment?.etcTaxRegime as EtcTaxRegime) || (initialAntt === AnttModality.ETC ? EtcTaxRegime.SimplesNacional : ''));
+      setEtcTaxRegime((lastShipment?.etcTaxRegime as EtcTaxRegime) || '');
       setDriverFreightType(lastShipment?.driverFreightType || (initialAntt === AnttModality.TAC ? 'PF' : 'PJ'));
 
       setEmbarcadorId(currentUser?.id || '');
@@ -236,8 +236,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 }
                 if (lastShipment.etcTaxRegime) {
                   setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
-                } else if (lastShipment.driverFreightType === 'PJ' || lastShipment.anttModality === AnttModality.ETC) {
-                  setEtcTaxRegime(EtcTaxRegime.SimplesNacional);
+                } else {
+                  setEtcTaxRegime('');
                 }
             }
             setLastAutofilledDriverId(selectedDriver.id);
@@ -321,7 +321,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       showToast(`CNPJ Identificado: ${companyName} (${desc})`, 'success');
     } catch (err: any) {
       console.warn('Erro na busca do CNPJ:', err);
-      showToast(`Aviso: ${err.message || 'Não foi possível consultar os dados automaticamente'}. Você pode selecionar o regime manualmente.`, 'warning');
+      setEtcTaxRegime('');
+      setCnpjSearchResult(null);
+      showToast(`CNPJ não localizado na Receita Federal: ${err.message || 'Verifique o CNPJ digitado e tente novamente'}.`, 'error');
     } finally {
       setIsSearchingCnpj(false);
     }
@@ -630,7 +632,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     if (anttModality === AnttModality.ETC && !etcTaxRegime) {
-        showToast('Para a modalidade ETC (Pessoa Jurídica), selecione o Regime Tributário (MEI, Simples Nacional, Lucro Presumido ou Lucro Real).', 'warning');
+        showToast('Para a modalidade ETC (Pessoa Jurídica), realize a consulta do CNPJ na Receita Federal para identificar o Regime Tributário.', 'warning');
         return;
     }
 
@@ -1214,9 +1216,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                 setDriverFreightType('PJ');
                                 if (anttOwnerIdentifier.replace(/\D/g, '').length === 11) {
                                   setAnttOwnerIdentifier('');
-                                }
-                                if (!etcTaxRegime) {
-                                  setEtcTaxRegime(EtcTaxRegime.SimplesNacional);
+                                  setEtcTaxRegime('');
+                                  setCnpjSearchResult(null);
                                 }
                               }}
                               className={`p-3.5 rounded-xl border-2 text-left transition-all duration-200 flex flex-col justify-between ${
@@ -1314,44 +1315,42 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                     )}
                                 </div>
 
-                                {/* Regime Tributário (ETC) */}
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                {/* Regime Tributário (ETC) - Definido exclusivamente pela consulta */}
+                                <div className="space-y-1.5 animate-fade-in">
+                                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                                         Regime Tributário (ETC) <span className="text-red-500">*</span>
-                                      </label>
-                                      {etcTaxRegime && (
-                                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
-                                          ✓ {etcTaxRegime}
-                                        </span>
-                                      )}
-                                    </div>
+                                    </label>
 
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {[
-                                          { value: EtcTaxRegime.MEI, label: 'MEI' },
-                                          { value: EtcTaxRegime.SimplesNacional, label: 'Simples Nacional' },
-                                          { value: EtcTaxRegime.LucroPresumido, label: 'Lucro Presumido' },
-                                          { value: EtcTaxRegime.LucroReal, label: 'Lucro Real' },
-                                        ].map(item => (
-                                          <button
-                                            key={item.value}
-                                            type="button"
-                                            onClick={() => {
-                                              setAnttModality(AnttModality.ETC);
-                                              setEtcTaxRegime(item.value);
-                                              setDriverFreightType('PJ');
-                                            }}
-                                            className={`px-3 py-2 rounded-xl text-xs font-bold border text-center transition-all flex flex-col items-center justify-center ${
-                                              etcTaxRegime === item.value
-                                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-500/30'
-                                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                                            }`}
-                                          >
-                                            <span>{item.label}</span>
-                                          </button>
-                                        ))}
-                                    </div>
+                                    {etcTaxRegime ? (
+                                        <div className="p-3 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/60 rounded-xl flex items-center justify-between shadow-sm">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+                                                    ✓
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-black text-emerald-950 dark:text-emerald-100">
+                                                        {etcTaxRegime}
+                                                    </p>
+                                                    <p className="text-[10px] text-emerald-700 dark:text-emerald-300">
+                                                        Obtido automaticamente via Receita Federal
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200">
+                                                Confirmado
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-start gap-2 text-amber-800 dark:text-amber-200 text-xs">
+                                            <span className="text-sm shrink-0">ℹ️</span>
+                                            <div>
+                                                <p className="font-semibold text-[11px]">Identificação Automática Obrigatória</p>
+                                                <p className="text-[10px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
+                                                    Informe o CNPJ acima e clique em <strong>Consultar</strong> para obter o regime tributário oficial da empresa.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}

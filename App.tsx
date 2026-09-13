@@ -906,13 +906,12 @@ const App: React.FC = () => {
   const inProgressLoads = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const filtered = visibleLoads.filter(c => {
-      if (c.status === CargoStatus.Suspensa) {
-        return currentUser?.profile !== UserProfile.Motorista;
+      // Oculta cargas suspensas ou fechadas
+      if (c.status !== CargoStatus.EmAndamento) {
+        return false;
       }
-      if (c.status === CargoStatus.EmAndamento) {
-        return c.dailySchedule?.some(ds => ds.date >= today);
-      }
-      return false;
+      // Oculta cargas sem programação ativa a partir de hoje
+      return Boolean(c.dailySchedule && c.dailySchedule.some(ds => ds.date >= today));
     });
 
     // Para motoristas: garantir que os cargos dos embarques ativos sempre estejam incluídos,

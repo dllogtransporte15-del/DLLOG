@@ -128,6 +128,22 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   };
   const [displayedLoads, setDisplayedLoads] = useState<Cargo[]>([]);
 
+  const operationalLoads = React.useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return loads.filter(load => {
+      // Oculta cargas suspensas ou fechadas
+      if (load.status === CargoStatus.Suspensa || load.status === CargoStatus.Fechada) {
+        return false;
+      }
+      // Oculta cargas sem programação ativa a partir de hoje
+      const hasActiveSchedule = Array.isArray(load.dailySchedule) && load.dailySchedule.some(ds => ds.date >= today);
+      if (!hasActiveSchedule) {
+        return false;
+      }
+      return true;
+    });
+  }, [loads]);
+
   const handleFilteredLoadsChange = useCallback((filteredLoads: Cargo[]) => {
     setDisplayedLoads(filteredLoads);
   }, []);
@@ -380,10 +396,10 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
 
       <h2 className="text-2xl font-semibold text-gray-800 dark:text-white mb-4">Oportunidades de Carga</h2>
       <LoadTable 
-        loads={loads} 
+        loads={operationalLoads} 
         clients={clients} 
         products={products}
-        shipments={shipments}
+        shipments={allShipments}
         dailyBalanceDate={dailyBalanceDate}
         onDailyBalanceDateChange={setDailyBalanceDate}
         onCreateShipment={canCreateShipment ? handleOpenNewShipmentModal : undefined} 

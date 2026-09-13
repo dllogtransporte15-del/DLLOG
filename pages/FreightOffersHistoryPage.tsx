@@ -52,10 +52,10 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
       });
       return list;
     }
-    // All CNPJs from freightOffers
+    // All CNPJs from freightOffers (exclusively client offers)
     const set = new Map<string, string>();
     freightOffers.forEach(o => {
-      if (o.clientCnpj) {
+      if (!o.driverId && o.clientCnpj) {
         set.set(o.clientCnpj.replace(/\D/g, ''), o.clientCnpj);
       }
     });
@@ -64,6 +64,9 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
 
   const filteredOffers = useMemo(() => {
     return freightOffers.filter(offer => {
+      // Ofertas de frete são EXCLUSIVAMENTE de clientes (não solicitações de motoristas / ordens do app)
+      if (offer.driverId) return false;
+
       if (currentUser?.profile === UserProfile.Cliente && currentUser?.clientId) {
         if (offer.clientId !== currentUser.clientId) return false;
       }
@@ -77,7 +80,6 @@ const FreightOffersHistoryPage: React.FC<FreightOffersHistoryPageProps> = ({
       }
       if (filterOrigin && !offer.origin.toLowerCase().includes(filterOrigin.toLowerCase())) return false;
       if (filterDestination && !offer.destination.toLowerCase().includes(filterDestination.toLowerCase())) return false;
-      if (currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Cliente && currentUser?.profile !== UserProfile.Admin && currentUser?.profile !== UserProfile.Demonstracao && offer.driverId) return false;
       return true;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [freightOffers, filterStatus, filterClientId, filterCnpj, filterOrigin, filterDestination, currentUser, clients]);

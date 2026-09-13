@@ -975,7 +975,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
     const SEVENTY_TWO_HOURS_MS = 72 * 60 * 60 * 1000;
     const pendingOffers = freightOffers.filter(o => {
-      if (o.status === FreightOfferStatus.Recusada) return false;
+      if (o.status === FreightOfferStatus.Recusada || o.driverId) return false;
       const age = Date.now() - new Date(o.createdAt).getTime();
       if (age > SEVENTY_TWO_HOURS_MS) return false;
       return true;
@@ -1343,6 +1343,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   if (currentUser?.profile === UserProfile.Cliente && clientDashboardData) {
     const myOffers = freightOffers.filter(o => {
+      if (o.driverId) return false;
       if (o.clientId !== currentUser.clientId) return false;
       if (o.status === FreightOfferStatus.Aceita) {
         const matchedCargo = getMatchedCargo(o, cargos);
