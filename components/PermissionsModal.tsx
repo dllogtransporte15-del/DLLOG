@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ProfilePermissions, Page, CrudPermissions, User } from '../types';
 import { UserProfile } from '../types';
+import { Copy, RotateCcw } from 'lucide-react';
 
 interface PermissionsModalProps {
   isOpen: boolean;
@@ -180,6 +181,19 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
     }
   };
 
+  const handleMirrorUserPermissions = (sourceUserId: string) => {
+    if (!sourceUserId) return;
+    const sourceUser = users.find(u => u.id === sourceUserId);
+    if (!sourceUser) return;
+
+    if (sourceUser.customPermissions && Object.keys(sourceUser.customPermissions).length > 0) {
+      setEditableUserPermissions(JSON.parse(JSON.stringify(sourceUser.customPermissions)));
+    } else {
+      const sourceProfilePerms = permissions[sourceUser.profile] || {};
+      setEditableUserPermissions(JSON.parse(JSON.stringify(sourceProfilePerms)));
+    }
+  };
+
   const handleSave = () => {
     if (mode === 'profile') {
       onSaveProfilePermissions(editableProfilePermissions);
@@ -236,20 +250,47 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
               </select>
             </div>
           ) : (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Selecione o usuário:</label>
-              <select
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
-                className="w-full md:w-1/3 pl-3 pr-10 py-2 border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              >
-                {availableUsers.map(user => (
-                  <option key={user.id} value={user.id}>{user.name} ({user.profile})</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                As permissões definidas aqui sobrescrevem as regras do perfil do usuário.
-              </p>
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Selecione o usuário para configurar:</label>
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="w-full pl-3 pr-10 py-2 border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  {availableUsers.map(user => (
+                    <option key={user.id} value={user.id}>{user.name} ({user.profile})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  As permissões definidas aqui sobrescrevem as regras do perfil do usuário.
+                </p>
+              </div>
+
+              <div className="w-full md:w-auto p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
+                <label className="block text-xs font-bold text-blue-900 dark:text-blue-200 mb-1 flex items-center gap-1">
+                  <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  Espelhar Acessos de Outro Usuário:
+                </label>
+                <select
+                  onChange={(e) => {
+                    handleMirrorUserPermissions(e.target.value);
+                    e.target.value = '';
+                  }}
+                  className="w-full pl-2.5 pr-8 py-1.5 text-xs border border-blue-300 dark:border-blue-700 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 cursor-pointer"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Selecione um usuário para espelhar...</option>
+                  {availableUsers
+                    .filter(u => u.id !== selectedUserId)
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.profile})
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
             </div>
           )}
         </div>

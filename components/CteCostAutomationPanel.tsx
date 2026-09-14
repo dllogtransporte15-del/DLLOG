@@ -80,6 +80,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     (currentUser?.profile as string) === 'Cliente' ||
     (currentUser?.profile as string) === 'Motorista';
 
+  const isAgenciador = currentUser?.profile === UserProfile.Agenciador || (currentUser?.profile as string) === 'Agenciador';
   const isEmbarcadorOrAgenciador = isRestrictedProfile;
 
   // Determinação inicial do enquadramento tributário
@@ -1709,7 +1710,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       )}
 
       {/* LINHA 1: Cards Principais de Receita & Bases */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className={`grid grid-cols-1 ${isAgenciador ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-2`}>
         {/* Box 1: CTe Frete Bruto */}
         <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-blue-100 dark:border-blue-900/40 p-2.5 shadow-2xs">
           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
@@ -1750,140 +1751,142 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           </div>
         </div>
 
-        {/* Box 3: Crédito Gerado (Informativo Fiscal - Gerado apenas se for Exportação) */}
-        <div className={`p-2.5 bg-white dark:bg-slate-800/90 rounded-xl border ${
-          isEditingGeneratedCredit
-            ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
-            : isGeneratedCreditCustom
-              ? 'border-emerald-300 dark:border-emerald-700/80 shadow-2xs'
-              : isExportCargo 
-                ? 'border-emerald-200 dark:border-emerald-900/40 shadow-2xs' 
-                : 'border-slate-200 dark:border-slate-800 opacity-80 shadow-2xs'
-        } flex flex-col justify-between transition-all relative`}>
-          <div className="flex items-center justify-between gap-1 mb-0.5">
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">Crédito Gerado</span>
-              {isGeneratedCreditCustom && (
-                <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0">
-                  Manual
-                </span>
-              )}
-              {justSavedGeneratedCredit && (
-                <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
-                  ✔ Salvo!
-                </span>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-0.5 shrink-0">
-              <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
-                Informativo
-              </span>
-
-              {!isEditingGeneratedCredit && (
-                <button
-                  type="button"
-                  onClick={handleStartEditGeneratedCredit}
-                  className="p-0.5 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded transition-all cursor-pointer"
-                  title="Editar valor do Crédito Gerado"
-                >
-                  <Pencil className="w-2.5 h-2.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {isEditingGeneratedCredit ? (
-            <div className="space-y-1 py-0.5">
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  autoFocus
-                  placeholder="0,00"
-                  value={generatedCreditInput}
-                  onChange={(e) => setGeneratedCreditInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveGeneratedCredit();
-                    if (e.key === 'Escape') setIsEditingGeneratedCredit(false);
-                  }}
-                  disabled={isSavingGeneratedCredit}
-                  className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-emerald-400 bg-emerald-50/40 dark:bg-slate-700 dark:border-emerald-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-emerald-500/40"
-                />
+        {/* Box 3: Crédito Gerado (Informativo Fiscal - Gerado apenas se for Exportação - Oculto para Agenciador) */}
+        {!isAgenciador && (
+          <div className={`p-2.5 bg-white dark:bg-slate-800/90 rounded-xl border ${
+            isEditingGeneratedCredit
+              ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
+              : isGeneratedCreditCustom
+                ? 'border-emerald-300 dark:border-emerald-700/80 shadow-2xs'
+                : isExportCargo 
+                  ? 'border-emerald-200 dark:border-emerald-900/40 shadow-2xs' 
+                  : 'border-slate-200 dark:border-slate-800 opacity-80 shadow-2xs'
+          } flex flex-col justify-between transition-all relative`}>
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">Crédito Gerado</span>
+                {isGeneratedCreditCustom && (
+                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0">
+                    Manual
+                  </span>
+                )}
+                {justSavedGeneratedCredit && (
+                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0 animate-pulse">
+                    ✔ Salvo!
+                  </span>
+                )}
               </div>
               
-              <div className="flex items-center justify-between gap-1 pt-0.5">
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveGeneratedCredit}
-                    disabled={isSavingGeneratedCredit}
-                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
-                    title="Salvar valor do Crédito Gerado"
-                  >
-                    {isSavingGeneratedCredit ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
-                    <span>Salvar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingGeneratedCredit(false)}
-                    disabled={isSavingGeneratedCredit}
-                    className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
-                    title="Cancelar"
-                  >
-                    <X className="w-2 h-2" />
-                  </button>
-                </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
+                  Informativo
+                </span>
 
-                {isGeneratedCreditCustom && (
+                {!isEditingGeneratedCredit && (
                   <button
                     type="button"
-                    onClick={handleRestoreDefaultGeneratedCredit}
-                    disabled={isSavingGeneratedCredit}
-                    className="inline-flex items-center gap-0.5 text-[8px] text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 underline transition-all cursor-pointer"
-                    title="Restaurar fórmula de cálculo automático"
+                    onClick={handleStartEditGeneratedCredit}
+                    className="p-0.5 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded transition-all cursor-pointer"
+                    title="Editar valor do Crédito Gerado"
                   >
-                    <RotateCcw className="w-2 h-2" />
-                    <span>Auto</span>
+                    <Pencil className="w-2.5 h-2.5" />
                   </button>
                 )}
               </div>
             </div>
-          ) : (
-            <>
-              <div className={`text-sm sm:text-base font-bold font-mono ${
-                isExportCargo || isGeneratedCreditCustom ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
-              }`}>
-                {formatBrl(pisCofinsCredit)}
-              </div>
-              <div className="flex items-center justify-between">
-                <div 
-                  className={`text-[10px] font-medium truncate ${
-                    isExportCargo || isGeneratedCreditCustom ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
-                  }`} 
-                  title={
-                    isGeneratedCreditCustom
-                      ? `Valor manual informado: ${formatBrl(pisCofinsCredit)} (Cálculo padrão: ${creditRatePercentLabel})`
-                      : (isExportCargo ? `Exportação PJ • Crédito Fiscal PIS/COFINS informativo (${formatBrl(pisCofinsCredit)})` : 'Gera crédito fiscal apenas quando a carga for de exportação')
-                  }
-                >
-                  {isGeneratedCreditCustom ? 'Valor Manual' : (isExportCargo ? `${creditRatePercentLabel} (Info)` : 'Apenas Exportação')}
+
+            {isEditingGeneratedCredit ? (
+              <div className="space-y-1 py-0.5">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    placeholder="0,00"
+                    value={generatedCreditInput}
+                    onChange={(e) => setGeneratedCreditInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveGeneratedCredit();
+                      if (e.key === 'Escape') setIsEditingGeneratedCredit(false);
+                    }}
+                    disabled={isSavingGeneratedCredit}
+                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-emerald-400 bg-emerald-50/40 dark:bg-slate-700 dark:border-emerald-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-emerald-500/40"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={handleStartEditGeneratedCredit}
-                  className="text-[8px] text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium ml-1 shrink-0"
-                  title="Editar valor manualmente"
-                >
-                  <Pencil className="w-2 h-2" />
-                  Editar
-                </button>
+                
+                <div className="flex items-center justify-between gap-1 pt-0.5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveGeneratedCredit}
+                      disabled={isSavingGeneratedCredit}
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                      title="Salvar valor do Crédito Gerado"
+                    >
+                      {isSavingGeneratedCredit ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
+                      <span>Salvar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingGeneratedCredit(false)}
+                      disabled={isSavingGeneratedCredit}
+                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                      title="Cancelar"
+                    >
+                      <X className="w-2 h-2" />
+                    </button>
+                  </div>
+
+                  {isGeneratedCreditCustom && (
+                    <button
+                      type="button"
+                      onClick={handleRestoreDefaultGeneratedCredit}
+                      disabled={isSavingGeneratedCredit}
+                      className="inline-flex items-center gap-0.5 text-[8px] text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 underline transition-all cursor-pointer"
+                      title="Restaurar fórmula de cálculo automático"
+                    >
+                      <RotateCcw className="w-2 h-2" />
+                      <span>Auto</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <div className={`text-sm sm:text-base font-bold font-mono ${
+                  isExportCargo || isGeneratedCreditCustom ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
+                }`}>
+                  {formatBrl(pisCofinsCredit)}
+                </div>
+                <div className="flex items-center justify-between">
+                  <div 
+                    className={`text-[10px] font-medium truncate ${
+                      isExportCargo || isGeneratedCreditCustom ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
+                    }`} 
+                    title={
+                      isGeneratedCreditCustom
+                        ? `Valor manual informado: ${formatBrl(pisCofinsCredit)} (Cálculo padrão: ${creditRatePercentLabel})`
+                        : (isExportCargo ? `Exportação PJ • Crédito Fiscal PIS/COFINS informativo (${formatBrl(pisCofinsCredit)})` : 'Gera crédito fiscal apenas quando a carga for de exportação')
+                    }
+                  >
+                    {isGeneratedCreditCustom ? 'Valor Manual' : (isExportCargo ? `${creditRatePercentLabel} (Info)` : 'Apenas Exportação')}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartEditGeneratedCredit}
+                    className="text-[8px] text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium ml-1 shrink-0"
+                    title="Editar valor manualmente"
+                  >
+                    <Pencil className="w-2 h-2" />
+                    Editar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Box de Destaque: Diferença de Frete (Passo 3: Frete_Liquido - Frete_Motorista) */}

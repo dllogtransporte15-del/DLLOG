@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { Shipment, User, Cargo, Client, Driver, Vehicle, Branch, Product } from '../../types';
-import { ShipmentStatus } from '../../types';
+import { ShipmentStatus, UserProfile } from '../../types';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -73,6 +73,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const [endDate, setEndDate] = useState(propEndDate || '');
   const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const isAgenciador = currentUser?.profile === UserProfile.Agenciador || (currentUser?.profile as string) === 'Agenciador';
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedExport, setSelectedExport] = useState<string[]>([]);
@@ -871,7 +872,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 <th className="py-2.5 px-2 text-right">Frete Motorista (-)</th>
                 <th className="py-2.5 px-2 text-right">Dif. Frete</th>
                 <th className="py-2.5 px-2 text-center">Despesas Operac.</th>
-                <th className="py-2.5 px-2 text-right">Créd. Exp.</th>
+                {!isAgenciador && <th className="py-2.5 px-2 text-right">Créd. Exp.</th>}
                 <th className="py-2.5 px-2 text-right">Resultado (=)</th>
                 <th className="py-2.5 px-2 text-center">Ações</th>
               </tr>
@@ -980,21 +981,23 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       )}
                     </td>
 
-                    {/* Crédito Fiscal Gerado (Exportação) - Informativo */}
-                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
-                      {row.generatedCredit > 0 ? (
-                        <div>
-                          <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                            R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          <p className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">
-                            Informativo
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 dark:text-gray-500 text-[10px]">---</span>
-                      )}
-                    </td>
+                    {/* Crédito Fiscal Gerado (Exportação) - Informativo - Oculto para Agenciador */}
+                    {!isAgenciador && (
+                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                        {row.generatedCredit > 0 ? (
+                          <div>
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                              R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <p className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">
+                              Informativo
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500 text-[10px]">---</span>
+                        )}
+                      </td>
+                    )}
 
                     {/* Resultado Final (Lucro Real da Operação) */}
                     <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
@@ -1043,7 +1046,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="py-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={isAgenciador ? 9 : 10} className="py-10 text-center text-gray-500 dark:text-gray-400">
                     <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     Nenhum embarque encontrado com os filtros selecionados.
                   </td>
@@ -1071,10 +1074,12 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                   <td className="py-2.5 px-2 text-center font-mono text-xs text-red-600 dark:text-red-400">
                     - R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td className="py-2.5 px-2 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                    R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    <p className="text-[8px] font-normal text-gray-500 dark:text-gray-400">Informativo</p>
-                  </td>
+                  {!isAgenciador && (
+                    <td className="py-2.5 px-2 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                      R$ {totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <p className="text-[8px] font-normal text-gray-500 dark:text-gray-400">Informativo</p>
+                    </td>
+                  )}
                   <td className="py-2.5 px-2 text-right font-mono text-xs">
                     <span className={`text-xs font-black ${
                       totals.sumNetProfit >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'

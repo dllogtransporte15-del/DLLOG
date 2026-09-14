@@ -5,7 +5,11 @@ import UserTable from '../components/UserTable';
 import UserFilter, { UserFilters } from '../components/UserFilter';
 import UserFormModal from '../components/UserFormModal';
 import PermissionsModal from '../components/PermissionsModal';
-import type { User, ProfilePermissions, Client, Branch } from '../types';
+import UserAccessViewerModal from '../components/UserAccessViewerModal';
+import type { 
+  User, ProfilePermissions, Client, Branch, Cargo, Shipment, Owner, 
+  Driver, Vehicle, Product, FreightOffer, RiskQueryOption, Ticket 
+} from '../types';
 import { UserProfile } from '../types';
 import { can } from '../auth';
 import { useToast } from '../hooks/useToast';
@@ -23,23 +27,58 @@ interface UsersPageProps {
   clients: Client[];
   onDeleteUser: (userId: string) => void;
   branches: Branch[];
+  cargos?: Cargo[];
+  shipments?: Shipment[];
+  owners?: Owner[];
+  drivers?: Driver[];
+  vehicles?: Vehicle[];
+  products?: Product[];
+  freightOffers?: FreightOffer[];
+  stays?: any[];
+  tickets?: Ticket[];
+  riskQueryOptions?: RiskQueryOption[];
+  companyLogo?: string | null;
 }
 
 export const isExternalUserProfile = (profile?: UserProfile | string): boolean => {
   return profile === UserProfile.Cliente || profile === UserProfile.Motorista;
 };
 
-const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, currentUser, profilePermissions, onSavePermissions, clients, onDeleteUser, branches }) => {
+const UsersPage: React.FC<UsersPageProps> = ({ 
+  users, 
+  setUsers, 
+  onSaveUser, 
+  currentUser, 
+  profilePermissions, 
+  onSavePermissions, 
+  clients, 
+  onDeleteUser, 
+  branches,
+  cargos = [],
+  shipments = [],
+  owners = [],
+  drivers = [],
+  vehicles = [],
+  products = [],
+  freightOffers = [],
+  stays = [],
+  tickets = [],
+  riskQueryOptions = [],
+  companyLogo = null
+}) => {
   const [activeTab, setActiveTab] = useState<UserTabType>('internal');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [userToInspect, setUserToInspect] = useState<User | null>(null);
   const [filters, setFilters] = useState<UserFilters>({
     id: '',
     name: '',
     profile: '',
     status: '',
   });
+
+  const isAdmin = currentUser.profile === UserProfile.Admin;
 
   const canCreateUser = can('create', currentUser, 'users-register', profilePermissions);
   const canUpdateUser = can('update', currentUser, 'users-register', profilePermissions);
@@ -242,6 +281,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
         allUsers={users}
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
+        onInspectUser={isAdmin ? (user) => setUserToInspect(user) : undefined}
         clients={clients}
         showAppOptionColumn={activeTab === 'internal' || activeTab === 'all'}
         onToggleDriverRequests={canUpdateUser ? handleToggleDriverRequests : undefined}
@@ -270,6 +310,36 @@ const UsersPage: React.FC<UsersPageProps> = ({ users, setUsers, onSaveUser, curr
         }}
         permissions={profilePermissions}
         users={users}
+      />
+
+      <UserAccessViewerModal
+        isOpen={Boolean(userToInspect)}
+        onClose={() => setUserToInspect(null)}
+        targetUser={userToInspect}
+        currentUser={currentUser}
+        profilePermissions={profilePermissions}
+        onSaveUserPermissions={(userId, customPermissions) => {
+          const user = users.find(u => u.id === userId);
+          if (user) {
+            const updatedUser = { ...user, customPermissions };
+            onSaveUser(updatedUser);
+            setUserToInspect(updatedUser);
+          }
+        }}
+        cargos={cargos}
+        shipments={shipments}
+        clients={clients}
+        owners={owners}
+        drivers={drivers}
+        vehicles={vehicles}
+        products={products}
+        branches={branches}
+        users={users}
+        freightOffers={freightOffers}
+        stays={stays}
+        tickets={tickets}
+        riskQueryOptions={riskQueryOptions}
+        companyLogo={companyLogo}
       />
     </>
   );

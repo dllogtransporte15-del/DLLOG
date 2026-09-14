@@ -4,7 +4,7 @@ import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
-import { X } from 'lucide-react';
+import { X, Copy, CheckCircle2 } from 'lucide-react';
 
 interface UserFormModalProps {
   isOpen: boolean;
@@ -19,6 +19,7 @@ interface UserFormModalProps {
 
 const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, userToEdit, clients, branches, users, defaultProfile }) => {
   const { showToast } = useToast();
+  const [selectedUserToMirror, setSelectedUserToMirror] = useState<string>('');
   const getInitialState = (): Omit<User, 'id'> => ({
     name: '',
     email: '',
@@ -35,10 +36,11 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
     agencyLeaderId: undefined,
   });
 
-  const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string }>(getInitialState());
+  const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string; customPermissions?: any }>(getInitialState());
 
   useEffect(() => {
     if (isOpen) {
+        setSelectedUserToMirror('');
         if(userToEdit) {
             const { password, ...userWithoutPass } = userToEdit;
             setUser({ 
@@ -51,6 +53,28 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
         }
     }
   }, [userToEdit, isOpen, defaultProfile]);
+
+  const handleMirrorUser = (sourceUserId: string) => {
+    setSelectedUserToMirror(sourceUserId);
+    if (!sourceUserId) return;
+    const sourceUser = (users || []).find(u => u.id === sourceUserId);
+    if (!sourceUser) return;
+
+    setUser(prev => ({
+      ...prev,
+      profile: sourceUser.profile,
+      clientId: sourceUser.clientId,
+      branchId: sourceUser.branchId,
+      hasCommercialCommission: sourceUser.hasCommercialCommission,
+      availableForDriverRequests: sourceUser.availableForDriverRequests !== false,
+      agencyRole: sourceUser.agencyRole,
+      agencyCommissionPercentage: sourceUser.agencyCommissionPercentage,
+      agencyLeaderId: sourceUser.agencyLeaderId,
+      customPermissions: sourceUser.customPermissions ? JSON.parse(JSON.stringify(sourceUser.customPermissions)) : undefined,
+    }));
+
+    showToast(`Acessos e perfil de "${sourceUser.name}" (${sourceUser.profile}) espelhados com sucesso!`, 'success');
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -140,12 +164,47 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             <input name="phone" value={user.phone || ''} onChange={handleChange} placeholder="Telefone" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
             <input name="password" value={user.password} onChange={handleChange} type="password" placeholder={userToEdit ? 'Nova Senha (deixe em branco para manter)' : 'Senha'} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
           
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Perfil de Acesso</label>
-            <select name="profile" value={user.profile} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
-              {Object.values(UserProfile).map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
+            {/* Campo: Espelhar Acesso de Outro Usuário */}
+            <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                  <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  Espelhar Acesso de Outro Usuário
+                </label>
+                <span className="text-[10px] text-blue-700/80 dark:text-blue-300 font-medium">Opcional</span>
+              </div>
+              <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80">
+                Selecione um usuário para clonar automaticamente seu perfil, permissões personalizadas, filial e vínculos.
+              </p>
+              <select
+                value={selectedUserToMirror}
+                onChange={(e) => handleMirrorUser(e.target.value)}
+                className="p-2 w-full text-xs font-medium border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-xs"
+              >
+                <option value="">Selecione um usuário para espelhar acessos...</option>
+                {(users || [])
+                  .filter(u => u.id !== userToEdit?.id)
+                  .map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.profile}) {u.branchId ? `• Filial: ${u.branchId}` : ''} {u.customPermissions ? '• (Permissões Personalizadas)' : ''}
+                    </option>
+                  ))
+                }
+              </select>
+              {selectedUserToMirror && (
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium pt-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Acessos espelhados de: <strong>{(users || []).find(u => u.id === selectedUserToMirror)?.name}</strong></span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Perfil de Acesso</label>
+              <select name="profile" value={user.profile} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
+                {Object.values(UserProfile).map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
 
           {user.profile === UserProfile.Cliente && (
             <div>

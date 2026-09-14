@@ -3,19 +3,20 @@ import React from 'react';
 import type { User, Client } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
-import { Building2, Smartphone, PhoneOff } from 'lucide-react';
+import { Building2, Smartphone, PhoneOff, Eye } from 'lucide-react';
 
 interface UserTableProps {
   users: User[];
   allUsers?: User[];
   onEdit?: (user: User) => void;
   onDelete?: (userId: string) => void;
+  onInspectUser?: (user: User) => void;
   clients?: Client[];
   showAppOptionColumn?: boolean;
   onToggleDriverRequests?: (user: User) => void;
 }
 
-const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
+const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete, onInspectUser, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
   const getWhatsAppUrl = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     const finalDigits = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
@@ -45,8 +46,8 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                   Opção no App (Motoristas)
                 </th>
               )}
-              {(onEdit || onDelete) && (
-                <th scope="col" className="w-28 px-3 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Ações</th>
+              {(onEdit || onDelete || onInspectUser) && (
+                <th scope="col" className="w-36 px-3 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Ações</th>
               )}
             </tr>
           </thead>
@@ -161,9 +162,20 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                     )}
                   </td>
                 )}
-                {(onEdit || onDelete) && (
+                {(onEdit || onDelete || onInspectUser) && (
                   <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="inline-flex items-center justify-end gap-3">
+                    <div className="inline-flex items-center justify-end gap-2.5">
+                      {onInspectUser && (
+                        <button
+                          type="button"
+                          onClick={() => onInspectUser(user)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 transition-all shadow-sm active:scale-95"
+                          title="Espelhar e Revisar Acessos do Usuário em Tempo Real"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Acessos</span>
+                        </button>
+                      )}
                       {onEdit && (
                         <button onClick={() => onEdit(user)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Editar</button>
                       )}
@@ -178,7 +190,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
           })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={((onEdit || onDelete) ? 7 : 6) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={((onEdit || onDelete || onInspectUser) ? 7 : 6) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nenhum usuário encontrado para os filtros selecionados.
                 </td>
               </tr>
