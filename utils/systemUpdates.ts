@@ -21,6 +21,40 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_14_v2_5_0',
+    version: 'v2.5.0',
+    date: '14/09/2026',
+    title: 'Visualizador de Acessos, Espelhamento de Usuários, Período e Filtros de CT-e',
+    summary: 'Novo visualizador de acessos em subjanela flutuante para administradores, espelhamento de permissões, novos filtros de período e visualização de CT-e em relatórios.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Subjanela Flutuante de Acessos em Tempo Real (Admin)',
+        description: 'Administradores agora contam com o botão "Acessos" para abrir uma subjanela flutuante sobreposta que espelha exatamente a visão do usuário em tempo real em modo estrito de somente leitura.'
+      },
+      {
+        category: 'feature',
+        title: 'Espelhar Acesso de Outro Usuário',
+        description: 'Opção de replicar com um clique todo o perfil de permissões e módulos de um usuário existente no cadastro e edição de colaboradores.'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro de Período e Atalhos nos Relatórios',
+        description: 'Adicionado filtro de período com Data de Início e Data Final no Relatório de Outros, com atalhos de 1 clique (Hoje, Este Mês, Mês Anterior, Últimos 30 dias, Ano Atual).'
+      },
+      {
+        category: 'improvement',
+        title: 'Visualização e Filtro por Nº CT-e em Custos Extras',
+        description: 'Inclusão da coluna de Nº CT-e na tabela de Custos Extras e Prejuízos Operacionais, exportação em PDF e campo de filtro específico por CT-e.'
+      },
+      {
+        category: 'security',
+        title: 'Isolamento de Créditos de Exportação para Agenciadores',
+        description: 'Ocultação de créditos fiscais e dados tributários de exportação nos relatórios e painéis para usuários com perfil de Agenciador.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_13_v2_4_0',
     version: 'v2.4.0',
     date: '13/09/2026',
