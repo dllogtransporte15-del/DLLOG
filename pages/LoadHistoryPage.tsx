@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import LoadTable from '../components/LoadTable';
@@ -7,6 +6,7 @@ import HistoryModal from '../components/HistoryModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
 import type { Cargo, Client, Product, User, Shipment } from '../types';
 import { UserProfile } from '../types';
+import { isDemoUser } from '../auth';
 
 interface LoadHistoryPageProps {
   loads: Cargo[];
@@ -20,6 +20,7 @@ interface LoadHistoryPageProps {
 }
 
 const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, products, users, currentUser, shipments, onDeleteLoad, onReactivateLoad }) => {
+  const isDemo = isDemoUser(currentUser);
   const [filters, setFilters] = useState<LoadFilters>({
     startDate: '',
     endDate: '',
@@ -34,7 +35,6 @@ const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, produ
   const [selectedLoadForHistory, setSelectedLoadForHistory] = useState<Cargo | null>(null);
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
-
 
   const filteredLoads = useMemo(() => {
     return loads.filter(load => {
@@ -82,9 +82,9 @@ const LoadHistoryPage: React.FC<LoadHistoryPageProps> = ({ loads, clients, produ
         dailyBalanceDate={dailyBalanceDate}
         onDailyBalanceDateChange={setDailyBalanceDate}
         onShowHistory={handleShowHistory}
-        onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onReactivateLoad : undefined}
+        onReactivate={(!isDemo && currentUser.profile !== UserProfile.Embarcador) ? onReactivateLoad : undefined}
         onShowDetails={handleShowDetails}
-        onDelete={onDeleteLoad}
+        onDelete={!isDemo ? onDeleteLoad : undefined}
         currentUser={currentUser}
       />
 

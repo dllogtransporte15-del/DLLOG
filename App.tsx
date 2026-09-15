@@ -8,7 +8,7 @@ import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority,
 import { formatId, isCteApplicableForStatus } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
-import { INITIAL_PERMISSIONS, can } from './auth';
+import { INITIAL_PERMISSIONS, can, isDemoUser } from './auth';
 import { useToast } from './hooks/useToast';
 
 // Page Imports
@@ -222,6 +222,10 @@ const App: React.FC = () => {
   }, [currentUser?.id, isLoading]);
 
   const handleSaveRiskQueryOption = async (optionData: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       const saved = await upsertRiskQueryOption(optionData);
       setRiskQueryOptions(prev => {
@@ -242,6 +246,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRiskQueryOption = async (optionId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       await deleteRiskQueryOption(optionId);
       setRiskQueryOptions(prev => prev.filter(o => o.id !== optionId));
@@ -253,6 +261,10 @@ const App: React.FC = () => {
   };
 
   const handleRestoreRiskQueryDefaults = async () => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       await saveAllRiskQueryOptions(DEFAULT_RISK_QUERY_OPTIONS);
       setRiskQueryOptions(DEFAULT_RISK_QUERY_OPTIONS);
@@ -647,6 +659,10 @@ const App: React.FC = () => {
 
   const handlePasswordChange = async (newPassword: string, currentPassword: string) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração não pode alterar senha.', 'warning');
+      return;
+    }
     
     try {
       // 1. Atualiza no Banco de Dados
@@ -706,6 +722,10 @@ const App: React.FC = () => {
   };
 
   const handleSavePermissions = async (newPermissions: ProfilePermissions) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setProfilePermissions(newPermissions);
     try {
       await saveProfilePermissions(newPermissions);
@@ -716,6 +736,10 @@ const App: React.FC = () => {
   };
   
   const handleSaveLogo = async (logo: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setCompanyLogo(logo || null);
     try {
       await saveAppSettings({ company_logo: logo || null });
@@ -726,6 +750,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveThemeImage = async (image: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setThemeImage(image || null);
     try {
       await saveAppSettings({ theme_image: image || null });
@@ -737,6 +765,10 @@ const App: React.FC = () => {
 
   const handleSaveTicket = async (ticketData: Omit<Ticket, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const newId = formatId(nextIds.ticket, 'TCK');
     const newTicket: Ticket = {
       ...ticketData,
@@ -756,6 +788,10 @@ const App: React.FC = () => {
   }
 
   const handleDeleteTicket = async (ticketId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     if (window.confirm('Tem certeza que deseja excluir este chamado?')) {
       setTickets((prev: Ticket[]) => prev.filter(t => t.id !== ticketId));
@@ -771,6 +807,10 @@ const App: React.FC = () => {
 
   const handleUpdateTicket = async (ticketId: string, newStatus: TicketStatus, comment: string) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     
     const ticketToUpdate = tickets.find(t => t.id === ticketId);
     if (!ticketToUpdate) return;
@@ -953,6 +993,10 @@ const App: React.FC = () => {
   }, [visibleLoads, currentUser, shipments]);
 
   const handleAcceptFreightOffer = async (offer: FreightOffer) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       if (offer.cargoId && offer.driverId) {
         // It's a Driver's request for a Shipment
@@ -982,6 +1026,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveFreightOffer = async (offerData: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       const isUuid = 'id' in offerData && typeof (offerData as FreightOffer).id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((offerData as FreightOffer).id);
       const isNew = !isUuid;
@@ -1025,6 +1073,10 @@ const App: React.FC = () => {
 
   const handleRequestLoadOrder = (cargo: Cargo) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     
     // Check if the user already has a pending offer for this cargo
     const existingOffer = freightOffers.find(o => o.cargoId === cargo.id && o.driverId === currentUser.id && o.status === FreightOfferStatus.Pendente);
@@ -1039,6 +1091,10 @@ const App: React.FC = () => {
 
   const handleConfirmRequestOrder = async (embarcadorId: string) => {
     if (!currentUser || !selectedCargoForRequest) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const cargo = selectedCargoForRequest;
     
     const newOffer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'> = {
@@ -1071,6 +1127,10 @@ const App: React.FC = () => {
 
   const handleAcceptOrderRequestFromNotification = async (offer: FreightOffer) => {
     if (currentUser) {
+      if (isDemoUser(currentUser)) {
+        showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+        return;
+      }
       const history = [...(offer.history || []), {
         id: `log_${Date.now()}_sys`,
         userId: currentUser.id,
@@ -1085,6 +1145,10 @@ const App: React.FC = () => {
 
   const handleRefuseOrderRequestFromNotification = async (offer: FreightOffer, reason?: string) => {
     if (currentUser) {
+      if (isDemoUser(currentUser)) {
+        showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+        return;
+      }
       const history = [...(offer.history || []), {
         id: `log_${Date.now()}_sys`,
         userId: currentUser.id,
@@ -1097,6 +1161,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteFreightOffer = async (offer: FreightOffer) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     try {
       setFreightOffers(prev => prev.filter(o => o.id !== offer.id));
@@ -1125,6 +1193,10 @@ const App: React.FC = () => {
   // --- CRUD HANDLERS ---
   const handleCreateShipment = async (data: NewShipmentRequestData) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     
     let currentNextIds = { ...nextIds };
     let historyId = currentNextIds.history;
@@ -1405,6 +1477,10 @@ const App: React.FC = () => {
 
   const handleMarkArrival = async (shipmentId: string) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
@@ -1427,6 +1503,10 @@ const App: React.FC = () => {
   const handleAddShipmentAttachments = async (shipmentId: string, files: File[]) => {
     if (!currentUser) {
       showToast('Usuário não autenticado.', 'error');
+      return;
+    }
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
     
@@ -1468,6 +1548,10 @@ const App: React.FC = () => {
   
   const handleDeleteShipmentAttachment = async (shipmentId: string, url: string) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !shipment.documents) return;
@@ -1537,16 +1621,22 @@ const App: React.FC = () => {
     realProfitData?: RealProfitData,
   }) => {
     const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, isBreakageWaived, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost, realProfitData } = data;
+    
+    if (!currentUser) {
+      showToast('Usuário não autenticado.', 'error');
+      throw new Error('Usuário não autenticado');
+    }
+
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      throw new Error('Usuário em modo demonstração possui acesso apenas de visualização.');
+    }
+
     const originalShipment = shipments.find(s => s.id === shipmentId);
     
     if (!originalShipment) {
       showToast('Embarque não encontrado.', 'error');
       throw new Error('Embarque não encontrado');
-    }
-    
-    if (!currentUser) {
-      showToast('Usuário não autenticado.', 'error');
-      throw new Error('Usuário não autenticado');
     }
 
     // Validation for "Aguardando Seguradora" transition
@@ -1988,6 +2078,11 @@ const App: React.FC = () => {
   };
 
   const handleUpdateShipmentAnttAndBankDetails = async (shipmentId: string, data: { anttOwnerIdentifier: string; bankDetails?: string }) => {
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
@@ -2011,6 +2106,11 @@ const App: React.FC = () => {
   };
 
   const handleUpdateShipmentData = async (shipmentId: string, data: Partial<Shipment>) => {
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
@@ -2135,6 +2235,11 @@ const App: React.FC = () => {
   };
 
   const handleBatchUpdateShipments = async (updatedList: Shipment[]) => {
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!updatedList || updatedList.length === 0) return;
     
     // Atualiza estado local imediatamente
@@ -2153,6 +2258,11 @@ const App: React.FC = () => {
   };
 
   const handleUpdateShipmentPrice = async (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => {
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
@@ -2206,6 +2316,11 @@ const App: React.FC = () => {
   };
 
   const handleUpdateScheduledDateTime = async (shipmentId: string, data: { scheduledDate: string, scheduledTime?: string }) => {
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
@@ -2236,6 +2351,10 @@ const App: React.FC = () => {
 
   
   const handleConfirmCancelShipment = async (shipmentId: string, reason: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipmentToCancel = shipments.find(s => s.id === shipmentId);
     if (!shipmentToCancel || !currentUser) return;
     
@@ -2282,6 +2401,11 @@ const App: React.FC = () => {
   };
 
   const handleTransferShipment = async (shipmentId: string, newEmbarcadorId: string) => {
+    if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let updated: Shipment | undefined;
     setShipments((prev: Shipment[]) => prev.map(s => {
         if (s.id === shipmentId) {
@@ -2299,6 +2423,10 @@ const App: React.FC = () => {
 
   const handleSwapCargo = async (shipmentId: string, newCargoId: string) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
 
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment) return;
@@ -2394,6 +2522,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveClient = async (clientData: Client | Omit<Client, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: Client;
     if ('id' in clientData) {
       saved = clientData;
@@ -2414,6 +2546,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteClient = async (clientId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       await deleteClient(clientId);
       setClients(prev => prev.filter(c => c.id !== clientId));
@@ -2425,6 +2561,10 @@ const App: React.FC = () => {
   };
 
   const handleMergeClients = async (targetClientId: string, sourceClientIds: string[]) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     try {
       await mergeClients(targetClientId, sourceClientIds, clients, cargos, freightOffers, users);
       const [refreshedClients, refreshedCargos, refreshedOffers] = await Promise.all([
@@ -2444,6 +2584,10 @@ const App: React.FC = () => {
   };
   
   const handleDeleteCargo = async (cargoId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
     
@@ -2466,6 +2610,10 @@ const App: React.FC = () => {
 
 
   const handleDeleteShipment = async (shipmentId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
     
@@ -2503,6 +2651,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveOwner = async (ownerData: Owner | Omit<Owner, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: Owner;
     if ('id' in ownerData) {
       saved = ownerData;
@@ -2517,6 +2669,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveDriver = async (driverData: Driver | Omit<Driver, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: Driver;
     if ('id' in driverData) {
       saved = driverData;
@@ -2537,6 +2693,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveVehicle = async (vehicleData: Vehicle | Omit<Vehicle, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: Vehicle;
     if ('id' in vehicleData) {
       saved = vehicleData;
@@ -2557,6 +2717,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveProduct = async (productData: Product | Omit<Product, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: Product;
     if ('id' in productData) {
       saved = productData;
@@ -2577,6 +2741,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteProduct = async (productId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     try {
       await deleteProduct(productId);
@@ -2589,6 +2757,10 @@ const App: React.FC = () => {
   };
   
   const handleSaveLoad = async (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     // Sanitize branchId to avoid FK violations ('' is not a valid UUID)
     if (loadData.branchId === '') {
         delete loadData.branchId;
@@ -2752,6 +2924,10 @@ const App: React.FC = () => {
 
   const handleBulkSaveLoads = async (loadsToInsert: Omit<Cargo, 'id'>[]) => {
     if (!loadsToInsert || loadsToInsert.length === 0 || !currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
 
     try {
       // 1. Descobre o maior sequenceId atual (banco + estado local)
@@ -2809,6 +2985,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveUser = async (userData: User | Omit<User, 'id'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: User;
     if ('id' in userData) {
       saved = userData;
@@ -2829,6 +3009,10 @@ const App: React.FC = () => {
   };
   
   const handleDeleteUser = async (userId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
     if (userId === currentUser.id) {
@@ -2849,6 +3033,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveBranch = async (branchData: Branch | Omit<Branch, 'id' | 'createdAt'>) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let saved: Branch;
     if ('id' in branchData) {
       saved = branchData;
@@ -2864,6 +3052,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteBranch = async (branchId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
     if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
     if (confirm('Tem certeza que deseja excluir esta filial?')) {
@@ -2879,6 +3071,10 @@ const App: React.FC = () => {
   };
 
   const handleRevertShipmentStatus = async (shipmentId: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !currentUser) return;
     
@@ -3020,6 +3216,10 @@ const App: React.FC = () => {
 
   const handleReactivateLoad = async (cargoToReactivate: Cargo) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     
     const updatedCargo: Cargo = {
       ...cargoToReactivate,
@@ -3038,6 +3238,10 @@ const App: React.FC = () => {
 
   const handleSuspendLoad = async (cargoToSuspend: Cargo) => {
     if (!currentUser) return;
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     
     const updatedCargo: Cargo = {
       ...cargoToSuspend,

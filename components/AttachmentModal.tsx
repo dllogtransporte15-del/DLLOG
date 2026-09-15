@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData } from '../types';
+import { isDemoUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
@@ -231,6 +232,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   riskQueryOptions: propRiskQueryOptions,
   onUpdateShipmentData,
 }) => {
+  const isDemo = isDemoUser(currentUser);
   const riskQueryOptions = React.useMemo<RiskQueryOption[]>(() => {
     if (propRiskQueryOptions && propRiskQueryOptions.length > 0) {
       return propRiskQueryOptions;
@@ -832,6 +834,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     let filesToAttach: { [key: string]: File[] } = {};
     if (shipment.status === ShipmentStatus.AguardandoNota || shipment.status === ShipmentStatus.AguardandoFiscal) {
       const someFiles = Object.values(multiFiles).some(arr => Array.isArray(arr) && arr.length > 0);
@@ -1372,7 +1378,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             )}
           </>
 
-        {!isClientUser ? (
+        {!isClientUser && !isDemo ? (
           <div className="border-t dark:border-gray-700 pt-4">
             <h3 className="text-lg font-semibold mb-4 text-primary">
               {shipment.status === ShipmentStatus.Finalizado ? 'Demonstrativo Financeiro / Lucro Real da Operação' : `Próximo Passo: ${documentName}`}

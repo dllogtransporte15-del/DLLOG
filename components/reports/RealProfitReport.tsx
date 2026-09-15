@@ -259,6 +259,19 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     });
   }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, startDate, endDate, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
 
+  const canViewFinalNetProfit = useMemo(() => {
+    if (!currentUser) return false;
+    return [
+      UserProfile.Comercial,
+      UserProfile.GerenteComercial,
+      UserProfile.Admin,
+      UserProfile.Diretor,
+      UserProfile.Financeiro,
+      UserProfile.Demonstracao
+    ].includes(currentUser.profile) ||
+    ['Comercial', 'Admin', 'Administrador', 'Diretor', 'Financeiro', 'Demonstração', 'Demo'].includes(currentUser.profile as string);
+  }, [currentUser]);
+
   // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e e Estadias)
   const enrichedRows = useMemo(() => {
     return filteredData.map(s => {
@@ -290,6 +303,54 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const netProfit = Number((calculatedExpenses.netProfit + demurrageProfit).toFixed(2));
       const profitMarginPercent = companyFreight > 0 ? (netProfit / companyFreight) * 100 : 0;
 
+      // Apuração de Comissões de Agência e Embarcador
+      const requesterUser = users.find(u => u.id === s.embarcadorId || u.id === s.createdById);
+      const isAgenciadorRequester = requesterUser?.profile === UserProfile.Agenciador || (requesterUser?.profile as string) === 'Agenciador';
+
+      // 1. Comissão do Embarcador (R$/t)
+      const isShipperCommEnabled = Boolean(
+        s.shipperCommissionEnabled === true ||
+        (s.documents as any)?.shipper_commission_enabled === true ||
+        s.realProfitData?.shipperCommissionEnabled === true
+      );
+      const shipperCommRate = s.shipperCommissionRatePerTon !== undefined && s.shipperCommissionRatePerTon !== null
+        ? Number(s.shipperCommissionRatePerTon)
+        : ((s.documents as any)?.shipper_commission_rate_per_ton !== undefined && (s.documents as any)?.shipper_commission_rate_per_ton !== null
+            ? Number((s.documents as any).shipper_commission_rate_per_ton)
+            : (s.realProfitData?.shipperCommissionRatePerTon !== undefined && s.realProfitData?.shipperCommissionRatePerTon !== null
+                ? Number(s.realProfitData.shipperCommissionRatePerTon)
+                : (requesterUser?.shipperCommissionRatePerTon || 0)));
+
+      const tonnage = s.shipmentTonnage || cargo?.totalVolume || 0;
+      const shipperCommission = (isShipperCommEnabled && shipperCommRate > 0 && tonnage > 0)
+        ? Number((shipperCommRate * tonnage).toFixed(2))
+        : (isShipperCommEnabled && s.shipperCommissionValue !== undefined && s.shipperCommissionValue !== null
+            ? Number(s.shipperCommissionValue)
+            : (isShipperCommEnabled && s.realProfitData?.shipperCommission !== undefined && s.realProfitData?.shipperCommission !== null
+                ? Number(s.realProfitData.shipperCommission)
+                : 0));
+
+      // 2. Comissão de Agência (% sobre lucro líquido antes da comissão de agência)
+      const isAgencyCommEnabled = Boolean(
+        s.agencyCommissionEnabled !== undefined
+          ? s.agencyCommissionEnabled
+          : ((s.documents as any)?.agency_commission_enabled !== undefined
+              ? Boolean((s.documents as any).agency_commission_enabled)
+              : (isAgenciadorRequester ? true : false))
+      );
+
+      const effectiveAgencyPercentage = s.agencyCommissionPercentage ?? requesterUser?.agencyCommissionPercentage ?? 30;
+      const opProfitBeforeAgency = Math.max(0, netProfit - shipperCommission);
+      const agencyCommission = (isAgencyCommEnabled && opProfitBeforeAgency > 0)
+        ? Number((opProfitBeforeAgency * (effectiveAgencyPercentage / 100)).toFixed(2))
+        : (isAgencyCommEnabled && s.agencyCommissionValue !== undefined && s.agencyCommissionValue !== null
+            ? Number(s.agencyCommissionValue)
+            : 0);
+
+      const totalCommissions = Number((shipperCommission + agencyCommission).toFixed(2));
+      const netProfitWithCommissions = Number((netProfit - totalCommissions).toFixed(2));
+      const marginWithCommissionsPercent = companyFreight > 0 ? (netProfitWithCommissions / companyFreight) * 100 : 0;
+
       // Comprovante / Anexo de saldo ou despesas
       const saldoDoc = s.documents?.['Comprovante de Pagamento de Saldo'] || 
                        s.documents?.['Comprovante de Saldo'] || 
@@ -314,6 +375,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         totalExpenses,
         netProfit,
         profitMarginPercent,
+        shipperCommission,
+        agencyCommission,
+        totalCommissions,
+        netProfitWithCommissions,
+        marginWithCommissionsPercent,
         expenseItems: rawExpenseItems,
         riskCost,
         generatedCredit,
@@ -325,7 +391,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         demurrageProfit,
       };
     });
-  }, [filteredData, cargoMap, clientMap, stays]);
+  }, [filteredData, cargoMap, clientMap, stays, users]);
 
   // Totais Gerais
   const totals = useMemo(() => {
@@ -338,9 +404,14 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     const sumExpenses = enrichedRows.reduce((acc, r) => acc + r.totalExpenses, 0);
     const sumGeneratedCredit = enrichedRows.reduce((acc, r) => acc + r.generatedCredit, 0);
     const sumNetProfit = enrichedRows.reduce((acc, r) => acc + r.netProfit, 0);
+    const sumShipperCommission = enrichedRows.reduce((acc, r) => acc + r.shipperCommission, 0);
+    const sumAgencyCommission = enrichedRows.reduce((acc, r) => acc + r.agencyCommission, 0);
+    const sumCommissions = enrichedRows.reduce((acc, r) => acc + r.totalCommissions, 0);
+    const sumNetProfitWithCommissions = enrichedRows.reduce((acc, r) => acc + r.netProfitWithCommissions, 0);
     const countOcr = enrichedRows.filter(r => r.hasOcr).length;
 
     const consolidatedMargin = sumCompanyFreight > 0 ? (sumNetProfit / sumCompanyFreight) * 100 : 0;
+    const consolidatedMarginWithCommissions = sumCompanyFreight > 0 ? (sumNetProfitWithCommissions / sumCompanyFreight) * 100 : 0;
     const consolidatedFreightMargin = sumCompanyFreight > 0 ? (sumFreightDiff / sumCompanyFreight) * 100 : 0;
 
     return {
@@ -353,7 +424,12 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       sumExpenses,
       sumGeneratedCredit,
       sumNetProfit,
+      sumShipperCommission,
+      sumAgencyCommission,
+      sumCommissions,
+      sumNetProfitWithCommissions,
       consolidatedMargin,
+      consolidatedMarginWithCommissions,
       consolidatedFreightMargin,
       consolidatedFreightDiffMargin: consolidatedFreightMargin,
       countOcr,
@@ -384,55 +460,71 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     doc.text(`${periodText} | Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, 21);
 
     // Tabela
-    const tableData = enrichedRows.map(r => [
-      r.shipment.id,
-      r.cte || '---',
-      r.shipment.scheduledDate || '---',
-      r.clientName,
-      `${r.shipment.driverName} (${r.shipment.horsePlate})`,
-      `R$ ${r.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
-      `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '---',
-      `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
-      r.hasOcr ? 'Sim (IA)' : 'Estimado'
-    ]);
+    const tableData = enrichedRows.map(r => {
+      const rowArr = [
+        r.shipment.id,
+        r.cte || '---',
+        r.shipment.scheduledDate || '---',
+        r.clientName,
+        `${r.shipment.driverName} (${r.shipment.horsePlate})`,
+        `R$ ${r.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
+        `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+        r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '---',
+        `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
+      ];
+      if (canViewFinalNetProfit) {
+        rowArr.push(`R$ ${r.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.marginWithCommissionsPercent.toFixed(1)}%)`);
+      }
+      rowArr.push(r.hasOcr ? 'Sim (IA)' : 'Estimado');
+      return rowArr;
+    });
+
+    const headRow = [
+      'ID Embarque', 
+      'CT-e',
+      'Data', 
+      'Cliente', 
+      'Motorista / Placa', 
+      'Frete Empresa (+)', 
+      'Frete Motorista (-)', 
+      'Dif. Frete', 
+      'Despesas (-)', 
+      'Créd. Exp. (Info)',
+      'Lucro Real (=)', 
+    ];
+    if (canViewFinalNetProfit) {
+      headRow.push('Líq. Final (- Com.)');
+    }
+    headRow.push('OCR');
+
+    const footRow = [
+      'TOTAL CONSOLIDADO',
+      '---',
+      `${totals.totalShipments} emb.`,
+      '---',
+      '---',
+      `R$ ${totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `R$ ${totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `R$ ${totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `R$ ${totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `R$ ${totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${totals.consolidatedMargin.toFixed(1)}%)`,
+    ];
+    if (canViewFinalNetProfit) {
+      footRow.push(`R$ ${totals.sumNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${totals.consolidatedMarginWithCommissions.toFixed(1)}%)`);
+    }
+    footRow.push(`${totals.countOcr} lidos`);
 
     autoTable(doc, {
-      head: [[
-        'ID Embarque', 
-        'CT-e',
-        'Data', 
-        'Cliente', 
-        'Motorista / Placa', 
-        'Frete Empresa (+)', 
-        'Frete Motorista (-)', 
-        'Dif. Frete', 
-        'Despesas (-)', 
-        'Créd. Exp. (Info)',
-        'Lucro Real (=)', 
-        'OCR'
-      ]],
+      head: [headRow],
       body: tableData,
       startY: 26,
-      styles: { fontSize: 7.5, cellPadding: 2 },
+      styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
-      foot: [[
-        'TOTAL CONSOLIDADO',
-        '---',
-        `${totals.totalShipments} emb.`,
-        '---',
-        '---',
-        `R$ ${totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${totals.consolidatedMargin.toFixed(1)}%)`,
-        `${totals.countOcr} lidos`
-      ]],
+      foot: [footRow],
       footStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: 'bold' }
     });
 
@@ -457,15 +549,22 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       'Margem Frete (%)',
       'Despesas Operacionais (R$)',
       'Credito Gerado Exportacao (R$)',
-      'Lucro Real / Resultado (R$)',
-      'Margem Real (%)',
+      'Lucro Real Operacional (R$)',
+      'Margem Real Operacional (%)',
+      ...(canViewFinalNetProfit ? [
+        'Comissao Embarcador (R$)',
+        'Comissao Agencia (R$)',
+        'Total Comissoes (R$)',
+        'Lucro Liquido Real Apos Comissoes (R$)',
+        'Margem Liquida Real Apos Comissoes (%)'
+      ] : []),
       'Despesas Detalhadas',
       'Processado via OCR'
     ];
 
     const rows = enrichedRows.map(r => {
       const expenseDesc = r.expenseItems.map(e => `${e.name}: R$ ${e.value}`).join(' | ');
-      return [
+      const rowData = [
         r.shipment.id,
         r.cte || '',
         r.shipment.scheduledDate || '',
@@ -483,9 +582,17 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         r.generatedCredit.toFixed(2),
         r.netProfit.toFixed(2),
         r.profitMarginPercent.toFixed(2),
+        ...(canViewFinalNetProfit ? [
+          r.shipperCommission.toFixed(2),
+          r.agencyCommission.toFixed(2),
+          r.totalCommissions.toFixed(2),
+          r.netProfitWithCommissions.toFixed(2),
+          r.marginWithCommissionsPercent.toFixed(2)
+        ] : []),
         `"${expenseDesc.replace(/"/g, '""')}"`,
         r.hasOcr ? 'SIM' : 'NAO'
-      ].join(';');
+      ];
+      return rowData.join(';');
     });
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n');
@@ -514,9 +621,9 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       {/* BANNER DE REGRAS DE DESPESAS OPERACIONAIS E TRIBUTÁRIAS */}
-      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-3.5 rounded-2xl border border-indigo-800/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-3.5 rounded-2xl border border-indigo-800/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs w-full">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/20 shrink-0">
             <ShieldCheck className="w-4 h-4" />
@@ -539,7 +646,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       </div>
 
       {/* CARDS DE RESUMO CONSOLIDADO (KPIs) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${canViewFinalNetProfit ? 'lg:grid-cols-4 xl:grid-cols-7' : 'lg:grid-cols-3 xl:grid-cols-6'} gap-3 w-full`}>
         {/* Frete Bruto Empresa */}
         <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between mb-1.5">
@@ -626,6 +733,26 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           </p>
         </div>
 
+        {/* NOVO CARD: Lucro Líquido Real Pós Comissões (Visível para Comercial, Admin, Diretor e Financeiro) */}
+        {canViewFinalNetProfit && (
+          <div className="p-3 bg-gradient-to-br from-teal-500/10 via-emerald-500/5 to-cyan-500/10 dark:from-teal-950/40 dark:to-emerald-950/30 rounded-xl border-2 border-teal-500/60 dark:border-teal-400/50 shadow-xs relative overflow-hidden">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                Líquido Real Final
+              </span>
+              <div className="p-1 rounded-md bg-teal-500 text-white shadow-2xs">
+                <DollarSign className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <p className={`text-base sm:text-lg font-mono font-black truncate ${totals.sumNetProfitWithCommissions >= 0 ? 'text-teal-700 dark:text-teal-300' : 'text-rose-600 dark:text-rose-400'}`} title={`R$ ${totals.sumNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+              R$ {totals.sumNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-[10px] text-teal-700/90 dark:text-teal-300/90 mt-0.5 font-bold truncate" title={`Margem: ${totals.consolidatedMarginWithCommissions.toFixed(1)}% | Comissões abatidas: R$ ${totals.sumCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+              Margem: {totals.consolidatedMarginWithCommissions.toFixed(1)}% {totals.sumCommissions > 0 ? `(- R$ ${totals.sumCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com.)` : ''}
+            </p>
+          </div>
+        )}
+
         {/* Total de Embarques & OCR */}
         <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between mb-1.5">
@@ -646,7 +773,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       </div>
 
       {/* CABEÇALHO DO RELATÓRIO */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs w-full">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white leading-tight">
             Relatório de Lucro Real
@@ -697,7 +824,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
       {/* PAINEL DE FILTROS */}
       {showFilters && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-4 animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-4 animate-in fade-in duration-200 w-full">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-9 gap-3">
             {/* Busca textual */}
             <div>
@@ -860,8 +987,8 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       )}
 
       {/* TABELA DETALHADA DE LUCRO REAL */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden w-full">
+        <div className="overflow-x-auto w-full">
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 dark:bg-gray-900/60 text-gray-600 dark:text-gray-400 font-bold border-b dark:border-gray-700 uppercase tracking-wider text-[10px]">
               <tr>
@@ -874,6 +1001,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 <th className="py-2.5 px-2 text-center">Despesas Operac.</th>
                 {!isAgenciador && <th className="py-2.5 px-2 text-right">Créd. Exp.</th>}
                 <th className="py-2.5 px-2 text-right">Resultado (=)</th>
+                {canViewFinalNetProfit && (
+                  <th className="py-2.5 px-2 text-right text-teal-700 dark:text-teal-300 font-black">
+                    Líquido Real (- Com.)
+                  </th>
+                )}
                 <th className="py-2.5 px-2 text-center">Ações</th>
               </tr>
             </thead>
@@ -1017,6 +1149,38 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       </div>
                     </td>
 
+                    {/* NOVO: Líquido Real Final Pós Comissões (Visível para Comercial, Admin, Diretor e Financeiro) */}
+                    {canViewFinalNetProfit && (
+                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap bg-teal-50/30 dark:bg-teal-950/20">
+                        <div className="flex flex-col items-end">
+                          <span className={`text-xs font-black ${
+                            row.netProfitWithCommissions >= 0 ? 'text-teal-700 dark:text-teal-300' : 'text-rose-600 dark:text-rose-400'
+                          }`}>
+                            R$ {row.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
+                            row.netProfitWithCommissions >= 0 
+                              ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300' 
+                              : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300'
+                          }`}>
+                            {row.marginWithCommissionsPercent.toFixed(1)}%
+                          </span>
+                          {row.totalCommissions > 0 ? (
+                            <span 
+                              className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold mt-0.5 truncate max-w-[120px]"
+                              title={`Comissões abatidas: R$ ${row.totalCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Agência: R$ ${row.agencyCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Embarcador: R$ ${row.shipperCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}
+                            >
+                              - R$ {row.totalCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com.
+                            </span>
+                          ) : (
+                            <span className="text-[8px] text-gray-400 dark:text-gray-500 mt-0.5">
+                              Sem comissão
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    )}
+
                     {/* Acesso ao Anexo e Ação de Correção */}
                     <td className="py-2.5 px-2 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
@@ -1046,7 +1210,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={isAgenciador ? 9 : 10} className="py-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={isAgenciador ? (canViewFinalNetProfit ? 10 : 9) : (canViewFinalNetProfit ? 11 : 10)} className="py-10 text-center text-gray-500 dark:text-gray-400">
                     <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     Nenhum embarque encontrado com os filtros selecionados.
                   </td>
@@ -1092,6 +1256,25 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       Margem: {totals.consolidatedMargin.toFixed(2)}%
                     </p>
                   </td>
+                  {canViewFinalNetProfit && (
+                    <td className="py-2.5 px-2 text-right font-mono text-xs bg-teal-100/40 dark:bg-teal-900/30">
+                      <span className={`text-xs font-black ${
+                        totals.sumNetProfitWithCommissions >= 0 ? 'text-teal-700 dark:text-teal-300' : 'text-red-700 dark:text-red-300'
+                      }`}>
+                        R$ {totals.sumNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <p className={`text-[9px] font-extrabold ${
+                        totals.sumNetProfitWithCommissions >= 0 ? 'text-teal-800 dark:text-teal-400' : 'text-red-800 dark:text-red-400'
+                      }`}>
+                        Margem: {totals.consolidatedMarginWithCommissions.toFixed(2)}%
+                      </p>
+                      {totals.sumCommissions > 0 && (
+                        <p className="text-[8px] text-purple-700 dark:text-purple-300 font-semibold" title={`Comissões totais abatidas: R$ ${totals.sumCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Agência: R$ ${totals.sumAgencyCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Embarcador: R$ ${totals.sumShipperCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}>
+                          - R$ {totals.sumCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com.
+                        </p>
+                      )}
+                    </td>
+                  )}
                   <td className="py-2.5 px-2 text-center text-[10px] text-gray-500">
                     {totals.countOcr} IA
                   </td>

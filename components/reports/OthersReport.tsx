@@ -315,7 +315,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
   const taxCreditItems = useMemo(() => filteredData.filter(d => d.hasTaxCredit), [filteredData]);
   const additionalCostItems = useMemo(() => filteredData.filter(d => d.hasAdditionalCost), [filteredData]);
 
-  // Totais e KPIs
+  // Totais e KPIs do Período Filtrado
   const kpis = useMemo(() => {
     const totalCredit = taxCreditItems.reduce((sum, d) => sum + d.creditValue, 0);
     const totalCost = additionalCostItems.reduce((sum, d) => sum + d.addCostValue, 0);
@@ -329,6 +329,32 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       avgCost: additionalCostItems.length > 0 ? totalCost / additionalCostItems.length : 0,
     };
   }, [taxCreditItems, additionalCostItems]);
+
+  // Totais Gerais Acumulados de Todos os Tempos (Independente de Filtros de Data)
+  const { allTimeTotalCost, allTimeCountCost, allTimeTotalCredit, allTimeCountCredit } = useMemo(() => {
+    let totalCost = 0;
+    let countCost = 0;
+    let totalCredit = 0;
+    let countCredit = 0;
+
+    processedData.forEach(d => {
+      if (d.hasAdditionalCost) {
+        totalCost += d.addCostValue;
+        countCost += 1;
+      }
+      if (d.hasTaxCredit) {
+        totalCredit += d.creditValue;
+        countCredit += 1;
+      }
+    });
+
+    return {
+      allTimeTotalCost: totalCost,
+      allTimeCountCost: countCost,
+      allTimeTotalCredit: totalCredit,
+      allTimeCountCredit: countCredit,
+    };
+  }, [processedData]);
 
   const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -444,77 +470,125 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAgenciador ? '' : 'lg:grid-cols-4'} gap-3.5`}>
         {/* Card 1: Total Crédito de Imposto - Oculto para Agenciador */}
         {!isAgenciador && (
-          <div className="p-4 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-blue-500/10 dark:from-blue-950/40 dark:to-indigo-950/30 rounded-2xl border border-blue-200/80 dark:border-blue-800/60 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 block mb-0.5">
-                Crédito de Imposto Gerado
-              </span>
-              <div className="text-xl sm:text-2xl font-black font-mono text-blue-950 dark:text-blue-100">
-                {formatCurrency(kpis.totalCredit)}
+          <div className="p-4 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-blue-500/10 dark:from-blue-950/40 dark:to-indigo-950/30 rounded-2xl border border-blue-200/80 dark:border-blue-800/60 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 block mb-0.5">
+                  Crédito de Imposto Gerado
+                </span>
+                <div className="text-xl sm:text-2xl font-black font-mono text-blue-950 dark:text-blue-100">
+                  {formatCurrency(kpis.totalCredit)}
+                </div>
+                <span className="text-[11px] text-blue-700/80 dark:text-blue-300 font-medium">
+                  {kpis.countCredit} {kpis.countCredit === 1 ? 'embarque gerador' : 'embarques geradores'}
+                </span>
               </div>
-              <span className="text-[11px] text-blue-700/80 dark:text-blue-300 font-medium">
-                {kpis.countCredit} {kpis.countCredit === 1 ? 'embarque gerador' : 'embarques geradores'}
-              </span>
+              <div className="p-3 bg-blue-500 text-white rounded-xl shadow-sm">
+                <Sparkles className="w-5 h-5" />
+              </div>
             </div>
-            <div className="p-3 bg-blue-500 text-white rounded-xl shadow-sm">
-              <Sparkles className="w-5 h-5" />
+
+            {/* Rodapé: Total Geral Acumulado */}
+            <div className="mt-3 pt-2 border-t border-blue-200/60 dark:border-blue-800/60 flex items-center justify-between text-[10px]">
+              <span className="text-blue-700/80 dark:text-blue-300/80 font-semibold uppercase tracking-tight">
+                Total Geral Acumulado:
+              </span>
+              <span className="font-mono font-black text-blue-950 dark:text-blue-100" title={`Soma de todos os créditos fiscais gerados (${allTimeCountCredit} ${allTimeCountCredit === 1 ? 'embarque' : 'embarques'})`}>
+                {formatCurrency(allTimeTotalCredit)}
+              </span>
             </div>
           </div>
         )}
 
         {/* Card 2: Total Custos Adicionais / Prejuízos */}
-        <div className="p-4 bg-gradient-to-br from-rose-500/10 via-amber-500/5 to-rose-500/10 dark:from-rose-950/40 dark:to-amber-950/30 rounded-2xl border border-rose-200/80 dark:border-rose-800/60 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 block mb-0.5">
-              Custos Extras / Prejuízos
-            </span>
-            <div className="text-xl sm:text-2xl font-black font-mono text-rose-950 dark:text-rose-100">
-              {formatCurrency(kpis.totalCost)}
+        <div className="p-4 bg-gradient-to-br from-rose-500/10 via-amber-500/5 to-rose-500/10 dark:from-rose-950/40 dark:to-amber-950/30 rounded-2xl border border-rose-200/80 dark:border-rose-800/60 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 block mb-0.5">
+                Custos Extras / Prejuízos
+              </span>
+              <div className="text-xl sm:text-2xl font-black font-mono text-rose-950 dark:text-rose-100">
+                {formatCurrency(kpis.totalCost)}
+              </div>
+              <span className="text-[11px] text-rose-700/80 dark:text-rose-300 font-medium">
+                {kpis.countCost} {kpis.countCost === 1 ? 'ocorrência registrada' : 'ocorrências registradas'}
+              </span>
             </div>
-            <span className="text-[11px] text-rose-700/80 dark:text-rose-300 font-medium">
-              {kpis.countCost} {kpis.countCost === 1 ? 'ocorrência registrada' : 'ocorrências registradas'}
-            </span>
+            <div className="p-3 bg-rose-500 text-white rounded-xl shadow-sm">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
           </div>
-          <div className="p-3 bg-rose-500 text-white rounded-xl shadow-sm">
-            <AlertTriangle className="w-5 h-5" />
+
+          {/* Rodapé: Total Geral de Prejuízos (Independente de Data) */}
+          <div className="mt-3 pt-2 border-t border-rose-200/60 dark:border-rose-800/60 flex items-center justify-between text-[10px]">
+            <span className="text-rose-700/80 dark:text-rose-300/80 font-semibold uppercase tracking-tight">
+              Total Geral Acumulado:
+            </span>
+            <span className="font-mono font-black text-rose-950 dark:text-rose-100" title={`Soma de todos os prejuízos de todos os períodos (${allTimeCountCost} ${allTimeCountCost === 1 ? 'ocorrência' : 'ocorrências'})`}>
+              {formatCurrency(allTimeTotalCost)}
+            </span>
           </div>
         </div>
 
         {/* Card 3: Média de Crédito por Frete - Oculto para Agenciador */}
         {!isAgenciador && (
-          <div className="p-4 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-0.5">
-                Média Crédito / Frete
-              </span>
-              <div className="text-xl sm:text-2xl font-black font-mono text-gray-900 dark:text-white">
-                {formatCurrency(kpis.avgCredit)}
+          <div className="p-4 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-0.5">
+                  Média Crédito / Frete
+                </span>
+                <div className="text-xl sm:text-2xl font-black font-mono text-gray-900 dark:text-white">
+                  {formatCurrency(kpis.avgCredit)}
+                </div>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Sobre embarques c/ crédito
+                </span>
               </div>
-              <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                Sobre embarques c/ crédito
-              </span>
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
+                <Receipt className="w-5 h-5" />
+              </div>
             </div>
-            <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
-              <Receipt className="w-5 h-5" />
+
+            {/* Rodapé: Total Embarques com Crédito */}
+            <div className="mt-3 pt-2 border-t border-gray-200/60 dark:border-gray-700/60 flex items-center justify-between text-[10px]">
+              <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-tight">
+                Embarques (Geral):
+              </span>
+              <span className="font-mono font-bold text-gray-900 dark:text-white">
+                {allTimeCountCredit} {allTimeCountCredit === 1 ? 'embarque' : 'embarques'}
+              </span>
             </div>
           </div>
         )}
 
         {/* Card 4: Média de Custo por Ocorrência */}
-        <div className="p-4 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-0.5">
-              Média Prejuízo / Ocorrência
-            </span>
-            <div className="text-xl sm:text-2xl font-black font-mono text-gray-900 dark:text-white">
-              {formatCurrency(kpis.avgCost)}
+        <div className="p-4 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 block mb-0.5">
+                Média Prejuízo / Ocorrência
+              </span>
+              <div className="text-xl sm:text-2xl font-black font-mono text-gray-900 dark:text-white">
+                {formatCurrency(kpis.avgCost)}
+              </div>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                Avarias, multas, transbordos
+              </span>
             </div>
-            <span className="text-[11px] text-gray-500 dark:text-gray-400">
-              Avarias, multas, transbordos
-            </span>
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-100 dark:border-amber-800/50">
+              <TrendingUp className="w-5 h-5" />
+            </div>
           </div>
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-100 dark:border-amber-800/50">
-            <TrendingUp className="w-5 h-5" />
+
+          {/* Rodapé: Total de Ocorrências Geral */}
+          <div className="mt-3 pt-2 border-t border-gray-200/60 dark:border-gray-700/60 flex items-center justify-between text-[10px]">
+            <span className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-tight">
+              Ocorrências (Geral):
+            </span>
+            <span className="font-mono font-bold text-gray-900 dark:text-white">
+              {allTimeCountCost} {allTimeCountCost === 1 ? 'ocorrência' : 'ocorrências'}
+            </span>
           </div>
         </div>
       </div>

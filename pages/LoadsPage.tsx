@@ -11,7 +11,7 @@ import NewShipmentModal from '../components/NewShipmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch } from '../types';
 import { CargoStatus, UserProfile } from '../types';
-import { can } from '../auth';
+import { can, isDemoUser } from '../auth';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, FreightOffer } from '../types';
 
@@ -115,9 +115,10 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
     setIsRecommendedDriversModalOpen(true);
   };
 
-  const canCreate = can('create', currentUser, 'loads', profilePermissions);
-  const canUpdate = can('update', currentUser, 'loads', profilePermissions);
-  const canDelete = can('delete', currentUser, 'loads', profilePermissions);
+  const isDemo = isDemoUser(currentUser);
+  const canCreate = !isDemo && can('create', currentUser, 'loads', profilePermissions);
+  const canUpdate = !isDemo && can('update', currentUser, 'loads', profilePermissions);
+  const canDelete = !isDemo && can('delete', currentUser, 'loads', profilePermissions);
 
   const handleOpenModal = () => {
     setLoadToEdit(null);
@@ -188,20 +189,20 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             shipments={allShipments}
             dailyBalanceDate={dailyBalanceDate}
             onDailyBalanceDateChange={setDailyBalanceDate}
-            onEdit={canUpdate ? handleEditLoad : undefined}
-            onClose={(canDelete || currentUser.profile === UserProfile.Supervisor) ? handleCloseLoad : undefined}
+            onEdit={!isDemo && canUpdate ? handleEditLoad : undefined}
+            onClose={!isDemo && (canDelete || currentUser.profile === UserProfile.Supervisor) ? handleCloseLoad : undefined}
             onShowHistory={handleShowHistory}
-            onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onReactivateLoad : undefined}
-            onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onSuspendLoad : undefined}
-            onEditSchedule={canUpdate ? handleEditSchedule : undefined}
+            onReactivate={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
+            onSuspend={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
+            onEditSchedule={!isDemo && canUpdate ? handleEditSchedule : undefined}
             onShowDetails={handleShowDetails}
             onShowShipments={handleShowShipments}
             onRecommendDrivers={handleOpenRecommendations}
-            onDelete={onDeleteLoad}
+            onDelete={!isDemo ? onDeleteLoad : undefined}
             currentUser={currentUser}
             stays={stays}
             tickets={tickets}
-            onSaveLoad={handleSaveLoad}
+            onSaveLoad={!isDemo ? handleSaveLoad : undefined}
         />
       </div>
 

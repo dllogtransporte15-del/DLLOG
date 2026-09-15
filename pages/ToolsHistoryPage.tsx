@@ -18,6 +18,7 @@ import {
 import { getShipmentAttachmentUrl } from '../lib/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
+import { isDemoUser } from '../auth';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { addPdfLogo } from '../utils/pdfGenerator';
@@ -30,6 +31,7 @@ interface ToolsHistoryPageProps {
 }
 
 export default function ToolsHistoryPage({ currentUser, shipments = [], cargos = [], clients: propsClients = [] }: ToolsHistoryPageProps) {
+  const isDemo = isDemoUser(currentUser);
   const [activeView, setActiveView] = useState<'estadias' | 'cotacoes'>('estadias');
   const [stays, setStays] = useState<StayRecord[]>([]);
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
@@ -77,7 +79,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (!currentUser) return;
     
     // Check if user is an administrator/manager who should see everything
-    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Demonstracao].includes(currentUser.profile);
+    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
     
     const [staysData, quotesData, clientsData] = await Promise.all([
       isAdmin ? getAllToolStays() : getToolStays(currentUser.id),
@@ -237,7 +239,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
   };
 
   const handleSaveStayFinancials = async () => {
-    if (!editValues || isSavingEdit) return;
+    if (!editValues || isSavingEdit || isDemo) return;
     setIsSavingEdit(true);
     try {
       let cteUrl: string | undefined = undefined;
@@ -285,6 +287,10 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
   };
 
   const handleDelete = async (id: string, type: 'estadias' | 'cotacoes') => {
+    if (isDemo) {
+      alert("Usuário em modo demonstração possui acesso apenas de visualização.");
+      return;
+    }
     if (!confirm('Deseja realmente excluir este registro?')) return;
     
     if (type === 'estadias') {
@@ -676,13 +682,15 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                         {formatCurrency(parseFlexibleNumber(editValues?.approved) - parseFlexibleNumber(editValues?.paid))}
                                       </div>
                                    </div>
-                                   <button 
-                                     onClick={handleSaveStayFinancials} 
-                                     disabled={isSavingEdit}
-                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-                                   >
-                                     {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
-                                   </button>
+                                   {!isDemo && (
+                                     <button 
+                                       onClick={handleSaveStayFinancials} 
+                                       disabled={isSavingEdit}
+                                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+                                     >
+                                       {isSavingEdit ? 'Salvando...' : 'Salvar Alterações'}
+                                     </button>
+                                   )}
                                  </div>
                                </div>
                             </div>
@@ -747,11 +755,13 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                              <FileText className="w-3.5 h-3.5 mr-2 text-slate-400" /> Detalhes PDF
                           </button>
                        </div>
-                       <div className="flex items-center gap-2">
-                          <button onClick={() => handleDelete(item.id, activeView)} className="flex items-center px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl text-xs font-bold transition-all">
-                             <Trash2 className="w-3.5 h-3.5 mr-2" /> Excluir Registro
-                          </button>
-                       </div>
+                       {!isDemo && (
+                          <div className="flex items-center gap-2">
+                             <button onClick={() => handleDelete(item.id, activeView)} className="flex items-center px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl text-xs font-bold transition-all">
+                                <Trash2 className="w-3.5 h-3.5 mr-2" /> Excluir Registro
+                             </button>
+                          </div>
+                       )}
                     </div>
                   </div>
                 )}

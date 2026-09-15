@@ -12,7 +12,7 @@ import AttachmentModal from '../components/AttachmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import { REQUIRED_DOCUMENT_MAP } from '../types';
 import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption } from '../types';
-import { can } from '../auth';
+import { can, isDemoUser } from '../auth';
 import { CopyIcon } from '../components/icons/CopyIcon';
 import { CargoStatus, UserProfile, ShipmentStatus } from '../types';
 import ShipmentTable from '../components/ShipmentTable';
@@ -118,8 +118,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const [copyButtonText, setCopyButtonText] = useState('Divulgar Cargas');
   const [fretebrasButtonText, setFretebrasButtonText] = useState('Prompt Fretebras');
   const [dailyBalanceDate, setDailyBalanceDate] = useState(new Date().toISOString().split('T')[0]);
-  const canCreateShipment = can('create', currentUser, 'shipments', profilePermissions);
-  const canUpdateLoad = can('update', currentUser, 'loads', profilePermissions);
+  const isDemo = isDemoUser(currentUser);
+  const canCreateShipment = !isDemo && can('create', currentUser, 'shipments', profilePermissions);
+  const canUpdateLoad = !isDemo && can('update', currentUser, 'loads', profilePermissions);
 
   const handleEditLoad = (load: Cargo) => {
     setLoadToEdit(load);
@@ -347,7 +348,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       <Header title="Cargas em Operação">
         {currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
           <div className="flex items-center gap-2">
-            {can('create', currentUser, 'loads', profilePermissions) && (
+            {!isDemo && can('create', currentUser, 'loads', profilePermissions) && (
               <button
                 onClick={() => setIsBulkImportModalOpen(true)}
                 className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-bold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 shadow-sm transition-all text-sm"
@@ -386,8 +387,8 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
             products={products}
             currentUser={currentUser}
             onShowCargoDetails={handleShowCargoDetails}
-            onAttach={handleOpenAttachmentModal}
-            onUpdateShipmentData={onUpdateShipmentData}
+            onAttach={!isDemo ? handleOpenAttachmentModal : undefined}
+            onUpdateShipmentData={!isDemo ? onUpdateShipmentData : undefined}
             stays={stays}
             activeStatus="all"
           />
@@ -402,20 +403,20 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         shipments={allShipments}
         dailyBalanceDate={dailyBalanceDate}
         onDailyBalanceDateChange={setDailyBalanceDate}
-        onCreateShipment={canCreateShipment ? handleOpenNewShipmentModal : undefined} 
-        onEdit={canUpdateLoad ? handleEditLoad : undefined}
+        onCreateShipment={!isDemo && canCreateShipment ? handleOpenNewShipmentModal : undefined} 
+        onEdit={!isDemo && canUpdateLoad ? handleEditLoad : undefined}
         onShowHistory={handleShowHistory}
-        onReactivate={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onReactivateLoad : undefined}
-        onSuspend={(currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Demonstracao && (currentUser.profile as string) !== 'Demo') ? onSuspendLoad : undefined}
+        onReactivate={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onReactivateLoad : undefined}
+        onSuspend={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
         onShowDetails={handleShowCargoDetails}
         onShowShipments={handleShowShipments}
-        onDelete={onDeleteLoad}
+        onDelete={!isDemo ? onDeleteLoad : undefined}
         currentUser={currentUser}
         stays={stays}
         tickets={tickets}
-        onRequestLoadOrder={onRequestLoadOrder}
+        onRequestLoadOrder={!isDemo ? onRequestLoadOrder : undefined}
         onFilteredLoadsChange={handleFilteredLoadsChange}
-        onSaveLoad={onSaveLoad}
+        onSaveLoad={!isDemo ? onSaveLoad : undefined}
       />
 
       <NewShipmentModal

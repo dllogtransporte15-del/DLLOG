@@ -3,6 +3,7 @@ import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog, User,
 import { extractDetailedDocData } from '../utils/fiscalDocParser';
 import { upsertShipment } from '../lib/db';
 import { useToast } from '../hooks/useToast';
+import { isDemoUser } from '../auth';
 import { StayRecord, getAllToolStays } from '../utils/toolStorage';
 import { isStayForShipment } from '../utils';
 import { calculateTacTaxDeductions } from '../utils/freightCalculation';
@@ -69,6 +70,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const { showToast } = useToast();
   const formatBrl = (val: number | undefined | null) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
+  const isDemo = isDemoUser(currentUser);
 
   const isRestrictedProfile = 
     currentUser?.profile === UserProfile.Embarcador || 
@@ -252,6 +255,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   }, [shipment.etcTaxRegime, shipment.documents, shipment.driverFreightType, shipment.anttModality]);
 
   const handleSaveRegime = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setIsSavingRegime(true);
     try {
       const isPf = selectedRegime === 'PF' || selectedRegime === 'TAC';
@@ -385,6 +392,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   }, [shipment.isFederalTaxManual, shipment.realProfitData?.isFederalTaxManual, shipment.realProfitData?.federalTax, shipment.federalTax, shipment.documents]);
 
   const handleStartEditFederalTax = () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const currentNum = (isManualFederalTax && customFederalTax !== undefined) 
       ? customFederalTax 
       : (impostoFederalLiquido > 0 ? impostoFederalLiquido : 0);
@@ -393,6 +404,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleSaveFederalTax = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setIsSavingFederalTax(true);
     try {
       const parsedVal = parseCurrencyInput(federalTaxInput);
@@ -458,6 +473,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleRestoreDefaultFederalTax = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setIsSavingFederalTax(true);
     try {
       setCustomFederalTax(undefined);
@@ -565,6 +584,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   }, [shipment.isGeneratedCreditManual, shipment.realProfitData?.isGeneratedCreditManual, shipment.realProfitData?.generatedCredit, shipment.generatedCredit, shipment.documents]);
 
   const handleStartEditGeneratedCredit = () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const currentNum = (isManualGeneratedCredit && customGeneratedCredit !== undefined) 
       ? customGeneratedCredit 
       : (pisCofinsCredit > 0 ? pisCofinsCredit : 0);
@@ -573,6 +596,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleSaveGeneratedCredit = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setIsSavingGeneratedCredit(true);
     try {
       const parsedVal = parseCurrencyInput(generatedCreditInput);
@@ -638,6 +665,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleRestoreDefaultGeneratedCredit = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     setIsSavingGeneratedCredit(true);
     try {
       setCustomGeneratedCredit(undefined);
@@ -722,6 +753,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   // --- HANDLERS: Custo Adicional / Prejuízo ---
   const handleOpenAddAdditionalCost = (mode: 'create' | 'edit' = 'create') => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (additionalCost && mode === 'edit') {
       setCostFormValue(String(additionalCost.value));
       setCostFormCategory(additionalCost.category || 'Avaria de Carga');
@@ -742,6 +777,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleSaveAdditionalCost = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const numVal = parseCurrencyInput(costFormValue);
     if (!numVal || numVal <= 0) {
       showToast('Por favor, informe um valor monetário válido maior que zero.', 'error');
@@ -824,6 +863,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleDeleteAdditionalCost = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     if (!window.confirm('Tem certeza que deseja remover este lançamento de custo adicional?')) return;
     setIsSavingAdditionalCost(true);
     try {
@@ -887,6 +930,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   // --- HANDLERS: Comissão de Agência ---
   const handleToggleAgencyCommission = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const nextState = !agencyCommEnabled;
     setIsSavingAgencyComm(true);
     setAgencyCommEnabled(nextState);
@@ -956,6 +1003,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   // --- HANDLERS: Comissão do Embarcador (R$/ton) ---
   const handleToggleShipperCommission = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const nextState = !shipperCommEnabled;
     setIsSavingShipperComm(true);
     setShipperCommEnabled(nextState);
@@ -1022,6 +1073,10 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   };
 
   const handleSaveShipperRate = async (newRateVal?: number) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
     const parsedRate = newRateVal !== undefined ? newRateVal : parseCurrencyInput(shipperRateInput);
     const validRate = isNaN(parsedRate) || parsedRate <= 0 ? 1.00 : Number(parsedRate.toFixed(2));
 
@@ -1553,8 +1608,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           <select
             value={selectedRegime}
             onChange={(e) => setSelectedRegime(e.target.value)}
-            disabled={isSavingRegime}
-            className={`flex-1 min-w-0 text-xs font-semibold rounded-lg px-2 py-1.5 border outline-hidden transition-all cursor-pointer truncate ${
+            disabled={isSavingRegime || isDemo}
+            className={`flex-1 min-w-0 text-xs font-semibold rounded-lg px-2 py-1.5 border outline-hidden transition-all ${isDemo ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'} truncate ${
               isSimplesNacional
                 ? 'bg-purple-50/70 text-purple-900 border-purple-300 dark:bg-purple-950/50 dark:text-purple-200 dark:border-purple-800'
                 : isShipmentPf
@@ -1568,20 +1623,22 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             <option value="MEI">🟢 MEI (Simples Nacional - 3,40%)</option>
           </select>
 
-          <button
-            type="button"
-            onClick={handleSaveRegime}
-            disabled={isSavingRegime}
-            className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-all shrink-0 cursor-pointer"
-            title="Salvar regime tributário no banco de dados e registrar histórico"
-          >
-            {isSavingRegime ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Save className="w-3.5 h-3.5" />
-            )}
-            <span>Salvar</span>
-          </button>
+          {!isDemo && (
+            <button
+              type="button"
+              onClick={handleSaveRegime}
+              disabled={isSavingRegime}
+              className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs transition-all shrink-0 cursor-pointer"
+              title="Salvar regime tributário no banco de dados e registrar histórico"
+            >
+              {isSavingRegime ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              <span>Salvar</span>
+            </button>
+          )}
         </div>
 
         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
@@ -2042,7 +2099,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                     {isExportCargo ? 'Exportação' : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25% Spread'))}
                   </span>
 
-                  {!isEditingFederalTax && (
+                  {!isEditingFederalTax && !isDemo && (
                     <button
                       type="button"
                       onClick={handleStartEditFederalTax}
@@ -2119,15 +2176,17 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                     <div className={`text-xs font-bold font-mono ${impostoFederalLiquido > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
                       {impostoFederalLiquido > 0 ? `- ${formatBrl(impostoFederalLiquido)}` : 'R$ 0,00'}
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleStartEditFederalTax}
-                      className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
-                      title="Editar valor do Imposto Federal"
-                    >
-                      <Pencil className="w-2 h-2" />
-                      <span>editar</span>
-                    </button>
+                    {!isDemo && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditFederalTax}
+                        className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                        title="Editar valor do Imposto Federal"
+                      >
+                        <Pencil className="w-2 h-2" />
+                        <span>editar</span>
+                      </button>
+                    )}
                   </div>
                   <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={
                     isFederalTaxCustom
@@ -2386,11 +2445,11 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleAgencyCommission}
-                  disabled={isSavingAgencyComm}
-                  className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                  disabled={isSavingAgencyComm || isDemo}
+                  className={`relative inline-flex h-4 w-7 shrink-0 ${isDemo ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'} rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
                     agencyCommEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-600'
                   }`}
-                  title={agencyCommEnabled ? 'Desativar comissão de agência' : 'Ativar comissão de 30% da agência sobre o Lucro Líquido Real'}
+                  title={isDemo ? 'Acesso de visualização no modo demonstração' : (agencyCommEnabled ? 'Desativar comissão de agência' : 'Ativar comissão de 30% da agência sobre o Lucro Líquido Real')}
                 >
                   <span
                     className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
@@ -2444,11 +2503,11 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleShipperCommission}
-                  disabled={isSavingShipperComm}
-                  className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                  disabled={isSavingShipperComm || isDemo}
+                  className={`relative inline-flex h-4 w-7 shrink-0 ${isDemo ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'} rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
                     shipperCommEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'
                   }`}
-                  title={shipperCommEnabled ? 'Desativar comissão do embarcador' : 'Ativar comissão do embarcador por tonelada'}
+                  title={isDemo ? 'Acesso de visualização no modo demonstração' : (shipperCommEnabled ? 'Desativar comissão do embarcador' : 'Ativar comissão do embarcador por tonelada')}
                 >
                   <span
                     className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
@@ -2522,7 +2581,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                     }`}>
                       {shipperCommEnabled && shipperCommissionValue > 0 ? `- ${formatBrl(shipperCommissionValue)}` : 'R$ 0,00'}
                     </div>
-                    {shipperCommEnabled && (
+                    {shipperCommEnabled && !isDemo && (
                       <button
                         type="button"
                         onClick={() => {
@@ -2535,6 +2594,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                         <span>R$ {shipperCommRate.toFixed(2)}/t</span>
                         <Pencil className="w-2 h-2" />
                       </button>
+                    )}
+                    {shipperCommEnabled && isDemo && (
+                      <span
+                        className="text-[8px] font-bold px-1 py-0.2 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0"
+                      >
+                        R$ {shipperCommRate.toFixed(2)}/t
+                      </span>
                     )}
                   </div>
 
@@ -2671,24 +2737,28 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                     <Eye className="w-3 h-3" />
                     <span>Ver Detalhes</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenAddAdditionalCost('edit')}
-                    className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                    title="Editar valor, categoria ou justificativa"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDeleteAdditionalCost}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                    title="Remover custo adicional"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {!isDemo && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddAdditionalCost('edit')}
+                        className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                        title="Editar valor, categoria ou justificativa"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteAdditionalCost}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Remover custo adicional"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
-              ) : (
+              ) : !isDemo ? (
                 <button
                   type="button"
                   onClick={() => handleOpenAddAdditionalCost('create')}
@@ -2697,7 +2767,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   <Plus className="w-3.5 h-3.5" />
                   <span>Lançar Custo / Prejuízo</span>
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -2768,25 +2838,29 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 </div>
 
                 <div className="pt-2 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDeleteAdditionalCost}
-                    disabled={isSavingAdditionalCost}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Excluir Lançamento</span>
-                  </button>
-
-                  <div className="flex items-center gap-2">
+                  {!isDemo ? (
                     <button
                       type="button"
-                      onClick={() => handleOpenAddAdditionalCost('edit')}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                      onClick={handleDeleteAdditionalCost}
+                      disabled={isSavingAdditionalCost}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                     >
-                      <Pencil className="w-3.5 h-3.5" />
-                      <span>Editar</span>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Excluir Lançamento</span>
                     </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    {!isDemo && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddAdditionalCost('edit')}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setIsAdditionalCostModalOpen(false)}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus } from '../types';
+import { isDemoUser } from '../auth';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
 import { AlertTriangle, Flame, Truck, ShieldAlert, FileCheck2, Volume2, VolumeX, ChevronRight, X, CheckCircle, XCircle, Wallet } from 'lucide-react';
@@ -53,6 +54,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   onRefuseOrderRequest,
   onSaveFreightOffer
 }) => {
+  const isDemo = isDemoUser(user);
   const [isOpen, setIsOpen] = useState(false);
   const [decisionOffer, setDecisionOffer] = useState<FreightOffer | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(() => {
@@ -102,7 +104,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isFiscal = user.profile === UserProfile.Fiscal;
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
     const isFinanceiro = user.profile === UserProfile.Financeiro;
-    const isAdminOrDiretor = user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor || user.profile === UserProfile.Demonstracao;
+    const isAdminOrDiretor = !isDemo && (user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor);
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
     if (isEmbarcador || isAdminOrDiretor) {
@@ -284,6 +286,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   const handleAlertClick = (alert: SystemAlert) => {
     if (alert.type === 'order_request') {
+      if (isDemo) {
+        setIsOpen(false);
+        return;
+      }
       const offerId = alert.relatedId || alert.id.replace('order_', '');
       const matchedOffer = freightOffers.find(o => o.id === offerId);
       if (matchedOffer) {
@@ -303,6 +309,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   const handleOpenDecisionForOffer = (e: React.MouseEvent, offerId: string) => {
     e.stopPropagation();
+    if (isDemo) return;
     const matchedOffer = freightOffers.find(o => o.id === offerId);
     if (matchedOffer) {
       setIsOpen(false);
@@ -460,7 +467,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                         </p>
 
                         {/* Botões de Ação Rápida para Solicitação de Ordem */}
-                        {isOrderRequest && (
+                        {isOrderRequest && !isDemo && (
                           <div className="mt-2.5 flex items-center gap-2">
                             <button
                               type="button"

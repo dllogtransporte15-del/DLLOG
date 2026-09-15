@@ -10,6 +10,7 @@ import { supabase } from '../supabase';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity, getCoordsSync } from '../utils/geocoding';
 import { upsertManyCargos } from '../lib/db';
+import { isDemoUser } from '../auth';
 
 // Declare Leaflet globally since it's loaded via script tag in index.html
 declare const L: any;
@@ -56,6 +57,7 @@ const isInBoundingBox = (lat: number, lon: number, centerLat: number, centerLon:
 };
 
 const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipments, clients, products, drivers, vehicles, onCreateShipment, currentUser, users, onModalStateChange, onDeleteAttachment }) => {
+  const isDemo = isDemoUser(currentUser);
   const [originQuery, setOriginQuery] = useState('Catalão');
   const [originRadius, setOriginRadius] = useState(200);
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -87,6 +89,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
   const loadsWithCoordsRef = useRef<(Cargo & { originCoords?: { lat: number, lng: number }, destinationCoords?: { lat: number, lng: number }})[]>([]);
 
   const handleOpenNewShipmentModal = (cargo: Cargo) => {
+    if (isDemo) return;
     setSelectedCargoForShipment(cargo);
     setIsShipmentModalOpen(true);
   };
@@ -97,6 +100,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
   };
 
   const handleSaveShipment = (shipmentData: Omit<Shipment, 'id' | 'orderId' | 'cargoId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => {
+    if (isDemo) return;
     if (selectedCargoForShipment) {
       onCreateShipment({
         cargoId: selectedCargoForShipment.id,
@@ -198,6 +202,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
   }, []);
 
   const handleSyncAllCargos = async () => {
+    if (isDemo) return;
     if (!window.confirm('Deseja atualizar as coordenadas de TODAS as cargas cadastradas? Isso pode levar algum tempo.')) return;
     
     setSyncingAll(true);
@@ -324,7 +329,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
                 <p class="text-sm"><b>Rota:</b> ${load.origin} &rarr; ${load.destination}</p>
                 <p class="text-sm"><b>Valor:</b> R$ ${load.driverFreightValuePerTon.toFixed(2)}${tollText}/ton</p>
                 <p class="text-sm"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
-                <button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>
+                ${!isDemo ? `<button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>` : ''}
             </div>
         `;
         const marker = L.marker([load.originCoords.lat, load.originCoords.lng]);
@@ -538,20 +543,22 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
             </form>
             {error && <p className="text-red-500 text-[10px] mt-3 font-bold bg-red-50 dark:bg-red-900/20 p-2 rounded-lg text-center">{error}</p>}
             
-            <button 
-                onClick={handleSyncAllCargos}
-                disabled={syncingAll}
-                className="w-full mt-4 py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-[10px] items-center justify-center font-bold text-gray-400 hover:text-blue-500 hover:border-blue-500 transition-all flex gap-2"
-            >
-                {syncingAll ? (
-                    <>
-                        <div className="w-3 h-3 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                        <span>Sincronizando Coordenadas...</span>
-                    </>
-                ) : (
-                    <span>Sincronizar Todas as Cargas (Old)</span>
-                )}
-            </button>
+            {!isDemo && (
+              <button 
+                  onClick={handleSyncAllCargos}
+                  disabled={syncingAll}
+                  className="w-full mt-4 py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl text-[10px] items-center justify-center font-bold text-gray-400 hover:text-blue-500 hover:border-blue-500 transition-all flex gap-2"
+              >
+                  {syncingAll ? (
+                      <>
+                          <div className="w-3 h-3 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                          <span>Sincronizando Coordenadas...</span>
+                      </>
+                  ) : (
+                      <span>Sincronizar Todas as Cargas (Old)</span>
+                  )}
+              </button>
+            )}
           </div>
 
           {/* Card 2: Resultados - Centralizado agora na direita */}

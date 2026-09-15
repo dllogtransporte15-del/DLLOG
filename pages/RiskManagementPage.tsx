@@ -31,6 +31,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../utils/pdfGenerator';
+import { isDemoUser } from '../auth';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EditRiskQueryModal from '../components/EditRiskQueryModal';
@@ -144,6 +145,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
 }) => {
   // Tabs: 'operational' | 'analytics' | 'query_types'
   const [activeTab, setActiveTab] = useState<'operational' | 'analytics' | 'query_types'>('operational');
+  const isDemo = isDemoUser(currentUser);
 
   // Global / Quick Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -1680,13 +1682,15 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
                         {/* Ações */}
                         <td className="px-3.5 py-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => setShipmentToEditRisk(row.shipment)}
-                              className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 transition-colors"
-                              title="Editar modalidade / tipo de consulta"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
+                            {!isDemo && (
+                              <button
+                                onClick={() => setShipmentToEditRisk(row.shipment)}
+                                className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 transition-colors"
+                                title="Editar modalidade / tipo de consulta"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => setSelectedShipmentForDetails(row.shipment)}
                               className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"

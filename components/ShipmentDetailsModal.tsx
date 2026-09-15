@@ -10,6 +10,7 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
+import { isDemoUser } from '../auth';
 
 
 interface ShipmentDetailsModalProps {
@@ -120,9 +121,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     return isNaN(d.getTime()) ? String(dateString) : d.toLocaleString('pt-BR');
   };
 
+  const isDemo = isDemoUser(currentUser);
   const isFinalized = shipment.status === ShipmentStatus.Finalizado;
   const isAdmin = currentUser?.profile === UserProfile.Admin;
-  const canEdit = !!onUpdatePrice && (
+  const canEdit = !isDemo && !!onUpdatePrice && (
     (isFinalized ? isAdmin : currentUser?.profile !== UserProfile.Embarcador)
   );
 
@@ -138,6 +140,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const netDemurrage = approvedStaysValue - driverPaidStaysValue;
 
   const handleStartEdit = () => {
+    if (isDemo) return;
     setEditRate(driverRateSnapshot);
     setEditCompanyRate(companyRateSnapshot);
     setIsEditing(true);
@@ -148,6 +151,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const product = (products || []).find(p => p.id === cargo?.productId);
 
   const handleSave = () => {
+    if (isDemo) return;
     if (onUpdatePrice) {
       const newTotal = editRate * tonnage;
       onUpdatePrice(shipment.id, {
@@ -160,6 +164,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   };
 
   const handleStartEditData = () => {
+    if (isDemo) return;
     setEditedData({
       driverName: shipment.driverName,
       driverCpf: shipment.driverCpf,
@@ -191,6 +196,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   };
 
   const handleSaveData = () => {
+    if (isDemo) return;
     if (onUpdateShipmentData) {
       const finalRate = editedData.driverFreightRateSnapshot !== undefined ? editedData.driverFreightRateSnapshot : driverRateSnapshot;
       const finalTon = editedData.shipmentTonnage !== undefined ? editedData.shipmentTonnage : tonnage;
@@ -205,6 +211,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   };
 
   const handleConfirmAttachments = async () => {
+    if (isDemo) return;
     if (!onAddAttachments || filesToAttach.length === 0) return;
     setIsUploading(true);
     try {
@@ -232,7 +239,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
             <div>
                 <div className="flex items-center gap-3">
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Detalhes do Embarque</h2>
-                    {onSwapCargo && shipment && shipment.status !== ShipmentStatus.Cancelado && (
+                    {onSwapCargo && !isDemo && shipment && shipment.status !== ShipmentStatus.Cancelado && (
                         <button
                             type="button"
                             onClick={() => setIsSwapModalOpen(true)}
@@ -271,7 +278,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
                             {cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.tmsLoteNumber ? ` (Lote TMS: ${cargo.tmsLoteNumber})` : ''}` : (cargo?.id || 'N/A')}
                         </span>
-                        {onSwapCargo && shipment.status !== ShipmentStatus.Cancelado && (
+                        {onSwapCargo && !isDemo && shipment.status !== ShipmentStatus.Cancelado && (
                             <button
                                 type="button"
                                 onClick={() => setIsSwapModalOpen(true)}
@@ -299,12 +306,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Motorista e Veículo</h3>
                     {!isEditingData ? (
-                        <button 
-                            onClick={handleStartEditData}
-                            className="text-xs font-semibold text-primary hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
-                        >
-                            <span>Editar Dados</span>
-                        </button>
+                        !isDemo && (
+                            <button 
+                                onClick={handleStartEditData}
+                                className="text-xs font-semibold text-primary hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                            >
+                                <span>Editar Dados</span>
+                            </button>
+                        )
                     ) : (
                         <div className="flex gap-2">
                             <button 
@@ -765,7 +774,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
                                             {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
                                         </p>
-                                        {onUpdateShipmentData && (
+                                        {onUpdateShipmentData && !isDemo && (
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -961,7 +970,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                                         <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
                                                                         <span className="truncate">{fileName}</span>
                                                                     </button>
-                                                                    {onDeleteAttachment && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
+                                                                    {onDeleteAttachment && !isDemo && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
                                                                         <button
                                                                             onClick={() => {
                                                                                 if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
@@ -986,7 +995,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             );
                         })()}
 
-                        {onAddAttachments && (
+                        {onAddAttachments && !isDemo && (
                             <div className="md:col-span-2 mt-6 pt-6 border-t dark:border-gray-700">
                                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">Anexar Novos Documentos</h3>
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">

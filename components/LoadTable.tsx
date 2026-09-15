@@ -11,6 +11,7 @@ import MultiSelectDropdown from './MultiSelectDropdown';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 import { TicketStatus } from '../types';
+import { isDemoUser } from '../auth';
 
 interface LoadTableProps {
   loads: Cargo[];
@@ -40,18 +41,20 @@ interface LoadTableProps {
 }
 
 const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipments, dailyBalanceDate, onDailyBalanceDateChange, onCreateShipment, onSuspend, onReactivate, onFinalize, onEdit, onClose, onShowHistory, onShowDetails, onEditSchedule, onShowShipments, onRecommendDrivers, onDelete, onRequestLoadOrder, onSaveLoad, currentUser, stays = [], tickets = [], onFilteredLoadsChange }) => {
+  const isDemo = isDemoUser(currentUser);
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [tmsModalCargo, setTmsModalCargo] = useState<Cargo | null>(null);
   const [tmsLoteInput, setTmsLoteInput] = useState<string>('');
 
   const handleOpenTmsModal = (cargo: Cargo) => {
+    if (isDemo) return;
     setTmsModalCargo(cargo);
     setTmsLoteInput(cargo.tmsLoteNumber || '');
   };
 
   const handleSaveTmsLote = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!tmsModalCargo) return;
+    if (!tmsModalCargo || isDemo) return;
     const updatedCargo: Cargo = {
       ...tmsModalCargo,
       tmsLoteNumber: tmsLoteInput.trim() || undefined,

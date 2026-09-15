@@ -10,6 +10,7 @@ import {
 import Header from '../components/Header';
 import { saveToolStay, getToolClients, saveToolClient, ToolClient, getAllToolClients } from '../utils/toolStorage';
 import { User as AppUser, Shipment, Cargo, Client as AppClient, ShipmentStatus, UserProfile } from '../types';
+import { isDemoUser } from '../auth';
 import { autoFormatInput } from '../utils/formatters';
 import { addPdfLogo } from '../utils/pdfGenerator';
 
@@ -45,7 +46,8 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
-    const isAdmin = [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Demonstracao].includes(currentUser.profile);
+    const isDemo = isDemoUser(currentUser);
+    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
     const data = await (isAdmin ? getAllToolClients() : getToolClients(currentUser.id));
     setClients(data);
   }, [currentUser]);
@@ -205,6 +207,10 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
 
   const handleSave = async () => {
     if (!result || isSaving || !currentUser) return;
+    if (isDemoUser(currentUser)) {
+      alert("Usuário em modo demonstração possui acesso apenas de visualização.");
+      return;
+    }
     
     if (!formData.driver || !formData.plate || !formData.origin || !formData.destination) {
       alert("Por favor, preencha os campos obrigatórios (Motorista, Placa, Origem, Destino).");
@@ -725,10 +731,12 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
                         Estadia salva com sucesso!
                       </div>
                     )}
-                    <button onClick={handleSave} disabled={isSaving} className="w-full flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium disabled:opacity-60">
-                      {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                      {isSaving ? 'Salvando...' : 'Salvar Estadia'}
-                    </button>
+                    {!isDemoUser(currentUser) && (
+                      <button onClick={handleSave} disabled={isSaving} className="w-full flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium disabled:opacity-60">
+                        {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                        {isSaving ? 'Salvando...' : 'Salvar Estadia'}
+                      </button>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={exportToCSV} className="flex items-center justify-center px-4 py-2 border border-slate-300 dark:border-gray-600 text-slate-700 dark:text-gray-300 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700 font-medium text-sm">
                         <FileText className="w-4 h-4 mr-2" /> CSV

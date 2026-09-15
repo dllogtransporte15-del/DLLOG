@@ -21,6 +21,7 @@ import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
 import { TicketStatus } from '../types';
 import { useDriverLocations, normalizeDriverKey } from '../hooks/useDriverLocations';
+import { isDemoUser } from '../auth';
 
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
@@ -104,6 +105,7 @@ interface ShipmentTableProps {
 const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
 
 
+  const isDemo = isDemoUser(currentUser);
   const { showToast } = useToast();
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number, left: number, isUp: boolean } | null>(null);
@@ -125,6 +127,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
   const handleTriggerUploadTmsOrder = (shipment: Shipment, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isDemo) return;
     setTargetShipmentForTmsUpload(shipment);
     if (tmsFileInputRef.current) {
       tmsFileInputRef.current.value = '';
@@ -134,7 +137,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
   const handleTmsFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !targetShipmentForTmsUpload) return;
+    if (!file || !targetShipmentForTmsUpload || isDemo) return;
 
     const shipmentId = targetShipmentForTmsUpload.id;
     setUploadingTmsOrderId(shipmentId);
@@ -236,6 +239,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
   const [editingCteDateValue, setEditingCteDateValue] = useState<string>('');
 
   const handleSaveCte = (shipmentId: string) => {
+    if (isDemo) return;
     if (onUpdateShipmentData) {
       onUpdateShipmentData(shipmentId, { 
         cteNumber: editingCteValue.trim(),
@@ -615,7 +619,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                   <span>OC TMS</span>
                                   <ExternalLink className="w-2.5 h-2.5 opacity-70" />
                                 </button>
-                                {!isClient && (
+                                {!isClient && !isDemo && (
                                   <button
                                     type="button"
                                     onClick={(e) => handleTriggerUploadTmsOrder(shipment, e)}
@@ -629,7 +633,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             );
                           }
 
-                          if (isAgCarregamento && !isClient) {
+                          if (isAgCarregamento && !isClient && !isDemo) {
                             return (
                               <button
                                 type="button"
@@ -1077,7 +1081,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                     <span>OC TMS</span>
                                     <ExternalLink className="w-2.5 h-2.5 opacity-70" />
                                   </button>
-                                  {!isClient && (
+                                  {!isClient && !isDemo && (
                                     <button
                                       type="button"
                                       onClick={(e) => handleTriggerUploadTmsOrder(shipment, e)}
@@ -1091,7 +1095,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                               );
                             }
 
-                            if (isAgCarregamento && !isClient) {
+                            if (isAgCarregamento && !isClient && !isDemo) {
                               return (
                                 <button
                                   type="button"

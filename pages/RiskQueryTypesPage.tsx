@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import type { RiskQueryOption, User, ProfilePermissions } from '../types';
 import { DEFAULT_RISK_QUERY_OPTIONS } from '../types';
-import { can } from '../auth';
+import { can, isDemoUser } from '../auth';
 import { 
   ShieldCheck, 
   Plus, 
@@ -42,28 +42,32 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
 
-  const canCreate = can('create', currentUser, 'risk-query-types', profilePermissions);
-  const canUpdate = can('update', currentUser, 'risk-query-types', profilePermissions);
-  const canDelete = can('delete', currentUser, 'risk-query-types', profilePermissions);
+  const isDemo = isDemoUser(currentUser);
+  const canCreate = !isDemo && can('create', currentUser, 'risk-query-types', profilePermissions);
+  const canUpdate = !isDemo && can('update', currentUser, 'risk-query-types', profilePermissions);
+  const canDelete = !isDemo && can('delete', currentUser, 'risk-query-types', profilePermissions);
 
   const handleOpenModal = () => {
+    if (isDemo) return;
     setOptionToEdit(null);
     setIsModalOpen(true);
   };
 
   const handleEdit = (option: RiskQueryOption) => {
+    if (isDemo) return;
     setOptionToEdit(option);
     setIsModalOpen(true);
   };
 
   const handleDelete = async (option: RiskQueryOption) => {
+    if (isDemo) return;
     if (window.confirm(`Tem certeza que deseja excluir a modalidade de consulta "${option.name}"?`)) {
       await onDeleteOption(option.id);
     }
   };
 
   const handleToggleActive = async (option: RiskQueryOption) => {
-    if (!canUpdate) return;
+    if (!canUpdate || isDemo) return;
     await onSaveOption({
       ...option,
       active: !option.active
@@ -71,6 +75,7 @@ const RiskQueryTypesPage: React.FC<RiskQueryTypesPageProps> = ({
   };
 
   const handleResetToDefaults = async () => {
+    if (isDemo) return;
     if (window.confirm('Deseja restaurar as modalidades padrão do sistema (Consulta, Consulta + Biometria, Cadastro Geral + Biometria, Vitimologia, Liberação Simplificada)?')) {
       if (onRestoreDefaults) {
         await onRestoreDefaults();

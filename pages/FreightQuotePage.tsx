@@ -15,6 +15,7 @@ import {
 import Header from '../components/Header';
 import { saveToolQuote, getToolClients, saveToolClient, ToolClient } from '../utils/toolStorage';
 import type { User as AppUser, Cargo } from '../types';
+import { isDemoUser } from '../auth';
 import { autoFormatInput } from '../utils/formatters';
 import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
 import { geocodeCity } from '../utils/geocoding';
@@ -316,6 +317,10 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
 
   const handleSave = async () => {
     if (!results || !routeInfo || isSaving) return;
+    if (isDemoUser(currentUser)) {
+      alert("Usuário em modo demonstração possui acesso apenas de visualização.");
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -743,10 +748,12 @@ export default function FreightQuotePage({ currentUser, cargos = [] }: FreightQu
                         <CheckCircle2 className="w-4 h-4 mr-2" /> Cotação salva no histórico!
                       </div>
                     )}
-                    <button onClick={handleSave} disabled={isSaving} className="w-full flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-md shadow-red-200 dark:shadow-none hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:translate-y-0">
-                      {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                      {isSaving ? 'Salvando...' : 'Salvar no Histórico'}
-                    </button>
+                    {!isDemoUser(currentUser) && (
+                      <button onClick={handleSave} disabled={isSaving} className="w-full flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-bold shadow-md shadow-red-200 dark:shadow-none hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:translate-y-0">
+                        {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                        {isSaving ? 'Salvando...' : 'Salvar no Histórico'}
+                      </button>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={exportToPDF} className="flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-gray-600 text-slate-600 dark:text-gray-300 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-700 transition-colors font-medium text-xs">
                         <Download className="w-4 h-4 mr-2" /> PDF

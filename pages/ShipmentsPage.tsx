@@ -15,7 +15,7 @@ import SwapCargoModal from '../components/SwapCargoModal';
 import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product, Vehicle, ShipmentLock, RiskQueryOption } from '../types';
 
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
-import { can } from '../auth';
+import { can, isDemoUser } from '../auth';
 import { FileText, X } from 'lucide-react';
 import { getShipmentCte, isCteApplicableForStatus } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
@@ -120,11 +120,12 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
 
 
 
-  const canUpdate = can('update', currentUser, 'shipments', profilePermissions);
-  const canDelete = can('delete', currentUser, 'shipments', profilePermissions);
+  const isDemo = isDemoUser(currentUser);
+  const canUpdate = !isDemo && can('update', currentUser, 'shipments', profilePermissions);
+  const canDelete = !isDemo && can('delete', currentUser, 'shipments', profilePermissions);
 
   const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
-  const canPerformSpecialActions = currentUser && allowedProfilesForActions.includes(currentUser.profile);
+  const canPerformSpecialActions = !isDemo && currentUser && allowedProfilesForActions.includes(currentUser.profile);
   
   const canEditPrice = canUpdate && canPerformSpecialActions;
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
@@ -253,7 +254,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     const defaultResponse = { allowed: true, reason: '' };
     if (!currentUser) return { allowed: false, reason: 'Usuário não autenticado.' };
 
-    if (currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') {
+    if (isDemoUser(currentUser)) {
       return { allowed: false, reason: 'Usuário em modo demonstração possui acesso apenas de visualização.' };
     }
 
@@ -299,32 +300,32 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         vehicles={vehicles}
         filterCte={filterCte}
         onFilterCteChange={setFilterCte}
-        onAttach={(canUpdate || isClient || isFinanceiro) ? handleOpenAttachmentModal : undefined}
-        onAddAttachments={onAddAttachments}
+        onAttach={!isDemo && (canUpdate || isClient || isFinanceiro) ? handleOpenAttachmentModal : undefined}
+        onAddAttachments={!isDemo ? onAddAttachments : undefined}
         onEditPrice={canEditPrice ? handleEditPrice : undefined}
         onCancel={canCancelShipment ? handleCancelShipment : undefined}
         onTransfer={canTransferShipment ? handleOpenTransferModal : undefined}
         onShowHistory={handleShowHistory}
         onShowCargoDetails={handleShowCargoDetails}
         canUserAdvanceStatus={canUserAdvanceStatus}
-        onMarkArrival={onMarkArrival}
-        onDelete={onDeleteShipment}
-        onRevertStatus={onRevertStatus}
-        onOpenCadastroAntt={handleOpenCadastroAnttModal}
-        onOpenEditScheduledDateTime={(shipment) => {
+        onMarkArrival={!isDemo ? onMarkArrival : undefined}
+        onDelete={!isDemo ? onDeleteShipment : undefined}
+        onRevertStatus={!isDemo ? onRevertStatus : undefined}
+        onOpenCadastroAntt={!isDemo ? handleOpenCadastroAnttModal : undefined}
+        onOpenEditScheduledDateTime={!isDemo ? (shipment) => {
           setSelectedShipment(shipment);
           setEditScheduledDateTimeModalOpen(true);
-        }}
-        onUpdatePrice={onUpdatePrice}
-        onUpdateShipmentData={onUpdateShipmentData}
+        } : undefined}
+        onUpdatePrice={!isDemo ? onUpdatePrice : undefined}
+        onUpdateShipmentData={!isDemo ? onUpdateShipmentData : undefined}
         currentUser={currentUser}
         activeStatus={activeStatus}
         clients={clients}
         products={products}
         companyLogo={companyLogo}
-        onDeleteAttachment={onDeleteAttachment}
-        onSwapCargo={handleOpenSwapCargoModal}
-        onPerformSwapCargo={onSwapCargo}
+        onDeleteAttachment={!isDemo ? onDeleteAttachment : undefined}
+        onSwapCargo={!isDemo ? handleOpenSwapCargoModal : undefined}
+        onPerformSwapCargo={!isDemo ? onSwapCargo : undefined}
         tickets={tickets}
       />
 

@@ -1,8 +1,8 @@
-
 import React, { useState, useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { Ticket, User, TicketHistory, Cargo, Shipment } from '../types';
 import { TicketStatus, TicketPriority, UserProfile } from '../types';
+import { isDemoUser } from '../auth';
 import { useToast } from '../hooks/useToast';
 import { Package, Truck, ExternalLink } from 'lucide-react';
 import SearchableSelect, { SearchableOption } from './SearchableSelect';
@@ -25,6 +25,7 @@ interface TicketModalProps {
 type FilterType = 'meus' | 'abertos' | 'resolvidos' | 'fechados' | 'todos';
 
 const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, users, currentUser, onSave, onUpdate, onDelete, cargos = [], shipments = [], onNavigateTo }) => {
+  const isDemo = isDemoUser(currentUser);
   const { showToast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [filter, setFilter] = useState<FilterType>('meus');
@@ -108,6 +109,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isDemo) return;
     onSave({
       ...newTicket,
       cargoId: newTicket.cargoId || undefined,
@@ -127,7 +129,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
 
   const handleCancelCreate = () => {
     setIsCreating(false);
-     setNewTicket({
+    setNewTicket({
       title: '',
       description: '',
       status: TicketStatus.Aberto,
@@ -136,9 +138,10 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
       cargoId: '',
       shipmentId: '',
     });
-  }
+  };
 
   const handleAttend = (ticketId: string) => {
+    if (isDemo) return;
     setAttendingTicketId(ticketId);
     setObservation('');
     
@@ -155,6 +158,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
   };
 
   const handleUpdateStatus = (status: TicketStatus) => {
+    if (isDemo) return;
     if (attendingTicketId) {
       if ((status === TicketStatus.Fechado || status === TicketStatus.Resolvido) && !observation.trim()) {
         showToast(`Por favor, adicione uma observação para ${status === TicketStatus.Fechado ? 'fechar' : 'resolver'} o chamado.`, 'warning');
@@ -226,10 +230,12 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
                             <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1 text-xs rounded-full font-medium transition-all duration-300 ${filter === f ? 'bg-white dark:bg-gray-800 text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
                         ))}
                     </div>
-                    <button onClick={() => setIsCreating(true)} className="py-1.5 px-4 text-sm btn-premium rounded-xl font-medium flex items-center gap-1.5 shadow-md">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-                      Novo Chamado
-                    </button>
+                    {!isDemo && (
+                      <button onClick={() => setIsCreating(true)} className="py-1.5 px-4 text-sm btn-premium rounded-xl font-medium flex items-center gap-1.5 shadow-md">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                        Novo Chamado
+                      </button>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2">
@@ -246,7 +252,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
                                  </span>
                                </div>
                                <div className="flex items-center gap-2 flex-shrink-0">
-                                   {currentUser.profile === UserProfile.Admin && (
+                                   {currentUser.profile === UserProfile.Admin && !isDemo && (
                                        <button onClick={(e) => { e.stopPropagation(); onDelete(ticket.id); }} className="text-gray-400 hover:text-red-500 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Excluir Chamado">
                                            <Trash2 size={16} />
                                        </button>
@@ -314,7 +320,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
                                    )}
 
                                    <div className="flex justify-end">
-                                       {attendingTicketId !== ticket.id && ticket.status !== TicketStatus.Fechado && ticket.status !== TicketStatus.Resolvido && (
+                                       {!isDemo && attendingTicketId !== ticket.id && ticket.status !== TicketStatus.Fechado && ticket.status !== TicketStatus.Resolvido && (
                                          <button onClick={(e) => { e.stopPropagation(); handleAttend(ticket.id); }} className="py-2 px-5 text-sm btn-premium rounded-xl whitespace-nowrap shadow-md mt-2">
                                            Atender Chamado
                                          </button>

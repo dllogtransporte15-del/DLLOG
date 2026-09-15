@@ -58,6 +58,16 @@ if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]) {
 }
 
 
+export const isDemoUser = (user: User | null | undefined): boolean => {
+  if (!user) return false;
+  return (
+    user.profile === UserProfile.Demonstracao ||
+    (user.profile as string) === 'Demo' ||
+    (user.profile as string) === 'Demonstração' ||
+    Boolean(user.name && user.name.toUpperCase().includes('DEMONSTRA'))
+  );
+};
+
 export const can = (
   action: keyof CrudPermissions,
   user: User | null,
@@ -67,7 +77,7 @@ export const can = (
   if (!user) return false;
   
   // Demonstracao / Demo user can ONLY read (all pages), never create, update or delete
-  if (user.profile === UserProfile.Demonstracao || (user.profile as string) === 'Demo' || (user.profile as string) === 'Demonstração') {
+  if (isDemoUser(user)) {
     return action === 'read';
   }
 
