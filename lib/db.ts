@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
-import { isCteApplicableForStatus } from '../utils';
+import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate } from '../utils';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
@@ -621,8 +621,8 @@ const toShipment = (row: any): Shipment => {
     anttModality: (row.antt_modality && row.antt_modality !== 'null') ? row.antt_modality : ((docs.antt_modality && docs.antt_modality !== 'null') ? docs.antt_modality : undefined),
     etcTaxRegime: (row.etc_tax_regime && row.etc_tax_regime !== 'null') ? row.etc_tax_regime : ((docs.etc_tax_regime && docs.etc_tax_regime !== 'null') ? docs.etc_tax_regime : undefined),
     driverFreightType: row.driver_freight_type || docs.driver_freight_type || 'PJ',
-    cteNumber: row.cte_number || docs.cte_number,
-    cteEmissionDate: row.cte_emission_date || docs.cte_emission_date,
+    cteNumber: row.cte_number || docs.cte_number || (getShipmentCte({ status: row.status, documents: docs }) !== '-' ? getShipmentCte({ status: row.status, documents: docs }) : undefined),
+    cteEmissionDate: row.cte_emission_date || docs.cte_emission_date || (getShipmentCteEmissionDate({ status: row.status, documents: docs }) || undefined),
     nfeNumber: row.nfe_number || docs.nfe_number,
     mdfeNumber: row.mdfe_number || docs.mdfe_number,
     realProfitData: realProfit,
@@ -702,20 +702,20 @@ const fromShipment = (s: Shipment) => {
 
   const docs = {
     ...(s.documents || {}),
-    risk_release_code: s.riskReleaseCode ?? null,
-    risk_query_type: s.riskQueryType ?? null,
-    risk_query_cost: s.riskQueryCost !== undefined ? s.riskQueryCost : null,
-    payment_method: s.paymentMethod ?? null,
-    pix_key: s.pixKey ?? null,
-    advance_percentage: s.advancePercentage !== undefined ? s.advancePercentage : null,
-    is_breakage_waived: s.isBreakageWaived !== undefined ? s.isBreakageWaived : null,
-    antt_modality: s.anttModality ?? null,
-    etc_tax_regime: s.etcTaxRegime ?? null,
-    driver_freight_type: s.driverFreightType ?? 'PJ',
-    cte_number: s.cteNumber ?? null,
-    cte_emission_date: s.cteEmissionDate ?? null,
-    nfe_number: s.nfeNumber ?? null,
-    mdfe_number: s.mdfeNumber ?? null,
+    risk_release_code: s.riskReleaseCode !== undefined ? s.riskReleaseCode : (s.documents?.risk_release_code ?? null),
+    risk_query_type: s.riskQueryType !== undefined ? s.riskQueryType : (s.documents?.risk_query_type ?? null),
+    risk_query_cost: s.riskQueryCost !== undefined ? s.riskQueryCost : (s.documents?.risk_query_cost ?? null),
+    payment_method: s.paymentMethod !== undefined ? s.paymentMethod : (s.documents?.payment_method ?? null),
+    pix_key: s.pixKey !== undefined ? s.pixKey : (s.documents?.pix_key ?? null),
+    advance_percentage: s.advancePercentage !== undefined ? s.advancePercentage : (s.documents?.advance_percentage ?? null),
+    is_breakage_waived: s.isBreakageWaived !== undefined ? s.isBreakageWaived : (s.documents?.is_breakage_waived ?? null),
+    antt_modality: s.anttModality !== undefined ? s.anttModality : (s.documents?.antt_modality ?? null),
+    etc_tax_regime: s.etcTaxRegime !== undefined ? s.etcTaxRegime : (s.documents?.etc_tax_regime ?? null),
+    driver_freight_type: s.driverFreightType !== undefined ? s.driverFreightType : (s.documents?.driver_freight_type ?? 'PJ'),
+    cte_number: s.cteNumber !== undefined ? s.cteNumber : (s.documents?.cte_number ?? null),
+    cte_emission_date: s.cteEmissionDate !== undefined ? s.cteEmissionDate : (s.documents?.cte_emission_date ?? null),
+    nfe_number: s.nfeNumber !== undefined ? s.nfeNumber : (s.documents?.nfe_number ?? null),
+    mdfe_number: s.mdfeNumber !== undefined ? s.mdfeNumber : (s.documents?.mdfe_number ?? null),
     is_federal_tax_manual: isFederalTaxManual,
     federal_tax: federalTax,
     imposto_federal: federalTax,
@@ -723,19 +723,19 @@ const fromShipment = (s: Shipment) => {
     generated_credit: generatedCredit,
     credito_gerado: generatedCredit,
     real_profit_data: realProfitData,
-    freight_calculation_type: s.freightCalculationType ?? null,
-    icms_value: s.icmsValue !== undefined ? s.icmsValue : null,
-    additional_cost: s.additionalCost ?? null,
-    additional_cost_value: s.additionalCostValue !== undefined ? s.additionalCostValue : (s.additionalCost?.value ?? null),
-    additional_cost_category: s.additionalCostCategory ?? (s.additionalCost?.category ?? null),
-    additional_cost_description: s.additionalCostDescription ?? (s.additionalCost?.description ?? null),
-    agency_commission_enabled: s.agencyCommissionEnabled !== undefined ? s.agencyCommissionEnabled : null,
-    agency_commission_percentage: s.agencyCommissionPercentage ?? 30,
-    agency_commission_value: s.agencyCommissionValue !== undefined ? s.agencyCommissionValue : null,
-    agency_commission_agency_name: s.agencyCommissionAgencyName ?? null,
-    shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : null,
-    shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : null,
-    shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : null,
+    freight_calculation_type: s.freightCalculationType ?? (s.documents?.freight_calculation_type ?? null),
+    icms_value: s.icmsValue !== undefined ? s.icmsValue : (s.documents?.icms_value ?? null),
+    additional_cost: s.additionalCost ?? (s.documents?.additional_cost ?? null),
+    additional_cost_value: s.additionalCostValue !== undefined ? s.additionalCostValue : (s.additionalCost?.value ?? s.documents?.additional_cost_value ?? null),
+    additional_cost_category: s.additionalCostCategory ?? (s.additionalCost?.category ?? s.documents?.additional_cost_category ?? null),
+    additional_cost_description: s.additionalCostDescription ?? (s.additionalCost?.description ?? s.documents?.additional_cost_description ?? null),
+    agency_commission_enabled: s.agencyCommissionEnabled !== undefined ? s.agencyCommissionEnabled : (s.documents?.agency_commission_enabled ?? null),
+    agency_commission_percentage: s.agencyCommissionPercentage ?? (s.documents?.agency_commission_percentage ?? 30),
+    agency_commission_value: s.agencyCommissionValue !== undefined ? s.agencyCommissionValue : (s.documents?.agency_commission_value ?? null),
+    agency_commission_agency_name: s.agencyCommissionAgencyName ?? (s.documents?.agency_commission_agency_name ?? null),
+    shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : (s.documents?.shipper_commission_enabled ?? null),
+    shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : (s.documents?.shipper_commission_rate_per_ton ?? null),
+    shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : (s.documents?.shipper_commission_value ?? null),
   };
 
   return {
@@ -1635,7 +1635,7 @@ export async function backfillAdvanceAndBalanceCalculations(): Promise<{ updated
       const toll = s.tollValue || 0;
       const advPct = s.advancePercentage !== undefined ? s.advancePercentage : 70;
 
-      const isPfShipment = (s.driverFreightType === 'PF' || s.anttModality === 'TAC' || (s.driverCpf && !s.driverCnpj));
+      const isPfShipment = (s.driverFreightType === 'PF' || s.anttModality === 'TAC');
       const calc = calculateAdvanceAndBalance({
         driverFreightValue: totalFreight,
         driverFreightRate: rate,

@@ -176,7 +176,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
       setOwnerContact(lastShipment?.ownerContact || '');
       setShipmentTonnage(offer?.totalTonnage || (cargo ? Math.max(0, cargo.scheduledVolume - cargo.loadedVolume) : 0) || 0);
-      setScheduledDate(offer?.scheduledDate || cargo?.scheduledDate || new Date().toISOString().split('T')[0]);
+      setScheduledDate(offer?.scheduledDate || cargo?.loadingDeadline || new Date().toISOString().split('T')[0]);
       setScheduledTime(offer?.scheduledTime || '');
       setSelectedVehicle(linkedVehicle || null);
       setVehicleSetType(lastShipment?.vehicleSetType || linkedVehicle?.setType || '');

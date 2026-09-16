@@ -148,20 +148,26 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const isClientUser = currentUser?.profile === UserProfile.Cliente || (currentUser?.profile as string) === 'Cliente';
 
   const visibleStageDefinitions = React.useMemo(() => {
-    if (isClientUser) {
+    const is100PctAdv = (shipment.advancePercentage !== undefined && shipment.advancePercentage >= 100) ||
+                        (shipment.balanceToReceiveValue !== undefined && shipment.balanceToReceiveValue <= 0.001 && shipment.advanceValue !== undefined && shipment.advanceValue > 0);
+    const omitSaldo = isClientUser || (is100PctAdv && shipment.status !== ShipmentStatus.AguardandoPagamentoSaldo);
+
+    if (omitSaldo) {
       return STAGES_DEFINITIONS.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo).map((s, idx) => ({
         ...s,
         stepNumber: idx + 1,
         description: s.status === ShipmentStatus.Finalizado 
           ? 'Embarque finalizado e entrega concluída com sucesso.' 
-          : (s.status === ShipmentStatus.AguardandoFiscal
+          : (s.status === ShipmentStatus.AguardandoFiscal && isClientUser
               ? 'Emissão do CT-e, MDF-e e documentos fiscais da viagem.'
               : s.description),
-        associatedDocTypes: s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
+        associatedDocTypes: isClientUser 
+          ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
+          : s.associatedDocTypes
       }));
     }
     return STAGES_DEFINITIONS;
-  }, [isClientUser]);
+  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.status]);
 
   // Inicializa a aba ativa com o status atual do embarque
   const initialActiveStage = React.useMemo(() => {

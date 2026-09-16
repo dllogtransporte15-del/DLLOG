@@ -21,6 +21,49 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_16_v2_6_2',
+    version: 'v2.6.2',
+    date: '16/09/2026',
+    title: 'Persistência de Documentos Fiscais (CT-e, MDF-e, Carta Frete) e Proteção contra Perda em Reversões',
+    summary: 'Correção crítica na preservação de anexos e números fiscais durante trocas de status, avanços concorrentes e reversões de etapas, garantindo que nenhum documento seja perdido.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Proteção de Anexos em Reversão de Status',
+        description: 'Corrigida a lógica de reversão de etapas para limpar exclusivamente os anexos da etapa cancelada, preservando integralmente os documentos já anexados nas etapas anteriores (CT-e, MDF-e, Carta Frete, etc.).'
+      },
+      {
+        category: 'fix',
+        title: 'Sincronização Segura de Documentos Fiscais',
+        description: 'Ao anexar comprovantes em etapas subsequentes (ex: adiantamento ou descarga), o sistema agora mescla com o registro mais recente do banco de dados, prevenindo perda de CT-e ou anexos inseridos simultaneamente por outro usuário.'
+      },
+      {
+        category: 'improvement',
+        title: 'Restauração Automática de Dados Fiscais',
+        description: 'Implementado fallback inteligente para resolução automática do número e data de emissão do CT-e a partir dos anexos gravados, garantindo exibição instantânea no painel e nos relatórios.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_16_v2_6_1',
+    version: 'v2.6.1',
+    date: '16/09/2026',
+    title: 'Correção no Cálculo de Saldo para Fretes PJ (ETC)',
+    summary: 'Ajustada a regra de apuração do saldo de frete para transportadores e empresas (PJ / ETC), impedindo a dedução indevida de tributos exclusivos de motoristas autônomos (PF / TAC).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Cálculo de Saldo de Frete PJ / ETC',
+        description: 'Corrigida a identificação de frete PJ na rotina de cálculo de adiantamento e saldo, garantindo que o saldo contratual integral seja preservado sem deduções de INSS/SEST/SENAT de autônomo (ex: embarque FEL-458 atualizado de R$ 2.635,00 para R$ 2.895,60).'
+      },
+      {
+        category: 'improvement',
+        title: 'Adiantamento 100% em Fretes TAC (Pessoa Física)',
+        description: 'Em embarques com 100% de adiantamento para autônomos (TAC), as retenções de INSS, SEST/SENAT e IRRF são aplicadas diretamente no adiantamento em conta, zerando o saldo e finalizando o embarque diretamente após a etapa de descarga, sem retenção em "Ag. Saldo".'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_16_v2_6_0',
     version: 'v2.6.0',
     date: '16/09/2026',

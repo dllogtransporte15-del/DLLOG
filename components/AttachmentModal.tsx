@@ -1567,11 +1567,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   const tacDeductions = isPfShipment ? calculateTacTaxDeductions(totalDriverFreight, tagNum) : null;
                   const baseFrete = Math.max(0, totalDriverFreight - tagNum);
                   const advPctNum = advancePercentage !== '' && advancePercentage !== undefined ? Number(advancePercentage) : 70;
+                  const is100Pct = advPctNum >= 100;
                   const adiantamentoBruto = Number((baseFrete * (advPctNum / 100)).toFixed(2));
-                  const valorContaCalculado = adiantamentoBruto;
-                  const saldoOriginalContratual = Number((baseFrete * ((100 - advPctNum) / 100)).toFixed(2));
-                  const totalRetencoesSaldo = tacDeductions ? Number((tacDeductions.inss + tacDeductions.sestSenat + tacDeductions.irrf).toFixed(2)) : 0;
-                  const saldoLiquidoPreDescarga = isPfShipment ? Math.max(0, Number((saldoOriginalContratual - totalRetencoesSaldo).toFixed(2))) : saldoOriginalContratual;
+                  const totalRetencoes = tacDeductions ? Number((tacDeductions.inss + tacDeductions.sestSenat + tacDeductions.irrf).toFixed(2)) : 0;
+                  const valorContaCalculado = (isPfShipment && is100Pct) ? Math.max(0, Number((adiantamentoBruto - totalRetencoes).toFixed(2))) : adiantamentoBruto;
+                  const saldoOriginalContratual = is100Pct ? 0 : Number((baseFrete * ((100 - advPctNum) / 100)).toFixed(2));
+                  const totalRetencoesSaldo = is100Pct ? 0 : totalRetencoes;
+                  const saldoLiquidoPreDescarga = is100Pct ? 0 : (isPfShipment ? Math.max(0, Number((saldoOriginalContratual - totalRetencoesSaldo).toFixed(2))) : saldoOriginalContratual);
 
                   return (
                     <div className="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-3">
@@ -1666,11 +1668,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         <div className="bg-emerald-50/80 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col justify-between shadow-2xs">
                           <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-tight">
-                            {isPfShipment ? 'Saldo Restante Líquido' : 'Valor do Saldo'}
+                            {isPfShipment ? (is100Pct ? 'Saldo Restante' : 'Saldo Restante Líquido') : 'Valor do Saldo'}
                           </span>
                           <span className={`text-base font-black mt-1 ${saldoLiquidoPreDescarga < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-900 dark:text-emerald-100'}`}>
                             {formatCurrency(saldoLiquidoPreDescarga)}
                           </span>
+                          {is100Pct && (
+                            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
+                              100% no Adiantamento
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1690,19 +1697,25 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">INSS Autônomo (11%)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.inss)}</span>
-                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Deduz no Saldo</span>
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
+                                {is100Pct ? 'Deduz no Adiantamento' : 'Deduz no Saldo'}
+                              </span>
                             </div>
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">SEST/SENAT (2,5%)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.sestSenat)}</span>
-                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Deduz no Saldo</span>
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
+                                {is100Pct ? 'Deduz no Adiantamento' : 'Deduz no Saldo'}
+                              </span>
                             </div>
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">IRRF (Prog.)</span>
                               <span className="font-bold text-red-600 dark:text-red-400">
                                 {tacDeductions.irrf > 0 ? `- ${formatCurrency(tacDeductions.irrf)}` : 'Isento (R$ 0,00)'}
                               </span>
-                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">Deduz no Saldo</span>
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold block mt-0.5">
+                                {is100Pct ? 'Deduz no Adiantamento' : 'Deduz no Saldo'}
+                              </span>
                             </div>
                             <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-orange-200 dark:border-gray-700">
                               <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-semibold">Total Retenções</span>
@@ -1712,10 +1725,21 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           </div>
 
                           <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-600 dark:text-gray-400 bg-white/60 dark:bg-gray-800/60 p-2 rounded-lg border border-gray-200 dark:border-gray-700/60">
-                            <span>Adiant. na Conta ({advPctNum}%): <strong>{formatCurrency(valorContaCalculado)}</strong></span>
-                            <span>Total Retenções no Saldo: <strong className="text-red-600 dark:text-red-400">- {formatCurrency(totalRetencoesSaldo)}</strong></span>
-                            <span>Saldo Original: <strong>{formatCurrency(saldoOriginalContratual)}</strong></span>
-                            <span>Saldo Restante Líquido: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
+                            {is100Pct ? (
+                              <>
+                                <span>Adiant. Bruto (100%): <strong>{formatCurrency(adiantamentoBruto)}</strong></span>
+                                <span>Total Retenções: <strong className="text-red-600 dark:text-red-400">- {formatCurrency(tacDeductions.totalDeductions)}</strong></span>
+                                <span>Valor Líquido na Conta: <strong className="text-blue-700 dark:text-blue-300">{formatCurrency(valorContaCalculado)}</strong></span>
+                                <span>Saldo Restante: <strong className="text-emerald-700 dark:text-emerald-400">R$ 0,00 (Finaliza na Descarga)</strong></span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Adiant. na Conta ({advPctNum}%): <strong>{formatCurrency(valorContaCalculado)}</strong></span>
+                                <span>Total Retenções no Saldo: <strong className="text-red-600 dark:text-red-400">- {formatCurrency(totalRetencoesSaldo)}</strong></span>
+                                <span>Saldo Original: <strong>{formatCurrency(saldoOriginalContratual)}</strong></span>
+                                <span>Saldo Restante Líquido: <strong className="text-emerald-700 dark:text-emerald-400">{formatCurrency(saldoLiquidoPreDescarga)}</strong></span>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}

@@ -159,29 +159,35 @@ export function calculateAdvanceAndBalance({
   // Valor do Adiantamento na Conta (antes de qualquer desconto de saldo)
   const grossAdvanceInAccountValue = Number((baseFreight * (advPct / 100)).toFixed(2));
 
+  const is100Pct = advPct >= 100;
+
   // Deduções fiscais de PF (TAC / Autônomo) - calculadas com base líquida de pedágio
   const isPf = driverFreightType === 'PF';
   const tacTaxes = isPf ? calculateTacTaxDeductions(totalFreight, tagVal) : undefined;
   
-  // Retenções a descontar NO SALDO (Conforme item 3.5 da Carta Frete): INSS + SEST/SENAT + IRRF
+  // Retenções: INSS + SEST/SENAT + IRRF
   const inssRetido = tacTaxes ? tacTaxes.inss : 0;
   const sestSenat = tacTaxes ? tacTaxes.sestSenat : 0;
   const irrf = tacTaxes ? tacTaxes.irrf : 0;
   const totalTaxDeductions = Number((inssRetido + sestSenat + irrf).toFixed(2));
 
-  // O adiantamento em conta é pago integralmente (70% da base), pois as retenções são deduzidas no saldo
-  const advanceInAccountValue = grossAdvanceInAccountValue;
+  // Quando o adiantamento é de 100%, as deduções de PF são feitas no próprio adiantamento (valor líquido pago na conta).
+  // Quando < 100%, o adiantamento em conta é pago pelo valor contratual (ex: 70%), e as retenções são deduzidas no saldo.
+  const advanceTaxDeductions = (isPf && is100Pct) ? totalTaxDeductions : 0;
+  const advanceInAccountValue = (isPf && is100Pct)
+    ? Math.max(0, Number((grossAdvanceInAccountValue - totalTaxDeductions).toFixed(2)))
+    : grossAdvanceInAccountValue;
 
   // Total do adiantamento entregue (Conta + Tag Pedágio)
   const totalAdvanceValue = Number((advanceInAccountValue + tagVal).toFixed(2));
 
   // Saldo Original Contratual (Item 3.5.1 da Carta Frete)
-  const originalBalanceValue = Number((baseFreight * ((100 - advPct) / 100)).toFixed(2));
+  const originalBalanceValue = is100Pct ? 0 : Number((baseFreight * ((100 - advPct) / 100)).toFixed(2));
 
-  // Saldo Líquido Restante a Receber (Item 3.5.10 Subtotal Pré-Descarga): Saldo Original - INSS - SEST/SENAT - IRRF
-  const balanceToReceiveValue = isPf
-    ? Math.max(0, Number((originalBalanceValue - totalTaxDeductions).toFixed(2)))
-    : originalBalanceValue;
+  // Saldo Líquido Restante a Receber: Saldo Original - INSS - SEST/SENAT - IRRF (se < 100%), ou 0 se 100%
+  const balanceToReceiveValue = is100Pct
+    ? 0
+    : (isPf ? Math.max(0, Number((originalBalanceValue - totalTaxDeductions).toFixed(2))) : originalBalanceValue);
 
   return {
     totalFreight: Number(totalFreight.toFixed(2)),
@@ -193,7 +199,7 @@ export function calculateAdvanceAndBalance({
     totalAdvanceValue,
     inssRetido,
     sestSenat,
-    advanceTaxDeductions: 0,
+    advanceTaxDeductions,
     originalBalanceValue,
     irrf,
     balanceToReceiveValue,

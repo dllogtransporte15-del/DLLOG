@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 import { useDatabase } from './hooks/useDatabase';
 import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Page, ProfilePermissions, HistoryLog, Ticket, TicketHistory, ShipmentLock, Branch, FreightOffer, RiskQueryOption, RealProfitData } from './types';
 import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus, DEFAULT_RISK_QUERY_OPTIONS } from './types';
-import { formatId, isCteApplicableForStatus } from './utils';
+import { formatId, isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
 import { INITIAL_PERMISSIONS, can, isDemoUser } from './auth';
@@ -123,6 +123,8 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
 };
 
 interface NewShipmentRequestData extends Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'> {
+  status?: ShipmentStatus;
+  history?: HistoryLog[];
   driverCnh?: string;
   vehicleSetType?: VehicleSetType;
   vehicleBodyType?: VehicleBodyType;
@@ -1421,7 +1423,8 @@ const App: React.FC = () => {
       driverFreightRateSnapshot: data.driverFreightRateSnapshot ?? (cargos.find(c => c.id === data.cargoId)?.driverFreightValuePerTon || 0),
       companyFreightRateSnapshot: cargos.find(c => c.id === data.cargoId)?.companyFreightValuePerTon,
       driverFreightType: data.driverFreightType || 'PJ',
-      status: initialStatus,
+      status: data.status || initialStatus,
+      cancellationReason: data.cancellationReason,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
       paymentMethod: data.paymentMethod,
@@ -1429,7 +1432,7 @@ const App: React.FC = () => {
       bankDetails: data.bankDetails,
       advancePercentage: data.advancePercentage,
       documents: Object.keys(documentsUrlMap).length > 0 ? documentsUrlMap : undefined,
-      history: [createHistoryLogLocal(historyMsg)],
+      history: data.history ? data.history : [createHistoryLogLocal(historyMsg)],
       createdAt: new Date().toISOString(),
       createdById: currentUser.id,
       driverReferences: data.driverReferences,
@@ -1443,7 +1446,7 @@ const App: React.FC = () => {
       shipperCommissionEnabled: isShipperCommAuto ? true : undefined,
       shipperCommissionRatePerTon: isShipperCommAuto ? shipperRateConfigured : undefined,
       statusHistory: [{
-        status: initialStatus,
+        status: data.status || initialStatus,
         timestamp: new Date().toISOString(),
         userId: currentUser.id,
       }],
@@ -1746,8 +1749,9 @@ const App: React.FC = () => {
             nextStatus = ShipmentStatus.AguardandoDescarga;
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoDescarga) {
-        const is100PercentAdvance = (originalShipment.advancePercentage && originalShipment.advancePercentage >= 100) || 
-                                     (originalShipment.advanceValue && originalShipment.driverFreightValue && originalShipment.advanceValue >= originalShipment.driverFreightValue);
+        const is100PercentAdvance = (originalShipment.advancePercentage !== undefined && originalShipment.advancePercentage >= 100) || 
+                                     (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue <= 0.001 && originalShipment.advanceValue !== undefined && originalShipment.advanceValue > 0) ||
+                                     (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
         if (is100PercentAdvance) {
             nextStatus = ShipmentStatus.Finalizado;
         } else {
@@ -1786,8 +1790,31 @@ const App: React.FC = () => {
         throw new Error(`Você não tem permissão para alterar o status deste embarque. ${alertMessage}`);
     }
 
-    // 1. Upload Files
-    const updatedDocuments = { ...(originalShipment.documents || {}) };
+    // 1. Upload Files - Fetch freshest documents from Supabase to prevent concurrent overwrites
+    let latestDbDocs: Record<string, any> = {};
+    let latestDbCteNumber: string | undefined = undefined;
+    let latestDbCteDate: string | undefined = undefined;
+    let latestDbNfeNumber: string | undefined = undefined;
+    let latestDbMdfeNumber: string | undefined = undefined;
+
+    try {
+      const { data: freshRow } = await supabase
+        .from('shipments')
+        .select('documents, cte_number, cte_emission_date, nfe_number, mdfe_number')
+        .eq('id', shipmentId)
+        .single();
+      if (freshRow?.documents) {
+        latestDbDocs = freshRow.documents;
+      }
+      latestDbCteNumber = freshRow?.cte_number || freshRow?.documents?.cte_number;
+      latestDbCteDate = freshRow?.cte_emission_date || freshRow?.documents?.cte_emission_date;
+      latestDbNfeNumber = freshRow?.nfe_number || freshRow?.documents?.nfe_number;
+      latestDbMdfeNumber = freshRow?.mdfe_number || freshRow?.documents?.mdfe_number;
+    } catch (err) {
+      console.warn('[handleUpdateShipmentAttachment] Could not fetch freshest db documents:', err);
+    }
+
+    const updatedDocuments = { ...(originalShipment.documents || {}), ...latestDbDocs };
     const attachedFileNames: string[] = [];
 
     try {
@@ -1815,10 +1842,10 @@ const App: React.FC = () => {
     const targetStatus = nextStatus || originalShipment.status;
     const canExtractCte = isCteApplicableForStatus(targetStatus);
 
-    let extractedCteNumber: string | undefined = originalShipment.cteNumber || undefined;
-    let extractedCteEmissionDate: string | undefined = originalShipment.cteEmissionDate || undefined;
-    let extractedNfeNumber: string | undefined = originalShipment.nfeNumber;
-    let extractedMdfeNumber: string | undefined = originalShipment.mdfeNumber;
+    let extractedCteNumber: string | undefined = originalShipment.cteNumber || latestDbCteNumber || undefined;
+    let extractedCteEmissionDate: string | undefined = originalShipment.cteEmissionDate || latestDbCteDate || undefined;
+    let extractedNfeNumber: string | undefined = originalShipment.nfeNumber || latestDbNfeNumber || undefined;
+    let extractedMdfeNumber: string | undefined = originalShipment.mdfeNumber || latestDbMdfeNumber || undefined;
     let fiscalDocLog = '';
     let extractedTollValue: number | undefined = undefined;
     let extractedAdvanceValue: number | undefined = undefined;
@@ -1855,6 +1882,20 @@ const App: React.FC = () => {
         }
       } catch (e) {
         console.warn('[handleUpdateShipmentAttachment] Could not extract fiscal doc numbers:', e);
+      }
+    }
+
+    // Safety fallback: if CTE is applicable and we have CTE documents attached, derive CTE number if still missing
+    if (canExtractCte && !extractedCteNumber) {
+      const derivedCte = getShipmentCte({ status: targetStatus, documents: updatedDocuments });
+      if (derivedCte && derivedCte !== '-') {
+        extractedCteNumber = derivedCte;
+      }
+    }
+    if (canExtractCte && !extractedCteEmissionDate) {
+      const derivedDate = getShipmentCteEmissionDate({ status: targetStatus, documents: updatedDocuments });
+      if (derivedDate) {
+        extractedCteEmissionDate = derivedDate;
       }
     }
 
@@ -1904,7 +1945,7 @@ const App: React.FC = () => {
         historyLogs.push(`Pagamento de Adiantamento: ${effectiveAdvancePercentage}% registrado (Conta: ${formattedAdv} + Tag: R$ ${(effectiveTollValue || 0).toLocaleString('pt-BR')}).`);
     }
 
-    let finalBalanceToReceive = balanceToReceiveValue ?? (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue > 0 ? originalShipment.balanceToReceiveValue : calcResult.balanceToReceiveValue);
+    let finalBalanceToReceive = balanceToReceiveValue ?? ((originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue > 0 && originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo) ? originalShipment.balanceToReceiveValue : calcResult.balanceToReceiveValue);
     let finalDiscountValue = isBreakageWaived ? 0 : (discountValue ?? originalShipment.discountValue);
     let finalNetBalanceValue = netBalanceValue ?? originalShipment.netBalanceValue;
     let finalIsBreakageWaived = isBreakageWaived !== undefined ? isBreakageWaived : originalShipment.isBreakageWaived;
@@ -2036,8 +2077,9 @@ const App: React.FC = () => {
         const commentMsg = `Chamado criado automaticamente após o envio do comprovante de descarga pelo motorista ${currentUser.name}.`;
         const assignedToId = originalShipment.embarcadorId || '';
 
-        const is100PercentAdvance = (originalShipment.advancePercentage && originalShipment.advancePercentage >= 100) || 
-                                     (originalShipment.advanceValue && originalShipment.driverFreightValue && originalShipment.advanceValue >= originalShipment.driverFreightValue);
+        const is100PercentAdvance = (originalShipment.advancePercentage !== undefined && originalShipment.advancePercentage >= 100) || 
+                                     (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue <= 0.001 && originalShipment.advanceValue !== undefined && originalShipment.advanceValue > 0) ||
+                                     (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
         const targetStatusText = is100PercentAdvance ? '"Finalizado"' : '"Ag. Saldo"';
 
         createdTicket = {
@@ -3122,7 +3164,7 @@ const App: React.FC = () => {
     const previousStatusEntry = historyCopy[historyCopy.length - 1];
     const previousStatus = previousStatusEntry.status;
 
-    // Build comprehensive list of document and metadata keys to clear for current and reverted status
+    // Build list of document and metadata keys to clear ONLY for the current status that is being reverted/cancelled
     const getDocKeysForStatus = (status: ShipmentStatus): string[] => {
       const mainDoc = REQUIRED_DOCUMENT_MAP[status];
       const keys: string[] = mainDoc ? [mainDoc] : [];
@@ -3133,43 +3175,25 @@ const App: React.FC = () => {
       } else if (status === ShipmentStatus.AguardandoSeguradora) {
         keys.push('risk_release_code', 'risk_query_type', 'risk_query_cost', 'riskReleaseCode', 'riskQueryType', 'riskQueryCost');
       } else if (status === ShipmentStatus.AguardandoAdiantamento) {
-        keys.push('advance_percentage', 'advance_value', 'toll_value', 'advancePercentage', 'advanceValue', 'tollValue');
+        keys.push('advance_percentage', 'advance_value', 'toll_value', 'advancePercentage', 'advanceValue', 'tollValue', 'Comprovante de Adiantamento');
       } else if (status === ShipmentStatus.AguardandoDescarga) {
-        keys.push('unloaded_tonnage', 'unloadedTonnage');
+        keys.push('unloaded_tonnage', 'unloadedTonnage', 'Comprovante de Descarga');
       } else if (status === ShipmentStatus.AguardandoPagamentoSaldo) {
-        keys.push('balance_to_receive_value', 'discount_value', 'net_balance_value', 'is_breakage_waived', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived');
+        keys.push('balance_to_receive_value', 'discount_value', 'net_balance_value', 'is_breakage_waived', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived', 'Comprovante de Saldo');
       }
       return keys;
     };
 
-    const keysToRemove = Array.from(new Set([
-      ...getDocKeysForStatus(currentStatus),
-      ...getDocKeysForStatus(previousStatus)
-    ]));
+    // CRITICAL: Only remove keys associated with currentStatus being undone; never remove keys of previousStatus
+    const keysToRemove = Array.from(new Set(getDocKeysForStatus(currentStatus)));
 
     const updatedDocuments = { ...(shipment.documents || {}) };
-    const filesToDelete: string[] = [];
 
     keysToRemove.forEach(key => {
       if (updatedDocuments[key]) {
-        const val = updatedDocuments[key];
-        if (Array.isArray(val)) {
-          val.forEach(item => {
-            if (typeof item === 'string' && (item.startsWith('http') || item.includes('/'))) {
-              filesToDelete.push(item);
-            }
-          });
-        } else if (typeof val === 'string' && (val.startsWith('http') || val.includes('/'))) {
-          filesToDelete.push(val);
-        }
         delete updatedDocuments[key];
       }
     });
-
-    // Best-effort storage deletion of physical files associated with cleared keys
-    for (const fileUrl of filesToDelete) {
-      await deleteShipmentAttachmentFromStorage(fileUrl);
-    }
 
     let updatedCargo: Cargo | undefined;
     if (currentStatus === ShipmentStatus.AguardandoDescarga) {
@@ -3203,21 +3227,21 @@ const App: React.FC = () => {
         statusHistory: historyCopy,
         cancellationReason: currentStatus === ShipmentStatus.Cancelado ? undefined : shipment.cancellationReason,
         documents: Object.keys(updatedDocuments).length > 0 ? updatedDocuments : undefined,
-        riskReleaseCode: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskReleaseCode')) ? undefined : shipment.riskReleaseCode,
-        riskQueryType: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryType')) ? undefined : shipment.riskQueryType,
-        riskQueryCost: (previousStatus === ShipmentStatus.AguardandoSeguradora || keysToRemove.includes('riskQueryCost')) ? undefined : shipment.riskQueryCost,
-        cteNumber: (!isCteApplicableForStatus(previousStatus) || keysToRemove.includes('cteNumber')) ? undefined : shipment.cteNumber,
-        cteEmissionDate: (!isCteApplicableForStatus(previousStatus) || keysToRemove.includes('cteEmissionDate')) ? undefined : shipment.cteEmissionDate,
-        nfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || keysToRemove.includes('nfeNumber')) ? undefined : shipment.nfeNumber,
-        mdfeNumber: (previousStatus === ShipmentStatus.AguardandoNota || previousStatus === ShipmentStatus.AguardandoFiscal || keysToRemove.includes('mdfeNumber')) ? undefined : shipment.mdfeNumber,
-        advancePercentage: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('advancePercentage')) ? undefined : shipment.advancePercentage,
-        advanceValue: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('advanceValue')) ? undefined : shipment.advanceValue,
-        tollValue: (previousStatus === ShipmentStatus.AguardandoAdiantamento || keysToRemove.includes('tollValue')) ? undefined : shipment.tollValue,
-        unloadedTonnage: (previousStatus === ShipmentStatus.AguardandoDescarga || keysToRemove.includes('unloadedTonnage')) ? undefined : shipment.unloadedTonnage,
-        balanceToReceiveValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('balanceToReceiveValue')) ? undefined : shipment.balanceToReceiveValue,
-        discountValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('discountValue')) ? undefined : shipment.discountValue,
-        isBreakageWaived: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('isBreakageWaived')) ? undefined : shipment.isBreakageWaived,
-        netBalanceValue: (previousStatus === ShipmentStatus.AguardandoPagamentoSaldo || keysToRemove.includes('netBalanceValue')) ? undefined : shipment.netBalanceValue,
+        riskReleaseCode: keysToRemove.includes('riskReleaseCode') ? undefined : shipment.riskReleaseCode,
+        riskQueryType: keysToRemove.includes('riskQueryType') ? undefined : shipment.riskQueryType,
+        riskQueryCost: keysToRemove.includes('riskQueryCost') ? undefined : shipment.riskQueryCost,
+        cteNumber: (!isCteApplicableForStatus(previousStatus) || keysToRemove.includes('cteNumber')) ? undefined : (shipment.cteNumber || shipment.documents?.cte_number),
+        cteEmissionDate: (!isCteApplicableForStatus(previousStatus) || keysToRemove.includes('cteEmissionDate')) ? undefined : (shipment.cteEmissionDate || shipment.documents?.cte_emission_date),
+        nfeNumber: keysToRemove.includes('nfeNumber') ? undefined : (shipment.nfeNumber || shipment.documents?.nfe_number),
+        mdfeNumber: keysToRemove.includes('mdfeNumber') ? undefined : (shipment.mdfeNumber || shipment.documents?.mdfe_number),
+        advancePercentage: keysToRemove.includes('advancePercentage') ? undefined : shipment.advancePercentage,
+        advanceValue: keysToRemove.includes('advanceValue') ? undefined : shipment.advanceValue,
+        tollValue: keysToRemove.includes('tollValue') ? undefined : shipment.tollValue,
+        unloadedTonnage: keysToRemove.includes('unloadedTonnage') ? undefined : shipment.unloadedTonnage,
+        balanceToReceiveValue: keysToRemove.includes('balanceToReceiveValue') ? undefined : shipment.balanceToReceiveValue,
+        discountValue: keysToRemove.includes('discountValue') ? undefined : shipment.discountValue,
+        isBreakageWaived: keysToRemove.includes('isBreakageWaived') ? undefined : shipment.isBreakageWaived,
+        netBalanceValue: keysToRemove.includes('netBalanceValue') ? undefined : shipment.netBalanceValue,
         history: [...shipment.history, createHistoryLog(`Status revertido de "${currentStatus}" para "${previousStatus}" por ${currentUser.name}. Anexos e dados da etapa removidos para reanexação.`)]
     };
 
