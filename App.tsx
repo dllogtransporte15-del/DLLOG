@@ -1125,20 +1125,12 @@ const App: React.FC = () => {
     setSelectedCargoForRequest(null);
   };
 
-  const handleAcceptOrderRequestFromNotification = async (offer: FreightOffer) => {
+  const handleAcceptOrderRequestFromNotification = (offer: FreightOffer) => {
     if (currentUser) {
       if (isDemoUser(currentUser)) {
         showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
         return;
       }
-      const history = [...(offer.history || []), {
-        id: `log_${Date.now()}_sys`,
-        userId: currentUser.id,
-        timestamp: new Date().toISOString(),
-        description: `Solicitação de ordem de carregamento aceita por ${currentUser.name}. Abrindo formulário de embarque...`
-      }];
-      await handleSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
-      showToast('Solicitação aceita! Preenchendo dados do embarque...', 'success');
     }
     setOfferForNewShipment(offer);
   };
@@ -1149,14 +1141,50 @@ const App: React.FC = () => {
         showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
         return;
       }
+      const refusalReason = reason || 'Solicitação de ordem recusada pelo embarcador';
       const history = [...(offer.history || []), {
         id: `log_${Date.now()}_sys`,
         userId: currentUser.id,
         timestamp: new Date().toISOString(),
-        description: `Solicitação de ordem de carregamento recusada por ${currentUser.name}.${reason ? ` Motivo: ${reason}` : ''}`
+        description: `Solicitação de ordem de carregamento recusada por ${currentUser.name}. Motivo: ${refusalReason}`
       }];
       await handleSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
-      showToast('Solicitação de ordem de carregamento recusada com sucesso.', 'success');
+
+      // Registrar essa recusa no histórico de embarques cancelados
+      if (offer.cargoId) {
+        const driverUser = users.find(u => u.id === offer.driverId);
+        const driverInDb = drivers.find(d => d.id === offer.driverId || (driverUser?.email && d.cpf.replace(/\D/g, '') === driverUser.email.replace(/\D/g, '')));
+        const dName = driverInDb?.name || driverUser?.name || (offer as any).driverName || 'Motorista';
+        const dCpf = driverInDb?.cpf || (driverUser?.email && driverUser.email.replace(/\D/g, '').length === 11 ? driverUser.email : '') || (offer as any).driverCpf || '';
+        const dContact = driverInDb?.phone || driverUser?.phone || (offer as any).driverContact || '';
+
+        const cargo = cargos.find(c => c.id === offer.cargoId);
+        const ton = offer.totalTonnage || (cargo ? Math.max(0, cargo.scheduledVolume - cargo.loadedVolume) : 0) || 0;
+        const driverFreightRate = offer.freightValuePerTon || cargo?.driverFreightValuePerTon || 0;
+
+        await handleCreateShipment({
+          cargoId: offer.cargoId,
+          driverName: dName,
+          driverCpf: dCpf,
+          driverContact: dContact,
+          embarcadorId: currentUser.id,
+          horsePlate: '-',
+          shipmentTonnage: ton,
+          driverFreightValue: driverFreightRate * ton,
+          driverFreightRateSnapshot: driverFreightRate,
+          status: ShipmentStatus.Cancelado,
+          scheduledDate: new Date().toISOString().split('T')[0],
+          cancellationReason: refusalReason,
+          history: [{
+            id: `log_${Date.now()}_refusal`,
+            userId: currentUser.id,
+            timestamp: new Date().toISOString(),
+            description: `Solicitação de ordem do motorista ${dName} recusada. Motivo: ${refusalReason}`
+          }]
+        });
+      }
+
+      showToast('Solicitação de ordem de carregamento recusada e registrada no histórico de cancelados.', 'success');
     }
   };
 
@@ -1742,8 +1770,8 @@ const App: React.FC = () => {
 
     // Check permissions based on the current status
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin, UserProfile.Agenciador].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Administrador podem realizar esta ação.';
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin, UserProfile.Agenciador, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Gerenciadora de Risco, Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Administrador podem realizar esta ação.';
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
         isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.Financeiro].includes(currentUser.profile);
         alertMessage = 'Apenas o perfil Gerenciadora de Risco, Embarcador ou Administrador do Sistema pode avançar embarques neste status.';
@@ -3443,6 +3471,13 @@ const App: React.FC = () => {
           isOpen={!!offerForNewShipment}
           onClose={() => setOfferForNewShipment(null)}
           onSave={async (data) => {
+            const history = [...(offerForNewShipment.history || []), {
+              id: `log_${Date.now()}_sys`,
+              userId: currentUser?.id || 'system',
+              timestamp: new Date().toISOString(),
+              description: `Solicitação de ordem aceita por ${currentUser?.name || 'Embarcador'}. Embarque criado com sucesso.`
+            }];
+            await handleSaveFreightOffer({ ...offerForNewShipment, status: FreightOfferStatus.Aceita, history });
             await handleCreateShipment({
               cargoId: offerForNewShipment.cargoId,
               ...data

@@ -410,6 +410,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onSuspend={!isDemo && (currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Motorista) ? onSuspendLoad : undefined}
         onShowDetails={handleShowCargoDetails}
         onShowShipments={handleShowShipments}
+        onRecommendDrivers={handleOpenRecommendations}
         onDelete={!isDemo ? onDeleteLoad : undefined}
         currentUser={currentUser}
         stays={stays}

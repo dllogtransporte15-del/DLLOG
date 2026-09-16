@@ -895,51 +895,24 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                             </button>
                           </>
                         )}
-                         {(offer.status === FreightOfferStatus.Pendente || offer.status === FreightOfferStatus.ContrapropostaAceita) && (
-                           <>
-                             {/* Driver request — show labeled buttons */}
-                             {offer.driverId ? (
-                               <>
-                                 <button
-                                   onClick={() => onAccept(offer)}
-                                   className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                                 >
-                                   <CheckIcon className="w-3.5 h-3.5" />
-                                   Aceitar Embarque
-                                 </button>
-                                 <button
-                                   onClick={() => onRefuse(offer)}
-                                   className="px-3 py-1.5 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                                 >
-                                   <XIcon className="w-3.5 h-3.5" />
-                                   Recusar
-                                 </button>
-                               </>
-                             ) : (
-                               <>
-                                 <button onClick={() => onAccept(offer)} title="Aceitar Oferta" className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
-                                   <CheckIcon className="w-4 h-4" />
-                                 </button>
-                                 <button onClick={() => setCounterOfferModal(offer)} title="Fazer Contraproposta" className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
-                                   <MessageCircleIcon className="w-4 h-4" />
-                                 </button>
-                                 <button onClick={() => onRefuse(offer)} title="Recusar Oferta" className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
-                                   <XIcon className="w-4 h-4" />
-                                 </button>
-                               </>
-                             )}
-                           </>
-                         )}
-                         {offer.status === FreightOfferStatus.Aceita && onConvertToCargo && !offer.driverId && !matchedCargo && (
-                           <button onClick={() => onConvertToCargo(offer)} title="Gerar Carga a partir desta oferta" className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center gap-1">
-                             <PackageIcon className="w-4 h-4" />
-                           </button>
-                         )}
-                          {onShowDriverHistory && offer.driverId && (
-                            <button onClick={() => offer.driverId && onShowDriverHistory(offer.driverId)} title="Ver Histórico do Motorista" className="p-1.5 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors flex items-center gap-1">
-                              <UserIcon className="w-4 h-4" />
+                        {(offer.status === FreightOfferStatus.Pendente || offer.status === FreightOfferStatus.ContrapropostaAceita) && (
+                          <>
+                            <button onClick={() => onAccept(offer)} title="Aceitar Oferta" className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                              <CheckIcon className="w-4 h-4" />
                             </button>
-                          )}
+                            <button onClick={() => setCounterOfferModal(offer)} title="Fazer Contraproposta" className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                              <MessageCircleIcon className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => onRefuse(offer)} title="Recusar Oferta" className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
+                              <XIcon className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        {offer.status === FreightOfferStatus.Aceita && onConvertToCargo && !matchedCargo && (
+                          <button onClick={() => onConvertToCargo(offer)} title="Gerar Carga a partir desta oferta" className="p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center gap-1">
+                            <PackageIcon className="w-4 h-4" />
+                          </button>
+                        )}
                       </>
                     )}
                     {/* Ações do Cliente */}

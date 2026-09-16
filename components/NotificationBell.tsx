@@ -4,12 +4,28 @@ import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus } from '.
 import { isDemoUser } from '../auth';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
-import { AlertTriangle, Flame, Truck, ShieldAlert, FileCheck2, Volume2, VolumeX, ChevronRight, X, CheckCircle, XCircle, Wallet } from 'lucide-react';
+import { 
+  AlertTriangle, 
+  Flame, 
+  Truck, 
+  ShieldAlert, 
+  FileCheck2, 
+  Volume2, 
+  VolumeX, 
+  ChevronRight, 
+  X, 
+  CheckCircle, 
+  XCircle, 
+  Wallet,
+  DollarSign,
+  Tag,
+  Package
+} from 'lucide-react';
 import OrderRequestDecisionModal from './OrderRequestDecisionModal';
 
 export interface SystemAlert {
   id: string;
-  type: 'order_request' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket';
+  type: 'order_request' | 'client_freight_offer' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket';
   title: string;
   message: string;
   timestamp: string;
@@ -105,6 +121,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
     const isFinanceiro = user.profile === UserProfile.Financeiro;
     const isAdminOrDiretor = !isDemo && (user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor);
+    const isCommercialOrSupervisor = !isDemo && [
+      UserProfile.Comercial,
+      UserProfile.GerenteComercial,
+      UserProfile.Supervisor,
+      UserProfile.Admin,
+      UserProfile.Diretor
+    ].includes(user.profile);
+    const isClient = user.profile === UserProfile.Cliente && !!user.clientId;
+    const isMotorista = user.profile === UserProfile.Motorista;
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
     if (isEmbarcador || isAdminOrDiretor) {
@@ -138,7 +163,121 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       });
     }
 
-    // 2. REGRA FISCAL: Embarques "Ag. Fiscal" no time "Atenção" (>= 30 min) ou "Crítico" (>= 60 min)
+    // 1.1 RETORNO AO MOTORISTA: Avisar motorista quando sua solicitação de ordem for aceita ou recusada
+    if (isMotorista) {
+      freightOffers.forEach(offer => {
+        if (offer.driverId !== user.id) return;
+        const cargo = offer.cargoId ? cargoMap.get(offer.cargoId) : undefined;
+        const cargoSeq = cargo ? cargo.sequenceId : (offer.cargoId || 'N/A');
+
+        if (offer.status === FreightOfferStatus.Aceita) {
+          const lastLog = offer.history?.[offer.history.length - 1];
+          alerts.push({
+            id: `driver_accepted_${offer.id}`,
+            type: 'order_request',
+            title: 'Ordem de Carregamento Aprovada!',
+            message: `Sua solicitação de ordem para a Carga #${cargoSeq} foi aceita pelo Embarcador.`,
+            timestamp: lastLog?.timestamp || offer.requestTimestamp || offer.createdAt,
+            urgency: 'normal',
+            targetPage: 'dashboard',
+            relatedId: offer.id
+          });
+        } else if (offer.status === FreightOfferStatus.Recusada) {
+          const lastLog = offer.history?.[offer.history.length - 1];
+          alerts.push({
+            id: `driver_refused_${offer.id}`,
+            type: 'order_request',
+            title: 'Ordem de Carregamento Recusada',
+            message: `Sua solicitação de ordem para a Carga #${cargoSeq} foi recusada.${lastLog?.description ? ` (${lastLog.description})` : ''}`,
+            timestamp: lastLog?.timestamp || offer.requestTimestamp || offer.createdAt,
+            urgency: 'warning',
+            targetPage: 'dashboard',
+            relatedId: offer.id
+          });
+        }
+      });
+    }
+
+    // 2. REGRA CLIENTES & COMERCIAL: Solicitações e Cotações de Frete de Clientes
+    if (isCommercialOrSupervisor) {
+      freightOffers.forEach(offer => {
+        if (offer.driverId) return; // Exclusivo cotações de clientes
+        const client = clientMap.get(offer.clientId);
+        const product = productMap.get(offer.productId);
+        const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente';
+        const productName = product?.name || 'Mercadoria';
+
+        if (offer.status === FreightOfferStatus.AguardandoPreco || offer.status === FreightOfferStatus.Pendente) {
+          alerts.push({
+            id: `freight_quote_${offer.id}`,
+            type: 'client_freight_offer',
+            title: 'Nova Solicitação de Frete (Cliente)',
+            message: `${clientName} solicitou cotação para ${productName} (${offer.origin} -> ${offer.destination}).`,
+            timestamp: offer.createdAt,
+            urgency: 'warning',
+            targetPage: 'freight-offers-history',
+            relatedId: offer.id
+          });
+        } else if (offer.status === FreightOfferStatus.Contraproposta) {
+          alerts.push({
+            id: `freight_counter_${offer.id}`,
+            type: 'client_freight_offer',
+            title: 'Contraproposta de Frete (Cliente)',
+            message: `${clientName} enviou contraproposta de R$ ${(offer.counterOfferValue || 0).toFixed(2)}/ton para ${productName}.`,
+            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
+            urgency: 'warning',
+            targetPage: 'freight-offers-history',
+            relatedId: offer.id
+          });
+        } else if (offer.status === FreightOfferStatus.SolicitadoExclusao) {
+          alerts.push({
+            id: `freight_delete_${offer.id}`,
+            type: 'client_freight_offer',
+            title: 'Exclusão Solicitada pelo Cliente',
+            message: `${clientName} solicitou exclusão da oferta #${offer.displayId || offer.id}.`,
+            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
+            urgency: 'warning',
+            targetPage: 'freight-offers-history',
+            relatedId: offer.id
+          });
+        }
+      });
+    }
+
+    // 2.1 RETORNO AO CLIENTE: Avisar cliente quando transportadora responder cotação
+    if (isClient) {
+      freightOffers.forEach(offer => {
+        if (offer.driverId || offer.clientId !== user.clientId) return;
+        const product = productMap.get(offer.productId);
+        const productName = product?.name || 'Mercadoria';
+
+        if (offer.status === FreightOfferStatus.AnaliseCliente) {
+          alerts.push({
+            id: `client_price_${offer.id}`,
+            type: 'client_freight_offer',
+            title: 'Preço de Frete Disponível',
+            message: `A transportadora enviou o valor de R$ ${(offer.freightValuePerTon || 0).toFixed(2)}/ton para ${productName}.`,
+            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
+            urgency: 'warning',
+            targetPage: 'dashboard',
+            relatedId: offer.id
+          });
+        } else if (offer.status === FreightOfferStatus.Contraproposta) {
+          alerts.push({
+            id: `client_counter_${offer.id}`,
+            type: 'client_freight_offer',
+            title: 'Contraproposta da Transportadora',
+            message: `Nova contraproposta de R$ ${(offer.counterOfferValue || 0).toFixed(2)}/ton para sua oferta.`,
+            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
+            urgency: 'warning',
+            targetPage: 'dashboard',
+            relatedId: offer.id
+          });
+        }
+      });
+    }
+
+    // 3. REGRA FISCAL: Embarques "Ag. Fiscal" no time "Atenção" (>= 30 min) ou "Crítico" (>= 60 min)
     if (isFiscal || isAdminOrDiretor) {
       shipments.forEach(s => {
         if (s.status !== ShipmentStatus.AguardandoNota && s.status !== ShipmentStatus.AguardandoFiscal) return;
@@ -168,7 +307,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       });
     }
 
-    // 3. REGRA GERENCIADORA DE RISCO: Embarques "Ag. Seguradora" no time "Atenção" (>= 30 min) ou "Crítico" (>= 60 min)
+    // 4. REGRA GERENCIADORA DE RISCO: Embarques "Ag. Seguradora" no time "Atenção" (>= 30 min) ou "Crítico" (>= 60 min)
     if (isSeguradora || isAdminOrDiretor) {
       shipments.forEach(s => {
         if (s.status !== ShipmentStatus.AguardandoSeguradora) return;
@@ -198,7 +337,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       });
     }
 
-    // 4. REGRA FINANCEIRO: Embarques "Ag. Adiantamento" e "Ag. Saldo"
+    // 5. REGRA FINANCEIRO: Embarques "Ag. Adiantamento" e "Ag. Saldo"
     // Time nos status de adiantamento e saldo: 2:30h (150 min) alerta - 2:45h (165 min) crítico
     if (isFinanceiro || isAdminOrDiretor) {
       shipments.forEach(s => {
@@ -232,7 +371,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       });
     }
 
-    // 5. TICKETS (Chamados Abertos Atribuídos ao Usuário)
+    // 6. TICKETS (Chamados Abertos Atribuídos ao Usuário)
     tickets.forEach(t => {
       if (t.assignedToId === user.id && t.status !== TicketStatus.Resolvido && t.status !== TicketStatus.Fechado) {
         alerts.push({
@@ -253,7 +392,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       if (a.urgency !== 'critical' && b.urgency === 'critical') return 1;
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
-  }, [user, shipments, freightOffers, cargos, drivers, tickets, cargoMap, driverMap]);
+  }, [user, shipments, freightOffers, cargos, drivers, clients, products, tickets, cargoMap, driverMap, clientMap, productMap]);
 
   // Contadores por urgência
   const criticalCount = useMemo(() => activeAlerts.filter(a => a.urgency === 'critical').length, [activeAlerts]);
@@ -292,7 +431,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       }
       const offerId = alert.relatedId || alert.id.replace('order_', '');
       const matchedOffer = freightOffers.find(o => o.id === offerId);
-      if (matchedOffer) {
+      if (matchedOffer && user.profile !== UserProfile.Motorista) {
         setIsOpen(false);
         setDecisionOffer(matchedOffer);
         return;
@@ -401,6 +540,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                 activeAlerts.map(alert => {
                   const isCritical = alert.urgency === 'critical';
                   const isOrderRequest = alert.type === 'order_request';
+                  const isClientOffer = alert.type === 'client_freight_offer';
                   const offerId = alert.relatedId || alert.id.replace('order_', '');
 
                   return (
@@ -412,6 +552,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                           ? 'border-l-rose-500 bg-rose-50/40 dark:bg-rose-950/20'
                           : isOrderRequest
                           ? 'border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10'
+                          : isClientOffer
+                          ? 'border-l-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/10'
                           : 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
                       }`}
                     >
@@ -419,6 +561,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                         {alert.type === 'order_request' && (
                           <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
                             <Truck className="w-4 h-4" />
+                          </div>
+                        )}
+                        {alert.type === 'client_freight_offer' && (
+                          <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+                            <Tag className="w-4 h-4" />
                           </div>
                         )}
                         {alert.type === 'fiscal_sla' && (
@@ -450,6 +597,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                               ? 'text-rose-600 dark:text-rose-400' 
                               : isOrderRequest 
                               ? 'text-blue-900 dark:text-blue-200' 
+                              : isClientOffer
+                              ? 'text-indigo-900 dark:text-indigo-200'
                               : 'text-gray-900 dark:text-white'
                           }`}>
                             {alert.title}
@@ -466,8 +615,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                           {alert.message}
                         </p>
 
-                        {/* Botões de Ação Rápida para Solicitação de Ordem */}
-                        {isOrderRequest && !isDemo && (
+                        {/* Botões de Ação Rápida para Solicitação de Ordem do Motorista */}
+                        {isOrderRequest && !isDemo && user.profile !== UserProfile.Motorista && (
                           <div className="mt-2.5 flex items-center gap-2">
                             <button
                               type="button"

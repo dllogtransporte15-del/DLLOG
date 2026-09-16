@@ -6,7 +6,6 @@ import LoadFormModal from '../components/LoadFormModal';
 import HistoryModal from '../components/HistoryModal';
 import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
-import RecommendedDriversModal from '../components/RecommendedDriversModal';
 import NewShipmentModal from '../components/NewShipmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch } from '../types';
@@ -57,15 +56,13 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   const [detailsModalCargo, setDetailsModalCargo] = useState<Cargo | null>(null);
   const [isShipmentsPanelOpen, setIsShipmentsPanelOpen] = useState(false);
   const [selectedCargoForShipments, setSelectedCargoForShipments] = useState<Cargo | null>(null);
-  const [isRecommendedDriversModalOpen, setIsRecommendedDriversModalOpen] = useState(false);
-  const [selectedCargoForRecommendations, setSelectedCargoForRecommendations] = useState<Cargo | null>(null);
   const [isNewShipmentModalOpen, setIsNewShipmentModalOpen] = useState(false);
   const [selectedCargoForShipment, setSelectedCargoForShipment] = useState<Cargo | null>(null);
 
   React.useEffect(() => {
-    const isAnyOpen = isModalOpen || isBulkImportModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isRecommendedDriversModalOpen || isNewShipmentModalOpen;
+    const isAnyOpen = isModalOpen || isBulkImportModalOpen || isHistoryModalOpen || !!detailsModalCargo || isShipmentsPanelOpen || isNewShipmentModalOpen;
     onModalStateChange(isAnyOpen);
-  }, [isModalOpen, isBulkImportModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isRecommendedDriversModalOpen, isNewShipmentModalOpen, onModalStateChange]);
+  }, [isModalOpen, isBulkImportModalOpen, isHistoryModalOpen, detailsModalCargo, isShipmentsPanelOpen, isNewShipmentModalOpen, onModalStateChange]);
 
   React.useEffect(() => {
     if (offerToConvert) {
@@ -108,11 +105,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
   const handleShowShipments = (cargo: Cargo) => {
     setSelectedCargoForShipments(cargo);
     setIsShipmentsPanelOpen(true);
-  };
-
-  const handleOpenRecommendations = (cargo: Cargo) => {
-    setSelectedCargoForRecommendations(cargo);
-    setIsRecommendedDriversModalOpen(true);
   };
 
   const isDemo = isDemoUser(currentUser);
@@ -197,7 +189,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
             onEditSchedule={!isDemo && canUpdate ? handleEditSchedule : undefined}
             onShowDetails={handleShowDetails}
             onShowShipments={handleShowShipments}
-            onRecommendDrivers={handleOpenRecommendations}
             onDelete={!isDemo ? onDeleteLoad : undefined}
             currentUser={currentUser}
             stays={stays}
@@ -274,19 +265,6 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         cargos={loads}
       />
 
-      {isRecommendedDriversModalOpen && selectedCargoForRecommendations && (
-        <RecommendedDriversModal
-          isOpen={isRecommendedDriversModalOpen}
-          onClose={() => {
-            setIsRecommendedDriversModalOpen(false);
-            setSelectedCargoForRecommendations(null);
-          }}
-          currentCargo={selectedCargoForRecommendations}
-          drivers={drivers}
-          shipments={allShipments}
-          cargos={loads}
-        />
-      )}
       <NewShipmentModal
         isOpen={isNewShipmentModalOpen}
         onClose={handleCloseNewShipmentModal}

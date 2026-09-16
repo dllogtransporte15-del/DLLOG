@@ -21,6 +21,40 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_16_v2_6_0',
+    version: 'v2.6.0',
+    date: '16/09/2026',
+    title: 'Histórico Automático de Motoristas, Gestão de Ordens e Validação de Cadastros',
+    summary: 'Preenchimento automático inteligente do histórico do motorista em novos embarques, separação de ordens do app vs. fretes, permissões para Gerenciadora de Risco e correções no app.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Preenchimento Automático do Histórico de Motoristas',
+        description: 'Ao selecionar ou buscar o motorista em Novo Embarque, o sistema localiza o histórico recente e preenche automaticamente placas (cavalo e carretas), documentos, proprietário, ANTT e dados cadastrais.'
+      },
+      {
+        category: 'feature',
+        title: 'Separação de Ordens de Motoristas vs. Fretes de Clientes',
+        description: 'Notificações e Dashboard agora possuem listas e modais específicos para solicitações do App do Motorista e Ofertas de Clientes, garantindo persistência da solicitação e histórico de recusas.'
+      },
+      {
+        category: 'security',
+        title: 'Avanço de Cadastro para Gerenciadora de Risco',
+        description: 'O perfil Gerenciadora de Risco agora tem permissão para editar informações e acionar "Salvar e Avançar" diretamente na etapa de Ag. Cadastro.'
+      },
+      {
+        category: 'fix',
+        title: 'Correção no Cadastro de Motoristas no App',
+        description: 'Eliminado erro de chave duplicada no cadastro do aplicativo, integrando CPFs pré-cadastrados com segurança e IDs exclusivos anti-colisão.'
+      },
+      {
+        category: 'improvement',
+        title: 'Motoristas Indicados em Cargas em Andamento',
+        description: 'Ação de Motoristas Indicados por DDD e histórico de rotas agora é exclusiva das operações ativas em Operacional > Cargas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_14_v2_5_0',
     version: 'v2.5.0',
     date: '14/09/2026',

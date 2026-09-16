@@ -23,6 +23,7 @@ import CadastroAnttModal from '../components/CadastroAnttModal';
 import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/OptimizedShipmentsBoard';
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
+import DriverOrderRequestsList from '../components/DriverOrderRequestsList';
 import { getMatchedCargo, getShipmentEffectiveDate } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
@@ -858,44 +859,70 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     return (
       <>
         <Header title="Dashboard do Embarcador" />
-        <div className="mb-8">
-          <FreightOffersList
-            title="Solicitações de Motoristas"
-            offers={pendingRequests}
-            clients={clients}
-            products={products}
-            cargos={cargos}
-            users={users}
-            isClientProfile={false}
-            onAccept={async (offer) => {
-              // Mark offer as accepted in the DB, then open the shipment modal
-              if (onSaveFreightOffer) {
-                const history = [...(offer.history || []), {
-                  id: `log_${Date.now()}_sys`,
-                  userId: currentUser.id,
-                  timestamp: new Date().toISOString(),
-                  description: `Solicitação aceita por ${currentUser.name}. Criando embarque...`
-                }];
-                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Aceita, history });
-              }
-              // Open NewShipmentModal pre-filled with driver data
-              setOfferForNewShipment(offer);
-            }}
-            onRefuse={async (offer) => {
-              if (onSaveFreightOffer) {
-                const history = [...(offer.history || []), {
-                  id: `log_${Date.now()}_sys`,
-                  userId: currentUser.id,
-                  timestamp: new Date().toISOString(),
-                  description: `Solicitação recusada por ${currentUser.name}.`
-                }];
-                await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
-              }
-            }}
-            onCounterOffer={() => {}}
-            onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
-          />
-        </div>
+        {pendingRequests.length > 0 && (
+          <div className="mb-8">
+            <DriverOrderRequestsList
+              title="Solicitações de Ordem de Carregamento (Motoristas)"
+              requests={pendingRequests}
+              clients={clients}
+              products={products}
+              cargos={cargos}
+              drivers={drivers}
+              users={users}
+              currentUser={currentUser}
+              onAccept={async (offer) => {
+                // Open NewShipmentModal pre-filled with driver data without closing the request prematurely
+                setOfferForNewShipment(offer);
+              }}
+              onRefuse={async (offer, reason) => {
+                const refusalReason = reason || 'Solicitação de ordem recusada pelo embarcador';
+                if (onSaveFreightOffer) {
+                  const history = [...(offer.history || []), {
+                    id: `log_${Date.now()}_sys`,
+                    userId: currentUser.id,
+                    timestamp: new Date().toISOString(),
+                    description: `Solicitação de ordem recusada por ${currentUser.name}. Motivo: ${refusalReason}`
+                  }];
+                  await onSaveFreightOffer({ ...offer, status: FreightOfferStatus.Recusada, history });
+                }
+                // Registrar no histórico de cancelados
+                if (offer.cargoId && onCreateShipment) {
+                  const driverUser = users.find(u => u.id === offer.driverId);
+                  const driverInDb = drivers.find(d => d.id === offer.driverId || (driverUser?.email && d.cpf.replace(/\D/g, '') === driverUser.email.replace(/\D/g, '')));
+                  const dName = driverInDb?.name || driverUser?.name || (offer as any).driverName || 'Motorista';
+                  const dCpf = driverInDb?.cpf || (driverUser?.email && driverUser.email.replace(/\D/g, '').length === 11 ? driverUser.email : '') || (offer as any).driverCpf || '';
+                  const dContact = driverInDb?.phone || driverUser?.phone || (offer as any).driverContact || '';
+
+                  const cargo = cargos.find(c => c.id === offer.cargoId);
+                  const ton = offer.totalTonnage || (cargo ? Math.max(0, cargo.scheduledVolume - cargo.loadedVolume) : 0) || 0;
+                  const driverFreightRate = offer.freightValuePerTon || cargo?.driverFreightValuePerTon || 0;
+
+                  await onCreateShipment({
+                    cargoId: offer.cargoId,
+                    driverName: dName,
+                    driverCpf: dCpf,
+                    driverContact: dContact,
+                    embarcadorId: currentUser.id,
+                    horsePlate: '-',
+                    shipmentTonnage: ton,
+                    driverFreightValue: driverFreightRate * ton,
+                    driverFreightRateSnapshot: driverFreightRate,
+                    status: ShipmentStatus.Cancelado,
+                    scheduledDate: new Date().toISOString().split('T')[0],
+                    cancellationReason: refusalReason,
+                    history: [{
+                      id: `log_${Date.now()}_refusal`,
+                      userId: currentUser.id,
+                      timestamp: new Date().toISOString(),
+                      description: `Solicitação de ordem do motorista ${dName} recusada. Motivo: ${refusalReason}`
+                    }]
+                  });
+                }
+              }}
+              onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
+            />
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card
             title="Embarques Ativos"
@@ -949,6 +976,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             isOpen={!!offerForNewShipment}
             onClose={() => setOfferForNewShipment(null)}
             onSave={async (data) => {
+              if (onSaveFreightOffer && offerForNewShipment) {
+                const history = [...(offerForNewShipment.history || []), {
+                  id: `log_${Date.now()}_sys`,
+                  userId: currentUser.id,
+                  timestamp: new Date().toISOString(),
+                  description: `Solicitação de ordem aceita por ${currentUser.name}. Embarque criado com sucesso.`
+                }];
+                await onSaveFreightOffer({ ...offerForNewShipment, status: FreightOfferStatus.Aceita, history });
+              }
               await onCreateShipment({
                 cargoId: offerForNewShipment.cargoId,
                 ...data
@@ -1715,7 +1751,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 currentUser={currentUser || undefined}
                 onDelete={onDeleteFreightOffer}
                 onConvertToCargo={onConvertToCargo}
-                onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
                 onSaveFreightOffer={onSaveFreightOffer}
               />
             </div>
@@ -1760,22 +1795,18 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         <>
           {isMotorista && driverOffers.length > 0 && (
             <div className="mb-8">
-              <div className="mb-4">
-                <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">Minhas Solicitações de Embarque</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Acompanhe o status dos embarques que você solicitou.</p>
-              </div>
-              <FreightOffersList
-                title="Minhas Solicitações de Embarque"
-                offers={driverOffers}
+              <DriverOrderRequestsList
+                title="Minhas Solicitações de Ordem de Carregamento"
+                requests={driverOffers}
                 clients={clients}
                 products={products}
                 cargos={cargos}
+                drivers={drivers}
                 users={users}
-                isClientProfile={true}
+                currentUser={currentUser}
+                isDriverView={true}
                 onAccept={async () => {}} 
                 onRefuse={async () => {}}
-                onCounterOffer={async () => {}}
-                currentUser={currentUser || undefined}
               />
             </div>
           )}
@@ -1821,7 +1852,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 currentUser={currentUser || undefined}
                 onDelete={onDeleteFreightOffer}
                 onConvertToCargo={onConvertToCargo}
-                onShowDriverHistory={(driverId) => setSelectedDriverForHistoryId(driverId)}
                 onSaveFreightOffer={onSaveFreightOffer}
               />
             </div>

@@ -122,44 +122,75 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
   useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
+      // Find driver user or driver directly
       const driverUser = users.find(u => u.id === offer?.driverId);
-      const initialDriverName = offer?.driverName || driverUser?.name || '';
-      setDriverName(initialDriverName);
+      const cleanUserCpf = (driverUser?.email || '').replace(/\D/g, '');
+      const cleanUserPhone = (driverUser?.phone || '').replace(/\D/g, '');
       
-      const driverInDb = initialDriverName 
-        ? drivers.find(d => d.name.trim().toLowerCase() === initialDriverName.trim().toLowerCase())
+      // Locate in drivers table by: ID, CPF, Phone or Name
+      const driverInDb = drivers.find(d => {
+        if (offer?.driverId && d.id === offer.driverId) return true;
+        if (cleanUserCpf.length === 11 && d.cpf && d.cpf.replace(/\D/g, '') === cleanUserCpf) return true;
+        if (cleanUserPhone.length >= 10 && d.phone && d.phone.replace(/\D/g, '') === cleanUserPhone) return true;
+        if (driverUser?.name && d.name.trim().toLowerCase() === driverUser.name.trim().toLowerCase()) return true;
+        if (offer?.driverName && d.name.trim().toLowerCase() === offer.driverName.trim().toLowerCase()) return true;
+        return false;
+      });
+
+      const initialDriverName = driverInDb?.name || offer?.driverName || driverUser?.name || '';
+      const initialDriverCpf = driverInDb?.cpf || (cleanUserCpf.length === 11 ? driverUser?.email : '') || offer?.driverCpf || '';
+      const initialDriverContact = driverInDb?.phone || offer?.driverContact || driverUser?.phone || '';
+
+      setDriverName(initialDriverName);
+      setDriverCpf(initialDriverCpf);
+      setDriverContact(initialDriverContact);
+
+      // Now search for driver's last shipment across ALL available identifiers
+      const cleanTargetCpf = initialDriverCpf.replace(/\D/g, '');
+      const cleanTargetName = initialDriverName.trim().toLowerCase();
+      const cleanTargetPhone = initialDriverContact.replace(/\D/g, '');
+
+      let lastShipment = shipments
+        .filter(s => {
+          if (cleanTargetCpf.length === 11 && s.driverCpf && s.driverCpf.replace(/\D/g, '') === cleanTargetCpf) return true;
+          if (cleanTargetName && s.driverName && s.driverName.trim().toLowerCase() === cleanTargetName) return true;
+          if (cleanTargetPhone.length >= 10 && s.driverContact && s.driverContact.replace(/\D/g, '') === cleanTargetPhone) return true;
+          return false;
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+      // Vehicle lookup fallback from vehicles table if not found in lastShipment
+      const linkedVehicle = driverInDb?.id 
+        ? vehicles.find(v => v.driverId === driverInDb.id) 
         : undefined;
 
-      let lastShipment;
-      if (initialDriverName) {
-         lastShipment = shipments
-            .filter(s => s.driverName.trim().toLowerCase() === initialDriverName.trim().toLowerCase())
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-      }
+      const horsePlateVal = lastShipment?.horsePlate || linkedVehicle?.plate || '';
+      const trailer1Val = lastShipment?.trailer1Plate || '';
+      const trailer2Val = lastShipment?.trailer2Plate || '';
+      const trailer3Val = lastShipment?.trailer3Plate || '';
 
-      setDriverCpf(driverInDb?.cpf || lastShipment?.driverCpf || '');
+      setHorsePlate(horsePlateVal);
+      setTrailer1Plate(trailer1Val);
+      setTrailer2Plate(trailer2Val);
+      setTrailer3Plate(trailer3Val);
+
       setOwnerContact(lastShipment?.ownerContact || '');
-      setHorsePlate(lastShipment?.horsePlate || '');
-      setTrailer1Plate(lastShipment?.trailer1Plate || '');
-      setTrailer2Plate(lastShipment?.trailer2Plate || '');
-      setTrailer3Plate(lastShipment?.trailer3Plate || '');
-      setShipmentTonnage(0);
-      setDriverContact(offer?.driverContact || lastShipment?.driverContact || '');
-      setScheduledDate('');
-      setScheduledTime('');
-      setSelectedVehicle(null);
-      setVehicleSetType(lastShipment?.vehicleSetType || '');
-      setVehicleBodyType(lastShipment?.vehicleBodyType || '');
+      setShipmentTonnage(offer?.totalTonnage || (cargo ? Math.max(0, cargo.scheduledVolume - cargo.loadedVolume) : 0) || 0);
+      setScheduledDate(offer?.scheduledDate || cargo?.scheduledDate || new Date().toISOString().split('T')[0]);
+      setScheduledTime(offer?.scheduledTime || '');
+      setSelectedVehicle(linkedVehicle || null);
+      setVehicleSetType(lastShipment?.vehicleSetType || linkedVehicle?.setType || '');
+      setVehicleBodyType(lastShipment?.vehicleBodyType || linkedVehicle?.bodyType || '');
       setPaymentMethod(lastShipment?.paymentMethod || DriverPaymentMethod.PixEFrete);
       setPixKey(lastShipment?.pixKey || '');
       setBankDetails(lastShipment?.bankDetails || '');
       setAdvancePercentage(lastShipment?.advancePercentage !== undefined ? lastShipment.advancePercentage : 70);
       setVehicleTag(lastShipment?.vehicleTag || '');
       setFilesToAttach([]);
-      
+
       const initialAntt = (lastShipment?.anttModality as AnttModality) || (lastShipment?.driverFreightType === 'PF' ? AnttModality.TAC : (lastShipment?.driverFreightType === 'PJ' ? AnttModality.ETC : ''));
       setAnttModality(initialAntt || '');
-      setAnttOwnerIdentifier(lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (driverInDb?.cpf || lastShipment?.driverCpf || '') : ''));
+      setAnttOwnerIdentifier(lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (initialDriverCpf || '') : ''));
       setCnpjSearchResult(null);
       setEtcTaxRegime((lastShipment?.etcTaxRegime as EtcTaxRegime) || '');
       setDriverFreightType(lastShipment?.driverFreightType || (initialAntt === AnttModality.TAC ? 'PF' : 'PJ'));
@@ -170,7 +201,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setPendingPayload(null);
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles]);
 
   // Driver selection & Autofill logic
   const [lastAlertedDriverId, setLastAlertedDriverId] = useState<string>('');
@@ -193,7 +224,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             setDriverName(selectedDriver.name);
         }
 
-        setDriverContact(selectedDriver.phone || '');
+        if (selectedDriver.phone && !driverContact) {
+            setDriverContact(selectedDriver.phone);
+        }
 
         if (!selectedDriver.active && lastAlertedDriverId !== selectedDriver.id) {
             showToast(`ATENÇÃO: Este motorista encontra-se RESTRITO! Motivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}. O sistema impedirá a criação desta ordem.`, 'error', 10000);
@@ -206,22 +239,27 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             const selectedCleanCpf = selectedDriver.cpf ? selectedDriver.cpf.replace(/\D/g, '') : '';
             const lastShipment = shipments
                 .filter(s => 
-                    (s.driverCpf && s.driverCpf.replace(/\D/g, '') === selectedCleanCpf) || 
-                    (s.driverName.trim().toLowerCase() === selectedDriver.name.trim().toLowerCase())
+                    (selectedCleanCpf.length === 11 && s.driverCpf && s.driverCpf.replace(/\D/g, '') === selectedCleanCpf) || 
+                    (s.driverName && s.driverName.trim().toLowerCase() === selectedDriver.name.trim().toLowerCase())
                 )
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
+            const linkedVehicle = vehicles.find(v => v.driverId === selectedDriver.id);
+
             if (lastShipment) {
-                setHorsePlate(lastShipment.horsePlate || '');
-                setTrailer1Plate(lastShipment.trailer1Plate || '');
-                setTrailer2Plate(lastShipment.trailer2Plate || '');
-                setTrailer3Plate(lastShipment.trailer3Plate || '');
-                setOwnerContact(lastShipment.ownerContact || '');
+                if (lastShipment.horsePlate) setHorsePlate(lastShipment.horsePlate);
+                if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
+                if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
+                if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
+                if (lastShipment.ownerContact) setOwnerContact(lastShipment.ownerContact);
+                if (lastShipment.driverContact && !driverContact) setDriverContact(lastShipment.driverContact);
                 if (lastShipment.paymentMethod) setPaymentMethod(lastShipment.paymentMethod);
                 if (lastShipment.pixKey) setPixKey(lastShipment.pixKey);
                 if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
                 if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
-                setVehicleTag(lastShipment.vehicleTag || '');
+                if (lastShipment.vehicleTag) setVehicleTag(lastShipment.vehicleTag);
+                if (lastShipment.vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
+                if (lastShipment.vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
                 if (lastShipment.anttOwnerIdentifier) {
                   setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
                 } else if (selectedDriver.cpf) {
@@ -236,19 +274,19 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 }
                 if (lastShipment.etcTaxRegime) {
                   setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
-                } else {
-                  setEtcTaxRegime('');
                 }
+            } else if (linkedVehicle) {
+                if (linkedVehicle.plate) setHorsePlate(linkedVehicle.plate);
+                if (linkedVehicle.setType) setVehicleSetType(linkedVehicle.setType);
+                if (linkedVehicle.bodyType) setVehicleBodyType(linkedVehicle.bodyType);
             }
-            setLastAutofilledDriverId(selectedDriver.id);
-        } else if (!selectedDriver.active) {
             setLastAutofilledDriverId(selectedDriver.id);
         }
     } else {
         setLastAutofilledDriverId('');
         setLastAlertedDriverId('');
     }
-  }, [driverName, driverCpf, drivers, shipments, lastAlertedDriverId, lastAutofilledDriverId]);
+  }, [driverName, driverCpf, drivers, shipments, vehicles, lastAlertedDriverId, lastAutofilledDriverId, driverContact]);
 
   // Automatic CNPJ Tax Regime Lookup
   const searchCnpjTaxRegime = async (cnpjInput: string) => {

@@ -328,87 +328,127 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
       const upperName = regName.trim().toUpperCase();
       const cleanHorsePlate = regHorsePlate.trim().toUpperCase();
 
-      // 1. Gera ID incremental para o novo motorista
-      const { data: lastDrivers } = await supabase
+      // 1. Verifica se o motorista já existe no cadastro (pelo CPF)
+      let { data: existingDriver } = await supabase
         .from('drivers')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .select('*')
+        .or(`cpf.eq.${formattedCpf},cpf.eq.${cleanCpf}`)
+        .maybeSingle();
 
-      let currentDriverNum = 1000;
-      if (lastDrivers && lastDrivers.length > 0 && lastDrivers[0].id) {
-        const match = lastDrivers[0].id.match(/\d+/);
-        if (match) currentDriverNum = parseInt(match[0], 10);
-      }
-      const driverId = `DRV-${currentDriverNum + 1}`;
+      let driverId = existingDriver?.id;
 
-      const { data: lastVehicles } = await supabase
-        .from('vehicles')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1);
+      if (existingDriver) {
+        // Motorista já existia no banco: atualiza dados e ativa o app
+        driverId = existingDriver.id;
+        const { error: updateDriverErr } = await supabase
+          .from('drivers')
+          .update({
+            name: upperName || existingDriver.name,
+            phone: regPhone.trim() || existingDriver.phone,
+            has_app: true,
+            active: true,
+          })
+          .eq('id', driverId);
 
-      let currentVehNum = 2000;
-      if (lastVehicles && lastVehicles.length > 0 && lastVehicles[0].id) {
-        const match = lastVehicles[0].id.match(/\d+/);
-        if (match) currentVehNum = parseInt(match[0], 10);
-      }
+        if (updateDriverErr) {
+          console.warn('[LoginPage] Aviso ao atualizar dados do motorista existente:', updateDriverErr);
+        }
+      } else {
+        // Motorista novo: gera ID único seguro anti-colisão
+        driverId = `DRV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
 
-      // 2. Insere na tabela 'drivers'
-      const { error: driverErr } = await supabase
-        .from('drivers')
-        .insert({
-          id: driverId,
-          name: upperName,
-          cpf: formattedCpf,
-          cnh: '',
-          phone: regPhone.trim(),
-          classification: DriverClassification.Terceiro,
-          active: true,
-          has_app: true,
-        });
+        const { error: driverErr } = await supabase
+          .from('drivers')
+          .insert({
+            id: driverId,
+            name: upperName,
+            cpf: formattedCpf,
+            cnh: '',
+            phone: regPhone.trim(),
+            classification: DriverClassification.Terceiro,
+            active: true,
+            has_app: true,
+          });
 
-      if (driverErr) {
-        console.error('[LoginPage] Erro ao cadastrar motorista:', driverErr);
-        setError('Erro ao salvar dados do motorista: ' + (driverErr.message || 'Erro no banco de dados'));
-        setIsLoading(false);
-        return;
-      }
-
-      // 3. Insere o Cavalo na tabela 'vehicles'
-      currentVehNum++;
-      const { error: horseErr } = await supabase
-        .from('vehicles')
-        .insert({
-          id: `VEH-${currentVehNum}`,
-          plate: cleanHorsePlate,
-          set_type: regVehicleSetType,
-          body_type: regVehicleBodyType,
-          classification: DriverClassification.Terceiro,
-          driver_id: driverId,
-          owner_id: null,
-        });
-
-      if (horseErr) {
-        console.warn('[LoginPage] Aviso ao registrar cavalo:', horseErr);
+        if (driverErr) {
+          console.error('[LoginPage] Erro ao cadastrar motorista:', driverErr);
+          setError('Erro ao salvar dados do motorista: ' + (driverErr.message || 'Erro no banco de dados'));
+          setIsLoading(false);
+          return;
+        }
       }
 
-      // 4. Insere as Carretas na tabela 'vehicles'
+      // 2. Registra ou atualiza o Cavalo Mecânico na tabela 'vehicles'
+      if (cleanHorsePlate) {
+        const { data: existingHorse } = await supabase
+          .from('vehicles')
+          .select('id')
+          .eq('plate', cleanHorsePlate)
+          .maybeSingle();
+
+        if (existingHorse) {
+          await supabase
+            .from('vehicles')
+            .update({
+              driver_id: driverId,
+              set_type: regVehicleSetType,
+              body_type: regVehicleBodyType,
+            })
+            .eq('id', existingHorse.id);
+        } else {
+          const horseVehId = `VEH-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
+          const { error: horseErr } = await supabase
+            .from('vehicles')
+            .insert({
+              id: horseVehId,
+              plate: cleanHorsePlate,
+              set_type: regVehicleSetType,
+              body_type: regVehicleBodyType,
+              classification: DriverClassification.Terceiro,
+              driver_id: driverId,
+              owner_id: null,
+            });
+
+          if (horseErr) {
+            console.warn('[LoginPage] Aviso ao registrar cavalo:', horseErr);
+          }
+        }
+      }
+
+      // 3. Registra ou atualiza as Carretas na tabela 'vehicles'
       const trailers = [regTrailer1Plate, regTrailer2Plate, regTrailer3Plate].filter(p => p && p.trim().length > 0);
       for (const tPlate of trailers) {
-        currentVehNum++;
-        await supabase.from('vehicles').insert({
-          id: `VEH-${currentVehNum}`,
-          plate: tPlate.trim().toUpperCase(),
-          set_type: regVehicleSetType,
-          body_type: regVehicleBodyType,
-          classification: DriverClassification.Terceiro,
-          driver_id: driverId,
-          owner_id: null,
-        });
+        const cleanTPlate = tPlate.trim().toUpperCase();
+        const { data: existingTrailer } = await supabase
+          .from('vehicles')
+          .select('id')
+          .eq('plate', cleanTPlate)
+          .maybeSingle();
+
+        if (existingTrailer) {
+          await supabase
+            .from('vehicles')
+            .update({
+              driver_id: driverId,
+              set_type: regVehicleSetType,
+              body_type: regVehicleBodyType,
+            })
+            .eq('id', existingTrailer.id);
+        } else {
+          const trailerVehId = `VEH-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
+          await supabase.from('vehicles').insert({
+            id: trailerVehId,
+            plate: cleanTPlate,
+            set_type: regVehicleSetType,
+            body_type: regVehicleBodyType,
+            classification: DriverClassification.Terceiro,
+            driver_id: driverId,
+            owner_id: null,
+          });
+        }
       }
 
-      // 5. Cria usuário em 'app_users' para autenticação segura
+      // 4. Cria ou atualiza usuário em 'app_users' para autenticação segura
       const { error: userErr } = await supabase
         .from('app_users')
         .upsert({
@@ -427,7 +467,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         console.warn('[LoginPage] Aviso ao salvar usuário em app_users:', userErr);
       }
 
-      // 6. Realiza o login direto no app
+      // 5. Realiza o login direto no app
       const userProfile: User = {
         id: driverId,
         name: upperName,
