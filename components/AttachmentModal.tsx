@@ -6,7 +6,7 @@ import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../ser
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, Check, Paperclip } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
@@ -261,6 +261,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [isBreakageWaived, setIsBreakageWaived] = useState<boolean>(false);
   const [netBalanceValue, setNetBalanceValue] = useState<number | ''>('');
   const [unloadedTonnage, setUnloadedTonnage] = useState<number | ''>('');
+  const [isTicketValidated, setIsTicketValidated] = useState<boolean>(false);
   const [route, setRoute] = useState('');
   const [riskReleaseCode, setRiskReleaseCode] = useState('');
   const [riskQueryType, setRiskQueryType] = useState<string>('');
@@ -275,6 +276,33 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     docType: string;
     docName: string;
   } | null>(null);
+
+  const ticketFiles: string[] = React.useMemo(() => {
+    if (!shipment.documents) return [];
+    const files: string[] = [];
+    const keysToCheck = [
+      'Comprovante de Descarga',
+      'comprovante de descarga',
+      'Ticket de Descarga',
+      'Ticket de Balança',
+      'Ticket de Balanca',
+      'Validação de Ticket e Peso',
+      'ticket',
+      'Ticket',
+      'Descarga'
+    ];
+    for (const key of Object.keys(shipment.documents)) {
+      if (keysToCheck.some(k => k.toLowerCase() === key.toLowerCase()) || key.toLowerCase().includes('descarga') || key.toLowerCase().includes('ticket')) {
+        const val = shipment.documents[key];
+        if (Array.isArray(val)) {
+          files.push(...val);
+        } else if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('data:') || val.startsWith('blob:'))) {
+          files.push(val);
+        }
+      }
+    }
+    return Array.from(new Set(files));
+  }, [shipment.documents]);
 
   const { showToast } = useToast();
 
@@ -692,6 +720,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     ShipmentStatus.AguardandoAdiantamento,
     ShipmentStatus.AguardandoAgendamento,
     ShipmentStatus.AguardandoDescarga,
+    ShipmentStatus.ValidacaoTicket,
     ShipmentStatus.AguardandoPagamentoSaldo,
     ShipmentStatus.Finalizado
   ].includes(shipment.status);
@@ -701,6 +730,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     ShipmentStatus.AguardandoAdiantamento,
     ShipmentStatus.AguardandoAgendamento,
     ShipmentStatus.AguardandoDescarga,
+    ShipmentStatus.ValidacaoTicket,
     ShipmentStatus.AguardandoPagamentoSaldo,
     ShipmentStatus.Finalizado
   ].includes(shipment.status);
@@ -904,6 +934,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       return;
     }
 
+    if (shipment.status === ShipmentStatus.ValidacaoTicket) {
+      if (!isTicketValidated) {
+        showToast('É obrigatório validar o ticket e conferir o peso descarregado para prosseguir.', 'warning');
+        return;
+      }
+      if (!unloadedTonnage || Number(unloadedTonnage) <= 0) {
+        showToast('O peso descarregado precisa ser informado para validar a descarga.', 'warning');
+        return;
+      }
+    }
+
     if (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo) {
       const hasQuebra = shipment.unloadedTonnage !== undefined && shipment.shipmentTonnage !== undefined && (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001;
       if (hasQuebra && !isBreakageWaived && (!discountValue || Number(discountValue) <= 0)) {
@@ -930,7 +971,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         discountValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? (isBreakageWaived ? 0 : (discountValue === '' ? undefined : Number(discountValue))) : undefined,
         isBreakageWaived: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? isBreakageWaived : undefined,
         netBalanceValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(netBalanceValue) : undefined,
-        unloadedTonnage: shipment.status === ShipmentStatus.AguardandoDescarga ? Number(unloadedTonnage) : undefined,
+        unloadedTonnage: (shipment.status === ShipmentStatus.AguardandoDescarga || shipment.status === ShipmentStatus.ValidacaoTicket) ? Number(unloadedTonnage) : undefined,
         route: route ? route : undefined,
         grStatus: isRiskModal ? grStatus : undefined,
         riskReleaseCode: (isRiskModal && grStatus === 'aprovado') ? riskReleaseCode : undefined,
@@ -1767,6 +1808,195 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   />
                 </div>
               </div>
+            ) : shipment.status === ShipmentStatus.ValidacaoTicket ? (
+              <div className="space-y-5">
+                {/* Header Banner Informativo */}
+                <div className="p-4 bg-blue-50/80 dark:bg-blue-950/40 rounded-2xl border border-blue-200 dark:border-blue-800 flex items-start gap-3">
+                  <div className="p-2 bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-xl shrink-0">
+                    <FileCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-blue-900 dark:text-blue-200">
+                      Conferência do Ticket e Validação do Peso Descarregado
+                    </h4>
+                    <p className="text-xs text-blue-700/80 dark:text-blue-300/80 mt-0.5 leading-relaxed">
+                      Verifique o comprovante / ticket de balança anexado na descarga. Confirme se o peso descarregado está correto e clique em <strong>"Validar Ticket e Peso"</strong> para liberar o botão <strong>"Salvar e Avançar"</strong> para a quitação de saldo.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Seção 1: Visualização do Ticket Anexado */}
+                <div className="p-4 bg-gray-50/80 dark:bg-gray-900/40 rounded-2xl border dark:border-gray-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-primary" /> Ticket / Comprovante Anexado
+                    </span>
+                    {ticketFiles.length > 0 && (
+                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md">
+                        {ticketFiles.length} documento(s) encontrado(s)
+                      </span>
+                    )}
+                  </div>
+
+                  {ticketFiles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {ticketFiles.map((docUrl, idx) => {
+                        const fileName = docUrl.split('/').pop() || `Ticket ${idx + 1}`;
+                        const isPdf = docUrl.toLowerCase().includes('.pdf');
+                        return (
+                          <div key={idx} className="p-3 bg-white dark:bg-gray-800 border rounded-xl flex items-center justify-between gap-2 shadow-xs hover:border-blue-400 transition-colors">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 shrink-0">
+                                {isPdf ? <FileText className="w-4 h-4 text-red-500" /> : <Eye className="w-4 h-4 text-blue-500" />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate" title={fileName}>
+                                  {fileName}
+                                </p>
+                                <span className="text-[10px] text-gray-400">Comprovante de Descarga</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDocForDetails({ fileOrUrl: docUrl, docType: 'Comprovante de Descarga', docName: fileName })}
+                                className="px-2.5 py-1 text-xs font-bold text-primary bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 rounded-lg flex items-center gap-1 transition-colors"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Visualizar
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-800">
+                      Nenhum comprovante de descarga foi identificado previamente. Você pode anexar o ticket abaixo:
+                    </div>
+                  )}
+
+                  {/* Upload opcional ou substituição */}
+                  <div className="pt-2">
+                    <FileInput
+                      label="Anexar / Substituir Ticket de Descarga (opcional)"
+                      files={singleFiles}
+                      onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                      onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                    />
+                  </div>
+                </div>
+
+                {/* Seção 2: Conferência de Pesagem e Apuração de Quebra / Sobra */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Peso Carregado (Origem)</span>
+                    <span className="font-mono font-bold text-base text-gray-900 dark:text-white block">
+                      {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
+                    </span>
+                    <span className="text-[11px] text-gray-400">Peso constante na NF-e</span>
+                  </div>
+
+                  <div className="p-3.5 bg-white dark:bg-gray-800 rounded-xl border-2 border-primary/40 dark:border-primary/50 shadow-xs">
+                    <label className="block text-[10px] font-bold text-primary uppercase mb-1">
+                      Peso Descarregado (Destino - Ton) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={unloadedTonnage}
+                      onChange={(e) => {
+                        setUnloadedTonnage(e.target.value === '' ? '' : Number(e.target.value));
+                        setIsTicketValidated(false);
+                      }}
+                      className="w-full p-2 border rounded-lg font-mono font-bold text-base text-gray-900 dark:text-white dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-primary"
+                      placeholder="Ex: 45.20"
+                    />
+                    <span className="text-[11px] text-gray-400 mt-1 block">Ajuste conforme ticket de balança</span>
+                  </div>
+
+                  <div className="p-3.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Diferença de Balança (Destino - Origem)</span>
+                    {unloadedTonnage !== '' && shipment.shipmentTonnage ? (
+                      (() => {
+                        const diffTon = Number(unloadedTonnage) - shipment.shipmentTonnage;
+                        const diffKg = diffTon * 1000;
+                        const isQuebra = diffTon < -0.001;
+                        return (
+                          <div>
+                            <span className={`font-mono font-black text-base block ${isQuebra ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {diffTon > 0 ? `+${diffTon.toFixed(3)}` : diffTon.toFixed(3)} ton ({diffKg > 0 ? `+${diffKg.toFixed(0)}` : diffKg.toFixed(0)} kg)
+                            </span>
+                            <span className={`text-[11px] font-bold ${isQuebra ? 'text-red-500' : 'text-emerald-600'}`}>
+                              {isQuebra ? 'Quebra de carga apurada' : 'Sem quebra / Sobra'}
+                            </span>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-gray-400 font-mono text-sm block">Informe o peso descarregado</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Seção 3: Botão / Caixa de Validação Formal */}
+                <div className={`p-4 rounded-2xl border transition-all ${
+                  isTicketValidated
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700'
+                    : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
+                }`}>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl ${
+                        isTicketValidated
+                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                          : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                      }`}>
+                        {isTicketValidated ? <CheckCircle2 className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
+                      </div>
+                      <div>
+                        <h5 className={`text-sm font-bold ${isTicketValidated ? 'text-emerald-900 dark:text-emerald-200' : 'text-gray-900 dark:text-white'}`}>
+                          {isTicketValidated ? 'Ticket e Peso Descarregado Validados com Sucesso!' : 'Validação Obrigatória para Prosseguir'}
+                        </h5>
+                        <p className="text-xs text-gray-600 dark:text-gray-300">
+                          {isTicketValidated
+                            ? `Validado por ${currentUser?.name || 'Operador'} • Peso confirmado: ${unloadedTonnage} ton. O avanço para Quitação de Saldo está liberado.`
+                            : 'Confira o ticket e peso acima e confirme a validação para desbloquear o botão Salvar e Avançar.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!unloadedTonnage || Number(unloadedTonnage) <= 0) {
+                          showToast('Informe o peso descarregado antes de validar.', 'warning');
+                          return;
+                        }
+                        const nextVal = !isTicketValidated;
+                        setIsTicketValidated(nextVal);
+                        if (nextVal) {
+                          showToast('Ticket e peso validados com sucesso! Botão "Salvar e Avançar" liberado.', 'success');
+                        }
+                      }}
+                      className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition-all whitespace-nowrap active:scale-95 ${
+                        isTicketValidated
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : 'bg-primary text-white hover:bg-primary-dark shadow-primary/20 hover:shadow-md'
+                      }`}
+                    >
+                      {isTicketValidated ? (
+                        <>
+                          <Check className="w-4 h-4" /> Validado (Clique para Desmarcar)
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" /> Validar Ticket e Peso
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? (
               <div className="space-y-6">
                 {/* Resumo de Pesos para conferência */}
@@ -2088,22 +2318,29 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   </button>
                 )}
               </div>
-              <div className="flex gap-4">
+              <div className="flex items-center gap-4">
                 <button onClick={onClose} className="px-6 py-2 text-gray-500 hover:text-gray-700 font-bold transition-colors">Cancelar</button>
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave)}
-                  className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave))
-                      ? 'bg-gray-400 cursor-not-allowed shadow-none'
-                      : 'bg-primary hover:bg-primary-dark shadow-primary/20'
-                    }`}
-                >
-                  {isSaving ? (
-                    <>
-                      <LoaderIcon className="w-4 h-4 animate-spin" /> Salvando...
-                    </>
-                  ) : 'Salvar e Avançar'}
-                </button>
+                <div className="relative group">
+                  <button
+                    onClick={handleSave}
+                    disabled={isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && !isTicketValidated)}
+                    className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && !isTicketValidated))
+                        ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-none'
+                        : 'bg-primary hover:bg-primary-dark shadow-primary/20'
+                      }`}
+                  >
+                    {isSaving ? (
+                      <>
+                        <LoaderIcon className="w-4 h-4 animate-spin" /> Salvando...
+                      </>
+                    ) : 'Salvar e Avançar'}
+                  </button>
+                  {shipment.status === ShipmentStatus.ValidacaoTicket && !isTicketValidated && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-gray-900 text-white text-[11px] font-semibold py-1 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⚠️ Valide o ticket e o peso para liberar este botão
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

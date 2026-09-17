@@ -48,6 +48,7 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];

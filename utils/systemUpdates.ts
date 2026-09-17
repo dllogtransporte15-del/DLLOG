@@ -21,6 +21,87 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_17_v2_6_6',
+    version: 'v2.6.6',
+    date: '17/09/2026',
+    title: 'Novo Alerta em Tempo Real para Novas Cargas Cadastradas',
+    summary: 'Central de Alertas atualizada para notificar instantaneamente usuários Comercial, Administrador do Sistema, Agenciador e Embarcador sempre que uma nova carga for cadastrada.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Alerta Sonoro e Visual de Nova Carga',
+        description: 'Notificação instantânea no sino superior exibindo cliente, mercadoria, rota e volume da nova carga, permitindo acesso e navegação rápida direto para o cadastro de cargas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Distribuição Inteligente por Perfil',
+        description: 'Os alertas de novas cargas são direcionados exclusivamente aos perfis operacionais e comerciais pertinentes (Comercial, Administrador, Agenciador e Embarcador).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_17_v2_6_5',
+    version: 'v2.6.5',
+    date: '17/09/2026',
+    title: 'Ajuste de Nomenclatura dos Status Operacionais',
+    summary: 'Atualização dos títulos dos status para "Ag. Agend. ou Troca/nfe" e "Valid. de Ticket", trazendo maior clareza visual e adequação aos fluxos operacionais.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Status "Ag. Agend. ou Troca/nfe"',
+        description: 'Renomeado o status "Ag. Agendamento" para "Ag. Agend. ou Troca/nfe", refletindo tanto o agendamento no destino quanto a troca de documentação fiscal (NF-e).'
+      },
+      {
+        category: 'improvement',
+        title: 'Status "Valid. de Ticket"',
+        description: 'Ajustado o título da etapa de validação de pesagem e conferência de comprovante para "Valid. de Ticket" em todas as telas, filtros e linha do tempo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_17_v2_6_4',
+    version: 'v2.6.4',
+    date: '17/09/2026',
+    title: 'Controle de Permissão: Alteração de Preço do Frete Exclusivo para Administrador',
+    summary: 'Restrição de segurança para que o reajuste de valores de Frete Motorista e Frete Empresa nos embarques seja executado estritamente por usuários com perfil "Administrador do Sistema".',
+    items: [
+      {
+        category: 'security',
+        title: 'Restrição de Acesso no Modal de Alterar Preço',
+        description: 'Os campos de reajuste de Frete Motorista e Frete Empresa, bem como o botão de salvar, agora são estritamente bloqueados para qualquer perfil que não seja "Administrador do Sistema".'
+      },
+      {
+        category: 'security',
+        title: 'Validação em Camada Dupla e Ações da Tabela',
+        description: 'A opção de menu "Alterar Preço" nas listagens de embarque e as rotinas de atualização no sistema passam a exigir validação direta do perfil de Administrador antes da aplicação dos novos valores.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_17_v2_6_3',
+    version: 'v2.6.3',
+    date: '17/09/2026',
+    title: 'Novo Status "Validação de Ticket" no Fluxo de Embarques',
+    summary: 'Implementação da etapa intermediária "Validação de Ticket" entre "Ag. Descarga" e "Ag. Saldo", com conferência de comprovante, apuração do peso descarregado e bloqueio de segurança para salvar e avançar.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Etapa de Validação de Ticket e Pesagem',
+        description: 'Criado novo status operacional "Validação de Ticket" após a descarga. Permite aos operadores visualizar o ticket anexado, conferir e ajustar o peso descarregado e acompanhar em tempo real o cálculo de quebra ou sobra.'
+      },
+      {
+        category: 'security',
+        title: 'Bloqueio Seguro de Avanço de Status',
+        description: 'O botão "Salvar e Avançar" agora permanece bloqueado até que o operador realize a validação formal do ticket e do peso descarregado, garantindo conformidade nos dados antes da liquidação de saldo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Integração Completa na Linha do Tempo e Filtros',
+        description: 'A nova etapa foi integrada em toda a aplicação, incluindo tabs de filtros, painel Kanban, timeline de etapas e relatórios operacionais.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_16_v2_6_2',
     version: 'v2.6.2',
     date: '16/09/2026',

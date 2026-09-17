@@ -176,6 +176,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ShipmentStatus.AguardandoAdiantamento,
       ShipmentStatus.AguardandoAgendamento,
       ShipmentStatus.AguardandoDescarga,
+      ShipmentStatus.ValidacaoTicket,
       ShipmentStatus.AguardandoPagamentoSaldo,
       ShipmentStatus.Finalizado
     ];

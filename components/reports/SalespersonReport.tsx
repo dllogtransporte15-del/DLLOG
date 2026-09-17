@@ -52,6 +52,7 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];

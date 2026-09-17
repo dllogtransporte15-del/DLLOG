@@ -127,7 +127,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
   const canPerformSpecialActions = !isDemo && currentUser && allowedProfilesForActions.includes(currentUser.profile);
   
-  const canEditPrice = canUpdate && canPerformSpecialActions;
+  const canEditPrice = !isDemo && currentUser && (currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema');
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
   const canTransferShipment = (canUpdate || currentUser.profile === UserProfile.Supervisor) && canPerformSpecialActions;
   const isClient = currentUser.profile === UserProfile.Cliente;
@@ -209,7 +209,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   };
 
   const handleSavePrice = (data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => {
-    if (!selectedShipment) return;
+    if (!selectedShipment || !canEditPrice) return;
     onUpdatePrice(selectedShipment.id, data);
     setEditPriceModalOpen(false);
     setSelectedShipment(null);

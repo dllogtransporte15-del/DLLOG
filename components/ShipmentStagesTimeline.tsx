@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, AlertCircle, XCircle, FileText, Eye, 
   ExternalLink, User as UserIcon, Calendar, ShieldCheck, Scale, 
   DollarSign, Truck, MapPin, Building, CreditCard, ChevronDown, 
-  ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle
+  ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle, FileCheck
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 
@@ -45,35 +45,35 @@ export const STAGES_DEFINITIONS: StageDefinition[] = [
     shortTitle: 'Seguradora',
     stepNumber: 2,
     icon: <ShieldCheck className="w-4 h-4" />,
-    description: 'Consulta da ficha cadastral e liberação do motorista/veículo na seguradora.',
-    associatedDocTypes: ['Comprovação da Liberação da Seguradora'],
+    description: 'Consulta cadastral e aprovação junto à seguradora e gerenciadora de risco.',
+    associatedDocTypes: ['Comprovação da Liberação da Seguradora', 'Consulta de Risco', 'Liberação GR'],
   },
   {
     status: ShipmentStatus.AguardandoCarregamento,
-    title: 'Carregamento & Rota',
+    title: 'Carregamento na Origem',
     shortTitle: 'Carregamento',
     stepNumber: 3,
     icon: <Scale className="w-4 h-4" />,
-    description: 'Pesagem na balança de origem, emissão do ticket de carga e definição da rota.',
-    associatedDocTypes: ['Ticket de Carregamento'],
+    description: 'Pesagem de carga na balança da origem, definição da rota e anexação de ticket.',
+    associatedDocTypes: ['Ticket de Carregamento', 'Ticket de Pesagem'],
   },
   {
     status: ShipmentStatus.AguardandoNota,
-    title: 'Faturamento / Nota Fiscal',
+    title: 'Emissão de NF-e',
     shortTitle: 'Nota Fiscal',
     stepNumber: 4,
     icon: <FileText className="w-4 h-4" />,
-    description: 'Emissão da NF-e pelo cliente/embarcador e registro dos dados para pagamento.',
-    associatedDocTypes: ['Nota Fiscal', 'Nota Fiscal (NF-e)'],
+    description: 'Disponibilização da Nota Fiscal Eletrônica pelo embarcador/cliente.',
+    associatedDocTypes: ['Nota Fiscal (NF-e)', 'NF-e', 'NFe'],
   },
   {
     status: ShipmentStatus.AguardandoFiscal,
-    title: 'Emissão Fiscal & Viagem',
-    shortTitle: 'Fiscal (CT-e)',
+    title: 'Emissão Fiscal (CT-e & MDF-e)',
+    shortTitle: 'Fiscal',
     stepNumber: 5,
     icon: <FileText className="w-4 h-4" />,
-    description: 'Emissão do CT-e, MDF-e, Contrato de Transporte e Carta Frete da viagem.',
-    associatedDocTypes: ['CT-e', 'MDF-e', 'Carta Frete', 'Documentos de Viagem (CT-e, MDF-e, Contrato)', 'Outros'],
+    description: 'Emissão dos documentos fiscais de transporte (CT-e, MDF-e, CIOT e Contrato de Frete).',
+    associatedDocTypes: ['Documentos de Viagem (CT-e, MDF-e, Contrato)', 'CT-e', 'MDF-e', 'Contrato de Transporte', 'CIOT', 'Carta Frete'],
   },
   {
     status: ShipmentStatus.AguardandoAdiantamento,
@@ -86,12 +86,12 @@ export const STAGES_DEFINITIONS: StageDefinition[] = [
   },
   {
     status: ShipmentStatus.AguardandoAgendamento,
-    title: 'Agendamento no Destino',
-    shortTitle: 'Agendamento',
+    title: 'Ag. Agend. ou Troca/nfe',
+    shortTitle: 'Agend./Troca NF-e',
     stepNumber: 7,
     icon: <Calendar className="w-4 h-4" />,
-    description: 'Agendamento de janela para descarga da mercadoria no destinatário.',
-    associatedDocTypes: ['Comprovante de Agendamento'],
+    description: 'Agendamento de janela para descarga da mercadoria ou troca de NF-e no destinatário.',
+    associatedDocTypes: ['Comprovante de Agendamento', 'Agendamento ou Troca de NF-e'],
   },
   {
     status: ShipmentStatus.AguardandoDescarga,
@@ -103,10 +103,19 @@ export const STAGES_DEFINITIONS: StageDefinition[] = [
     associatedDocTypes: ['Comprovante de Descarga'],
   },
   {
+    status: ShipmentStatus.ValidacaoTicket,
+    title: 'Valid. de Ticket',
+    shortTitle: 'Valid. Ticket',
+    stepNumber: 9,
+    icon: <FileCheck className="w-4 h-4" />,
+    description: 'Conferência do ticket de balança anexado e validação do peso descarregado.',
+    associatedDocTypes: ['Comprovante de Descarga', 'Ticket de Balança', 'Ticket de Descarga', 'Validação de Ticket e Peso', 'Valid. de Ticket'],
+  },
+  {
     status: ShipmentStatus.AguardandoPagamentoSaldo,
     title: 'Quitação de Saldo',
     shortTitle: 'Pagamento Saldo',
-    stepNumber: 9,
+    stepNumber: 10,
     icon: <DollarSign className="w-4 h-4" />,
     description: 'Apuração do saldo líquido (descontos de quebra ou abono) e pagamento final.',
     associatedDocTypes: ['Comprovante de Pagamento de Saldo'],
@@ -115,7 +124,7 @@ export const STAGES_DEFINITIONS: StageDefinition[] = [
     status: ShipmentStatus.Finalizado,
     title: 'Conclusão do Embarque',
     shortTitle: 'Finalizado',
-    stepNumber: 10,
+    stepNumber: 11,
     icon: <CheckCircle2 className="w-4 h-4" />,
     description: 'Embarque 100% finalizado com apuração do lucro real e conciliação de custos.',
     associatedDocTypes: [],
@@ -131,6 +140,7 @@ const ORDERED_STATUS_KEYS = [
   ShipmentStatus.AguardandoAdiantamento,
   ShipmentStatus.AguardandoAgendamento,
   ShipmentStatus.AguardandoDescarga,
+  ShipmentStatus.ValidacaoTicket,
   ShipmentStatus.AguardandoPagamentoSaldo,
   ShipmentStatus.Finalizado,
 ];
@@ -856,6 +866,37 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                         <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block mb-0.5">Peso Descarregado (Destino)</span>
                         <span className="font-mono font-black text-sm text-emerald-900 dark:text-emerald-100 block">
                           {shipment.unloadedTonnage ? `${shipment.unloadedTonnage} ton` : '---'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Peso Carregado (Origem)</span>
+                        <span className="font-mono font-bold text-sm text-gray-900 dark:text-white block">
+                          {shipment.shipmentTonnage || '---'} ton
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase block mb-0.5">Diferença de Balança (Quebra/Sobra)</span>
+                        {shipment.unloadedTonnage && shipment.shipmentTonnage ? (
+                          <span className={`font-mono font-black text-sm block ${
+                            (shipment.unloadedTonnage - shipment.shipmentTonnage) < -0.001
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            {(shipment.unloadedTonnage - shipment.shipmentTonnage).toFixed(3)} ton ({((shipment.unloadedTonnage - shipment.shipmentTonnage) * 1000).toFixed(0)} kg)
+                          </span>
+                        ) : (
+                          <span className="font-mono text-gray-400 block">---</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {stage.status === ShipmentStatus.ValidacaoTicket && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                      <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
+                        <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase block mb-0.5">Peso Descarregado / Balança</span>
+                        <span className="font-mono font-black text-sm text-blue-900 dark:text-blue-100 block">
+                          {shipment.unloadedTonnage ? `${shipment.unloadedTonnage} ton` : 'Aguardando validação'}
                         </span>
                       </div>
                       <div className="p-2.5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border dark:border-gray-700">

@@ -629,11 +629,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         'Ag. Adiantamento',
         ShipmentStatus.AguardandoAgendamento,
         'Ag. Agendamento',
+        'Ag. Agend. ou Troca/nfe',
     ];
 
     const loadedAndFinishedStatuses: (string | ShipmentStatus)[] = [
         ShipmentStatus.AguardandoDescarga,
         'Ag. Descarga',
+        ShipmentStatus.ValidacaoTicket,
+        'Validação de Ticket',
+        'Valid. de Ticket',
         ShipmentStatus.AguardandoPagamentoSaldo,
         'Ag. Saldo',
         ShipmentStatus.Finalizado,
@@ -1442,6 +1446,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       { label: 'Ag. Nota', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoNota || (s.status as string) === 'Ag. Nota').length },
       { label: 'Ag. Fiscal', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoFiscal || (s.status as string) === 'Ag. Fiscal').length },
       { label: 'Ag. Descarga', value: myShipments.filter(s => s.status === ShipmentStatus.AguardandoDescarga || (s.status as string) === 'Ag. Descarga').length },
+      { label: 'Valid. de Ticket', value: myShipments.filter(s => s.status === ShipmentStatus.ValidacaoTicket || (s.status as string) === 'Valid. de Ticket' || (s.status as string) === 'Validação de Ticket').length },
       { label: 'Finalizado', value: myShipments.filter(s => s.status === ShipmentStatus.Finalizado || (s.status as string) === 'Finalizado').length },
     ].filter(d => d.value > 0);
 

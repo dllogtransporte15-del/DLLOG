@@ -344,8 +344,9 @@ export enum ShipmentStatus {
   AguardandoNota = "Ag. Nota",
   AguardandoFiscal = "Ag. Fiscal",
   AguardandoAdiantamento = "Ag. Adiantamento",
-  AguardandoAgendamento = "Ag. Agendamento",
+  AguardandoAgendamento = "Ag. Agend. ou Troca/nfe",
   AguardandoDescarga = "Ag. Descarga",
+  ValidacaoTicket = "Valid. de Ticket",
   AguardandoPagamentoSaldo = "Ag. Saldo",
   Finalizado = "Finalizado",
   Cancelado = "Cancelado",
@@ -413,6 +414,7 @@ export const REQUIRED_DOCUMENT_MAP: Partial<Record<ShipmentStatus, string>> = {
     [ShipmentStatus.AguardandoAdiantamento]: 'Comprovante de Adiantamento',
     [ShipmentStatus.AguardandoAgendamento]: 'Comprovante de Agendamento',
     [ShipmentStatus.AguardandoDescarga]: 'Comprovante de Descarga',
+    [ShipmentStatus.ValidacaoTicket]: 'Validação de Ticket e Peso',
     [ShipmentStatus.AguardandoPagamentoSaldo]: 'Comprovante de Pagamento de Saldo',
 };
 

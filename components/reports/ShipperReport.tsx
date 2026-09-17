@@ -86,6 +86,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                     ShipmentStatus.AguardandoAdiantamento,
                     ShipmentStatus.AguardandoAgendamento,
                     ShipmentStatus.AguardandoDescarga,
+                    ShipmentStatus.ValidacaoTicket,
                     ShipmentStatus.AguardandoPagamentoSaldo,
                     ShipmentStatus.Finalizado
                 ].includes(shipment.status);

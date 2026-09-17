@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page, Client, Product, Vehicle } from '../types';
-import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus } from '../types';
+import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus, CargoStatus } from '../types';
 import { isDemoUser } from '../auth';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
@@ -25,7 +25,7 @@ import OrderRequestDecisionModal from './OrderRequestDecisionModal';
 
 export interface SystemAlert {
   id: string;
-  type: 'order_request' | 'client_freight_offer' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket';
+  type: 'order_request' | 'client_freight_offer' | 'fiscal_sla' | 'insurance_sla' | 'financial_sla' | 'ticket' | 'new_cargo';
   title: string;
   message: string;
   timestamp: string;
@@ -386,6 +386,50 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       }
     });
 
+    // 7. REGRA NOVA CARGA CADASTRADA: Alerta para Comercial, Administrador do Sistema, Agenciador e Embarcador
+    const isEligibleForNewCargoAlert = !isDemo && [
+      UserProfile.Comercial,
+      UserProfile.GerenteComercial,
+      UserProfile.Admin,
+      UserProfile.Diretor,
+      UserProfile.Agenciador,
+      UserProfile.Embarcador,
+    ].includes(user.profile);
+
+    if (isEligibleForNewCargoAlert) {
+      cargos.forEach(cargo => {
+        if (cargo.status !== CargoStatus.EmAndamento) return;
+
+        const createdAtTime = new Date(cargo.createdAt).getTime();
+        if (isNaN(createdAtTime)) return;
+
+        const elapsedMinutes = Math.max(0, Math.floor((now - createdAtTime) / (1000 * 60)));
+
+        // Exibir cargas cadastradas nas últimas 24 horas (1440 min)
+        if (elapsedMinutes <= 1440) {
+          const client = clientMap.get(cargo.clientId);
+          const product = productMap.get(cargo.productId);
+          const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente';
+          const productName = product?.name || 'Mercadoria';
+          const cargoSeq = cargo.sequenceId ? `#${cargo.sequenceId}` : `#${cargo.id.slice(-6)}`;
+          const volumeFormatted = cargo.totalVolume ? `${cargo.totalVolume.toLocaleString('pt-BR')} ton` : '';
+          const originDest = `${cargo.origin || 'Origem'} ➔ ${cargo.destination || 'Destino'}`;
+
+          alerts.push({
+            id: `new_cargo_${cargo.id}`,
+            type: 'new_cargo',
+            title: `Nova Carga Cadastrada (${cargoSeq})`,
+            message: `${clientName} • ${productName} (${originDest})${volumeFormatted ? ` • ${volumeFormatted}` : ''}.`,
+            timestamp: cargo.createdAt,
+            elapsedMinutes,
+            urgency: elapsedMinutes <= 120 ? 'warning' : 'normal',
+            targetPage: 'loads',
+            relatedId: cargo.id
+          });
+        }
+      });
+    }
+
     // Ordenar alertas: Críticos primeiro, depois Atenção
     return alerts.sort((a, b) => {
       if (a.urgency === 'critical' && b.urgency !== 'critical') return -1;
@@ -541,6 +585,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                   const isCritical = alert.urgency === 'critical';
                   const isOrderRequest = alert.type === 'order_request';
                   const isClientOffer = alert.type === 'client_freight_offer';
+                  const isNewCargo = alert.type === 'new_cargo';
                   const offerId = alert.relatedId || alert.id.replace('order_', '');
 
                   return (
@@ -554,6 +599,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                           ? 'border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10'
                           : isClientOffer
                           ? 'border-l-indigo-500 bg-indigo-50/30 dark:bg-indigo-950/10'
+                          : isNewCargo
+                          ? 'border-l-emerald-500 bg-emerald-50/30 dark:bg-emerald-950/10'
                           : 'border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10'
                       }`}
                     >
@@ -566,6 +613,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                         {alert.type === 'client_freight_offer' && (
                           <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
                             <Tag className="w-4 h-4" />
+                          </div>
+                        )}
+                        {alert.type === 'new_cargo' && (
+                          <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400">
+                            <Package className="w-4 h-4" />
                           </div>
                         )}
                         {alert.type === 'fiscal_sla' && (
@@ -599,13 +651,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                               ? 'text-blue-900 dark:text-blue-200' 
                               : isClientOffer
                               ? 'text-indigo-900 dark:text-indigo-200'
+                              : isNewCargo
+                              ? 'text-emerald-900 dark:text-emerald-200'
                               : 'text-gray-900 dark:text-white'
                           }`}>
                             {alert.title}
                           </span>
                           {alert.elapsedMinutes !== undefined && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold font-mono ${
-                              isCritical ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
+                              isCritical 
+                                ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' 
+                                : isNewCargo
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
                             }`}>
                               {formatElapsedTime(alert.elapsedMinutes)}
                             </span>

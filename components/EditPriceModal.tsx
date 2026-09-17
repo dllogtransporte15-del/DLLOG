@@ -44,15 +44,18 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
     }
   };
 
+  const isAdmin = currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema';
+  const canEditCompanyPrice = isAdmin;
+  const canEditDriverPrice = isAdmin;
+
   const handleSave = () => {
+    if (!isAdmin) return;
     onSave({ 
       newTotal: totalPrice, 
       newRate: pricePerTon, 
       newCompanyRate: canEditCompanyPrice ? companyPricePerTon : undefined 
     });
   };
-
-  const canEditCompanyPrice = [UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile as UserProfile);
 
   if (!isOpen) return null;
 
@@ -62,7 +65,13 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 md:p-8 max-w-lg w-full">
         <h2 className="text-2xl font-bold mb-2 text-gray-800 dark:text-white">Alterar Preço do Frete</h2>
-        <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">Embarque: <span className="font-mono font-medium text-primary">{shipment.id}</span></p>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Embarque: <span className="font-mono font-medium text-primary">{shipment.id}</span></p>
+
+        {!isAdmin && (
+          <div className="mb-6 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg text-xs font-semibold text-red-700 dark:text-red-300">
+            ⚠️ Ação restrita: Apenas usuários com o perfil <strong>Administrador do Sistema</strong> têm autorização para reajustar valores de frete motorista e frete empresa.
+          </div>
+        )}
         
         <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -78,12 +87,12 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
                       type="number"
                       name="price-per-ton"
                       id="price-per-ton"
-                      className="focus:ring-primary focus:border-primary block w-full pl-8 pr-4 py-2 sm:text-sm border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      className="focus:ring-primary focus:border-primary block w-full pl-8 pr-4 py-2 sm:text-sm border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder="0,00"
                       value={pricePerTon || ''}
                       onChange={(e) => handlePricePerTonChange(Number(e.target.value))}
                       step="0.01"
-                      disabled={!shipment || shipment.shipmentTonnage <= 0}
+                      disabled={!isAdmin || !shipment || shipment.shipmentTonnage <= 0}
                     />
                   </div>
                 </div>
@@ -99,11 +108,12 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
                       type="number"
                       name="total-price"
                       id="total-price"
-                      className="focus:ring-primary focus:border-primary block w-full pl-8 pr-4 py-2 sm:text-sm border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      className="focus:ring-primary focus:border-primary block w-full pl-8 pr-4 py-2 sm:text-sm border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder="0,00"
                       value={totalPrice || ''}
                       onChange={(e) => handleTotalPriceChange(Number(e.target.value))}
                       step="0.01"
+                      disabled={!isAdmin}
                     />
                   </div>
                 </div>
@@ -122,11 +132,12 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
                     type="number"
                     name="company-price-per-ton"
                     id="company-price-per-ton"
-                    className="focus:ring-primary focus:border-primary block w-full pl-10 pr-4 py-2.5 sm:text-sm border-2 border-primary/20 rounded-md dark:bg-gray-700 dark:border-primary/30 dark:text-white font-bold text-lg"
+                    className="focus:ring-primary focus:border-primary block w-full pl-10 pr-4 py-2.5 sm:text-sm border-2 border-primary/20 rounded-md dark:bg-gray-700 dark:border-primary/30 dark:text-white font-bold text-lg disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder="0,00"
                     value={companyPricePerTon || ''}
                     onChange={(e) => setCompanyPricePerTon(Number(e.target.value))}
                     step="0.01"
+                    disabled={!isAdmin}
                   />
                 </div>
                 <p className="mt-1 text-[10px] text-gray-500 uppercase font-semibold">Alterar o valor que a empresa recebe por tonelada neste embarque.</p>
@@ -162,7 +173,16 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
           <button type="button" onClick={onClose} className="py-2.5 px-6 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-all">
             Cancelar
           </button>
-          <button type="button" onClick={handleSave} className="py-2.5 px-6 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark shadow-md shadow-primary/20 transition-all">
+          <button 
+            type="button" 
+            onClick={handleSave} 
+            disabled={!isAdmin}
+            className={`py-2.5 px-6 font-bold rounded-lg transition-all ${
+              isAdmin 
+                ? 'bg-primary text-white hover:bg-primary-dark shadow-md shadow-primary/20' 
+                : 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed shadow-none'
+            }`}
+          >
             Salvar Alteração
           </button>
         </div>

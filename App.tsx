@@ -619,7 +619,8 @@ const App: React.FC = () => {
     [ShipmentStatus.AguardandoFiscal]: ShipmentStatus.AguardandoAdiantamento,
     // AguardandoAdiantamento is now handled conditionally
     [ShipmentStatus.AguardandoAgendamento]: ShipmentStatus.AguardandoDescarga,
-    [ShipmentStatus.AguardandoDescarga]: ShipmentStatus.AguardandoPagamentoSaldo,
+    [ShipmentStatus.AguardandoDescarga]: ShipmentStatus.ValidacaoTicket,
+    [ShipmentStatus.ValidacaoTicket]: ShipmentStatus.AguardandoPagamentoSaldo,
     [ShipmentStatus.AguardandoPagamentoSaldo]: ShipmentStatus.Finalizado,
   };
 
@@ -1749,6 +1750,8 @@ const App: React.FC = () => {
             nextStatus = ShipmentStatus.AguardandoDescarga;
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoDescarga) {
+        nextStatus = ShipmentStatus.ValidacaoTicket;
+    } else if (originalShipment.status === ShipmentStatus.ValidacaoTicket) {
         const is100PercentAdvance = (originalShipment.advancePercentage !== undefined && originalShipment.advancePercentage >= 100) || 
                                      (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue <= 0.001 && originalShipment.advanceValue !== undefined && originalShipment.advanceValue > 0) ||
                                      (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
@@ -1779,6 +1782,9 @@ const App: React.FC = () => {
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
         isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.Financeiro].includes(currentUser.profile);
         alertMessage = 'Apenas o perfil Gerenciadora de Risco, Embarcador ou Administrador do Sistema pode avançar embarques neste status.';
+    } else if (currentStatus === ShipmentStatus.ValidacaoTicket) {
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Fiscal, Embarcador, Supervisor, Diretor, Comercial, Financeiro ou Administrador do Sistema podem validar o ticket do embarque.';
     } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo || currentStatus === ShipmentStatus.Finalizado) {
         isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Fiscal, UserProfile.Comercial].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor, Fiscal, Comercial ou Administrador do Sistema podem realizar esta ação.';
@@ -2029,7 +2035,7 @@ const App: React.FC = () => {
         ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro,
         ShipmentStatus.AguardandoCarregamento, ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal,
         ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento,
-        ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo,
+        ShipmentStatus.AguardandoDescarga, ShipmentStatus.ValidacaoTicket, ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];
 
@@ -2333,6 +2339,11 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
+    const isAdmin = currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema';
+    if (!isAdmin) {
+      showToast('Apenas Administradores do Sistema têm permissão para alterar o preço do frete.', 'error');
+      return;
+    }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
@@ -2519,6 +2530,7 @@ const App: React.FC = () => {
       ShipmentStatus.AguardandoAdiantamento,
       ShipmentStatus.AguardandoAgendamento,
       ShipmentStatus.AguardandoDescarga,
+      ShipmentStatus.ValidacaoTicket,
       ShipmentStatus.AguardandoPagamentoSaldo,
       ShipmentStatus.Finalizado
     ].includes(shipment.status);
@@ -3178,6 +3190,8 @@ const App: React.FC = () => {
         keys.push('advance_percentage', 'advance_value', 'toll_value', 'advancePercentage', 'advanceValue', 'tollValue', 'Comprovante de Adiantamento');
       } else if (status === ShipmentStatus.AguardandoDescarga) {
         keys.push('unloaded_tonnage', 'unloadedTonnage', 'Comprovante de Descarga');
+      } else if (status === ShipmentStatus.ValidacaoTicket) {
+        keys.push('ticket_validated', 'ticketValidated');
       } else if (status === ShipmentStatus.AguardandoPagamentoSaldo) {
         keys.push('balance_to_receive_value', 'discount_value', 'net_balance_value', 'is_breakage_waived', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived', 'Comprovante de Saldo');
       }

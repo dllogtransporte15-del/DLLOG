@@ -254,6 +254,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];
@@ -264,6 +265,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         ShipmentStatus.AguardandoAdiantamento,
         ShipmentStatus.AguardandoAgendamento,
         ShipmentStatus.AguardandoDescarga,
+        ShipmentStatus.ValidacaoTicket,
         ShipmentStatus.AguardandoPagamentoSaldo,
         ShipmentStatus.Finalizado
     ];

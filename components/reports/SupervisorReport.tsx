@@ -126,6 +126,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       ShipmentStatus.AguardandoAdiantamento,
       ShipmentStatus.AguardandoAgendamento,
       ShipmentStatus.AguardandoDescarga,
+      ShipmentStatus.ValidacaoTicket,
       ShipmentStatus.AguardandoPagamentoSaldo,
       ShipmentStatus.Finalizado
     ];

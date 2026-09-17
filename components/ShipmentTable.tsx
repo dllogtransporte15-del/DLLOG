@@ -671,7 +671,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           Motivo: {shipment.cancellationReason}
                         </div>
                     )}
-                    {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
+                    {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.ValidacaoTicket, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
                         <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">
                           {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </div>
@@ -1433,7 +1433,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           Motivo: {shipment.cancellationReason}
                         </p>
                       )}
-                      {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
+                      {[ShipmentStatus.AguardandoNota, ShipmentStatus.AguardandoFiscal, ShipmentStatus.AguardandoAdiantamento, ShipmentStatus.AguardandoAgendamento, ShipmentStatus.AguardandoDescarga, ShipmentStatus.ValidacaoTicket, ShipmentStatus.AguardandoPagamentoSaldo, ShipmentStatus.Finalizado].includes(shipment.status) && (
                         <p className="text-xs text-blue-600 dark:text-blue-400 font-bold mt-1">
                           Efetivado: {(Number(shipment.shipmentTonnage) || 0).toLocaleString('pt-BR')} ton
                         </p>
@@ -1580,7 +1580,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                         />
                                                                       )}
                                                                       {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => onOpenCadastroAntt(shipment)} />}
-                                                                      {isActionable && onEditPrice && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
+                                                                      {isActionable && onEditPrice && (currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema') && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
                                                                       {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
                                                                       {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora) && onSwapCargo && <ActionMenuItem icon={Package} text="Trocar Carga" onClick={() => onSwapCargo(shipment)} />}
                                                                       {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Alterar Data/Hora" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
