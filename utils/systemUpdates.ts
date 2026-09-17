@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_17_v2_6_7',
+    version: 'v2.6.7',
+    date: '17/09/2026',
+    title: 'Otimização de Espaço e Ampliação de Modais em 20%',
+    summary: 'Aumento proporcional de tamanho nas janelas modais de "Automatização do CT-e & Lucro Real" e "Gerenciar Anexos", proporcionando melhor legibilidade e visualização ampliada das tabelas e composições financeiras.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Ampliação do Modal de Automatização do CT-e',
+        description: 'Expandida a largura máxima da janela de detalhamento de despesas e apuração tributária (de max-w-2xl para max-w-4xl), permitindo a leitura integral de todos os blocos de crédito, margem e deduções sem truncamento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ampliação do Modal de Gerenciar Anexos',
+        description: 'Ampliada a largura proporcional da janela principal de anexos e linha do tempo de etapas (de max-w-5xl para max-w-7xl), oferecendo maior conforto visual para a gestão de documentos e conferência de dados.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_17_v2_6_6',
     version: 'v2.6.6',
     date: '17/09/2026',
