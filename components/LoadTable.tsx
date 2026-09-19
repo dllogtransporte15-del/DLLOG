@@ -6,12 +6,13 @@ import VolumeBar from './VolumeBar';
 import { Trash2 } from 'lucide-react';
 import { PlusIcon } from './icons/PlusIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
-import { Search, Filter, X, ChevronLeft, ChevronRight, ArrowUpDown, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Search, Filter, X, ChevronLeft, ChevronRight, ArrowUpDown, AlertCircle, AlertTriangle, MapPin, ExternalLink } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 import { TicketStatus } from '../types';
 import { isDemoUser } from '../auth';
+import { getCargoMapUrl } from '../utils';
 
 interface LoadTableProps {
   loads: Cargo[];
@@ -518,17 +519,89 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                 </div>
 
                 {/* Route */}
-                <div className="flex items-center gap-2 min-w-[180px] text-xs py-2 lg:py-0 border-t border-gray-50 lg:border-t-0 dark:border-gray-700/50">
-                  <div className="text-left lg:text-right flex-1">
-                    <div className="text-gray-400 text-[9px] uppercase font-bold">Origem</div>
-                    <div className="font-medium text-gray-700 dark:text-gray-300 truncate">{load.origin}</div>
-                  </div>
-                  <div className="text-gray-300">→</div>
-                  <div className="flex-1">
-                    <div className="text-gray-400 text-[9px] uppercase font-bold">Destino</div>
-                    <div className="font-medium text-gray-700 dark:text-gray-300 truncate">{load.destination}</div>
-                  </div>
-                </div>
+                {(() => {
+                  const originUrl = getCargoMapUrl('origin', load);
+                  const destUrl = getCargoMapUrl('destination', load);
+                  const routeUrl = getCargoMapUrl('route', load);
+                  const hasCustomOriginMap = Boolean(load.originMapLink || load.originLocation || load.originCoords);
+                  const hasCustomDestMap = Boolean(load.destinationMapLink || load.destinationLocation || load.destinationCoords);
+
+                  return (
+                    <div className="flex items-center gap-2 min-w-[190px] text-xs py-2 lg:py-0 border-t border-gray-50 lg:border-t-0 dark:border-gray-700/50">
+                      {/* Origem */}
+                      <div className="text-left lg:text-right flex-1 min-w-0">
+                        <div className="text-gray-400 text-[9px] uppercase font-bold flex items-center lg:justify-end gap-1">
+                          {hasCustomOriginMap && <MapPin className="w-2.5 h-2.5 text-emerald-500 shrink-0" />}
+                          <span>Origem</span>
+                        </div>
+                        {originUrl ? (
+                          <a
+                            href={originUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center lg:justify-end gap-1 font-medium text-gray-700 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline truncate max-w-full group/orig transition-colors"
+                            title={`Abrir localização de Origem no Google Maps${load.originLocation ? ` (${load.originLocation})` : ''}`}
+                          >
+                            <span className="truncate">{load.origin}</span>
+                            <ExternalLink className="w-3 h-3 opacity-0 group-hover/orig:opacity-100 shrink-0 transition-opacity text-emerald-500" />
+                          </a>
+                        ) : (
+                          <div className="font-medium text-gray-700 dark:text-gray-300 truncate">{load.origin}</div>
+                        )}
+                        {load.originLocation && (
+                          <div className="text-[10px] text-gray-400 dark:text-gray-500 truncate" title={`Local de Coleta: ${load.originLocation}`}>
+                            {load.originLocation}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Trajeto / Rota Arrow */}
+                      {routeUrl ? (
+                        <a
+                          href={routeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-1 py-0.5 rounded text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all shrink-0 hover:scale-110"
+                          title="Traçar rota no Google Maps (Origem → Destino)"
+                        >
+                          →
+                        </a>
+                      ) : (
+                        <div className="text-gray-300 shrink-0">→</div>
+                      )}
+
+                      {/* Destino */}
+                      <div className="text-left flex-1 min-w-0">
+                        <div className="text-gray-400 text-[9px] uppercase font-bold flex items-center gap-1">
+                          <span>Destino</span>
+                          {hasCustomDestMap && <MapPin className="w-2.5 h-2.5 text-rose-500 shrink-0" />}
+                        </div>
+                        {destUrl ? (
+                          <a
+                            href={destUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 font-medium text-gray-700 dark:text-gray-200 hover:text-rose-600 dark:hover:text-rose-400 hover:underline truncate max-w-full group/dest transition-colors"
+                            title={`Abrir localização de Destino no Google Maps${load.destinationLocation ? ` (${load.destinationLocation})` : ''}`}
+                          >
+                            <span className="truncate">{load.destination}</span>
+                            <ExternalLink className="w-3 h-3 opacity-0 group-hover/dest:opacity-100 shrink-0 transition-opacity text-rose-500" />
+                          </a>
+                        ) : (
+                          <div className="font-medium text-gray-700 dark:text-gray-300 truncate">{load.destination}</div>
+                        )}
+                        {load.destinationLocation && (
+                          <div className="text-[10px] text-gray-400 dark:text-gray-500 truncate" title={`Local de Entrega: ${load.destinationLocation}`}>
+                            {load.destinationLocation}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
 
                 {/* Balanço Geral */}

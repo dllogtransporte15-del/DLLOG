@@ -237,22 +237,20 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         // Query type and cost
         let queryType = s.riskQueryType || ((isPreCadastroOrSeguradora || !requiresRisk) ? 'Pendente de Definição' : 'Cadastro Geral + Biometria');
         let queryCost = 0;
-        if (!requiresRisk || isPreCadastroOrSeguradora) {
-          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
-        } else if (s.riskQueryCost !== undefined && s.riskQueryCost !== null) {
+        if (s.riskQueryCost !== undefined && s.riskQueryCost !== null && Number(s.riskQueryCost) > 0) {
           queryCost = Number(s.riskQueryCost);
-        } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType)) {
-          queryCost = costMapFromOptions.get(s.riskQueryType)!;
-        } else if (s.riskQueryType && costMapFromOptions.has(s.riskQueryType.toLowerCase().trim())) {
-          queryCost = costMapFromOptions.get(s.riskQueryType.toLowerCase().trim())!;
-        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType] !== undefined) {
-          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType];
-        } else if (s.riskQueryType && RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()] !== undefined) {
-          queryCost = RISK_QUERY_COST_MAP[s.riskQueryType.toLowerCase().trim()];
+        } else if (queryType && queryType !== 'Pendente de Definição') {
+          queryCost = costMapFromOptions.get(queryType) ?? 
+                      costMapFromOptions.get(queryType.toLowerCase().trim()) ?? 
+                      RISK_QUERY_COST_MAP[queryType] ?? 
+                      RISK_QUERY_COST_MAP[queryType.toLowerCase().trim()] ?? 
+                      (requiresRisk ? 31.50 : 0);
         } else if (s.riskReleaseCode) {
           queryCost = costMapFromOptions.get(queryType) ?? 6.50;
+        } else if (!requiresRisk || isPreCadastroOrSeguradora) {
+          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
         } else {
-          queryCost = 0;
+          queryCost = (s.riskQueryCost !== undefined && s.riskQueryCost !== null) ? Number(s.riskQueryCost) : 0;
         }
 
         // Release status
@@ -293,7 +291,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         }
 
         const isSequenced = outcomeStatus !== 'Cancelado';
-        const isWastedCost = outcomeStatus === 'Cancelado' && queryCost > 0;
+        const isWastedCost = (outcomeStatus === 'Cancelado' || releaseStatus === 'Reprovado') && queryCost > 0;
         const cancellationReason = s.cancellationReason || '';
 
         return {

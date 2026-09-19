@@ -425,6 +425,68 @@ export function getStayEffectiveDate(
   return null;
 }
 
+/**
+ * Retorna o link do Google Maps para a origem, destino ou trajeto de uma carga.
+ * Prioriza link de mapa salvo > coordenadas geográficas > ponto de coleta/entrega + cidade > cidade/UF.
+ */
+export function getCargoMapUrl(
+  type: 'origin' | 'destination' | 'route',
+  cargo?: {
+    origin?: string;
+    originLocation?: string;
+    originMapLink?: string;
+    originCoords?: { lat: number; lng: number };
+    destination?: string;
+    destinationLocation?: string;
+    destinationMapLink?: string;
+    destinationCoords?: { lat: number; lng: number };
+  } | null
+): string | null {
+  if (!cargo) return null;
+
+  if (type === 'origin') {
+    if (cargo.originMapLink && cargo.originMapLink.trim()) {
+      return cargo.originMapLink.trim();
+    }
+    if (cargo.originCoords?.lat && cargo.originCoords?.lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${cargo.originCoords.lat},${cargo.originCoords.lng}`;
+    }
+    const query = [cargo.originLocation, cargo.origin].filter(Boolean).join(', ').trim();
+    if (query) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    return null;
+  }
+
+  if (type === 'destination') {
+    if (cargo.destinationMapLink && cargo.destinationMapLink.trim()) {
+      return cargo.destinationMapLink.trim();
+    }
+    if (cargo.destinationCoords?.lat && cargo.destinationCoords?.lng) {
+      return `https://www.google.com/maps/search/?api=1&query=${cargo.destinationCoords.lat},${cargo.destinationCoords.lng}`;
+    }
+    const query = [cargo.destinationLocation, cargo.destination].filter(Boolean).join(', ').trim();
+    if (query) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    return null;
+  }
+
+  if (type === 'route') {
+    const originPart = cargo.originMapLink?.trim() ||
+      (cargo.originCoords?.lat ? `${cargo.originCoords.lat},${cargo.originCoords.lng}` : [cargo.originLocation, cargo.origin].filter(Boolean).join(', ').trim());
+    const destPart = cargo.destinationMapLink?.trim() ||
+      (cargo.destinationCoords?.lat ? `${cargo.destinationCoords.lat},${cargo.destinationCoords.lng}` : [cargo.destinationLocation, cargo.destination].filter(Boolean).join(', ').trim());
+
+    if (originPart && destPart) {
+      return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originPart)}&destination=${encodeURIComponent(destPart)}`;
+    }
+    return null;
+  }
+
+  return null;
+}
+
 
 
 

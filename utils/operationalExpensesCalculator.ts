@@ -274,15 +274,18 @@ export function calculateShipmentExpenses(
 
   let riskCost = 0;
   if (!isRiskRequired) {
-    riskCost = 0;
-  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && shipment.riskQueryCost > 0) {
+    riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) ? Number(shipment.riskQueryCost) : 0;
+  } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) {
     riskCost = Number(shipment.riskQueryCost);
-  } else if (historyRiskCost !== undefined && historyRiskCost !== null && historyRiskCost > 0) {
+  } else if (historyRiskCost !== undefined && historyRiskCost !== null && Number(historyRiskCost) > 0) {
     riskCost = historyRiskCost;
-  } else if (effectiveRiskType) {
+  } else if (effectiveRiskType && effectiveRiskType !== 'Pendente de Definição') {
     riskCost = (RISK_QUERY_COST_MAP[effectiveRiskType] ?? RISK_QUERY_COST_MAP[effectiveRiskType.toLowerCase().trim()] ?? 6.50);
   } else if (shipment.riskReleaseCode && !isPreCadastroOrSeguradora) {
     riskCost = 6.50;
+  } else if ((shipment.status === ShipmentStatus.Cancelado || (shipment as any)?.releaseStatus === 'Reprovado') && !isPreCadastroOrSeguradora) {
+    const inferredType = effectiveRiskType || 'Cadastro Geral + Biometria';
+    riskCost = RISK_QUERY_COST_MAP[inferredType] ?? RISK_QUERY_COST_MAP[inferredType.toLowerCase().trim()] ?? 31.50;
   } else {
     riskCost = 0;
   }

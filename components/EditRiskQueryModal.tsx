@@ -58,14 +58,16 @@ const EditRiskQueryModal: React.FC<EditRiskQueryModalProps> = ({
       setSelectedType(currentType);
 
       // Determine initial cost
-      if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null) {
+      if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) {
         setCost(Number(shipment.riskQueryCost));
-      } else if (costMap.has(currentType)) {
-        setCost(costMap.get(currentType)!);
-      } else if (RISK_QUERY_COST_MAP[currentType] !== undefined) {
-        setCost(RISK_QUERY_COST_MAP[currentType]);
-      } else if (RISK_QUERY_COST_MAP[currentType.toLowerCase().trim()] !== undefined) {
-        setCost(RISK_QUERY_COST_MAP[currentType.toLowerCase().trim()]);
+      } else if (currentType && currentType !== 'Pendente de Definição') {
+        const mappedCost = costMap.get(currentType) ?? 
+                           costMap.get(currentType.toLowerCase().trim()) ?? 
+                           RISK_QUERY_COST_MAP[currentType] ?? 
+                           RISK_QUERY_COST_MAP[currentType.toLowerCase().trim()];
+        setCost(mappedCost !== undefined ? mappedCost : (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null ? Number(shipment.riskQueryCost) : 0));
+      } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null) {
+        setCost(Number(shipment.riskQueryCost));
       } else {
         setCost(0);
       }

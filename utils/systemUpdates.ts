@@ -21,6 +21,44 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_18_v2_6_9',
+    version: 'v2.6.9',
+    date: '18/09/2026',
+    title: 'Atalhos Diretos de Localização e Rota no Google Maps',
+    summary: 'Configurados atalhos clicáveis nos campos de Origem e Destino das cargas e embarques para abertura instantânea do local de coleta, entrega e rota no Google Maps.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Atalho de Localização para Origem e Destino',
+        description: 'Ao clicar sobre a cidade de Origem ou Destino na listagem de oportunidades de carga e na tabela de embarques, o sistema abre diretamente o ponto no Google Maps (respeitando links específicos de mapa, pontos de coleta/entrega ou coordenadas cadastradas).'
+      },
+      {
+        category: 'improvement',
+        title: 'Traçado Rápido de Rota',
+        description: 'A seta indicadora de trajeto (→) entre as cidades agora permite traçar a rota rodoviária completa da viagem no Google Maps com apenas um clique.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_18_v2_6_8',
+    version: 'v2.6.8',
+    date: '18/09/2026',
+    title: 'Contabilização de Custos de Consultas de Risco em Embarques Cancelados e Reprovados',
+    summary: 'Aprimoramento no cálculo e exibição de despesas de gerenciamento de risco, garantindo que embarques com status "Reprovado" ou "Cancelado" que tenham uma modalidade de consulta vinculada contabilizem integralmente o custo da consulta tarifada.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Custo de Consulta para Reprovados e Cancelados',
+        description: 'Corrigida a apuração de valores na Listagem Operacional de Consultas de Risco e nos demonstrativos de despesas operacionais para que qualquer embarque cancelado ou reprovado no GR compute o custo tarifado da respectiva modalidade de consulta.'
+      },
+      {
+        category: 'improvement',
+        title: 'Auditoria e Cálculo de Desperdício Financeiro',
+        description: 'Métricas de desperdício financeiro, perda por cancelamento e rankings de motivos atualizados com a totalização precisa dos valores tarifados pela gerenciadora de risco.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_17_v2_6_7',
     version: 'v2.6.7',
     date: '17/09/2026',

@@ -917,6 +917,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             return;
           }
         }
+        if (isRiskModal && (grStatus === 'reprovado' || grStatus === 'reprovado_restrito')) {
+          if (!riskQueryType) {
+            setError('A Modalidade de Consulta Realizada é obrigatória para registrar os custos da consulta na gerenciadora.');
+            return;
+          }
+        }
         filesToAttach = isReprovedGr ? {} : (singleFiles.length > 0 ? { [documentName]: singleFiles } : {});
       }
 
@@ -954,7 +960,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
 
     const matchedOption = riskQueryOptions.find(o => o.name === riskQueryType || o.name.toLowerCase().trim() === riskQueryType?.toLowerCase().trim());
-    const calculatedRiskCost = matchedOption ? matchedOption.cost : (riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType] ?? RISK_QUERY_COST_MAP[riskQueryType.toLowerCase().trim()] ?? 0) : undefined);
+    const calculatedRiskCost = matchedOption ? matchedOption.cost : (riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType] ?? RISK_QUERY_COST_MAP[riskQueryType.toLowerCase().trim()] ?? 31.50) : undefined);
     const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
 
     setError('');
@@ -976,7 +982,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         grStatus: isRiskModal ? grStatus : undefined,
         riskReleaseCode: (isRiskModal && grStatus === 'aprovado') ? riskReleaseCode : undefined,
         riskQueryType: isRiskModal ? (riskQueryType || undefined) : undefined,
-        riskQueryCost: isRiskModal ? (calculatedRiskCost !== undefined ? calculatedRiskCost : (riskQueryType ? 6.50 : undefined)) : undefined,
+        riskQueryCost: isRiskModal ? (calculatedRiskCost !== undefined ? calculatedRiskCost : (riskQueryType ? 31.50 : undefined)) : undefined,
       });
     } catch (err: any) {
       console.error('Error in handleSave:', err);

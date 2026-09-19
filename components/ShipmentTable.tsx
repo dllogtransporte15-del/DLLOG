@@ -13,7 +13,7 @@ import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip } from 'lucide-react';
-import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getCargoMapUrl } from '../utils';
 import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { useToast } from '../hooks/useToast';
@@ -844,12 +844,53 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 </div>
 
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
-                  <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Rota (Origem → Destino)</div>
+                  <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center justify-between">
+                    <span>Rota (Origem → Destino)</span>
+                    {cargo && getCargoMapUrl('route', cargo) && (
+                      <a
+                        href={getCargoMapUrl('route', cargo)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
+                        title="Abrir rota completa no Google Maps"
+                      >
+                        <MapPin className="w-2.5 h-2.5 text-indigo-500" /> Ver Mapa
+                      </a>
+                    )}
+                  </div>
                   {cargo ? (
-                    <div className="text-xs dark:text-gray-300">
-                      <span className="font-semibold">{cargo.origin}</span>
-                      <span className="mx-2 text-gray-400">→</span>
-                      <span className="font-semibold">{cargo.destination}</span>
+                    <div className="text-xs dark:text-gray-300 flex items-center gap-1.5 flex-wrap">
+                      <a
+                        href={getCargoMapUrl('origin', cargo) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-gray-800 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline truncate"
+                        title={`Abrir localização de Origem no Google Maps: ${cargo.origin}${cargo.originLocation ? ` (${cargo.originLocation})` : ''}`}
+                      >
+                        {cargo.origin}
+                      </a>
+                      {getCargoMapUrl('route', cargo) ? (
+                        <a
+                          href={getCargoMapUrl('route', cargo)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:scale-110 transition-transform"
+                          title="Traçar rota no Google Maps"
+                        >
+                          →
+                        </a>
+                      ) : (
+                        <span className="mx-1 text-gray-400">→</span>
+                      )}
+                      <a
+                        href={getCargoMapUrl('destination', cargo) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-gray-800 dark:text-gray-200 hover:text-rose-600 dark:hover:text-rose-400 hover:underline truncate"
+                        title={`Abrir localização de Destino no Google Maps: ${cargo.destination}${cargo.destinationLocation ? ` (${cargo.destinationLocation})` : ''}`}
+                      >
+                        {cargo.destination}
+                      </a>
                     </div>
                   ) : (
                     <span className="text-red-500 font-bold text-[10px]">CARGA REMOVIDA</span>
@@ -1252,8 +1293,28 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm text-gray-900 dark:text-white group relative">
                       {cargo ? (
                         <>
-                          <div>{cargo.origin}</div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">{cargo.destination}</div>
+                          <div>
+                            <a
+                              href={getCargoMapUrl('origin', cargo) || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline inline-flex items-center gap-1"
+                              title={`Abrir localização de Origem no Google Maps: ${cargo.origin}${cargo.originLocation ? ` (${cargo.originLocation})` : ''}`}
+                            >
+                              <span>{cargo.origin}</span>
+                            </a>
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            <a
+                              href={getCargoMapUrl('destination', cargo) || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-rose-600 dark:hover:text-rose-400 hover:underline inline-flex items-center gap-1"
+                              title={`Abrir localização de Destino no Google Maps: ${cargo.destination}${cargo.destinationLocation ? ` (${cargo.destinationLocation})` : ''}`}
+                            >
+                              <span>{cargo.destination}</span>
+                            </a>
+                          </div>
                         </>
                       ) : (
                         <div className="flex flex-col">
