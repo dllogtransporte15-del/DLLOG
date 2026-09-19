@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_19_v2_7_0',
+    version: 'v2.7.0',
+    date: '19/09/2026',
+    title: 'Integração com Google Maps e Auditoria Financeira de Consultas de Risco',
+    summary: 'Atalhos interativos para abertura de mapas e rotas diretas no Google Maps, além do cômputo integral de custos tarifados de GR para embarques cancelados e reprovados.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Atalhos de Localização e Rota no Google Maps',
+        description: 'Ao clicar sobre a cidade de Origem ou Destino nas listas de Oportunidades de Carga e Tabela de Embarques, o sistema abre diretamente o local no Google Maps. A seta indicadora de trajeto (→) permite traçar a rota rodoviária completa com 1 clique.'
+      },
+      {
+        category: 'fix',
+        title: 'Custo de Consulta de Risco em Cancelados e Reprovados',
+        description: 'Corrigida a apuração na Listagem Operacional de Consultas de Risco e nos demonstrativos de despesas operacionais para que qualquer embarque cancelado ou reprovado compute o custo tarifado da respectiva consulta de GR.'
+      },
+      {
+        category: 'improvement',
+        title: 'Métricas de Desperdício Financeiro e Auditoria de GR',
+        description: 'Indicadores de desperdício financeiro, perda por cancelamento e rankings de motivos atualizados com a totalização precisa dos valores tarifados pela gerenciadora de risco.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_18_v2_6_9',
     version: 'v2.6.9',
     date: '18/09/2026',
