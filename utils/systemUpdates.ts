@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_19_v2_8_0',
+    version: 'v2.8.0',
+    date: '19/09/2026',
+    title: 'Canal de Integração e Automação de WhatsApp',
+    summary: 'Novo módulo completo de mensageria via WhatsApp: pareamento por QR Code, configurador de réguas com tags dinâmicas, fila de envios com rate limiting e suporte a envio de comprovantes, ordens e CT-e em PDF.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Módulo Integrado de WhatsApp',
+        description: 'Painel completo em Operacional > Canal WhatsApp com monitoramento de status da conexão, pareamento via QR Code, nível de bateria e chave de instância.'
+      },
+      {
+        category: 'feature',
+        title: 'Configurador de Réguas & Variáveis Dinâmicas',
+        description: 'Editor visual de templates com suporte a tags clicáveis (ex: {{motorista_nome}}, {{origem}}, {{destino}}, {{valor_frete}}, {{numero_carga}}) e simulador em tempo real de balão de mensagem do WhatsApp.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fila Resiliente e Envio de Documentos em PDF',
+        description: 'Mecanismo de fila de envios com delay humanizado (anti-ban), controle de retentativas automáticas e envio nominal de comprovantes bancários, ordens de carregamento e CT-e.'
+      },
+      {
+        category: 'feature',
+        title: 'Ambiente de Homologação e Disparos de Teste',
+        description: 'Modal de envio de teste instantâneo para qualquer número de telefone para validação imediata das mensagens e layouts.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_19_v2_7_0',
     version: 'v2.7.0',
     date: '19/09/2026',

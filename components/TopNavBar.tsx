@@ -21,7 +21,7 @@ import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -72,6 +72,7 @@ const navItems: NavItem[] = [
       { id: 'operational-loads', label: 'Cargas em Andamento', icon: ChartIcon },
       { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
       { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
+      { id: 'whatsapp', label: 'Canal WhatsApp', icon: MessageSquare },
     ],
   },
   {

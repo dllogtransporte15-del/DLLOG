@@ -38,6 +38,7 @@ import SystemMonitorPage from './pages/SystemMonitorPage';
 import DownloadAppPage from './pages/DownloadAppPage';
 import RiskManagementPage from './pages/RiskManagementPage';
 import RiskQueryTypesPage from './pages/RiskQueryTypesPage';
+import WhatsAppManagementPage from './pages/WhatsAppManagementPage';
 
 // Component Imports
 import TopNavBar from './components/TopNavBar';
@@ -3367,6 +3368,7 @@ const App: React.FC = () => {
         <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} onSwapCargo={handleSwapCargo} />} />
         <Route path="/risk-query-types" element={!can('read', currentUser, 'risk-query-types', profilePermissions) ? <Navigate to="/" replace /> : <RiskQueryTypesPage riskQueryOptions={riskQueryOptions} onSaveOption={handleSaveRiskQueryOption} onDeleteOption={handleDeleteRiskQueryOption} onRestoreDefaults={handleRestoreRiskQueryDefaults} currentUser={currentUser} profilePermissions={profilePermissions} />} />
         <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
+        <Route path="/whatsapp" element={!can('read', currentUser, 'whatsapp', profilePermissions) ? <Navigate to="/" replace /> : <WhatsAppManagementPage currentUser={currentUser} />} />
         <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
       </Routes>
     );
@@ -3424,7 +3426,7 @@ const App: React.FC = () => {
     );
   }
 
-  const operationalPages: Page[] = ['loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'risk-management', 'risk-query-types'];
+  const operationalPages: Page[] = ['loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'risk-management', 'risk-query-types', 'whatsapp'];
   const isOperationalPage = operationalPages.includes(currentPage);
 
   return (

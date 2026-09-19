@@ -2,7 +2,7 @@
 import type { User, Page, ProfilePermissions, CrudPermissions } from './types';
 import { UserProfile } from './types';
 
-const allPages: Page[] = ['dashboard', 'clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'loads', 'products', 'shipments', 'financial', 'reports', 'operational-loads', 'operational-map', 'users-register', 'commissions', 'appearance', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'ai-assistant', 'tools-history', 'branches', 'system-monitor', 'freight-offers-history', 'risk-management', 'risk-query-types'];
+const allPages: Page[] = ['dashboard', 'clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'loads', 'products', 'shipments', 'financial', 'reports', 'operational-loads', 'operational-map', 'users-register', 'commissions', 'appearance', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'ai-assistant', 'tools-history', 'branches', 'system-monitor', 'freight-offers-history', 'risk-management', 'risk-query-types', 'whatsapp'];
 
 const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: CrudPermissions } => {
   const permissions: { [key in Page]?: CrudPermissions } = {};
@@ -20,16 +20,16 @@ const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: C
 
 const supervisorAndDiretorPages = allPages.filter(p => p !== 'appearance');
 export const INITIAL_PERMISSIONS: ProfilePermissions = {
-  [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'freight-offers-history', 'risk-management', 'risk-query-types']),
-  [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types'], true),
-  [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types'], true),
-  [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator', 'risk-management'], true),
-  [UserProfile.Agenciador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator', 'risk-management', 'clients', 'loads', 'products', 'vehicles', 'drivers', 'embarcadores', 'freight-quote']),
+  [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'freight-offers-history', 'risk-management', 'risk-query-types', 'whatsapp']),
+  [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types', 'whatsapp'], true),
+  [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types', 'whatsapp'], true),
+  [UserProfile.Embarcador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator', 'risk-management', 'whatsapp'], true),
+  [UserProfile.Agenciador]: createPermissions(['dashboard', 'reports', 'operational-loads', 'shipments', 'operational-map', 'shipment-history', 'load-history', 'layover-calculator', 'risk-management', 'clients', 'loads', 'products', 'vehicles', 'drivers', 'embarcadores', 'freight-quote', 'whatsapp']),
   [UserProfile.Cliente]: createPermissions(['dashboard', 'loads', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'freight-offers-history', 'reports'], true),
   [UserProfile.Supervisor]: createPermissions(supervisorAndDiretorPages),
   [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages, true),
   [UserProfile.Motorista]: createPermissions(['operational-loads', 'shipment-history'], true),
-  [UserProfile.GerenciadoraDeRisco]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'reports', 'drivers', 'vehicles', 'loads', 'clients', 'products', 'owners', 'embarcadores', 'risk-management', 'risk-query-types']),
+  [UserProfile.GerenciadoraDeRisco]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'reports', 'drivers', 'vehicles', 'loads', 'clients', 'products', 'owners', 'embarcadores', 'risk-management', 'risk-query-types', 'whatsapp']),
   [UserProfile.Demonstracao]: createPermissions(allPages, true),
 };
 
