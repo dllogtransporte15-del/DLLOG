@@ -781,6 +781,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               </p>
             </div>
             <button
+              type="button"
               onClick={onClose}
               className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
             >
@@ -796,8 +797,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const isExistingDriver = !!drivers.find(d => d.name.trim().toLowerCase() === driverName.trim().toLowerCase() && driverName.trim() !== '');
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-3xl w-full max-h-[92vh] overflow-y-auto border border-gray-100 dark:border-gray-700">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-3xl w-full max-h-[92vh] overflow-y-auto overscroll-contain border border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Solicitação de Embarque</h2>
           <button
@@ -828,7 +829,15 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           )}
         </div>
         
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form 
+          onSubmit={handleSubmit} 
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault();
+            }
+          }}
+          className="space-y-5"
+        >
             {/* Date & Time */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

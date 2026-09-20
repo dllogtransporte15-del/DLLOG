@@ -27,8 +27,8 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700 overscroll-contain">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
           <div>
             <h2 className="text-xl font-bold text-gray-800 dark:text-white">Selecionar Embarcador</h2>
@@ -37,6 +37,7 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
           >
@@ -50,7 +51,7 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
             Se não for aceita em 5 minutos, a solicitação ficará disponível para todos.
           </p>
 
-          <div className="space-y-3 max-h-60 overflow-y-auto">
+          <div className="space-y-3 max-h-60 overflow-y-auto overscroll-contain">
             {embarcadores.map(emb => (
               <label
                 key={emb.id}
@@ -81,12 +82,14 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
 
         <div className="p-6 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3 bg-gray-50/50 dark:bg-gray-800/50">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors font-medium"
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleConfirm}
             disabled={!selectedEmbarcador}
             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"

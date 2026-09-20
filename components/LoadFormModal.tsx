@@ -527,6 +527,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Se o usuário apertar Enter no teclado virtual do celular em passos intermediários, apenas avança para o próximo passo
+    if (step < STEPS.length) {
+      nextStep();
+      return;
+    }
+
     if (isSubmitting) return;
 
     if (load.isExport === undefined) {
@@ -708,8 +715,8 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const leg2 = load.freightLegs?.[1] || { companyFreightValuePerTon: 0, companyFreightHasToll: false, driverFreightValuePerTon: 0, driverFreightHasToll: false, driverFreightValuePerTonPf: 0, driverFreightPfHasToll: false, disablePfFreight: false, hasIcms: false, icmsPercentage: 0 };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all overscroll-contain">
         
         {/* Title */}
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -748,8 +755,19 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         </div>
         
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+        <form 
+          onSubmit={handleSubmit} 
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault();
+              if (step < STEPS.length) {
+                nextStep();
+              }
+            }
+          }}
+          className="flex-1 flex flex-col min-h-0 overflow-hidden"
+        >
+          <div className="flex-1 overflow-y-auto overscroll-contain space-y-6 pr-2">
           
           {/* STEP 1: Informações da Carga */}
           {step === 1 && (

@@ -6,11 +6,29 @@
   --accent-dark: #0369A1;
 }
 
-/* Base styles for a premium feel */
-body {
+/* Base styles for a premium feel & mobile gestures protection */
+html, body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100vh;
+  overscroll-behavior-y: none;
+}
+
+/* Modais e painéis roláveis móveis - isola a rolagem para evitar pull-to-refresh na página */
+.overflow-y-auto, 
+.overflow-auto,
+[role="dialog"],
+.modal-container {
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Custom Brand Pattern (Angled Stripes) */

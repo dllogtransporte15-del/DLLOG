@@ -278,12 +278,24 @@ const App: React.FC = () => {
     }
   };
 
-  const isAnyModalActive = isAnyModalOpen; // isTicketModalOpen is intentionally excluded so ticket realtime always works
+  const isAnyModalActive = isAnyModalOpen || isSelectEmbarcadorModalOpen || !!offerForNewShipment;
   
   // Sincronização de modais para supressão de real-time
   useEffect(() => {
     isAnyModalActiveRef.current = isAnyModalActive;
   }, [isAnyModalActive, isAnyModalActiveRef]);
+
+  // Previne recarregamento acidental no celular/navegador quando houver formulários ou modais abertos
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isAnyModalActive) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isAnyModalActive]);
 
 
   // Track app activity for motoristas

@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_19_v2_8_2',
+    version: 'v2.8.2',
+    date: '19/09/2026',
+    title: 'Estabilidade Mobile: Correção de Recarregamento e Gestos no Celular',
+    summary: 'Correção crítica para aparelhos celulares que impedia o preenchimento de cadastros de cargas e solicitações de embarque devido a recarregamentos automáticos e gestos de rolagem nativos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Bloqueio do Gesto Pull-to-Refresh',
+        description: 'Implementado isolamento de overscroll em todos os modais e na aplicação móvel, eliminando o recarregamento acidental ao rolar formulários.'
+      },
+      {
+        category: 'fix',
+        title: 'Proteção de Teclado e Submissão Mobile',
+        description: 'Tratamento das teclas "Enter" e "Ir" dos teclados virtuais para impedir envios prematuros ou recarga nativa de páginas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Segurança de Sessão e Antes de Descarregar',
+        description: 'Adicionada proteção de persistência e confirmação de descarregamento durante o preenchimento de ordens e cadastros.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_19_v2_8_1',
     version: 'v2.8.1',
     date: '19/09/2026',
