@@ -123,6 +123,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   const handleDisconnect = async () => {
     if (!window.confirm('Deseja realmente desconectar a sessão do WhatsApp?')) return;
     setLoading(true);
+    setWarningMsg(null);
     try {
       const updated = await disconnectWhatsApp();
       onInstanceUpdated(updated);
@@ -331,6 +332,28 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                   <span>Desconectar</span>
                 </button>
               </>
+            ) : isQRCode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Cancelar Leitura e Desconectar"
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>Desconectar / Cancelar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateQR}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Atualizar QR</span>
+                </button>
+              </>
             ) : (
               <button
                 type="button"
@@ -339,7 +362,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                 className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 flex items-center gap-2 transition-all cursor-pointer"
               >
                 <QrCode className="w-4 h-4" />
-                <span>{isQRCode ? 'Atualizar QR Code' : 'Conectar via QR Code'}</span>
+                <span>Conectar via QR Code</span>
               </button>
             )}
           </div>
@@ -359,7 +382,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                 Disparos de aviso de carga, adiantamento, CT-e e saldos serão emitidos por este canal.
               </p>
             </div>
-            <div className="flex items-center gap-2 justify-center">
+            <div className="flex items-center gap-2 justify-center flex-wrap">
               <button
                 type="button"
                 onClick={() => setShowPairModal(true)}
@@ -367,6 +390,15 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                 <span>Alterar Número</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                disabled={loading}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-all cursor-pointer"
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>Desconectar</span>
               </button>
             </div>
           </div>
@@ -389,18 +421,27 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
             </div>
 
             {warningMsg && (
-              <p className="text-[10px] text-amber-300/90 max-w-xs bg-amber-950/40 p-2 rounded-lg border border-amber-800/60">
+              <p className="text-[10px] text-amber-300/90 max-w-xs bg-amber-950/40 p-2 rounded-lg border border-amber-800/60 leading-relaxed">
                 {warningMsg}
               </p>
             )}
 
-            <button
-              type="button"
-              onClick={() => setShowPairModal(true)}
-              className="text-xs text-emerald-400 hover:text-emerald-300 underline cursor-pointer block mx-auto"
-            >
-              Ou vincular digitando o número diretamente
-            </button>
+            <div className="flex flex-col gap-1.5 items-center">
+              <button
+                type="button"
+                onClick={() => setShowPairModal(true)}
+                className="text-xs text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+              >
+                Ou vincular digitando o número diretamente
+              </button>
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
+              >
+                Desconectar / Cancelar Sessão
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4 py-6">

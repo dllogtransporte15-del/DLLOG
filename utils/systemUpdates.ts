@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_19_v2_8_1',
+    version: 'v2.8.1',
+    date: '19/09/2026',
+    title: 'Sincronização em Tempo Real, Gestão de Logs e Desconexão Flexível de WhatsApp',
+    summary: 'Aprimoramento do módulo de WhatsApp com sincronização direta do perfil pareado na Evolution API, botões de exclusão de logs de disparo e opção de desconectar/cancelar disponível em todos os estados de pareamento.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Desconexão e Cancelamento Universal',
+        description: 'Disponibilizada a ação de desconectar ou cancelar a sessão tanto no estado conectado quanto durante a leitura do QR Code.'
+      },
+      {
+        category: 'feature',
+        title: 'Sincronização Instantânea com Servidor Gateway',
+        description: 'Auto-sincronização do status e identificação do número e nome do perfil pareado diretamente pela Evolution API local ou em nuvem.'
+      },
+      {
+        category: 'improvement',
+        title: 'Exclusão Individual e Limpeza de Logs',
+        description: 'Possibilidade de excluir mensagens específicas da fila de disparos ou limpar todo o histórico de envios com um clique.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_19_v2_8_0',
     version: 'v2.8.0',
     date: '19/09/2026',
