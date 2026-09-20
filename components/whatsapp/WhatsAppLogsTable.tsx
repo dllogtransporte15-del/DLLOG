@@ -13,10 +13,17 @@ import {
   User,
   ArrowUpRight,
   ShieldAlert,
-  Calendar
+  Calendar,
+  Trash2
 } from 'lucide-react';
 import type { WhatsAppQueueItem, WhatsAppQueueStatus } from '../../types/whatsapp';
-import { formatDisplayPhone, retryFailedQueueItem, processQueueItemImmediately } from '../../services/whatsappService';
+import { 
+  formatDisplayPhone, 
+  retryFailedQueueItem, 
+  processQueueItemImmediately, 
+  deleteQueueItem, 
+  clearWhatsAppQueue 
+} from '../../services/whatsappService';
 
 interface WhatsAppLogsTableProps {
   queue: WhatsAppQueueItem[];
@@ -31,6 +38,8 @@ export const WhatsAppLogsTable: React.FC<WhatsAppLogsTableProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedMessage, setSelectedMessage] = useState<WhatsAppQueueItem | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   const filteredQueue = queue.filter(item => {
     const matchesSearch = 
@@ -50,6 +59,28 @@ export const WhatsAppLogsTable: React.FC<WhatsAppLogsTableProps> = ({
       onReload();
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Deseja excluir este registro de mensagem?')) return;
+    setDeletingId(id);
+    try {
+      await deleteQueueItem(id);
+      onReload();
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!window.confirm('Deseja realmente limpar todo o histórico de mensagens e fila do WhatsApp?')) return;
+    setClearing(true);
+    try {
+      await clearWhatsAppQueue();
+      onReload();
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -139,6 +170,19 @@ export const WhatsAppLogsTable: React.FC<WhatsAppLogsTableProps> = ({
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+
+          {queue.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={clearing}
+              className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Excluir todas as mensagens da fila"
+            >
+              <Trash2 className={`w-3.5 h-3.5 ${clearing ? 'animate-spin' : ''}`} />
+              <span>{clearing ? 'Limpando...' : 'Limpar Logs'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -201,7 +245,7 @@ export const WhatsAppLogsTable: React.FC<WhatsAppLogsTableProps> = ({
                     </td>
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setSelectedMessage(item)}
@@ -222,6 +266,16 @@ export const WhatsAppLogsTable: React.FC<WhatsAppLogsTableProps> = ({
                             <span>Reenviar</span>
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={deletingId === item.id}
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-all cursor-pointer"
+                          title="Excluir Registro"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>

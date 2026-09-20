@@ -851,3 +851,31 @@ export async function retryFailedQueueItem(queueId: string): Promise<WhatsAppQue
   localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(updatedQueue));
   return updatedItem;
 }
+
+/**
+ * Exclui um item específico da fila / log de mensagens
+ */
+export async function deleteQueueItem(queueId: string): Promise<void> {
+  try {
+    await supabase.from('whatsapp_messages_queue').delete().eq('id', queueId);
+  } catch (err) {
+    console.warn('Erro ao excluir mensagem no Supabase:', err);
+  }
+
+  const queue = await getWhatsAppQueue();
+  const updated = queue.filter(q => q.id !== queueId);
+  localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(updated));
+}
+
+/**
+ * Limpa todos os registros da fila / histórico de envios
+ */
+export async function clearWhatsAppQueue(): Promise<void> {
+  try {
+    await supabase.from('whatsapp_messages_queue').delete().neq('id', '_none_');
+  } catch (err) {
+    console.warn('Erro ao limpar fila no Supabase:', err);
+  }
+
+  localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify([]));
+}
