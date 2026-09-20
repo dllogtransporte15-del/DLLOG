@@ -32,6 +32,7 @@ import {
   saveGatewayConfig,
   testGatewayHealth,
   checkGatewayConnectionStatus,
+  syncWhatsAppInstanceFromGateway,
   WhatsAppGatewayConfig
 } from '../../services/whatsappService';
 
@@ -52,10 +53,18 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   const [gatewayConfig, setGatewayConfigState] = useState<WhatsAppGatewayConfig>(getGatewayConfig());
   const [gatewayTestResult, setGatewayTestResult] = useState<{ success: boolean; message: string; version?: string } | null>(null);
   const [testingGateway, setTestingGateway] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [copiedDocker, setCopiedDocker] = useState(false);
 
   const pollingRef = useRef<any>(null);
+
+  // Sincronização automática na montagem do componente
+  useEffect(() => {
+    syncWhatsAppInstanceFromGateway().then(updated => {
+      onInstanceUpdated(updated);
+    }).catch(() => null);
+  }, []);
 
   // Contador de expiração do QR Code e Polling de Conexão Ativa
   useEffect(() => {
@@ -72,10 +81,10 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
           if (check.status === 'connected') {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
-            const updated = await simulatePairingSuccess(check.phone || '5511984219900');
+            const updated = await syncWhatsAppInstanceFromGateway();
             onInstanceUpdated(updated);
           }
-        }, 3000);
+        }, 2500);
       }
     } else if (countdown === 0 && instance.status === 'qrcode') {
       handleGenerateQR();
@@ -137,8 +146,15 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
 
   const handleTestGateway = async () => {
     setTestingGateway(true);
+    const sanitized = {
+      ...gatewayConfig,
+      url: (gatewayConfig.url || '').trim().replace(/\/+$/, ''),
+      apiKey: (gatewayConfig.apiKey || '').trim(),
+      instanceName: (gatewayConfig.instanceName || '').trim() || 'transcunha_matriz'
+    };
+    setGatewayConfigState(sanitized);
     try {
-      const result = await testGatewayHealth(gatewayConfig);
+      const result = await testGatewayHealth(sanitized);
       setGatewayTestResult(result);
     } finally {
       setTestingGateway(false);
@@ -146,7 +162,14 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   };
 
   const handleSaveGateway = () => {
-    saveGatewayConfig(gatewayConfig);
+    const sanitized = {
+      ...gatewayConfig,
+      url: (gatewayConfig.url || '').trim().replace(/\/+$/, ''),
+      apiKey: (gatewayConfig.apiKey || '').trim(),
+      instanceName: (gatewayConfig.instanceName || '').trim() || 'transcunha_matriz'
+    };
+    saveGatewayConfig(sanitized);
+    setGatewayConfigState(sanitized);
     setShowGatewayModal(false);
     handleGenerateQR();
   };
@@ -155,12 +178,23 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   --name evolution-api \\
   -p 8080:8080 \\
   -e AUTHENTICATION_API_KEY=${gatewayConfig.apiKey || 'sua_chave_aqui'} \\
-  atendai/evolution-api:v2.1.1`;
+  -e CORS_ORIGIN="*" \\
+  evoapicloud/evolution-api:latest`;
 
   const handleCopyDocker = () => {
     navigator.clipboard.writeText(dockerCommand);
     setCopiedDocker(true);
     setTimeout(() => setCopiedDocker(false), 2000);
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const updated = await syncWhatsAppInstanceFromGateway();
+      onInstanceUpdated(updated);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const isConnected = instance.status === 'connected';
@@ -188,6 +222,17 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSync}
+                disabled={syncing}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="Sincronizar status e número com o servidor Evolution API"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-emerald-500 ${syncing ? 'animate-spin' : ''}`} />
+                <span>{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowGatewayModal(true)}

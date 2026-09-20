@@ -41,7 +41,12 @@ export function getGatewayConfig(): WhatsAppGatewayConfig {
  * Salva as configurações do servidor de Gateway do WhatsApp
  */
 export function saveGatewayConfig(config: WhatsAppGatewayConfig): void {
-  localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify(config));
+  const sanitized: WhatsAppGatewayConfig = {
+    url: (config.url || '').trim().replace(/\/+$/, ''),
+    apiKey: (config.apiKey || '').trim(),
+    instanceName: (config.instanceName || '').trim() || 'transcunha_matriz'
+  };
+  localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify(sanitized));
 }
 
 /**
@@ -229,8 +234,48 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 
   try {
     const cleanUrl = cfg.url.replace(/\/$/, '');
+
+    // 1. Checa se o gateway está online e se a instância já está aberta/conectada
+    const stateRes = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
+      method: 'GET',
+      headers: { 'apikey': cfg.apiKey }
+    }).catch(() => null);
+
+    if (stateRes && stateRes.ok) {
+      const stateData = await stateRes.json().catch(() => ({}));
+      const state = stateData?.instance?.state || stateData?.state;
+
+      if (state === 'open' || state === 'connected') {
+        // Já está pareado no WhatsApp!
+        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
+          method: 'GET',
+          headers: { 'apikey': cfg.apiKey }
+        }).catch(() => null);
+
+        let phone = current.phone_number || '5511984219900';
+        if (infoRes && infoRes.ok) {
+          const infoData = await infoRes.json();
+          const target = Array.isArray(infoData) ? infoData[0] : infoData;
+          const found = target?.ownerJid?.replace('@s.whatsapp.net', '') || target?.number;
+          if (found) phone = sanitizePhoneNumber(found);
+        }
+
+        const updated: WhatsAppInstance = {
+          ...current,
+          instance_key: cfg.instanceName,
+          status: 'connected',
+          phone_number: phone,
+          qr_code_base64: undefined,
+          last_connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        await saveWhatsAppInstance(updated);
+        return { qrCode: '', instance: updated, isRealGateway: true };
+      }
+    }
     
-    // 1. Tenta criar a instância se não existir
+    // 2. Tenta criar a instância se não existir
     await fetch(`${cleanUrl}/instance/create`, {
       method: 'POST',
       headers: {
@@ -244,7 +289,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       })
     }).catch(() => null);
 
-    // 2. Solicita o QR Code de conexão
+    // 3. Solicita o QR Code de conexão
     const connectRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
       method: 'GET',
       headers: {
@@ -254,6 +299,22 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 
     if (connectRes.ok) {
       const data = await connectRes.json();
+
+      // Caso a resposta de connect indique que já está aberto
+      const connectState = data?.instance?.state || data?.state;
+      if (connectState === 'open' || connectState === 'connected') {
+        const updated: WhatsAppInstance = {
+          ...current,
+          instance_key: cfg.instanceName,
+          status: 'connected',
+          qr_code_base64: undefined,
+          last_connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        await saveWhatsAppInstance(updated);
+        return { qrCode: '', instance: updated, isRealGateway: true };
+      }
+
       let rawCode = data?.base64 || data?.qrcode?.base64 || data?.code || data?.pairingCode;
 
       if (rawCode) {
@@ -283,7 +344,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
     console.warn('[Evolution API] Servidor gateway não respondeu:', err);
   }
 
-  // Fallback: Gera um QR Code real com a chave de sessão local/instância
+  // Fallback: Gera um QR Code com link de pareamento caso o gateway não retorne imagem
   const fallbackCode = `https://wa.me/5511984219900?text=${encodeURIComponent('Transcunha Logistica Pareamento ' + cfg.instanceName)}`;
   const generatedDataUrl = await QRCode.toDataURL(fallbackCode, { width: 300, margin: 2 });
 
@@ -300,14 +361,14 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
     qrCode: generatedDataUrl, 
     instance: updated, 
     isRealGateway: false,
-    warning: `Servidor Gateway (${cfg.url}) offline. Configure seu servidor ou vincule o número diretamente.` 
+    warning: `Servidor Gateway (${cfg.url}) offline ou sem QR code ativo. Configure seu servidor ou vincule o número diretamente.` 
   };
 }
 
 /**
  * Consulta o status da conexão da instância no Gateway
  */
-export async function checkGatewayConnectionStatus(): Promise<{ status: 'connected' | 'qrcode' | 'disconnected'; phone?: string; battery?: number }> {
+export async function checkGatewayConnectionStatus(): Promise<{ status: 'connected' | 'qrcode' | 'disconnected'; phone?: string; profileName?: string; battery?: number }> {
   const cfg = getGatewayConfig();
   try {
     const cleanUrl = cfg.url.replace(/\/$/, '');
@@ -323,19 +384,27 @@ export async function checkGatewayConnectionStatus(): Promise<{ status: 'connect
       const state = data?.instance?.state || data?.state;
       if (state === 'open' || state === 'connected') {
         // Busca detalhes do número
-        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
+        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances`, {
           method: 'GET',
           headers: { 'apikey': cfg.apiKey }
         }).catch(() => null);
 
         let phone: string | undefined;
+        let profileName: string | undefined;
         if (infoRes && infoRes.ok) {
           const infoData = await infoRes.json();
-          const target = Array.isArray(infoData) ? infoData[0] : infoData;
-          phone = target?.ownerJid?.replace('@s.whatsapp.net', '') || target?.number;
+          const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
+          if (target?.ownerJid) {
+            phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
+          } else if (target?.number) {
+            phone = sanitizePhoneNumber(target.number);
+          }
+          if (target?.profileName) {
+            profileName = target.profileName;
+          }
         }
 
-        return { status: 'connected', phone, battery: 100 };
+        return { status: 'connected', phone, profileName, battery: 100 };
       } else if (state === 'connecting' || state === 'qrcode') {
         return { status: 'qrcode' };
       }
@@ -343,6 +412,68 @@ export async function checkGatewayConnectionStatus(): Promise<{ status: 'connect
   } catch { /* ignore */ }
 
   return { status: 'disconnected' };
+}
+
+/**
+ * Sincroniza o estado local e do Supabase diretamente com o servidor da Evolution API
+ */
+export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstance> {
+  const cfg = getGatewayConfig();
+  const current = await getWhatsAppInstance();
+
+  try {
+    const cleanUrl = cfg.url.replace(/\/$/, '');
+    const stateRes = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
+      method: 'GET',
+      headers: { 'apikey': cfg.apiKey }
+    });
+
+    if (stateRes.ok) {
+      const stateData = await stateRes.json().catch(() => ({}));
+      const state = stateData?.instance?.state || stateData?.state;
+
+      if (state === 'open' || state === 'connected') {
+        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances`, {
+          method: 'GET',
+          headers: { 'apikey': cfg.apiKey }
+        }).catch(() => null);
+
+        let phone = current.phone_number;
+        let profileName = current.name;
+        if (infoRes && infoRes.ok) {
+          const infoData = await infoRes.json();
+          const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
+          if (target?.ownerJid) {
+            phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
+          } else if (target?.number) {
+            phone = sanitizePhoneNumber(target.number);
+          }
+          if (target?.profileName) {
+            profileName = `${target.profileName} (Matriz)`;
+          }
+        }
+
+        const updated: WhatsAppInstance = {
+          ...current,
+          name: profileName || current.name,
+          phone_number: phone || current.phone_number,
+          instance_key: cfg.instanceName,
+          status: 'connected',
+          qr_code_base64: undefined,
+          battery_level: 100,
+          is_plugged: true,
+          last_connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        return await saveWhatsAppInstance(updated);
+      }
+    }
+  } catch (err) {
+    console.warn('[Evolution API] Erro ao sincronizar instância:', err);
+  }
+
+  return current;
 }
 
 // =========================================================================
