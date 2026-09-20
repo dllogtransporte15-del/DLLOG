@@ -238,7 +238,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
         if (cargosToUpdate.length > 0) {
             await upsertManyCargos(cargosToUpdate);
             alert(`${updatedCount} cargas atualizadas com sucesso! O mapa foi atualizado.`);
-            updateMapMarkers();
+            updateMapLayers();
         } else {
             alert('Todas as cargas já possuem coordenadas ou não foi possível geocodificar as restantes.');
         }
