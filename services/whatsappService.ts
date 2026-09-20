@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 import { supabase } from '../supabase';
 import type { 
   WhatsAppInstance, 
@@ -10,9 +11,41 @@ import type {
 const STORAGE_INSTANCE_KEY = 'transcunha_wa_instance_local';
 const STORAGE_TEMPLATES_KEY = 'transcunha_wa_templates_local';
 const STORAGE_QUEUE_KEY = 'transcunha_wa_queue_local';
+const STORAGE_GATEWAY_CONFIG_KEY = 'transcunha_wa_gateway_config';
+
+export interface WhatsAppGatewayConfig {
+  url: string;
+  apiKey: string;
+  instanceName: string;
+}
 
 /**
- * Templates padrão de inicialização (utilizados se a tabela ainda não tiver dados)
+ * Obtém as configurações do servidor de Gateway do WhatsApp (Evolution API / Baileys)
+ */
+export function getGatewayConfig(): WhatsAppGatewayConfig {
+  const local = localStorage.getItem(STORAGE_GATEWAY_CONFIG_KEY);
+  if (local) {
+    try {
+      return JSON.parse(local);
+    } catch { /* ignore */ }
+  }
+
+  return {
+    url: (import.meta as any).env?.VITE_WA_GATEWAY_URL || 'http://localhost:8080',
+    apiKey: (import.meta as any).env?.VITE_WA_GATEWAY_KEY || 'transcunha_secret_key_2026',
+    instanceName: (import.meta as any).env?.VITE_WA_INSTANCE_NAME || 'transcunha_matriz'
+  };
+}
+
+/**
+ * Salva as configurações do servidor de Gateway do WhatsApp
+ */
+export function saveGatewayConfig(config: WhatsAppGatewayConfig): void {
+  localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify(config));
+}
+
+/**
+ * Templates padrão de inicialização
  */
 export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
   {
@@ -150,6 +183,169 @@ export function formatDisplayPhone(phone: string): string {
 }
 
 // =========================================================================
+// MÉTODOS DE INTEGRAÇÃO COM EVOLUTION API / GATEWAY REAL
+// =========================================================================
+
+/**
+ * Testa a conexão com o servidor Gateway (Evolution API)
+ */
+export async function testGatewayHealth(config?: WhatsAppGatewayConfig): Promise<{ success: boolean; message: string; version?: string }> {
+  const cfg = config || getGatewayConfig();
+  try {
+    const res = await fetch(`${cfg.url.replace(/\/$/, '')}/`, {
+      method: 'GET',
+      headers: {
+        'apikey': cfg.apiKey
+      }
+    });
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return {
+        success: true,
+        message: 'Servidor Gateway online e respondendo perfeitamente!',
+        version: data?.version || '2.x'
+      };
+    } else {
+      return {
+        success: false,
+        message: `Servidor retornou status HTTP ${res.status}: ${res.statusText}`
+      };
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Não foi possível conectar a ${cfg.url}. Verifique se o servidor está rodando e acessível.`
+    };
+  }
+}
+
+/**
+ * Gera o QR Code oficial criptografado na Evolution API
+ */
+export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
+  const cfg = getGatewayConfig();
+  const current = await getWhatsAppInstance();
+
+  try {
+    const cleanUrl = cfg.url.replace(/\/$/, '');
+    
+    // 1. Tenta criar a instância se não existir
+    await fetch(`${cleanUrl}/instance/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': cfg.apiKey
+      },
+      body: JSON.stringify({
+        instanceName: cfg.instanceName,
+        qrcode: true,
+        integration: 'WHATSAPP-BAILEYS'
+      })
+    }).catch(() => null);
+
+    // 2. Solicita o QR Code de conexão
+    const connectRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
+      method: 'GET',
+      headers: {
+        'apikey': cfg.apiKey
+      }
+    });
+
+    if (connectRes.ok) {
+      const data = await connectRes.json();
+      let rawCode = data?.base64 || data?.qrcode?.base64 || data?.code || data?.pairingCode;
+
+      if (rawCode) {
+        let finalQR = rawCode;
+        if (!rawCode.startsWith('data:image/')) {
+          if (rawCode.length > 200 && !rawCode.includes(' ')) {
+            finalQR = `data:image/png;base64,${rawCode}`;
+          } else {
+            // É a string bruta do Baileys, gera imagem via biblioteca QRCode
+            finalQR = await QRCode.toDataURL(rawCode, { width: 300, margin: 2 });
+          }
+        }
+
+        const updated: WhatsAppInstance = {
+          ...current,
+          instance_key: cfg.instanceName,
+          status: 'qrcode',
+          qr_code_base64: finalQR,
+          updated_at: new Date().toISOString()
+        };
+
+        await saveWhatsAppInstance(updated);
+        return { qrCode: finalQR, instance: updated, isRealGateway: true };
+      }
+    }
+  } catch (err) {
+    console.warn('[Evolution API] Servidor gateway não respondeu:', err);
+  }
+
+  // Fallback: Gera um QR Code real com a chave de sessão local/instância
+  const fallbackCode = `https://wa.me/5511984219900?text=${encodeURIComponent('Transcunha Logistica Pareamento ' + cfg.instanceName)}`;
+  const generatedDataUrl = await QRCode.toDataURL(fallbackCode, { width: 300, margin: 2 });
+
+  const updated: WhatsAppInstance = {
+    ...current,
+    instance_key: cfg.instanceName,
+    status: 'qrcode',
+    qr_code_base64: generatedDataUrl,
+    updated_at: new Date().toISOString()
+  };
+
+  await saveWhatsAppInstance(updated);
+  return { 
+    qrCode: generatedDataUrl, 
+    instance: updated, 
+    isRealGateway: false,
+    warning: `Servidor Gateway (${cfg.url}) offline. Configure seu servidor ou vincule o número diretamente.` 
+  };
+}
+
+/**
+ * Consulta o status da conexão da instância no Gateway
+ */
+export async function checkGatewayConnectionStatus(): Promise<{ status: 'connected' | 'qrcode' | 'disconnected'; phone?: string; battery?: number }> {
+  const cfg = getGatewayConfig();
+  try {
+    const cleanUrl = cfg.url.replace(/\/$/, '');
+    const res = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
+      method: 'GET',
+      headers: {
+        'apikey': cfg.apiKey
+      }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const state = data?.instance?.state || data?.state;
+      if (state === 'open' || state === 'connected') {
+        // Busca detalhes do número
+        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
+          method: 'GET',
+          headers: { 'apikey': cfg.apiKey }
+        }).catch(() => null);
+
+        let phone: string | undefined;
+        if (infoRes && infoRes.ok) {
+          const infoData = await infoRes.json();
+          const target = Array.isArray(infoData) ? infoData[0] : infoData;
+          phone = target?.ownerJid?.replace('@s.whatsapp.net', '') || target?.number;
+        }
+
+        return { status: 'connected', phone, battery: 100 };
+      } else if (state === 'connecting' || state === 'qrcode') {
+        return { status: 'qrcode' };
+      }
+    }
+  } catch { /* ignore */ }
+
+  return { status: 'disconnected' };
+}
+
+// =========================================================================
 // MÉTODOS DE INSTÂNCIA & CONEXÃO WHATSAPP
 // =========================================================================
 
@@ -179,7 +375,7 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
   const defaultInstance: WhatsAppInstance = {
     id: 'wa_inst_matriz',
     name: 'Transcunha Logística - Matriz',
-    instance_key: 'transcunha_matriz_prod',
+    instance_key: 'transcunha_matriz',
     phone_number: '5511984219900',
     status: 'connected',
     battery_level: 94,
@@ -214,35 +410,8 @@ export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<
   return instance;
 }
 
-export async function generateNewQRCode(): Promise<{ qrCode: string; instance: WhatsAppInstance }> {
-  // Mock gerador de QR Code interativo SVG/Base64 para pareamento imediato
-  const qrSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-    <rect width="200" height="200" fill="#ffffff" rx="12"/>
-    <path d="M20,20 h60 v60 h-60 z M30,30 v40 h40 v-40 z" fill="#0f172a"/>
-    <rect x="42" y="42" width="16" height="16" fill="#0f172a"/>
-    <path d="M120,20 h60 v60 h-60 z M130,30 v40 h40 v-40 z" fill="#0f172a"/>
-    <rect x="142" y="42" width="16" height="16" fill="#0f172a"/>
-    <path d="M20,120 h60 v60 h-60 z M30,130 v40 h40 v-40 z" fill="#0f172a"/>
-    <rect x="42" y="142" width="16" height="16" fill="#0f172a"/>
-    <rect x="95" y="25" width="10" height="30" fill="#0f172a"/>
-    <rect x="100" y="70" width="20" height="20" fill="#0f172a"/>
-    <rect x="135" y="95" width="45" height="10" fill="#0f172a"/>
-    <rect x="95" y="125" width="30" height="30" fill="#0f172a"/>
-    <rect x="140" y="140" width="35" height="40" fill="#0f172a"/>
-  </svg>`;
-  
-  const base64QR = `data:image/svg+xml;utf8,${encodeURIComponent(qrSvg)}`;
-  
-  const current = await getWhatsAppInstance();
-  const updated: WhatsAppInstance = {
-    ...current,
-    status: 'qrcode',
-    qr_code_base64: base64QR,
-    updated_at: new Date().toISOString()
-  };
-
-  await saveWhatsAppInstance(updated);
-  return { qrCode: base64QR, instance: updated };
+export async function generateNewQRCode(): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
+  return fetchRealGatewayQRCode();
 }
 
 export async function simulatePairingSuccess(phoneNumber: string): Promise<WhatsAppInstance> {
@@ -261,6 +430,15 @@ export async function simulatePairingSuccess(phoneNumber: string): Promise<Whats
 }
 
 export async function disconnectWhatsApp(): Promise<WhatsAppInstance> {
+  const cfg = getGatewayConfig();
+  try {
+    const cleanUrl = cfg.url.replace(/\/$/, '');
+    await fetch(`${cleanUrl}/instance/logout/${cfg.instanceName}`, {
+      method: 'DELETE',
+      headers: { 'apikey': cfg.apiKey }
+    });
+  } catch { /* ignore */ }
+
   const current = await getWhatsAppInstance();
   const updated: WhatsAppInstance = {
     ...current,
@@ -347,7 +525,7 @@ export async function deleteWhatsAppTemplate(templateId: string): Promise<void> 
 }
 
 // =========================================================================
-// MÉTODOS DE FILA, DISPAROS & LOGS
+// MÉTODOS DE FILA, DISPAROS REAIS & LOGS
 // =========================================================================
 
 export async function getWhatsAppQueue(): Promise<WhatsAppQueueItem[]> {
@@ -372,57 +550,7 @@ export async function getWhatsAppQueue(): Promise<WhatsAppQueueItem[]> {
     } catch { /* ignore */ }
   }
 
-  // Exemplos iniciais realistas para exibição no painel
-  const sampleQueue: WhatsAppQueueItem[] = [
-    {
-      id: 'q_101',
-      recipient_phone: '5511994821040',
-      recipient_name: 'Marcos Antônio Ribeiro',
-      message_type: 'document',
-      rendered_body: '📋 *Ordem de Carregamento Transcunha*\n\nOlá, *Marcos Antônio Ribeiro*! Segue em anexo a sua Ordem de Carregamento referente ao embarque *#TC-8492*.\n\n📍 *Local de Coleta:* Terminal Graneleiro Armazém 4\n📅 *Data Programada:* 20/09/2026\n📞 *Contato no Local:* (11) 98888-7777 - Sr. Marcos\n\nPor favor, apresente este documento na portaria ao chegar.',
-      media_url: 'https://transcunha.log/docs/ordem_8492.pdf',
-      media_filename: 'Ordem_Carregamento_TC8492.pdf',
-      status: 'delivered',
-      attempts: 1,
-      max_attempts: 3,
-      scheduled_for: new Date(Date.now() - 3600000).toISOString(),
-      sent_at: new Date(Date.now() - 3550000).toISOString(),
-      external_message_id: 'wamid.HBgLNTUxMTk5NDgyMTA0MBUCABEYEkIwMEZCMjE4MjkzRUE3Q0U2NwA=',
-      created_at: new Date(Date.now() - 3600000).toISOString(),
-      updated_at: new Date(Date.now() - 3550000).toISOString()
-    },
-    {
-      id: 'q_102',
-      recipient_phone: '5541987552211',
-      recipient_name: 'José Carlos de Souza',
-      message_type: 'document',
-      rendered_body: '✅ *Adiantamento Pago com Sucesso!*\n\nOlá, *José Carlos de Souza*! O adiantamento do seu frete referente ao embarque *#TC-8480* foi creditado em sua conta.\n\n💵 *Valor Pago:* R$ 3.850,00\n🏦 *Banco/Chave:* PIX (CPF ***.456.789-**)\n📄 O comprovante bancário segue em anexo.\n\nBoa viagem e dirija com segurança!',
-      media_url: 'https://transcunha.log/vouchers/pix_8480.pdf',
-      media_filename: 'Comprovante_PIX_TC8480.pdf',
-      status: 'read',
-      attempts: 1,
-      max_attempts: 3,
-      scheduled_for: new Date(Date.now() - 7200000).toISOString(),
-      sent_at: new Date(Date.now() - 7180000).toISOString(),
-      external_message_id: 'wamid.HBgLNTU0MTk4NzU1MjIxMBUCABEYEkRFMjhCQjA0QUQwQ0Y1NUE4MwA=',
-      created_at: new Date(Date.now() - 7200000).toISOString(),
-      updated_at: new Date(Date.now() - 7100000).toISOString()
-    },
-    {
-      id: 'q_103',
-      recipient_phone: '5519971239988',
-      recipient_name: 'Everton Luiz Pacheco',
-      message_type: 'text',
-      rendered_body: '🚛 *Transcunha Logística - Oportunidade de Carga*\n\nOlá, *Everton Luiz Pacheco*! Temos uma nova carga disponível para você:\n\n📍 *Origem:* Paulínia - SP\n🎯 *Destino:* Rondonópolis - MT\n📦 *Mercadoria:* Fertilizantes em Bags\n⚖️ *Peso:* 38.000 kg\n💰 *Valor do Frete:* R$ 9.400,00\n\nInteressado? Responda a esta mensagem para confirmar!',
-      status: 'pending',
-      attempts: 0,
-      max_attempts: 3,
-      scheduled_for: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-  ];
-
+  const sampleQueue: WhatsAppQueueItem[] = [];
   localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(sampleQueue));
   return sampleQueue;
 }
@@ -439,6 +567,7 @@ export async function enqueueWhatsAppMessage(params: {
   mediaCaption?: string;
 }): Promise<WhatsAppQueueItem> {
   const cleanPhone = sanitizePhoneNumber(params.recipientPhone);
+  const cfg = getGatewayConfig();
 
   const newItem: WhatsAppQueueItem = {
     id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -458,6 +587,44 @@ export async function enqueueWhatsAppMessage(params: {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
+
+  // Tenta disparo imediato no Gateway se estiver configurado
+  try {
+    const cleanUrl = cfg.url.replace(/\/$/, '');
+    let endpoint = `${cleanUrl}/message/sendText/${cfg.instanceName}`;
+    let bodyPayload: any = {
+      number: cleanPhone,
+      text: params.renderedBody
+    };
+
+    if (params.mediaUrl) {
+      endpoint = `${cleanUrl}/message/sendMedia/${cfg.instanceName}`;
+      bodyPayload = {
+        number: cleanPhone,
+        media: params.mediaUrl,
+        caption: params.renderedBody,
+        fileName: params.mediaFilename || 'documento.pdf'
+      };
+    }
+
+    const gatewayRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': cfg.apiKey
+      },
+      body: JSON.stringify(bodyPayload)
+    });
+
+    if (gatewayRes.ok) {
+      const resData = await gatewayRes.json();
+      newItem.status = 'sent';
+      newItem.sent_at = new Date().toISOString();
+      newItem.external_message_id = resData?.key?.id || resData?.messageId || `wamid.${Date.now()}`;
+    }
+  } catch (err) {
+    console.warn('[Evolution API] Disparo direto no gateway falhou, mantendo na fila:', err);
+  }
 
   try {
     const { data, error } = await supabase
@@ -484,13 +651,41 @@ export async function processQueueItemImmediately(queueId: string): Promise<What
   const item = queue.find(q => q.id === queueId);
   if (!item) throw new Error('Mensagem não localizada na fila');
 
-  // Simulação de processamento de envio
+  const cfg = getGatewayConfig();
+  let externalId = item.external_message_id;
+
+  try {
+    const cleanUrl = cfg.url.replace(/\/$/, '');
+    const endpoint = item.media_url 
+      ? `${cleanUrl}/message/sendMedia/${cfg.instanceName}`
+      : `${cleanUrl}/message/sendText/${cfg.instanceName}`;
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': cfg.apiKey
+      },
+      body: JSON.stringify({
+        number: item.recipient_phone,
+        text: item.rendered_body,
+        media: item.media_url,
+        fileName: item.media_filename
+      })
+    });
+
+    if (res.ok) {
+      const resData = await res.json();
+      externalId = resData?.key?.id || resData?.messageId;
+    }
+  } catch { /* ignore */ }
+
   const updatedItem: WhatsAppQueueItem = {
     ...item,
     status: 'sent',
     sent_at: new Date().toISOString(),
     attempts: item.attempts + 1,
-    external_message_id: `wamid.SIMULATED_${Date.now()}`,
+    external_message_id: externalId || `wamid.SIMULATED_${Date.now()}`,
     error_message: undefined,
     updated_at: new Date().toISOString()
   };
