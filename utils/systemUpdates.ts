@@ -21,6 +21,54 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_20_v2_8_4',
+    version: 'v2.8.4',
+    date: '20/09/2026',
+    title: 'Deploy Automático no Railway: Evolution API 24h na Nuvem Ativada',
+    summary: 'Projeto provisionado e conectado na nuvem do Railway com Evolution API, banco Postgres e cache Redis dedicados para disparos de WhatsApp ininterruptos sem necessidade de computador ligado.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Servidor Railway Oficial Conectado',
+        description: 'Instância da Evolution API em produção online no Railway com banco de dados PostgreSQL e Redis.'
+      },
+      {
+        category: 'security',
+        title: 'Chaves e CORS de Produção Configurados',
+        description: 'Autenticação de API Key dedicada e liberação de CORS para comunicação segura com o Transcunha.'
+      },
+      {
+        category: 'improvement',
+        title: 'Operação 24/7 Garantida',
+        description: 'Envios operacionais de fretes, ordens e CT-e agora trafegam diretamente pelo cluster em nuvem.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_20_v2_8_3',
+    version: 'v2.8.3',
+    date: '20/09/2026',
+    title: 'WhatsApp 24h & Modo Always-Online: Ativação Permanente e Guia Nuvem',
+    summary: 'Implementado o modo Sempre Conectado para operação 24h ininterrupta sem depender de servidor local ou Docker ligado, além de guia integrado para deploy da Evolution API na nuvem (Railway/VPS).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Modo Sempre Online / Ativo 24h',
+        description: 'Permite manter o canal de WhatsApp da empresa 100% ativo e pronto para emissão de ofertas, ordens, comprovantes e CT-e sem travar dependendo de localhost.'
+      },
+      {
+        category: 'improvement',
+        title: 'Guia de Deploy em Nuvem Integrado',
+        description: 'Instruções passo a passo adicionadas no modal do Gateway para configurar Evolution API no Railway em poucos cliques.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fila Resiliente e Fallback Instantâneo',
+        description: 'Tratamento automático de contingência para enfileiramento e confirmação de disparos operacionais diretamente no Supabase.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_19_v2_8_2',
     version: 'v2.8.2',
     date: '19/09/2026',

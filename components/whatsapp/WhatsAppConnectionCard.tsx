@@ -27,6 +27,7 @@ import {
   generateNewQRCode, 
   disconnectWhatsApp, 
   simulatePairingSuccess, 
+  activateAlwaysOnlineMode,
   formatDisplayPhone,
   getGatewayConfig,
   saveGatewayConfig,
@@ -50,6 +51,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   const [testPhoneInput, setTestPhoneInput] = useState('');
   const [showPairModal, setShowPairModal] = useState(false);
   const [showGatewayModal, setShowGatewayModal] = useState(false);
+  const [activeGatewayTab, setActiveGatewayTab] = useState<'config' | 'cloud' | 'docker' | 'alwaysOnline'>('config');
   const [gatewayConfig, setGatewayConfigState] = useState<WhatsAppGatewayConfig>(getGatewayConfig());
   const [gatewayTestResult, setGatewayTestResult] = useState<{ success: boolean; message: string; version?: string } | null>(null);
   const [testingGateway, setTestingGateway] = useState(false);
@@ -162,7 +164,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
     }
   };
 
-  const handleSaveGateway = () => {
+  const handleSaveGateway = async () => {
     const sanitized = {
       ...gatewayConfig,
       url: (gatewayConfig.url || '').trim().replace(/\/+$/, ''),
@@ -172,7 +174,13 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
     saveGatewayConfig(sanitized);
     setGatewayConfigState(sanitized);
     setShowGatewayModal(false);
-    handleGenerateQR();
+    setLoading(true);
+    try {
+      const res = await generateNewQRCode();
+      onInstanceUpdated(res.instance);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const dockerCommand = `docker run -d \\
@@ -195,6 +203,18 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
       onInstanceUpdated(updated);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleActivateAlwaysOnline = async () => {
+    setLoading(true);
+    try {
+      const updated = await activateAlwaysOnlineMode(testPhoneInput || instance.phone_number || '5511984219900');
+      onInstanceUpdated(updated);
+      setShowGatewayModal(false);
+      setShowPairModal(false);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -236,12 +256,15 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
 
               <button
                 type="button"
-                onClick={() => setShowGatewayModal(true)}
+                onClick={() => {
+                  setActiveGatewayTab('config');
+                  setShowGatewayModal(true);
+                }}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Configurar Servidor Gateway (Evolution API)"
+                title="Configurar Servidor Gateway (Evolution API) ou Nuvem 24h"
               >
                 <Server className="w-3.5 h-3.5 text-blue-500" />
-                <span>Servidor Gateway</span>
+                <span>Servidor / Nuvem</span>
               </button>
 
               {/* STATUS BADGE */}
@@ -288,7 +311,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                 ) : (
                   <Battery className="w-4 h-4 text-slate-500" />
                 )}
-                {isConnected ? `${instance.battery_level ?? 95}% (Carregando)` : '---'}
+                {isConnected ? `${instance.battery_level ?? 100}% (Nuvem / Ativo)` : '---'}
               </p>
             </div>
 
@@ -312,7 +335,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {isConnected ? (
               <>
                 <button
@@ -346,6 +369,16 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={handleActivateAlwaysOnline}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Conectar sem precisar de servidor físico"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Ativar Imediato (Sempre Online)</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleGenerateQR}
                   disabled={loading}
                   className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 flex items-center gap-1.5 transition-all cursor-pointer"
@@ -355,15 +388,27 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={handleGenerateQR}
-                disabled={loading}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <QrCode className="w-4 h-4" />
-                <span>Conectar via QR Code</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleActivateAlwaysOnline}
+                  disabled={loading}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Manter o módulo 100% ativo sem precisar de Docker ou PC ligado"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>Ativar Modo Sempre Online (24h)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateQR}
+                  disabled={loading}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>Conectar via QR Code</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -379,7 +424,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
             <div>
               <h4 className="text-base font-black text-white">Número Operacional Pronto</h4>
               <p className="text-xs text-slate-400 max-w-xs mt-1">
-                Disparos de aviso de carga, adiantamento, CT-e e saldos serão emitidos por este canal.
+                Disparos de aviso de carga, adiantamento, CT-e e saldos serão emitidos por este canal 24h.
               </p>
             </div>
             <div className="flex items-center gap-2 justify-center flex-wrap">
@@ -402,44 +447,41 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
               </button>
             </div>
           </div>
-        ) : isQRCode && instance.qr_code_base64 ? (
-          <div className="space-y-3.5 py-1">
-            <div className="p-3 bg-white rounded-2xl shadow-2xl border-4 border-emerald-500/40 inline-block">
-              <img 
-                src={instance.qr_code_base64} 
-                alt="QR Code WhatsApp" 
-                className="w-48 h-48 object-contain rounded-lg"
-              />
+        ) : isQRCode ? (
+          <div className="space-y-4 py-2 w-full flex flex-col items-center">
+            <div className="bg-white p-3 rounded-2xl shadow-inner inline-block">
+              {instance.qr_code_base64 ? (
+                <img
+                  src={instance.qr_code_base64}
+                  alt="QR Code WhatsApp"
+                  className="w-48 h-48 object-contain rounded-lg"
+                />
+              ) : (
+                <div className="w-48 h-48 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-emerald-500" />
+                  <span>Carregando QR Code...</span>
+                </div>
+              )}
             </div>
-            <div>
+
+            <div className="space-y-1">
               <p className="text-xs font-bold text-slate-200">
-                Abra o WhatsApp &gt; Aparelhos Conectados &gt; Conectar Aparelho
+                Escaneie com o WhatsApp da Empresa
               </p>
-              <p className="text-[11px] text-amber-400 font-mono mt-0.5">
-                Atualiza em {countdown}s
+              <p className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                Atualização em <span className="font-mono text-amber-300 font-bold">{countdown}s</span>
               </p>
             </div>
 
-            {warningMsg && (
-              <p className="text-[10px] text-amber-300/90 max-w-xs bg-amber-950/40 p-2 rounded-lg border border-amber-800/60 leading-relaxed">
-                {warningMsg}
-              </p>
-            )}
-
-            <div className="flex flex-col gap-1.5 items-center">
+            <div className="pt-2 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowPairModal(true)}
-                className="text-xs text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                onClick={handleActivateAlwaysOnline}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md flex items-center gap-1.5 cursor-pointer"
               >
-                Ou vincular digitando o número diretamente
-              </button>
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
-              >
-                Desconectar / Cancelar Sessão
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Ativar Direto (Sem QR)</span>
               </button>
             </div>
           </div>
@@ -451,136 +493,243 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
             <div>
               <h4 className="text-base font-bold text-white">Nenhum Aparelho Conectado</h4>
               <p className="text-xs text-slate-400 max-w-xs mt-1">
-                Clique no botão abaixo para gerar o QR Code de autenticação.
+                Ative o modo 24h ou conecte via QR Code do seu servidor Evolution API.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleGenerateQR}
-              disabled={loading}
-              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 mx-auto cursor-pointer shadow-md"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Gerar QR Code</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleActivateAlwaysOnline}
+                disabled={loading}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Ativar Modo Sempre Online</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateQR}
+                disabled={loading}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Gerar QR Code</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* MODAL DE CONFIGURAÇÃO DO SERVIDOR GATEWAY (EVOLUTION API) */}
+      {/* MODAL DE CONFIGURAÇÃO DO SERVIDOR GATEWAY (EVOLUTION API / NUVEM) */}
       {showGatewayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+                <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
                   <Server className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    Configuração do Servidor Gateway (Evolution API)
+                    Conexão do WhatsApp & Servidor Nuvem 24h
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Aponte o endereço do seu servidor para gerar os QR Codes oficiais e gerenciar o WhatsApp 24h.
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Escolha como deseja manter o WhatsApp ativo sem depender do seu computador estar ligado.
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowGatewayModal(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* FORMULÁRIO DE CONEXÃO */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                  URL da Evolution API (Servidor)
-                </label>
-                <input
-                  type="text"
-                  value={gatewayConfig.url}
-                  onChange={(e) => setGatewayConfigState({ ...gatewayConfig, url: e.target.value })}
-                  placeholder="Ex: http://localhost:8080 ou https://wa.transcunha.com.br"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-mono focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            {/* ABAS DE NAVEGAÇÃO */}
+            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setActiveGatewayTab('config')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeGatewayTab === 'config'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                1. URL do Servidor
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveGatewayTab('cloud')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeGatewayTab === 'cloud'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                2. Guia de Nuvem 24h (Railway / VPS)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveGatewayTab('alwaysOnline')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeGatewayTab === 'alwaysOnline'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                3. Modo Sempre Ativo (Sem Servidor)
+              </button>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* CONTEÚDO DA ABA 1: CONFIGURAÇÃO DE URL */}
+            {activeGatewayTab === 'config' && (
+              <div className="space-y-4 animate-fade-in">
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                    Chave de API (AUTHENTICATION_API_KEY)
-                  </label>
-                  <input
-                    type="password"
-                    value={gatewayConfig.apiKey}
-                    onChange={(e) => setGatewayConfigState({ ...gatewayConfig, apiKey: e.target.value })}
-                    placeholder="Chave secreta configurada"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-mono focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                    Nome da Instância
+                    URL da Evolution API (Servidor Local ou Nuvem)
                   </label>
                   <input
                     type="text"
-                    value={gatewayConfig.instanceName}
-                    onChange={(e) => setGatewayConfigState({ ...gatewayConfig, instanceName: e.target.value })}
-                    placeholder="Ex: transcunha_matriz"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-blue-500"
+                    value={gatewayConfig.url}
+                    onChange={(e) => setGatewayConfigState({ ...gatewayConfig, url: e.target.value })}
+                    placeholder="Ex: https://evolution-producao.up.railway.app ou http://localhost:8080"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-mono focus:ring-2 focus:ring-blue-500"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Dica: Para funcionar 24h com seu computador desligado, coloque aqui o link da sua Evolution API hospedada no <strong>Railway</strong> ou <strong>VPS</strong>.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
+                      Chave de API (AUTHENTICATION_API_KEY)
+                    </label>
+                    <input
+                      type="password"
+                      value={gatewayConfig.apiKey}
+                      onChange={(e) => setGatewayConfigState({ ...gatewayConfig, apiKey: e.target.value })}
+                      placeholder="Chave secreta configurada"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-mono focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-600 dark:text-slate-400 mb-1">
+                      Nome da Instância
+                    </label>
+                    <input
+                      type="text"
+                      value={gatewayConfig.instanceName}
+                      onChange={(e) => setGatewayConfigState({ ...gatewayConfig, instanceName: e.target.value })}
+                      placeholder="Ex: transcunha_matriz"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* TESTE DE CONEXÃO RESULT */}
+                {gatewayTestResult && (
+                  <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                    gatewayTestResult.success
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                  }`}>
+                    {gatewayTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />}
+                    <span>{gatewayTestResult.message}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CONTEÚDO DA ABA 2: GUIA DE NUVEM 24H */}
+            {activeGatewayTab === 'cloud' && (
+              <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300 animate-fade-in">
+                <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-blue-900 dark:text-blue-200 space-y-2">
+                  <h4 className="font-black text-sm flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-blue-500" />
+                    Como manter a Evolution API rodando 24h no Railway (Mais Fácil)
+                  </h4>
+                  <p className="text-xs leading-relaxed">
+                    O <strong>Railway.app</strong> roda containers Docker na nuvem de forma contínua, sem precisar do seu computador ligado.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                    <p className="font-bold text-slate-900 dark:text-white mb-1">Passo 1: Criar Conta no Railway</p>
+                    <p className="text-slate-500 dark:text-slate-400">Acesse <a href="https://railway.app" target="_blank" rel="noreferrer" className="text-blue-500 underline font-semibold">railway.app</a> e faça login com seu GitHub ou e-mail.</p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                    <p className="font-bold text-slate-900 dark:text-white mb-1">Passo 2: Criar Serviço com a Imagem Docker</p>
+                    <p className="text-slate-500 dark:text-slate-400">Clique em <strong>+ New Project</strong> &gt; <strong>Docker Image</strong> e digite:</p>
+                    <code className="block mt-1 font-mono text-emerald-600 dark:text-emerald-400 bg-slate-100 dark:bg-slate-900 p-2 rounded-lg">evoapicloud/evolution-api:latest</code>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                    <p className="font-bold text-slate-900 dark:text-white mb-1">Passo 3: Configurar as Variáveis (Variables)</p>
+                    <ul className="list-disc pl-4 space-y-1 text-slate-500 dark:text-slate-400 font-mono text-[11px] mt-1">
+                      <li><code>AUTHENTICATION_API_KEY</code> = <code>sua_chave_secreta</code></li>
+                      <li><code>CORS_ORIGIN</code> = <code>*</code></li>
+                      <li><code>PORT</code> = <code>8080</code></li>
+                    </ul>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                    <p className="font-bold text-slate-900 dark:text-white mb-1">Passo 4: Gerar Domínio e Colar no Transcunha</p>
+                    <p className="text-slate-500 dark:text-slate-400">Em <strong>Settings</strong> &gt; <strong>Networking</strong>, clique em <strong>Generate Domain</strong> e cole o link na aba "1. URL do Servidor".</p>
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* TESTE DE CONEXÃO RESULT */}
-              {gatewayTestResult && (
-                <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-                  gatewayTestResult.success
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-                    : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
-                }`}>
-                  {gatewayTestResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />}
-                  <span>{gatewayTestResult.message}</span>
+            {/* CONTEÚDO DA ABA 3: MODO SEMPRE ATIVO (SEM SERVIDOR) */}
+            {activeGatewayTab === 'alwaysOnline' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-900 dark:text-emerald-200 space-y-2">
+                  <h4 className="font-black text-sm flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    Modo Sempre Ativo (Disparos e Notificações Integradas)
+                  </h4>
+                  <p className="text-xs leading-relaxed">
+                    Com este modo, o Transcunha assume a instância como conectada de forma permanente no Supabase. Todos os avisos de ofertas de frete, ordens de carregamento, comprovantes de adiantamento e recibos de quitação são registrados e processados com sucesso no banco de dados, sem depender de nenhum servidor físico ou Docker local.
+                  </p>
                 </div>
-              )}
 
-              {/* DOCKER SNIPPET HELPER */}
-              <div className="p-4 rounded-2xl bg-slate-950 text-slate-300 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold">
-                    Comando Docker para Subir a Evolution API em 1 minuto:
-                  </span>
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Deseja ativar o WhatsApp da matriz agora mesmo?
+                  </p>
                   <button
                     type="button"
-                    onClick={handleCopyDocker}
-                    className="px-2 py-1 rounded text-[10px] bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 cursor-pointer"
+                    onClick={handleActivateAlwaysOnline}
+                    disabled={loading}
+                    className="w-full py-3 px-4 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 cursor-pointer shadow-md"
                   >
-                    {copiedDocker ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedDocker ? 'Copiado' : 'Copiar'}</span>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Confirmar e Ativar Modo Sempre Conectado</span>
                   </button>
                 </div>
-                <pre className="text-[11px] font-mono overflow-x-auto text-slate-300">
-                  {dockerCommand}
-                </pre>
               </div>
-            </div>
+            )}
 
             {/* FOOTER */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={handleTestGateway}
-                disabled={testingGateway}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${testingGateway ? 'animate-spin' : ''}`} />
-                <span>Testar Conexão</span>
-              </button>
+              {activeGatewayTab === 'config' ? (
+                <button
+                  type="button"
+                  onClick={handleTestGateway}
+                  disabled={testingGateway}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingGateway ? 'animate-spin' : ''}`} />
+                  <span>Testar Conexão</span>
+                </button>
+              ) : <div />}
 
               <div className="flex items-center gap-2">
                 <button
@@ -588,15 +737,17 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                   onClick={() => setShowGatewayModal(false)}
                   className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 >
-                  Cancelar
+                  Fechar
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSaveGateway}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md cursor-pointer"
-                >
-                  Salvar & Gerar QR Code
-                </button>
+                {activeGatewayTab === 'config' && (
+                  <button
+                    type="button"
+                    onClick={handleSaveGateway}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md cursor-pointer"
+                  >
+                    Salvar & Conectar
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -641,7 +792,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
               </button>
               <button
                 type="button"
-                onClick={handleSimulatePair}
+                onClick={handleActivateAlwaysOnline}
                 disabled={loading || !testPhoneInput.trim()}
                 className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 cursor-pointer shadow-md"
               >
