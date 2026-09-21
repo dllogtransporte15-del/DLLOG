@@ -389,7 +389,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     {
       id: 'aguardando-adiantamento',
       title: 'Aguardando Pagamento de Adiantamento',
-      statuses: [ShipmentStatus.AguardandoAdiantamento],
+      statuses: [
+        ShipmentStatus.AguardandoAdiantamento,
+        'Ag. Adiantamento' as ShipmentStatus,
+        'Aguardando Adiantamento' as ShipmentStatus,
+        'Aguardando Pagamento de Adiantamento' as ShipmentStatus,
+      ],
       thresholds: { yellow: 150, red: 165 }, // 2:30h alerta - 2:45h crítico
       accentColor: '#f59e0b',
       emptyText: 'Nenhum embarque aguardando adiantamento'
@@ -397,7 +402,16 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     {
       id: 'em-transito',
       title: 'Em Trânsito / Entrega',
-      statuses: [ShipmentStatus.AguardandoDescarga],
+      statuses: [
+        ShipmentStatus.AguardandoDescarga,
+        'Ag. Descarga' as ShipmentStatus,
+        'Aguardando Descarga' as ShipmentStatus,
+        'Em Trânsito' as ShipmentStatus,
+        'Em Transito' as ShipmentStatus,
+        ShipmentStatus.ValidacaoTicket,
+        'Valid. de Ticket' as ShipmentStatus,
+        'Validação de Ticket' as ShipmentStatus,
+      ],
       thresholds: { yellow: 24 * 60, red: 48 * 60 },
       accentColor: '#3b82f6',
       emptyText: 'Nenhum embarque em trânsito'
@@ -405,7 +419,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     {
       id: 'aguardando-saldo',
       title: 'Aguardando Pagamento de Saldo',
-      statuses: [ShipmentStatus.AguardandoPagamentoSaldo],
+      statuses: [
+        ShipmentStatus.AguardandoPagamentoSaldo,
+        'Ag. Saldo' as ShipmentStatus,
+        'Aguardando Saldo' as ShipmentStatus,
+        'Aguardando Pagamento de Saldo' as ShipmentStatus,
+      ],
       thresholds: { yellow: 150, red: 165 }, // 2:30h alerta - 2:45h crítico
       accentColor: '#ef4444',
       emptyText: 'Nenhum embarque aguardando liquidação de saldo'

@@ -892,13 +892,13 @@ const App: React.FC = () => {
         return false;
       }
 
-      // 4. Filter by allowed user IDs if defined on cargo
+      // 4. Filter by allowed user IDs if defined on cargo (Admin, Diretor, Fiscal & Financeiro have global access)
       if (c.allowedUserIds && c.allowedUserIds.length > 0) {
-        if (!c.allowedUserIds.includes(currentUser.id)) {
+        if (!c.allowedUserIds.includes(currentUser.id) && ![UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
           return false;
         }
       } else if (c.allowedProfiles && c.allowedProfiles.length > 0) {
-        if (!c.allowedProfiles.includes(currentUser.profile)) {
+        if (!c.allowedProfiles.includes(currentUser.profile) && ![UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
           return false;
         }
       }
@@ -909,7 +909,7 @@ const App: React.FC = () => {
       }
 
       // 5. Profiles that see all branches
-      if ([UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile as UserProfile)) {
+      if ([UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco, UserProfile.Financeiro].includes(currentUser.profile as UserProfile)) {
         return true;
       }
 
@@ -936,16 +936,16 @@ const App: React.FC = () => {
       return shipments.filter(s => s.embarcadorId === currentUser.id || s.createdById === currentUser.id || (currentUser.branchId && s.branchId === currentUser.branchId));
     }
 
+    // Admin, Demo & Financeiro see all shipments (Financeiro requires company-wide visibility for advances, balances, receipts and settlement)
+    if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo' || currentUser.profile === UserProfile.Financeiro) {
+      return shipments;
+    }
+
     const visibleCargoIds = new Set(visibleLoads.map(c => c.id));
 
     // Cliente sees shipments of permitted visible loads matching their client
     if (currentUser.profile === UserProfile.Cliente && currentUser.clientId) {
       return shipments.filter(s => visibleCargoIds.has(s.cargoId));
-    }
-
-    // Admin & Demo see all shipments
-    if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') {
-      return shipments;
     }
 
     // Profiles with all-branch visibility must still respect cargo profile permissions

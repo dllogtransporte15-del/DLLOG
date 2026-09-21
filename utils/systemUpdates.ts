@@ -21,6 +21,49 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_21_v2_8_6',
+    version: 'v2.8.6',
+    date: '21/09/2026',
+    title: 'Garantia de Visibilidade Total dos Embarques para o Usuário Financeiro',
+    summary: 'Garantido que todos os embarques em status de "Ag. Adiantamento", "Ag. Saldo" e trânsito apareçam sem exceção no Dashboard Financeiro, eliminando bloqueios por filial ou permissões restritas de carga.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Visibilidade Global no Financeiro',
+        description: 'Removidos filtros restritivos de filial e de usuário da carga para o perfil Financeiro, garantindo que nenhum adiantamento ou saldo a pagar fique oculto.'
+      },
+      {
+        category: 'improvement',
+        title: 'Normalização de Status no Kanban Financeiro',
+        description: 'Compatibilização de todas as variações e sinônimos de status (ex: Ag. Adiantamento, Ag. Saldo, Validação de Ticket) para agrupamento automático nas colunas corretas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_21_v2_8_5',
+    version: 'v2.8.5',
+    date: '21/09/2026',
+    title: 'Correção de Desempenho e Estabilidade Mobile na Solicitação de Embarque',
+    summary: 'Eliminado o erro de recarregamento e crash da aba ("Ah, não! Algo deu errado") no Chrome e Safari Mobile ao preencher formulários de solicitação de embarque.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Fim do Erro "Ah, não!" no Mobile',
+        description: 'Substituição das datalists nativas do HTML5 por um sistema de sugestões flutuantes leve e de baixo consumo de memória, prevenindo o estouro de memória no teclado virtual do Android e iOS.'
+      },
+      {
+        category: 'improvement',
+        title: 'Autocomplete e Autofill Instantâneos',
+        description: 'Otimização dos algoritmos de busca do último embarque e dados de motorista/veículo com execução imediata e sem travamentos ao digitar.'
+      },
+      {
+        category: 'improvement',
+        title: 'Digitação Fluida e Sem Perda de Dados',
+        description: 'Eliminados loops de re-renderização em cascata que apagavam seleções de carroceria/veículo durante a digitação de placas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_20_v2_8_4',
     version: 'v2.8.4',
     date: '20/09/2026',

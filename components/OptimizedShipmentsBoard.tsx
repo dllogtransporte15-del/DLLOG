@@ -208,16 +208,32 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
     return users.filter(u => ids.has(u.id));
   }, [shipments, users]);
 
+  // Normalization helper for statuses
+  const normalizeStatusStr = useCallback((st?: string) => {
+    if (!st) return '';
+    return st.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }, []);
+
+  const isStatusMatching = useCallback((colStatuses: (ShipmentStatus | string)[], shipmentStatus: ShipmentStatus | string) => {
+    if (!shipmentStatus) return false;
+    if (colStatuses.includes(shipmentStatus as ShipmentStatus)) return true;
+    const normShipment = normalizeStatusStr(shipmentStatus);
+    return colStatuses.some(st => normalizeStatusStr(st) === normShipment);
+  }, [normalizeStatusStr]);
+
   // Column threshold lookup map
   const columnThresholdMap = useMemo(() => {
-    const map = new Map<ShipmentStatus, { yellow: number; red: number }>();
+    const map = new Map<string, { yellow: number; red: number }>();
     columns.forEach(col => {
       if (col.thresholds) {
-        col.statuses.forEach(st => map.set(st, col.thresholds!));
+        col.statuses.forEach(st => {
+          map.set(st, col.thresholds!);
+          map.set(normalizeStatusStr(st), col.thresholds!);
+        });
       }
     });
     return map;
-  }, [columns]);
+  }, [columns, normalizeStatusStr]);
 
   // SLA Calculation Helpers
   const getShipmentStatusStartTime = useCallback((shipment: Shipment): number => {
@@ -230,7 +246,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
     const startTime = getShipmentStatusStartTime(shipment);
     const now = Date.now();
     const elapsedMinutes = Math.max(0, Math.floor((now - startTime) / (1000 * 60)));
-    const thresholds = columnThresholdMap.get(shipment.status);
+    const thresholds = columnThresholdMap.get(shipment.status) || columnThresholdMap.get(normalizeStatusStr(shipment.status));
 
     let urgency: 'normal' | 'warning' | 'critical' = 'normal';
     if (thresholds) {
@@ -242,7 +258,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
     }
 
     return { elapsedMinutes, urgency, startTime, thresholds };
-  }, [getShipmentStatusStartTime, columnThresholdMap]);
+  }, [getShipmentStatusStartTime, columnThresholdMap, normalizeStatusStr]);
 
   const formatElapsedTime = useCallback((minutes: number): string => {
     if (minutes < 1) return '< 1 min';
@@ -387,7 +403,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
 
     filteredShipments.forEach(shipment => {
       for (const col of columns) {
-        if (col.statuses.includes(shipment.status)) {
+        if (isStatusMatching(col.statuses, shipment.status)) {
           grouped[col.id].push(shipment);
           break;
         }

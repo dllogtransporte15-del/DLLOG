@@ -40,6 +40,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'system-monitor': 'Monitoramento do Sistema',
   'risk-management': 'Gerenciadora de Risco',
   'risk-query-types': 'Tipos de Consulta GR',
+  'whatsapp': 'WhatsApp',
 };
 
 const CATEGORIES = [

@@ -203,90 +203,219 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     prevIsOpen.current = isOpen;
   }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles]);
 
-  // Driver selection & Autofill logic
+  // Driver & Plate Suggestions State
+  const [showDriverSuggestions, setShowDriverSuggestions] = useState(false);
+  const [showPlateSuggestions, setShowPlateSuggestions] = useState(false);
+  const driverInputContainerRef = useRef<HTMLDivElement>(null);
+  const plateInputContainerRef = useRef<HTMLDivElement>(null);
   const [lastAlertedDriverId, setLastAlertedDriverId] = useState<string>('');
-  const [lastAutofilledDriverId, setLastAutofilledDriverId] = useState<string>('');
-  const [lastAutofilledPlate, setLastAutofilledPlate] = useState<string>('');
 
+  // Close suggestion dropdowns when clicking outside
   useEffect(() => {
-    const cleanName = driverName.trim().toLowerCase();
-    const cleanCpf = driverCpf.replace(/\D/g, '');
+    const handleClickOutside = (e: MouseEvent) => {
+      if (driverInputContainerRef.current && !driverInputContainerRef.current.contains(e.target as Node)) {
+        setShowDriverSuggestions(false);
+      }
+      if (plateInputContainerRef.current && !plateInputContainerRef.current.contains(e.target as Node)) {
+        setShowPlateSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-    const driverByName = cleanName ? drivers.find(d => d.name.trim().toLowerCase() === cleanName) : undefined;
-    const driverByCpf = cleanCpf.length === 11 ? drivers.find(d => d.cpf.replace(/\D/g, '') === cleanCpf) : undefined;
+  // Efficient single-pass search for driver's latest shipment
+  const findLastShipmentForDriver = (targetCpf?: string, targetName?: string, targetPhone?: string) => {
+    const cleanCpf = (targetCpf || '').replace(/\D/g, '');
+    const cleanName = (targetName || '').trim().toLowerCase();
+    const cleanPhone = (targetPhone || '').replace(/\D/g, '');
 
-    const selectedDriver = driverByName || driverByCpf;
+    let latest: Shipment | null = null;
+    let latestTime = 0;
 
-    if (selectedDriver) {
-        if (driverByName && selectedDriver.cpf && selectedDriver.cpf.replace(/\D/g, '') !== cleanCpf && !driverCpf) {
-            setDriverCpf(selectedDriver.cpf);
-        } else if (driverByCpf && selectedDriver.name.trim().toLowerCase() !== cleanName && !driverName) {
-            setDriverName(selectedDriver.name);
+    for (let i = 0; i < (shipments || []).length; i++) {
+      const s = shipments[i];
+      const sCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
+      const sName = s.driverName ? s.driverName.trim().toLowerCase() : '';
+      const sPhone = s.driverContact ? s.driverContact.replace(/\D/g, '') : '';
+
+      const matchesCpf = cleanCpf.length === 11 && sCpf === cleanCpf;
+      const matchesName = cleanName.length > 0 && sName === cleanName;
+      const matchesPhone = cleanPhone.length >= 10 && sPhone === cleanPhone;
+
+      if (matchesCpf || matchesName || matchesPhone) {
+        const time = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        if (time >= latestTime) {
+          latestTime = time;
+          latest = s;
         }
-
-        if (selectedDriver.phone && !driverContact) {
-            setDriverContact(selectedDriver.phone);
-        }
-
-        if (!selectedDriver.active && lastAlertedDriverId !== selectedDriver.id) {
-            showToast(`ATENÇÃO: Este motorista encontra-se RESTRITO! Motivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}. O sistema impedirá a criação desta ordem.`, 'error', 10000);
-            setLastAlertedDriverId(selectedDriver.id);
-        } else if (selectedDriver.active) {
-            setLastAlertedDriverId(''); 
-        }
-
-        if (lastAutofilledDriverId !== selectedDriver.id && selectedDriver.active) {
-            const selectedCleanCpf = selectedDriver.cpf ? selectedDriver.cpf.replace(/\D/g, '') : '';
-            const lastShipment = shipments
-                .filter(s => 
-                    (selectedCleanCpf.length === 11 && s.driverCpf && s.driverCpf.replace(/\D/g, '') === selectedCleanCpf) || 
-                    (s.driverName && s.driverName.trim().toLowerCase() === selectedDriver.name.trim().toLowerCase())
-                )
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-
-            const linkedVehicle = vehicles.find(v => v.driverId === selectedDriver.id);
-
-            if (lastShipment) {
-                if (lastShipment.horsePlate) setHorsePlate(lastShipment.horsePlate);
-                if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
-                if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
-                if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
-                if (lastShipment.ownerContact) setOwnerContact(lastShipment.ownerContact);
-                if (lastShipment.driverContact && !driverContact) setDriverContact(lastShipment.driverContact);
-                if (lastShipment.paymentMethod) setPaymentMethod(lastShipment.paymentMethod);
-                if (lastShipment.pixKey) setPixKey(lastShipment.pixKey);
-                if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
-                if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
-                if (lastShipment.vehicleTag) setVehicleTag(lastShipment.vehicleTag);
-                if (lastShipment.vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
-                if (lastShipment.vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
-                if (lastShipment.anttOwnerIdentifier) {
-                  setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
-                } else if (selectedDriver.cpf) {
-                  setAnttOwnerIdentifier(selectedDriver.cpf);
-                }
-                if (lastShipment.anttModality) {
-                  setAnttModality(lastShipment.anttModality as AnttModality);
-                  setDriverFreightType(lastShipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ');
-                } else if (lastShipment.driverFreightType) {
-                  setDriverFreightType(lastShipment.driverFreightType);
-                  setAnttModality(lastShipment.driverFreightType === 'PF' ? AnttModality.TAC : AnttModality.ETC);
-                }
-                if (lastShipment.etcTaxRegime) {
-                  setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
-                }
-            } else if (linkedVehicle) {
-                if (linkedVehicle.plate) setHorsePlate(linkedVehicle.plate);
-                if (linkedVehicle.setType) setVehicleSetType(linkedVehicle.setType);
-                if (linkedVehicle.bodyType) setVehicleBodyType(linkedVehicle.bodyType);
-            }
-            setLastAutofilledDriverId(selectedDriver.id);
-        }
-    } else {
-        setLastAutofilledDriverId('');
-        setLastAlertedDriverId('');
+      }
     }
-  }, [driverName, driverCpf, drivers, shipments, vehicles, lastAlertedDriverId, lastAutofilledDriverId, driverContact]);
+    return latest;
+  };
+
+  // Efficient single-pass search for last shipment by vehicle plate
+  const findLastShipmentByPlate = (plate: string) => {
+    const cleanPlate = plate.trim().toUpperCase();
+    if (!cleanPlate) return null;
+
+    let latest: Shipment | null = null;
+    let latestTime = 0;
+
+    for (let i = 0; i < (shipments || []).length; i++) {
+      const s = shipments[i];
+      if (s.horsePlate && s.horsePlate.trim().toUpperCase() === cleanPlate) {
+        const time = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        if (time >= latestTime) {
+          latestTime = time;
+          latest = s;
+        }
+      }
+    }
+    return latest;
+  };
+
+  // Batch autofill driver and historical vehicle / bank info safely without render loops
+  const applyDriverAutofill = (selectedDriver: Driver) => {
+    setDriverName(selectedDriver.name || '');
+    if (selectedDriver.cpf) setDriverCpf(selectedDriver.cpf);
+    if (selectedDriver.phone) setDriverContact(selectedDriver.phone);
+
+    if (!selectedDriver.active) {
+      if (lastAlertedDriverId !== selectedDriver.id) {
+        showToast(`ATENÇÃO: Este motorista encontra-se RESTRITO! Motivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}. O sistema impedirá a criação desta ordem.`, 'error', 10000);
+        setLastAlertedDriverId(selectedDriver.id);
+      }
+    } else {
+      setLastAlertedDriverId('');
+    }
+
+    if (!selectedDriver.active) return;
+
+    const lastShipment = findLastShipmentForDriver(selectedDriver.cpf, selectedDriver.name, selectedDriver.phone);
+    const linkedVehicle = vehicles.find(v => v.driverId === selectedDriver.id);
+
+    if (lastShipment) {
+      if (lastShipment.horsePlate) setHorsePlate(lastShipment.horsePlate);
+      if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
+      if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
+      if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
+      if (lastShipment.ownerContact) setOwnerContact(lastShipment.ownerContact);
+      if (lastShipment.driverContact && !selectedDriver.phone) setDriverContact(lastShipment.driverContact);
+      if (lastShipment.paymentMethod) setPaymentMethod(lastShipment.paymentMethod);
+      if (lastShipment.pixKey) setPixKey(lastShipment.pixKey);
+      if (lastShipment.bankDetails) setBankDetails(lastShipment.bankDetails);
+      if (lastShipment.advancePercentage !== undefined) setAdvancePercentage(lastShipment.advancePercentage);
+      if (lastShipment.vehicleTag) setVehicleTag(lastShipment.vehicleTag);
+      if (lastShipment.vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
+      if (lastShipment.vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
+      if (lastShipment.anttOwnerIdentifier) {
+        setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
+      } else if (selectedDriver.cpf) {
+        setAnttOwnerIdentifier(selectedDriver.cpf);
+      }
+      if (lastShipment.anttModality) {
+        setAnttModality(lastShipment.anttModality as AnttModality);
+        setDriverFreightType(lastShipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ');
+      } else if (lastShipment.driverFreightType) {
+        setDriverFreightType(lastShipment.driverFreightType);
+        setAnttModality(lastShipment.driverFreightType === 'PF' ? AnttModality.TAC : AnttModality.ETC);
+      }
+      if (lastShipment.etcTaxRegime) {
+        setEtcTaxRegime(lastShipment.etcTaxRegime as EtcTaxRegime);
+      }
+    } else if (linkedVehicle) {
+      if (linkedVehicle.plate) setHorsePlate(linkedVehicle.plate);
+      if (linkedVehicle.setType) setVehicleSetType(linkedVehicle.setType);
+      if (linkedVehicle.bodyType) setVehicleBodyType(linkedVehicle.bodyType);
+      setSelectedVehicle(linkedVehicle);
+    }
+  };
+
+  // Plate autofill helper
+  const applyPlateAutofill = (plateVal: string) => {
+    const cleanPlate = plateVal.trim().toUpperCase();
+    setHorsePlate(cleanPlate);
+
+    const vehicle = vehicles.find(v => v.plate.trim().toUpperCase() === cleanPlate);
+    if (vehicle) {
+      setSelectedVehicle(vehicle);
+      if (vehicle.setType) setVehicleSetType(vehicle.setType);
+      if (vehicle.bodyType) setVehicleBodyType(vehicle.bodyType);
+    } else {
+      setSelectedVehicle(null);
+    }
+
+    if (cleanPlate.length >= 7) {
+      const lastShipment = findLastShipmentByPlate(cleanPlate);
+      if (lastShipment) {
+        if (lastShipment.trailer1Plate) setTrailer1Plate(lastShipment.trailer1Plate);
+        if (lastShipment.trailer2Plate) setTrailer2Plate(lastShipment.trailer2Plate);
+        if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
+        if (lastShipment.vehicleSetType && !vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
+        if (lastShipment.vehicleBodyType && !vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
+      }
+    }
+  };
+
+  // Safe input handlers with debounced match checks
+  const handleDriverNameChange = (val: string) => {
+    setDriverName(val);
+    setShowDriverSuggestions(true);
+    const clean = val.trim().toLowerCase();
+    if (clean.length >= 3) {
+      const exactDriver = drivers.find(d => d.name.trim().toLowerCase() === clean);
+      if (exactDriver) {
+        applyDriverAutofill(exactDriver);
+      }
+    }
+  };
+
+  const handleDriverCpfChange = (val: string) => {
+    const formatted = autoFormatInput('cpf', val);
+    setDriverCpf(formatted);
+    const clean = formatted.replace(/\D/g, '');
+    if (clean.length === 11) {
+      const exactDriver = drivers.find(d => d.cpf && d.cpf.replace(/\D/g, '') === clean);
+      if (exactDriver) {
+        applyDriverAutofill(exactDriver);
+      }
+    }
+  };
+
+  const handleHorsePlateChange = (val: string) => {
+    const upper = val.toUpperCase();
+    setHorsePlate(upper);
+    setShowPlateSuggestions(true);
+    const cleanPlate = upper.trim();
+    if (cleanPlate.length >= 7) {
+      applyPlateAutofill(cleanPlate);
+    } else {
+      const vehicle = vehicles.find(v => v.plate.trim().toUpperCase() === cleanPlate);
+      setSelectedVehicle(vehicle || null);
+      if (vehicle) {
+        if (vehicle.setType) setVehicleSetType(vehicle.setType);
+        if (vehicle.bodyType) setVehicleBodyType(vehicle.bodyType);
+      }
+    }
+  };
+
+  // Fast filtered suggestions (capped to 8 results for ultra-smooth mobile rendering)
+  const driverSuggestions = useMemo(() => {
+    const clean = driverName.trim().toLowerCase();
+    if (!clean || clean.length < 2) return [];
+    return drivers
+      .filter(d => (d.name && d.name.toLowerCase().includes(clean)) || (d.cpf && d.cpf.replace(/\D/g, '').includes(clean)))
+      .slice(0, 8);
+  }, [driverName, drivers]);
+
+  const plateSuggestions = useMemo(() => {
+    const clean = horsePlate.trim().toUpperCase();
+    if (!clean || clean.length < 2) return [];
+    return vehicles
+      .filter(v => v.plate && v.plate.toUpperCase().includes(clean))
+      .slice(0, 8);
+  }, [horsePlate, vehicles]);
 
   // Automatic CNPJ Tax Regime Lookup
   const searchCnpjTaxRegime = async (cnpjInput: string) => {
@@ -380,35 +509,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       }
     }
   };
-  
-  useEffect(() => {
-    const cleanPlate = horsePlate.trim().toLowerCase();
-    const vehicle = vehicles.find(v => v.plate.trim().toLowerCase() === cleanPlate);
-    setSelectedVehicle(vehicle || null);
-    
-    if (vehicle) {
-        setVehicleSetType(vehicle.setType);
-        setVehicleBodyType(vehicle.bodyType);
-    } else {
-        setVehicleSetType('');
-        setVehicleBodyType('');
-    }
-
-    if (cleanPlate && cleanPlate.length >= 7 && lastAutofilledPlate !== cleanPlate) {
-        const lastShipmentByPlate = shipments
-            .filter(s => s.horsePlate && s.horsePlate.trim().toLowerCase() === cleanPlate)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-
-        if (lastShipmentByPlate) {
-            setTrailer1Plate(lastShipmentByPlate.trailer1Plate || '');
-            setTrailer2Plate(lastShipmentByPlate.trailer2Plate || '');
-            setTrailer3Plate(lastShipmentByPlate.trailer3Plate || '');
-        }
-        setLastAutofilledPlate(cleanPlate);
-    } else if (!cleanPlate) {
-        setLastAutofilledPlate('');
-    }
-  }, [horsePlate, vehicles, shipments, lastAutofilledPlate]);
 
   const currentCargo = activeCargo || cargo;
 
@@ -868,31 +968,110 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">CPF do Motorista</label>
-                <input type="text" value={driverCpf} onChange={(e) => setDriverCpf(e.target.value)} placeholder="Digite o CPF do motorista" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required />
+                <input 
+                  type="text" 
+                  value={driverCpf} 
+                  onChange={(e) => handleDriverCpfChange(e.target.value)} 
+                  placeholder="Digite o CPF do motorista" 
+                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                  required 
+                />
               </div>
               <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Contato (WhatsApp)</label>
-                  <input type="text" value={driverContact} onChange={(e) => setDriverContact(e.target.value)} placeholder="Contato (auto-preenchido)" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" disabled={isExistingDriver} required />
+                  <input 
+                    type="text" 
+                    value={driverContact} 
+                    onChange={(e) => setDriverContact(autoFormatInput('phone', e.target.value))} 
+                    placeholder="Contato (WhatsApp)" 
+                    className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                    required 
+                  />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="relative" ref={driverInputContainerRef}>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Motorista</label>
-                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Digite o nome do motorista" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required list="driver-names" />
-                  <datalist id="driver-names">{drivers.map(d => <option key={d.id} value={d.name} />)}</datalist>
+                  <input 
+                    value={driverName} 
+                    onChange={(e) => handleDriverNameChange(e.target.value)} 
+                    onFocus={() => { if (driverSuggestions.length > 0) setShowDriverSuggestions(true); }}
+                    placeholder="Digite o nome do motorista" 
+                    className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                    required 
+                    autoComplete="off"
+                  />
+                  {showDriverSuggestions && driverSuggestions.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-h-56 overflow-y-auto overflow-x-hidden divide-y divide-gray-100 dark:divide-gray-700/60">
+                      {driverSuggestions.map((d) => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => {
+                            applyDriverAutofill(d);
+                            setShowDriverSuggestions(false);
+                          }}
+                          className="w-full text-left px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <div className="truncate">
+                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{d.name}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">CPF: {d.cpf || 'Não cadastrado'} {d.phone ? `• ${d.phone}` : ''}</p>
+                          </div>
+                          {!d.active && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 shrink-0">
+                              Restrito
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Contato do Proprietário</label>
-                <input type="text" value={ownerContact} onChange={(e) => setOwnerContact(e.target.value)} placeholder="Telefone/WhatsApp do proprietário" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                <input 
+                  type="text" 
+                  value={ownerContact} 
+                  onChange={(e) => setOwnerContact(autoFormatInput('phone', e.target.value))} 
+                  placeholder="Telefone/WhatsApp do proprietário" 
+                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+                />
               </div>
             </div>
 
             {/* Vehicle Plates & Types */}
-            <div>
+            <div className="relative" ref={plateInputContainerRef}>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Placa Cavalo</label>
-                <input value={horsePlate} onChange={(e) => setHorsePlate(e.target.value.toUpperCase())} placeholder="AAA-1234" className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" required list="vehicle-plates" />
-                <datalist id="vehicle-plates">{vehicles.map(v => <option key={v.id} value={v.plate} />)}</datalist>
+                <input 
+                  value={horsePlate} 
+                  onChange={(e) => handleHorsePlateChange(e.target.value)} 
+                  onFocus={() => { if (plateSuggestions.length > 0) setShowPlateSuggestions(true); }}
+                  placeholder="AAA-1234 ou ABC1D23" 
+                  className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white uppercase" 
+                  required 
+                  autoComplete="off"
+                />
+                {showPlateSuggestions && plateSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-h-56 overflow-y-auto overflow-x-hidden divide-y divide-gray-100 dark:divide-gray-700/60">
+                    {plateSuggestions.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          applyPlateAutofill(v.plate);
+                          setShowPlateSuggestions(false);
+                        }}
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                      >
+                        <div>
+                          <p className="text-sm font-mono font-bold text-gray-900 dark:text-white">{v.plate}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{v.setType || 'Cavalo'} {v.bodyType ? `• ${v.bodyType}` : ''}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
             </div>
           
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
