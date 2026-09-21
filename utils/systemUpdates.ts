@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_21_v2_8_7',
+    version: 'v2.8.7',
+    date: '21/09/2026',
+    title: 'Eliminação Definitiva do Crash Mobile a cada 30s ("Ah, não!")',
+    summary: 'Eliminado o loop de polling pesado que sobrecarregava a memória do navegador no celular a cada 30 segundos, substituindo por sincronização em tempo real via WebSocket nativo e fallback ultraleve.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Fim do Travamento Mobile a cada 30s',
+        description: 'Removido o download completo de milhares de embarques e cargas em background a cada 30 segundos, que causava estouro de memória (Out of Memory) e fechamento repentino da aba no Chrome Android/iOS.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização em Tempo Real Otimizada',
+        description: 'Priorização dos eventos em tempo real do Supabase sem consumo desnecessário de memória ou processamento do aparelho móvel.'
+      },
+      {
+        category: 'improvement',
+        title: 'Redução Drástica de Re-renderizações',
+        description: 'Removidos temporizadores ociosos de 1 segundo que forçavam a reconstrução contínua da árvore visual do quadro operacional.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_21_v2_8_6',
     version: 'v2.8.6',
     date: '21/09/2026',

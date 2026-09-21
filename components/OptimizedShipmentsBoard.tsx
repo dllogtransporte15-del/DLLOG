@@ -61,6 +61,17 @@ export interface OptimizedShipmentsBoardProps {
 type SlaUrgencyFilter = 'all' | 'normal' | 'warning' | 'critical';
 type DensityMode = 'expanded' | 'compact';
 
+const LiveClock: React.FC = () => {
+  const [time, setTime] = useState(() => new Date().toLocaleTimeString('pt-BR'));
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTime(new Date().toLocaleTimeString('pt-BR'));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span>{time}</span>;
+};
+
 export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = ({
   title,
   description,
@@ -89,18 +100,10 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
   const [copiedPlate, setCopiedPlate] = useState<string | null>(null);
   const [isTvMode, setIsTvMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [liveTime, setLiveTime] = useState(() => new Date().toLocaleTimeString('pt-BR'));
 
   // TV Mode Auto-Scroll System
   const columnScrollRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setLiveTime(new Date().toLocaleTimeString('pt-BR'));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const toggleTvMode = useCallback(() => {
     setIsTvMode(prev => {
@@ -474,7 +477,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                     </span>
-                    <span>TEMPO REAL • {liveTime}</span>
+                    <span>TEMPO REAL • <LiveClock /></span>
                   </div>
                 </div>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">

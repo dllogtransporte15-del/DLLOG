@@ -214,23 +214,6 @@ export function useDatabase(currentUser: User | null) {
           dbProducts, dbShipments, dbCargos, dbUsers, dbTickets, dbBranches, dbFreightOffers
         ));
 
-        // Backfill silencioso: extrai CT-e/NF-e/MDF-e e aplica cálculos de adiantamento/saldo (roda 1x por sessão)
-        if (!backfillRanRef.current) {
-          backfillRanRef.current = true;
-          backfillShipmentFiscalNumbers().then(({ updated }) => {
-            if (updated > 0) {
-              console.log(`[backfill] ${updated} embarque(s) atualizados — recarregando embarques.`);
-              fetchShipments().then(setShipments).catch(() => {});
-            }
-          }).catch(() => {});
-
-          backfillAdvanceAndBalanceCalculations().then(({ updated }) => {
-            if (updated > 0) {
-              console.log(`[advanceBackfill] ${updated} embarque(s) atualizados com regra de adiantamento/saldo.`);
-              fetchShipments().then(setShipments).catch(() => {});
-            }
-          }).catch(() => {});
-        }
       } // fim do else (não-Motorista)
 
     } catch (err) {
@@ -257,17 +240,19 @@ export function useDatabase(currentUser: User | null) {
     }
   }, [currentUser, loadAllData]);
 
-  // Real-time integration — with auto-reconnect and polling fallback
+  // Real-time integration — com reconexão segura e fallback ultraleve
   useEffect(() => {
     if (!currentUser) return;
 
-    // Track last known shipments/cargos hash to detect changes during polling
-    let lastShipmentsHash = '';
-    let lastCargosHash = '';
+    let isSubscribed = true;
     let realtimeWorking = false;
+    let reconnectTimeoutId: any = null;
     let channelRef: ReturnType<typeof supabase.channel> | null = null;
+    let lastShipmentCheckTs: string | null = null;
+    let lastCargoCheckTs: string | null = null;
 
     const handlePostgresChange = async (payload: any) => {
+      if (!isSubscribed) return;
       const { table, eventType } = payload;
       realtimeWorking = true;
       console.log(`[Realtime] Mudança detectada em ${table} (${eventType}). Atualizando...`);
@@ -280,90 +265,110 @@ export function useDatabase(currentUser: User | null) {
         switch (table) {
           case 'clients': {
             const dbClients = await fetchClients();
-            setClients(dbClients);
-            setNextIds((prev: any) => ({ ...prev, client: getMaxId(dbClients, 100) }));
+            if (isSubscribed) {
+              setClients(dbClients);
+              setNextIds((prev: any) => ({ ...prev, client: getMaxId(dbClients, 100) }));
+            }
             break;
           }
           case 'owners': {
             const dbOwners = await fetchOwners();
-            setOwners(dbOwners);
-            setNextIds((prev: any) => ({ ...prev, owner: getMaxId(dbOwners, 100) }));
+            if (isSubscribed) {
+              setOwners(dbOwners);
+              setNextIds((prev: any) => ({ ...prev, owner: getMaxId(dbOwners, 100) }));
+            }
             break;
           }
           case 'drivers': {
             const dbDrivers = await fetchDrivers();
-            setDrivers(dbDrivers);
-            setNextIds((prev: any) => ({ ...prev, driver: getMaxId(dbDrivers, 100) }));
+            if (isSubscribed) {
+              setDrivers(dbDrivers);
+              setNextIds((prev: any) => ({ ...prev, driver: getMaxId(dbDrivers, 100) }));
+            }
             break;
           }
           case 'vehicles': {
             const dbVehicles = await fetchVehicles();
-            setVehicles(dbVehicles);
-            setNextIds((prev: any) => ({ ...prev, vehicle: getMaxId(dbVehicles, 100) }));
+            if (isSubscribed) {
+              setVehicles(dbVehicles);
+              setNextIds((prev: any) => ({ ...prev, vehicle: getMaxId(dbVehicles, 100) }));
+            }
             break;
           }
           case 'products': {
             const dbProducts = await fetchProducts();
-            setProducts(dbProducts);
-            setNextIds((prev: any) => ({ ...prev, product: getMaxId(dbProducts, 100) }));
+            if (isSubscribed) {
+              setProducts(dbProducts);
+              setNextIds((prev: any) => ({ ...prev, product: getMaxId(dbProducts, 100) }));
+            }
             break;
           }
           case 'cargos': {
             const dbCargos = await fetchCargos();
-            lastCargosHash = JSON.stringify(dbCargos.map(c => `${c.id}:${(c as any).status}:${(c as any).updatedAt}`));
-            setCargos(dbCargos);
-            setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
+            if (isSubscribed) {
+              setCargos(dbCargos);
+              setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
+            }
             break;
           }
           case 'shipments': {
             const dbShipments = await fetchShipments();
-            lastShipmentsHash = JSON.stringify(dbShipments.map(s => `${s.id}:${s.status}:${(s as any).updatedAt}`));
-            setShipments(dbShipments);
-            setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
+            if (isSubscribed) {
+              setShipments(dbShipments);
+              setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
+            }
             break;
           }
           case 'app_users': {
             const dbUsers = await fetchUsers();
-            setUsers(dbUsers);
-            setNextIds((prev: any) => ({ ...prev, user: getMaxId(dbUsers, 100) }));
+            if (isSubscribed) {
+              setUsers(dbUsers);
+              setNextIds((prev: any) => ({ ...prev, user: getMaxId(dbUsers, 100) }));
+            }
             break;
           }
           case 'tickets': {
             const dbTickets = await fetchTickets();
-            setTickets(dbTickets);
-            setNextIds((prev: any) => ({ ...prev, ticket: getMaxId(dbTickets, 1) }));
+            if (isSubscribed) {
+              setTickets(dbTickets);
+              setNextIds((prev: any) => ({ ...prev, ticket: getMaxId(dbTickets, 1) }));
+            }
             break;
           }
           case 'freight_offers': {
             const dbOffers = await fetchFreightOffers();
-            setFreightOffers(dbOffers);
-            setNextIds((prev: any) => ({ ...prev, freightOffer: getMaxId(dbOffers, 1) }));
+            if (isSubscribed) {
+              setFreightOffers(dbOffers);
+              setNextIds((prev: any) => ({ ...prev, freightOffer: getMaxId(dbOffers, 1) }));
+            }
             break;
           }
           case 'branches': {
             const dbBranches = await fetchBranches();
-            setBranches(dbBranches);
-            setNextIds((prev: any) => ({ ...prev, branch: getMaxId(dbBranches, 10) }));
+            if (isSubscribed) {
+              setBranches(dbBranches);
+              setNextIds((prev: any) => ({ ...prev, branch: getMaxId(dbBranches, 10) }));
+            }
             break;
           }
           case 'tool_stays': {
             const dbStays = await getAllToolStays();
-            setStays(dbStays);
+            if (isSubscribed) setStays(dbStays);
             break;
           }
           case 'shipment_locks': {
             const dbLocks = await fetchShipmentLocks();
-            setActiveLocks(dbLocks);
+            if (isSubscribed) setActiveLocks(dbLocks);
             break;
           }
           case 'profile_permissions': {
             const dbPermissions = await fetchProfilePermissions();
-            if (dbPermissions) setProfilePermissions(dbPermissions);
+            if (isSubscribed && dbPermissions) setProfilePermissions(dbPermissions);
             const dbRiskOptions = await fetchRiskQueryOptions();
-            if (dbRiskOptions && dbRiskOptions.length > 0) {
+            if (isSubscribed && dbRiskOptions && dbRiskOptions.length > 0) {
               setRiskQueryOptions(dbRiskOptions);
             }
-            if (dbPermissions && (dbPermissions as any).client_branches) {
+            if (isSubscribed && dbPermissions && (dbPermissions as any).client_branches) {
               const bMap = (dbPermissions as any).client_branches;
               setClients(prev => prev.map(c => ({
                 ...c,
@@ -374,7 +379,7 @@ export function useDatabase(currentUser: User | null) {
           }
           case 'app_settings': {
             const dbSettings = await fetchAppSettings();
-            if (dbSettings) {
+            if (isSubscribed && dbSettings) {
               setCompanyLogo(dbSettings.company_logo || null);
               setThemeImage(dbSettings.theme_image || null);
             }
@@ -382,24 +387,24 @@ export function useDatabase(currentUser: User | null) {
           }
           case 'risk_query_options': {
             const dbRiskOptions = await fetchRiskQueryOptions();
-            if (dbRiskOptions && dbRiskOptions.length > 0) {
+            if (isSubscribed && dbRiskOptions && dbRiskOptions.length > 0) {
               setRiskQueryOptions(dbRiskOptions);
             }
             break;
           }
           default:
-            // If unknown table, fallback to background reload
-            loadAllData(true);
+            if (isSubscribed) loadAllData(true);
         }
       } catch (err) {
         console.error(`[Realtime] Erro ao atualizar ${table}:`, err);
-        loadAllData(true); // Fallback to full reload
       }
     };
 
     const subscribeChannel = () => {
+      if (!isSubscribed) return;
       if (channelRef) {
         supabase.removeChannel(channelRef);
+        channelRef = null;
       }
       channelRef = supabase
         .channel('db_changes_' + Date.now())
@@ -411,48 +416,79 @@ export function useDatabase(currentUser: User | null) {
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             console.warn(`[Realtime] ⚠️ Canal ${status} — tentando reconectar em 5s...`);
             realtimeWorking = false;
-            setTimeout(() => {
-              subscribeChannel();
-            }, 5000);
+            if (isSubscribed) {
+              if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
+              reconnectTimeoutId = setTimeout(() => {
+                subscribeChannel();
+              }, 5000);
+            }
           }
         });
     };
 
     subscribeChannel();
 
-    // ── Polling fallback (30s): garante atualização mesmo se Realtime não estiver
-    //    com replicação habilitada nas tabelas do Supabase ─────────────────────────
-    const POLL_INTERVAL_MS = 30_000;
+    // ── Polling de contingência LEVE: SÓ executa se o Realtime cair E a aba estiver visível ──
+    const FALLBACK_POLL_INTERVAL_MS = 60_000;
     const pollInterval = setInterval(async () => {
+      // Se Realtime está conectado e funcionando, ou se a aba está oculta/segundo plano, NÃO faz polling
+      if (realtimeWorking || (typeof document !== 'undefined' && document.visibilityState === 'hidden') || isAnyModalActiveRef.current) {
+        return;
+      }
+
       try {
-        // Poll shipments
-        const dbShipments = await fetchShipments();
-        const newShipmentsHash = JSON.stringify(dbShipments.map(s => `${s.id}:${s.status}:${(s as any).updatedAt}`));
-        if (newShipmentsHash !== lastShipmentsHash) {
-          console.log('[Polling] 🔄 Embarques alterados — atualizando...');
-          lastShipmentsHash = newShipmentsHash;
-          setShipments(dbShipments);
-          setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
+        // Consulta ultraleve (apenas 1 linha para verificar se houve alteração recente)
+        const { data: latestShipment } = await supabase
+          .from('shipments')
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const shipmentTs = latestShipment?.updated_at || null;
+        if (shipmentTs && lastShipmentCheckTs && shipmentTs !== lastShipmentCheckTs) {
+          console.log('[Polling Fallback] 🔄 Novos embarques detectados via timestamp');
+          lastShipmentCheckTs = shipmentTs;
+          const dbShipments = await fetchShipments();
+          if (isSubscribed) {
+            setShipments(dbShipments);
+            setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
+          }
+        } else if (shipmentTs) {
+          lastShipmentCheckTs = shipmentTs;
         }
 
-        // Poll cargos
-        const dbCargos = await fetchCargos();
-        const newCargosHash = JSON.stringify(dbCargos.map(c => `${c.id}:${(c as any).status}:${(c as any).updatedAt}`));
-        if (newCargosHash !== lastCargosHash) {
-          console.log('[Polling] 🔄 Cargas alteradas — atualizando...');
-          lastCargosHash = newCargosHash;
-          setCargos(dbCargos);
-          setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
+        const { data: latestCargo } = await supabase
+          .from('cargos')
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const cargoTs = latestCargo?.updated_at || null;
+        if (cargoTs && lastCargoCheckTs && cargoTs !== lastCargoCheckTs) {
+          console.log('[Polling Fallback] 🔄 Novas cargas detectadas via timestamp');
+          lastCargoCheckTs = cargoTs;
+          const dbCargos = await fetchCargos();
+          if (isSubscribed) {
+            setCargos(dbCargos);
+            setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
+          }
+        } else if (cargoTs) {
+          lastCargoCheckTs = cargoTs;
         }
       } catch (err) {
-        console.warn('[Polling] Erro ao verificar atualizações:', err);
+        console.warn('[Polling Fallback] Erro silencioso:', err);
       }
-    }, POLL_INTERVAL_MS);
+    }, FALLBACK_POLL_INTERVAL_MS);
 
     return () => {
+      isSubscribed = false;
+      if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
       clearInterval(pollInterval);
       if (channelRef) {
         supabase.removeChannel(channelRef);
+        channelRef = null;
       }
     };
   }, [currentUser, loadAllData]);
