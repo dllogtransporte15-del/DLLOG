@@ -73,12 +73,22 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [inlineAdvancePercentage, setInlineAdvancePercentage] = useState<number>(70);
   const [isSavingAdvance, setIsSavingAdvance] = useState(false);
 
+  const [isEditingPaymentMethod, setIsEditingPaymentMethod] = useState(false);
+  const [inlinePaymentMethod, setInlinePaymentMethod] = useState<string>(DriverPaymentMethod.PixEFrete);
+  const [inlinePixKey, setInlinePixKey] = useState<string>('');
+  const [inlineBankDetails, setInlineBankDetails] = useState<string>('');
+  const [isSavingPaymentMethod, setIsSavingPaymentMethod] = useState(false);
+
   React.useEffect(() => {
     if (shipment) {
       setInlineAdvancePercentage(shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70);
       setIsEditingAdvance(false);
+      setInlinePaymentMethod(shipment.paymentMethod || DriverPaymentMethod.PixEFrete);
+      setInlinePixKey(shipment.pixKey || '');
+      setInlineBankDetails(shipment.bankDetails || '');
+      setIsEditingPaymentMethod(false);
     }
-  }, [shipment?.id, shipment?.advancePercentage]);
+  }, [shipment?.id, shipment?.advancePercentage, shipment?.paymentMethod, shipment?.pixKey, shipment?.bankDetails]);
 
   const handleSaveInlineAdvance = async () => {
     if (!onUpdateShipmentData || !shipment) return;
@@ -90,6 +100,23 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       console.error('Erro ao atualizar porcentagem de adiantamento:', err);
     } finally {
       setIsSavingAdvance(false);
+    }
+  };
+
+  const handleSaveInlinePaymentMethod = async () => {
+    if (!onUpdateShipmentData || !shipment) return;
+    setIsSavingPaymentMethod(true);
+    try {
+      await onUpdateShipmentData(shipment.id, { 
+        paymentMethod: inlinePaymentMethod,
+        pixKey: inlinePaymentMethod === DriverPaymentMethod.PixEFrete ? inlinePixKey : (shipment.pixKey || undefined),
+        bankDetails: (inlinePaymentMethod === DriverPaymentMethod.DepositoConta || inlineBankDetails) ? inlineBankDetails : (shipment.bankDetails || undefined)
+      });
+      setIsEditingPaymentMethod(false);
+    } catch (err) {
+      console.error('Erro ao atualizar forma de pagamento:', err);
+    } finally {
+      setIsSavingPaymentMethod(false);
     }
   };
 
@@ -124,8 +151,31 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const isDemo = isDemoUser(currentUser);
   const isFinalized = shipment.status === ShipmentStatus.Finalizado;
   const isAdmin = currentUser?.profile === UserProfile.Admin;
+  const isDiretoria = currentUser?.profile === UserProfile.Diretor;
   const canEdit = !isDemo && !!onUpdatePrice && (
     (isFinalized ? isAdmin : currentUser?.profile !== UserProfile.Embarcador)
+  );
+
+  const isBeforeAdvanceStatus = [
+    ShipmentStatus.PreCadastro,
+    'Ag. Cadastro',
+    'PreCadastro',
+    ShipmentStatus.AguardandoSeguradora,
+    'Ag. Seguradora',
+    'AguardandoSeguradora',
+    ShipmentStatus.AguardandoCarregamento,
+    'Ag. Carregamento',
+    'AguardandoCarregamento',
+    ShipmentStatus.AguardandoNota,
+    'Ag. Nota',
+    'AguardandoNota',
+    ShipmentStatus.AguardandoFiscal,
+    'Ag. Fiscal',
+    'AguardandoFiscal',
+  ].includes(shipment.status);
+
+  const canEditPaymentDetails = !isDemo && !!onUpdateShipmentData && (
+    isBeforeAdvanceStatus || isAdmin || isDiretoria
   );
 
   const tonnage = Number(shipment.shipmentTonnage) || 0;
@@ -686,18 +736,102 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <DetailItem label="Forma de Pagamento">
                                 {isEditingData ? (
                                     <select
-                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-semibold"
+                                        className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                                         value={editedData.paymentMethod || DriverPaymentMethod.PixEFrete}
                                         onChange={e => setEditedData({...editedData, paymentMethod: e.target.value})}
+                                        disabled={!canEditPaymentDetails}
                                     >
                                         {Object.values(DriverPaymentMethod).map(m => (
                                             <option key={m} value={m}>{m}</option>
                                         ))}
                                     </select>
+                                ) : isEditingPaymentMethod ? (
+                                    <div className="mt-1 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                className="flex-1 p-1.5 text-xs font-bold border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                value={inlinePaymentMethod}
+                                                onChange={e => setInlinePaymentMethod(e.target.value)}
+                                                disabled={isSavingPaymentMethod}
+                                                autoFocus
+                                            >
+                                                {Object.values(DriverPaymentMethod).map(m => (
+                                                    <option key={m} value={m}>{m}</option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveInlinePaymentMethod}
+                                                disabled={isSavingPaymentMethod}
+                                                className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                                                title="Salvar Forma de Pagamento"
+                                            >
+                                                <Check size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setInlinePaymentMethod(shipment.paymentMethod || DriverPaymentMethod.PixEFrete);
+                                                    setInlinePixKey(shipment.pixKey || '');
+                                                    setInlineBankDetails(shipment.bankDetails || '');
+                                                    setIsEditingPaymentMethod(false);
+                                                }}
+                                                disabled={isSavingPaymentMethod}
+                                                className="p-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 text-gray-700 dark:text-gray-200 rounded-md text-xs transition-colors cursor-pointer"
+                                                title="Cancelar"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+
+                                        {inlinePaymentMethod === DriverPaymentMethod.PixEFrete && (
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Informe a Chave Pix..."
+                                                    className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                    value={inlinePixKey}
+                                                    onChange={e => setInlinePixKey(e.target.value)}
+                                                    disabled={isSavingPaymentMethod}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {inlinePaymentMethod === DriverPaymentMethod.DepositoConta && (
+                                            <div>
+                                                <textarea
+                                                    rows={2}
+                                                    placeholder="Banco, agência, conta e favorecido..."
+                                                    className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                                    value={inlineBankDetails}
+                                                    onChange={e => setInlineBankDetails(e.target.value)}
+                                                    disabled={isSavingPaymentMethod}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 ) : (
-                                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                                        {shipment.paymentMethod || 'PIX - E-FRETE'}
-                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                                            {shipment.paymentMethod || 'PIX - E-FRETE'}
+                                        </p>
+                                        {canEditPaymentDetails && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setInlinePaymentMethod(shipment.paymentMethod || DriverPaymentMethod.PixEFrete);
+                                                    setInlinePixKey(shipment.pixKey || '');
+                                                    setInlineBankDetails(shipment.bankDetails || '');
+                                                    setIsEditingPaymentMethod(true);
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800 cursor-pointer transition-colors"
+                                                title="Editar Forma de Pagamento"
+                                            >
+                                                <Edit2 size={11} />
+                                                <span>Editar</span>
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                             </DetailItem>
 
@@ -709,9 +843,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                 type="number"
                                                 min="0"
                                                 max="100"
-                                                className="w-full p-2 pr-7 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold"
+                                                className="w-full p-2 pr-7 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                                                 value={editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70}
                                                 onChange={e => setEditedData({...editedData, advancePercentage: Number(e.target.value)})}
+                                                disabled={!canEditPaymentDetails}
                                             />
                                             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">%</span>
                                         </div>
@@ -721,7 +856,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                     key={pct}
                                                     type="button"
                                                     onClick={() => setEditedData({...editedData, advancePercentage: pct})}
-                                                    className={`px-1.5 py-1 text-[10px] font-bold rounded border transition-colors cursor-pointer ${
+                                                    disabled={!canEditPaymentDetails}
+                                                    className={`px-1.5 py-1 text-[10px] font-bold rounded border transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                                                         (editedData.advancePercentage !== undefined ? editedData.advancePercentage : 70) === pct
                                                             ? 'bg-emerald-600 text-white border-emerald-600'
                                                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100'
@@ -774,7 +910,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
                                             {shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70}%
                                         </p>
-                                        {onUpdateShipmentData && !isDemo && (
+                                        {canEditPaymentDetails && (
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -792,16 +928,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 )}
                             </DetailItem>
 
-                            {(editedData.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.pixKey) && (
+                            {(editedData.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.paymentMethod === DriverPaymentMethod.PixEFrete || shipment.pixKey || inlinePaymentMethod === DriverPaymentMethod.PixEFrete) && (
                                 <div className="md:col-span-2">
                                     <DetailItem label="Chave Pix">
                                         {isEditingData ? (
                                             <input 
                                                 type="text"
-                                                className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                                                 value={editedData.pixKey || ''}
                                                 onChange={e => setEditedData({...editedData, pixKey: e.target.value})}
                                                 placeholder="Informe a Chave Pix..."
+                                                disabled={!canEditPaymentDetails}
                                             />
                                         ) : (
                                             <div className="mt-1 p-2.5 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-700">
@@ -818,10 +955,11 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 <DetailItem label="Dados Bancários">
                                     {isEditingData ? (
                                         <textarea 
-                                            className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[70px]"
+                                            className="w-full mt-1 p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white min-h-[70px] disabled:opacity-60 disabled:cursor-not-allowed"
                                             value={editedData.bankDetails || ''}
                                             onChange={e => setEditedData({...editedData, bankDetails: e.target.value})}
                                             placeholder="Informe os dados bancários..."
+                                            disabled={!canEditPaymentDetails}
                                         />
                                     ) : (
                                         <div className="mt-1 p-2.5 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-700">

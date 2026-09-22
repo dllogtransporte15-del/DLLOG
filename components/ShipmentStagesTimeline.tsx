@@ -158,26 +158,35 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const isClientUser = currentUser?.profile === UserProfile.Cliente || (currentUser?.profile as string) === 'Cliente';
 
   const visibleStageDefinitions = React.useMemo(() => {
+    const is0PctAdv = shipment.advancePercentage === 0 || 
+                      (shipment.advanceValue !== undefined && shipment.advanceValue <= 0 && shipment.freightTotal !== undefined && shipment.freightTotal > 0);
     const is100PctAdv = (shipment.advancePercentage !== undefined && shipment.advancePercentage >= 100) ||
                         (shipment.balanceToReceiveValue !== undefined && shipment.balanceToReceiveValue <= 0.001 && shipment.advanceValue !== undefined && shipment.advanceValue > 0);
+    
     const omitSaldo = isClientUser || (is100PctAdv && shipment.status !== ShipmentStatus.AguardandoPagamentoSaldo);
+    const omitAdiantamento = is0PctAdv && shipment.status !== ShipmentStatus.AguardandoAdiantamento;
 
+    let list = STAGES_DEFINITIONS;
     if (omitSaldo) {
-      return STAGES_DEFINITIONS.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo).map((s, idx) => ({
-        ...s,
-        stepNumber: idx + 1,
-        description: s.status === ShipmentStatus.Finalizado 
-          ? 'Embarque finalizado e entrega concluída com sucesso.' 
-          : (s.status === ShipmentStatus.AguardandoFiscal && isClientUser
-              ? 'Emissão do CT-e, MDF-e e documentos fiscais da viagem.'
-              : s.description),
-        associatedDocTypes: isClientUser 
-          ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
-          : s.associatedDocTypes
-      }));
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo);
     }
-    return STAGES_DEFINITIONS;
-  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.status]);
+    if (omitAdiantamento) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoAdiantamento);
+    }
+
+    return list.map((s, idx) => ({
+      ...s,
+      stepNumber: idx + 1,
+      description: s.status === ShipmentStatus.Finalizado 
+        ? 'Embarque finalizado e entrega concluída com sucesso.' 
+        : (s.status === ShipmentStatus.AguardandoFiscal && isClientUser
+            ? 'Emissão do CT-e, MDF-e e documentos fiscais da viagem.'
+            : s.description),
+      associatedDocTypes: isClientUser 
+        ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
+        : s.associatedDocTypes
+    }));
+  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.freightTotal, shipment.status]);
 
   // Inicializa a aba ativa com o status atual do embarque
   const initialActiveStage = React.useMemo(() => {

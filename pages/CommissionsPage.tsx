@@ -27,7 +27,7 @@ const CommissionsPage: React.FC<CommissionsPageProps> = ({ shipments, cargos, us
   const renderContent = () => {
     switch(activeTab) {
       case 'comercial':
-        return <SupervisorReport shipments={shipments} cargos={cargos} users={users} stays={stays} />;
+        return <SupervisorReport shipments={shipments} cargos={cargos} users={users} stays={stays} clients={clients} />;
       case 'embarcador':
         return <ShipperReport shipments={shipments} cargos={cargos} clients={clients} users={users} currentUser={null} />;
       case 'vendedor-externo':

@@ -1,11 +1,33 @@
-import React, { useMemo } from 'react';
-import type { Shipment, User, Cargo, Branch } from '../../types';
+import React, { useState, useMemo } from 'react';
+import type { Shipment, User, Cargo, Branch, Client } from '../../types';
 import { ShipmentStatus, UserProfile } from '../../types';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentCte, isCteApplicableForStatus, isStayForShipment } from '../../utils';
-import { Building2, CheckCircle2, XCircle, TrendingUp, ShieldCheck, Briefcase, Percent, Users, UserCheck } from 'lucide-react';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment } from '../../utils';
+import { 
+  Building2, 
+  CheckCircle2, 
+  XCircle, 
+  TrendingUp, 
+  ShieldCheck, 
+  Briefcase, 
+  Percent, 
+  Users, 
+  UserCheck,
+  Eye,
+  Download,
+  Search,
+  X,
+  FileSpreadsheet,
+  Calendar,
+  Truck,
+  MapPin,
+  DollarSign
+} from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { addPdfLogo } from '../../utils/pdfGenerator';
 
 interface CommercialReportProps {
   shipments: Shipment[];
@@ -13,6 +35,10 @@ interface CommercialReportProps {
   users: User[];
   branches?: Branch[];
   stays?: StayRecord[];
+  clients?: Client[];
+  companyLogo?: string | null;
+  startDate?: string;
+  endDate?: string;
   onSaveUser?: (user: User) => void;
   currentUser?: User | null;
 }
@@ -60,8 +86,15 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   users, 
   branches = [], 
   stays = [],
+  clients = [],
+  companyLogo,
+  startDate,
+  endDate,
   currentUser
 }) => {
+  const [selectedUserForDetails, setSelectedUserForDetails] = useState<User | null>(null);
+  const [modalSearchTerm, setModalSearchTerm] = useState('');
+  const [modalStatusFilter, setModalStatusFilter] = useState('ALL');
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
   const branchMap = useMemo(() => new Map(branches.map(b => [b.id, b])), [branches]);
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
@@ -374,6 +407,323 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     };
   }, [shipments, cargoMap, stays, users, userMap]);
 
+  // Helper para obter os embarques detalhados de uma agência ou usuário comercial
+  const getDetailedShipmentsForUser = (targetUser: User) => {
+    const isAgenciador = targetUser.profile === UserProfile.Agenciador;
+    const isOperator = isAgenciador && targetUser.agencyRole === 'embarque';
+    const isLeader = isAgenciador && targetUser.agencyRole !== 'embarque';
+
+    const userSelectedBranchIds = targetUser.commercialSelectedBranchIds || nonMatrizBranches.map(b => b.id);
+
+    const list: Array<{
+      id: string;
+      cte: string;
+      date: string;
+      clientName: string;
+      origin: string;
+      destination: string;
+      driverName: string;
+      plate: string;
+      operatorName: string;
+      grossRevenue: number;
+      totalExpenses: number;
+      netProfit: number;
+      commissionPct: number;
+      commissionVal: number;
+      status: ShipmentStatus;
+      rawShipment: Shipment;
+    }> = [];
+
+    shipments.forEach(s => {
+      if (s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
+
+      const cteVal = getShipmentCte(s);
+      const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');
+      if (!hasCte) return;
+
+      const cargo = cargoMap.get(s.cargoId);
+      const client = clients.find(c => c.id === cargo?.clientId);
+      const clientName = client?.nomeFantasia || client?.razaoSocial || cargo?.clientName || 'N/A';
+
+      let belongsToUser = false;
+
+      if (isLeader) {
+        let targetLeaderId = getLeaderIdForUser(s.embarcadorId) || 
+                             getLeaderIdForUser(s.createdById) || 
+                             (cargo?.createdById ? getLeaderIdForUser(cargo.createdById) : undefined);
+
+        if (!targetLeaderId && s.agencyCommissionAgencyName) {
+          const matchedUser = users.find(u => 
+            u.name.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase() ||
+            s.agencyCommissionAgencyName?.toLowerCase().includes(u.name.toLowerCase()) ||
+            u.email?.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase()
+          );
+          if (matchedUser) {
+            targetLeaderId = getLeaderIdForUser(matchedUser.id);
+          }
+        }
+
+        if (!targetLeaderId && s.branchId) {
+          const matchedLeaderByBranch = users.find(u => 
+            u.profile === UserProfile.Agenciador && 
+            u.agencyRole !== 'embarque' && 
+            u.branchId === s.branchId
+          );
+          if (matchedLeaderByBranch) {
+            targetLeaderId = matchedLeaderByBranch.id;
+          }
+        }
+
+        if (targetLeaderId === targetUser.id) {
+          belongsToUser = true;
+        }
+      } else if (isOperator) {
+        const directOperatorId = s.embarcadorId || s.createdById || cargo?.createdById;
+        if (directOperatorId === targetUser.id) {
+          belongsToUser = true;
+        }
+      } else {
+        // Comercial / Gerente / Supervisor
+        const effectiveBranchId = s.branchId || (s.createdById ? userBranchMap.get(s.createdById) : undefined) || cargo?.branchId || (cargo?.createdById ? userBranchMap.get(cargo.createdById) : undefined);
+        const isMatriz = effectiveBranchId 
+          ? (branchMap.get(effectiveBranchId)?.name.toLowerCase().includes('matriz') || effectiveBranchId === matrizBranch?.id)
+          : true;
+
+        if (targetUser.commercialIsAgencyMode) {
+          if (effectiveBranchId && userSelectedBranchIds.includes(effectiveBranchId)) {
+            belongsToUser = true;
+          }
+        } else {
+          const directOperatorId = s.embarcadorId || s.createdById || cargo?.createdById;
+          if (directOperatorId === targetUser.id || isMatriz || (effectiveBranchId && userSelectedBranchIds.includes(effectiveBranchId))) {
+            belongsToUser = true;
+          }
+        }
+      }
+
+      if (!belongsToUser) return;
+
+      const expenses = calculateShipmentExpenses(s, cargo);
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
+      const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
+      const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
+
+      const grossRevenue = expenses.companyFreight + demurrageRevenue;
+      const netProfit = expenses.netProfit + demurrageProfit;
+      const totalExpenses = expenses.totalExpenses + (demurrageRevenue - demurrageProfit);
+
+      const isAgencyEnabled = s.agencyCommissionEnabled !== false && (s.agencyCommissionEnabled === true || Boolean(targetUser.profile === UserProfile.Agenciador));
+      const pct = s.agencyCommissionPercentage !== undefined 
+        ? s.agencyCommissionPercentage 
+        : (targetUser.agencyCommissionPercentage ?? 30);
+
+      const commissionVal = (isAgencyEnabled && netProfit > 0) ? Number((netProfit * (pct / 100)).toFixed(2)) : 0;
+
+      const operatorUserId = s.embarcadorId || s.createdById || cargo?.createdById;
+      const operatorUser = operatorUserId ? userMap.get(operatorUserId) : null;
+      const operatorName = operatorUser ? operatorUser.name : (s.agencyCommissionAgencyName || 'N/A');
+
+      const effectiveDate = getShipmentEffectiveDate(s) || (s.createdAt ? new Date(s.createdAt).toLocaleDateString('pt-BR') : '-');
+
+      list.push({
+        id: s.id,
+        cte: cteVal,
+        date: effectiveDate,
+        clientName,
+        origin: cargo?.originLocation ? `${cargo.origin || ''} - ${cargo.originLocation}` : (cargo?.origin || s.origin || 'N/A'),
+        destination: cargo?.destinationLocation ? `${cargo.destination || ''} - ${cargo.destinationLocation}` : (cargo?.destination || s.destination || 'N/A'),
+        driverName: s.driverName || 'N/A',
+        plate: s.horsePlate ? s.horsePlate.toUpperCase() : '-',
+        operatorName,
+        grossRevenue,
+        totalExpenses,
+        netProfit,
+        commissionPct: pct,
+        commissionVal,
+        status: s.status,
+        rawShipment: s
+      });
+    });
+
+    return list;
+  };
+
+  // Gerador de PDF detalhado por agência
+  const exportUserShipmentsPDF = (targetUser: User, customShipments?: ReturnType<typeof getDetailedShipmentsForUser>) => {
+    const list = customShipments || getDetailedShipmentsForUser(targetUser);
+    const isAgenciador = targetUser.profile === UserProfile.Agenciador;
+
+    const doc = new jsPDF('landscape');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12;
+
+    // Cabeçalho institucional
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageWidth, 32, 'F');
+
+    addPdfLogo(doc, companyLogo, { align: 'right', y: 5, width: 35, height: 16 });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(11, 102, 228);
+    doc.text("RELATÓRIO DETALHADO DE EMBARQUES POR AGÊNCIA", margin, 12);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    const roleLabel = isAgenciador 
+      ? (targetUser.agencyRole === 'embarque' ? 'Agenciador de Embarque' : `Agenciador Líder (${targetUser.agencyCommissionPercentage ?? 30}%)`)
+      : (targetUser.profile || 'Comercial');
+    
+    doc.text(`Agência / Titular: ${targetUser.name} (${targetUser.email})`, margin, 18);
+    doc.text(`Perfil / Modalidade: ${roleLabel}  |  Emissão: ${new Date().toLocaleString('pt-BR')}`, margin, 24);
+
+    const totalGross = list.reduce((sum, item) => sum + item.grossRevenue, 0);
+    const totalExp = list.reduce((sum, item) => sum + item.totalExpenses, 0);
+    const totalProfit = list.reduce((sum, item) => sum + item.netProfit, 0);
+    const totalComm = list.reduce((sum, item) => sum + item.commissionVal, 0);
+
+    const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    // Tabela Resumo Executivo
+    autoTable(doc, {
+      startY: 36,
+      head: [["Total de Embarques", "Faturamento Bruto (R$)", "Custos & Despesas (R$)", "Lucro Real Total (R$)", "Comissão Total da Agência (R$)"]],
+      body: [[
+        `${list.length} embarque(s)`,
+        fmt(totalGross),
+        fmt(totalExp),
+        fmt(totalProfit),
+        fmt(totalComm)
+      ]],
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontSize: 8.5, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { fontSize: 9, fontStyle: 'bold', halign: 'center', textColor: [15, 23, 42] },
+      styles: { cellPadding: 3 }
+    });
+
+    const startTableY = (doc as any).lastAutoTable.finalY + 6;
+
+    const tableColumns = [
+      "CTE",
+      "Data",
+      "Cliente",
+      "Origem -> Destino",
+      "Motorista / Placa",
+      "Operador",
+      "Faturamento",
+      "Lucro Real",
+      "% Com.",
+      "Comissão",
+      "Status"
+    ];
+
+    const tableRows = list.map(item => [
+      item.cte || `#${item.id}`,
+      item.date,
+      item.clientName,
+      `${item.origin} -> ${item.destination}`,
+      `${item.driverName}\n(${item.plate})`,
+      item.operatorName,
+      fmt(item.grossRevenue),
+      fmt(item.netProfit),
+      `${item.commissionPct}%`,
+      fmt(item.commissionVal),
+      item.status
+    ]);
+
+    tableRows.push([
+      "TOTAIS",
+      "-",
+      "-",
+      "-",
+      "-",
+      `${list.length} emb.`,
+      fmt(totalGross),
+      fmt(totalProfit),
+      "-",
+      fmt(totalComm),
+      "-"
+    ]);
+
+    autoTable(doc, {
+      startY: startTableY,
+      head: [tableColumns],
+      body: tableRows,
+      theme: 'striped',
+      headStyles: { fillColor: [29, 59, 141], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 7, cellPadding: 2 },
+      columnStyles: {
+        0: { halign: 'center', fontStyle: 'bold' },
+        1: { halign: 'center' },
+        2: { cellWidth: 32 },
+        3: { cellWidth: 42 },
+        4: { cellWidth: 30 },
+        5: { cellWidth: 26 },
+        6: { halign: 'right', fontStyle: 'bold' },
+        7: { halign: 'right', fontStyle: 'bold', textColor: [5, 150, 105] },
+        8: { halign: 'center' },
+        9: { halign: 'right', fontStyle: 'bold', textColor: [126, 34, 206] },
+        10: { halign: 'center', fontSize: 6.5 }
+      },
+      didParseCell: (data) => {
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [241, 245, 249];
+          data.cell.styles.textColor = [15, 23, 42];
+        }
+      },
+      didDrawPage: (data) => {
+        const pageNumber = (doc as any).internal.getNumberOfPages();
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `Transcunha Logística - Relatório de Agenciamento | Página ${data.pageNumber} de ${pageNumber}`,
+          pageWidth / 2,
+          pageHeight - 6,
+          { align: 'center' }
+        );
+      }
+    });
+
+    const safeName = targetUser.name.replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`Relatorio_Embarques_Agencia_${safeName}_${new Date().toISOString().slice(0,10)}.pdf`);
+  };
+
+  // Dados filtrados do modal de detalhes
+  const modalDetailedShipments = useMemo(() => {
+    if (!selectedUserForDetails) return [];
+    const rawList = getDetailedShipmentsForUser(selectedUserForDetails);
+    
+    return rawList.filter(item => {
+      if (modalStatusFilter !== 'ALL' && item.status !== modalStatusFilter) return false;
+      if (modalSearchTerm.trim()) {
+        const q = modalSearchTerm.toLowerCase();
+        const match = 
+          item.cte.toLowerCase().includes(q) ||
+          item.clientName.toLowerCase().includes(q) ||
+          item.driverName.toLowerCase().includes(q) ||
+          item.plate.toLowerCase().includes(q) ||
+          item.origin.toLowerCase().includes(q) ||
+          item.destination.toLowerCase().includes(q) ||
+          item.operatorName.toLowerCase().includes(q) ||
+          item.id.toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [selectedUserForDetails, modalSearchTerm, modalStatusFilter, shipments, cargoMap, stays, users, clients]);
+
+  // Totais do modal
+  const modalTotals = useMemo(() => {
+    const gross = modalDetailedShipments.reduce((sum, item) => sum + item.grossRevenue, 0);
+    const exp = modalDetailedShipments.reduce((sum, item) => sum + item.totalExpenses, 0);
+    const profit = modalDetailedShipments.reduce((sum, item) => sum + item.netProfit, 0);
+    const comm = modalDetailedShipments.reduce((sum, item) => sum + item.commissionVal, 0);
+    return { gross, exp, profit, comm };
+  }, [modalDetailedShipments]);
+
   // Total geral de comissões de agenciamento em todos os fretes (para visão executiva)
   const totalGlobalAgencyCommission = useMemo(() => {
     let sum = 0;
@@ -509,6 +859,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   <th className="p-4">Fixo (R$)</th>
                   <th className="p-4">Comissões (%)</th>
                   <th className="p-4 text-right">Valor a Receber</th>
+                  <th className="p-4 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">
@@ -714,6 +1065,35 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                           <span className="text-gray-400">R$ 0,00</span>
                         )}
                       </td>
+
+                      {/* AÇÕES: LISTAGEM E PDF */}
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedUserForDetails(user);
+                              setModalSearchTerm('');
+                              setModalStatusFilter('ALL');
+                            }}
+                            title="Visualizar listagem detalhada de embarques"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 border border-slate-300/70 dark:border-slate-600 transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                            <span>Listagem</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => exportUserShipmentsPDF(user)}
+                            title="Baixar relatório detalhado de embarques em PDF"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border border-purple-500/30 transition-all shadow-xs hover:shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>PDF</span>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -750,6 +1130,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   <th className="p-4 text-center">Embarques com CTE</th>
                   <th className="p-4 text-right">Lucro Real Gerado</th>
                   <th className="p-4 text-right">Comissão Gerada</th>
+                  <th className="p-4 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">
@@ -778,11 +1159,273 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                       <td className="p-4 text-right font-mono font-black text-purple-600 dark:text-purple-400">
                         {opComm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedUserForDetails(op);
+                              setModalSearchTerm('');
+                              setModalStatusFilter('ALL');
+                            }}
+                            title={`Visualizar embarques de ${op.name}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 border border-slate-300/70 dark:border-slate-600 transition-all shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                            <span>Listagem</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => exportUserShipmentsPDF(op)}
+                            title={`Baixar PDF de ${op.name}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border border-purple-500/30 transition-all shadow-xs hover:shadow-sm active:scale-95 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>PDF</span>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE LISTAGEM DETALHADA DE EMBARQUES DA AGÊNCIA */}
+      {selectedUserForDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-gray-900 w-full max-w-6xl rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col max-h-[92vh] my-auto">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700/80 bg-gradient-to-r from-slate-900 via-purple-950 to-slate-900 text-white flex items-center justify-between flex-wrap gap-4 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-purple-600/30 border border-purple-400/40 flex items-center justify-center text-purple-300 shrink-0">
+                  <FileSpreadsheet className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg font-bold text-white tracking-tight">
+                      Detalhamento de Embarques: <span className="text-purple-300">{selectedUserForDetails.name}</span>
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/30 text-purple-200 border border-purple-400/40 uppercase">
+                      {selectedUserForDetails.profile === UserProfile.Agenciador
+                        ? (selectedUserForDetails.agencyRole === 'embarque' ? 'Operador de Embarque' : `Agência Líder (${selectedUserForDetails.agencyCommissionPercentage ?? 30}%)`)
+                        : selectedUserForDetails.profile}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    {selectedUserForDetails.email} • {modalDetailedShipments.length} embarque(s) com CT-e encontrados
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportUserShipmentsPDF(selectedUserForDetails, modalDetailedShipments)}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl border border-purple-400/50 shadow-md transition-all active:scale-95 cursor-pointer"
+                  title="Baixar a listagem exibida em PDF"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Baixar Relatório PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedUserForDetails(null)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title="Fechar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal KPI Mini-Cards */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400">Total Embarques</span>
+                <p className="text-lg font-black text-gray-900 dark:text-white mt-0.5">{modalDetailedShipments.length}</p>
+              </div>
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400">Faturamento Bruto</span>
+                <p className="text-lg font-black text-blue-600 dark:text-blue-400 mt-0.5 font-mono">
+                  {modalTotals.gross.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+              </div>
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200/80 dark:border-gray-700 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400">Lucro Real Total</span>
+                <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                  {modalTotals.profit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+              </div>
+              <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-purple-200 dark:border-purple-800/80 shadow-2xs bg-purple-50/40 dark:bg-purple-950/30">
+                <span className="text-[10px] uppercase font-bold text-purple-700 dark:text-purple-300">Comissão da Agência</span>
+                <p className="text-lg font-black text-purple-700 dark:text-purple-300 mt-0.5 font-mono">
+                  {modalTotals.comm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Filters Bar */}
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por CTE, cliente, motorista, placa, rota ou operador..."
+                  value={modalSearchTerm}
+                  onChange={e => setModalSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                {modalSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setModalSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={modalStatusFilter}
+                  onChange={e => setModalStatusFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-xs text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="ALL">Todos os Status</option>
+                  <option value={ShipmentStatus.Finalizado}>Finalizado</option>
+                  <option value={ShipmentStatus.AguardandoDescarga}>Aguardando Descarga</option>
+                  <option value={ShipmentStatus.ValidacaoTicket}>Validação Ticket</option>
+                  <option value={ShipmentStatus.AguardandoPagamentoSaldo}>Aguardando Pagamento Saldo</option>
+                  <option value={ShipmentStatus.AguardandoAdiantamento}>Aguardando Adiantamento</option>
+                  <option value={ShipmentStatus.AguardandoCarregamento}>Aguardando Carregamento</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Modal Table Content */}
+            <div className="overflow-x-auto overflow-y-auto flex-1 p-0">
+              {modalDetailedShipments.length === 0 ? (
+                <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+                  <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-40 text-purple-500" />
+                  <p className="font-bold text-sm text-gray-700 dark:text-gray-200">Nenhum embarque encontrado</p>
+                  <p className="text-xs text-gray-400 mt-1">Tente ajustar os filtros de busca ou status acima.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 uppercase font-bold text-[11px] border-b border-gray-200 dark:border-gray-700 z-10">
+                    <tr>
+                      <th className="p-3.5">CTE / Carga</th>
+                      <th className="p-3.5">Data</th>
+                      <th className="p-3.5">Cliente</th>
+                      <th className="p-3.5">Origem & Destino</th>
+                      <th className="p-3.5">Motorista / Veículo</th>
+                      <th className="p-3.5">Operador</th>
+                      <th className="p-3.5 text-right">Faturamento</th>
+                      <th className="p-3.5 text-right">Lucro Real</th>
+                      <th className="p-3.5 text-center">% Com.</th>
+                      <th className="p-3.5 text-right">Comissão Agência</th>
+                      <th className="p-3.5 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700/80 text-gray-900 dark:text-gray-100">
+                    {modalDetailedShipments.map(item => (
+                      <tr key={item.id} className="hover:bg-purple-50/40 dark:hover:bg-purple-950/20 transition-colors">
+                        <td className="p-3 font-mono font-bold text-gray-900 dark:text-white">
+                          <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded border border-slate-300 dark:border-slate-700 text-xs">
+                            {item.cte || `#${item.id}`}
+                          </span>
+                        </td>
+                        <td className="p-3 whitespace-nowrap text-gray-600 dark:text-gray-300 font-medium">
+                          {item.date}
+                        </td>
+                        <td className="p-3 font-semibold max-w-[160px] truncate" title={item.clientName}>
+                          {item.clientName}
+                        </td>
+                        <td className="p-3 text-[11px] max-w-[200px]">
+                          <div className="truncate text-gray-800 dark:text-gray-200 font-medium" title={`${item.origin} -> ${item.destination}`}>
+                            <span className="text-gray-500">De:</span> {item.origin}
+                          </div>
+                          <div className="truncate text-gray-800 dark:text-gray-200 font-medium" title={`${item.origin} -> ${item.destination}`}>
+                            <span className="text-gray-500">Para:</span> {item.destination}
+                          </div>
+                        </td>
+                        <td className="p-3 text-[11px]">
+                          <div className="font-bold text-gray-900 dark:text-white truncate max-w-[140px]" title={item.driverName}>
+                            {item.driverName}
+                          </div>
+                          <div className="font-mono text-[10px] text-gray-500 dark:text-gray-400">
+                            {item.plate}
+                          </div>
+                        </td>
+                        <td className="p-3 text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate max-w-[120px]" title={item.operatorName}>
+                          {item.operatorName}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                          {item.grossRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          {item.netProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="p-3 text-center font-bold text-purple-600 dark:text-purple-400">
+                          {item.commissionPct}%
+                        </td>
+                        <td className="p-3 text-right font-mono font-black text-purple-700 dark:text-purple-300 whitespace-nowrap">
+                          {item.commissionVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            item.status === ShipmentStatus.Finalizado
+                              ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                              : 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                          }`}>
+                            {item.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 bg-gray-100 dark:bg-gray-800 border-t-2 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white font-bold text-xs">
+                    <tr>
+                      <td colSpan={6} className="p-3.5 uppercase tracking-wide">
+                        Total Geral ({modalDetailedShipments.length} embarques filtrados)
+                      </td>
+                      <td className="p-3.5 text-right font-mono text-blue-600 dark:text-blue-400">
+                        {modalTotals.gross.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="p-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                        {modalTotals.profit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="p-3.5 text-center text-gray-400">-</td>
+                      <td className="p-3.5 text-right font-mono text-purple-700 dark:text-purple-300 font-black">
+                        {modalTotals.comm.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="p-3.5 text-center text-gray-400">-</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50 dark:bg-gray-800/80 flex items-center justify-between flex-wrap gap-3 shrink-0">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Relatório calculado em tempo real com base nos custos, fretes e estadias aprovadas.
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedUserForDetails(null)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

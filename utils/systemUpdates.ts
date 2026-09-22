@@ -21,6 +21,64 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_21_v2_8_9',
+    version: 'v2.8.9',
+    date: '21/09/2026',
+    title: 'Padronização Rigorosa do Fluxo e Transição de Status de Embarques',
+    summary: 'Reconfigurado o fluxo de avanço e retrocesso dos status para obedecer rigorosamente à ordem sequencial de 11 etapas, com tratamento preciso para as 3 regras de salto permitidas.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Fluxo Sequencial Padronizado de 11 Etapas',
+        description: 'O ciclo de vida do frete obedece estritamente à ordem: 1 - Ag. Cadastro, 2 - Ag. Seguradora, 3 - Ag. Carregamento, 4 - Ag. Nota, 5 - Ag. Fiscal, 6 - Ag. Adiantamento, 7 - Ag. Agend. ou Troca/nfe, 8 - Ag. Descarga, 9 - Valid. de Ticket, 10 - Ag. Saldo, 11 - Finalizado.'
+      },
+      {
+        category: 'improvement',
+        title: 'Retrocesso Preciso de Status',
+        description: 'A ação de voltar status agora segue exatamente a ordem inversa passo a passo (11 -> 10 -> 9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1).'
+      },
+      {
+        category: 'feature',
+        title: 'Tratamento das Regras Exclusivas de Salto',
+        description: 'Configuradas as únicas 3 exceções de avanço/recuo: motorista com histórico prévio inicia em Ag. Seguradora (pula Ag. Cadastro); adiantamento de 0% pula Ag. Adiantamento (avança 5 -> 7 e volta 7 -> 5); adiantamento de 100% pula Ag. Saldo (avança 9 -> 11 e volta 11 -> 9).'
+      },
+      {
+        category: 'feature',
+        title: 'Edição de Forma de Pagamento e Adiantamento até "Ag. Adiantamento"',
+        description: 'Disponibilizado botão direto de "Editar" para Forma de Pagamento (PIX - E-Frete, Depósito em Conta ou SMS Carta Frete, com chave Pix ou dados bancários) e Adiantamento (%) no modal de detalhes do embarque, disponível até a etapa de Ag. Adiantamento.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_21_v2_8_8',
+    version: 'v2.8.8',
+    date: '21/09/2026',
+    title: 'Visualização e Download de Relatórios de Embarques por Agência (Listagem & PDF)',
+    summary: 'Disponibilizados botões de "Listagem" para auditoria detalhada de cada frete e "PDF" para download instantâneo de relatórios consolidados por agência, agenciador líder e equipe de operadores.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Modal de Listagem Detalhada por Agência',
+        description: 'Permite abrir um painel completo com busca rápida, filtros por status e detalhamento de cada embarque: CT-e, data, tomador, rotas, motorista, custos operacionais, lucro real e comissões da agência.'
+      },
+      {
+        category: 'feature',
+        title: 'Exportação em PDF com Layout Transcunha',
+        description: 'Geração de relatórios em PDF com cabeçalho institucional, logotipo da empresa, métricas consolidadas (KPIs) e tabela completa dos embarques com totais calculados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ações Diretas nas Tabelas Comercial e Agenciadores',
+        description: 'Botões integrados diretamente nas linhas da tabela principal de comissões comerciais e na tabela de operadores vinculados para acesso com 1 clique.'
+      },
+      {
+        category: 'improvement',
+        title: 'Transferência de Embarques com Atualização do Solicitante',
+        description: 'Ao transferir um embarque, o solicitante (createdById) e embarcador responsável são atualizados automaticamente para o novo usuário, sincronizando também filial e comissões da agência.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_21_v2_8_7',
     version: 'v2.8.7',
     date: '21/09/2026',

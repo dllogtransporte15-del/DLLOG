@@ -625,16 +625,16 @@ const App: React.FC = () => {
   }, [verifySession]);
 
   const nextStatusMap: Partial<Record<ShipmentStatus, ShipmentStatus>> = {
-    [ShipmentStatus.PreCadastro]: ShipmentStatus.AguardandoSeguradora,
-    [ShipmentStatus.AguardandoSeguradora]: ShipmentStatus.AguardandoCarregamento,
-    [ShipmentStatus.AguardandoCarregamento]: ShipmentStatus.AguardandoNota,
-    [ShipmentStatus.AguardandoNota]: ShipmentStatus.AguardandoFiscal,
-    [ShipmentStatus.AguardandoFiscal]: ShipmentStatus.AguardandoAdiantamento,
-    // AguardandoAdiantamento is now handled conditionally
-    [ShipmentStatus.AguardandoAgendamento]: ShipmentStatus.AguardandoDescarga,
-    [ShipmentStatus.AguardandoDescarga]: ShipmentStatus.ValidacaoTicket,
-    [ShipmentStatus.ValidacaoTicket]: ShipmentStatus.AguardandoPagamentoSaldo,
-    [ShipmentStatus.AguardandoPagamentoSaldo]: ShipmentStatus.Finalizado,
+    [ShipmentStatus.PreCadastro]: ShipmentStatus.AguardandoSeguradora,            // 1 -> 2
+    [ShipmentStatus.AguardandoSeguradora]: ShipmentStatus.AguardandoCarregamento, // 2 -> 3
+    [ShipmentStatus.AguardandoCarregamento]: ShipmentStatus.AguardandoNota,       // 3 -> 4
+    [ShipmentStatus.AguardandoNota]: ShipmentStatus.AguardandoFiscal,             // 4 -> 5
+    [ShipmentStatus.AguardandoFiscal]: ShipmentStatus.AguardandoAdiantamento,     // 5 -> 6 (ou pula p/ 7 se 0%)
+    [ShipmentStatus.AguardandoAdiantamento]: ShipmentStatus.AguardandoAgendamento,// 6 -> 7
+    [ShipmentStatus.AguardandoAgendamento]: ShipmentStatus.AguardandoDescarga,    // 7 -> 8
+    [ShipmentStatus.AguardandoDescarga]: ShipmentStatus.ValidacaoTicket,          // 8 -> 9
+    [ShipmentStatus.ValidacaoTicket]: ShipmentStatus.AguardandoPagamentoSaldo,    // 9 -> 10 (ou pula p/ 11 se 100%)
+    [ShipmentStatus.AguardandoPagamentoSaldo]: ShipmentStatus.Finalizado,         // 10 -> 11
   };
 
   // --- HISTORY LOGGING ---
@@ -1267,12 +1267,7 @@ const App: React.FC = () => {
     const driverCpfClean = (data.driverCpf || driverToUse?.cpf || '').replace(/\D/g, '');
     const driverNameClean = (data.driverName || driverToUse?.name || '').trim().toLowerCase();
 
-    // Check if the product linked to this cargo requires Risk Management (GR)
-    const targetCargo = cargos.find(c => c.id === data.cargoId);
-    const targetProduct = products.find(p => p.id === targetCargo?.productId);
-    const requiresGR = targetProduct?.requiresRiskManagement !== false;
-
-    // Check if the driver has at least one completed shipment (viagem concluída - status Finalizado)
+    // Verificar se o motorista já tem histórico de embarque efetivado (embarque anterior não cancelado)
     const hasCompletedTrip = shipments.some(s => {
       const sCpfClean = (s.driverCpf || '').replace(/\D/g, '');
       const sNameClean = (s.driverName || '').trim().toLowerCase();
@@ -1281,19 +1276,16 @@ const App: React.FC = () => {
                             (driverNameClean !== '' && sNameClean === driverNameClean);
       if (!isDriverMatch) return false;
 
-      return s.status === ShipmentStatus.Finalizado;
+      return s.status !== ShipmentStatus.Cancelado;
     });
 
     let initialStatus: ShipmentStatus;
-    if (!hasCompletedTrip) {
-      // Primeira viagem / sem histórico de viagem concluída: obrigatoriamente passa por Ag. Cadastro
-      initialStatus = ShipmentStatus.PreCadastro;
-    } else if (!requiresGR) {
-      // Motorista com histórico de viagem concluída e carga sem exigência de GR: vai direto para Ag. Carregamento
-      initialStatus = ShipmentStatus.AguardandoCarregamento;
-    } else {
-      // Motorista com histórico de viagem concluída e carga com exigência de GR: vai para Ag. Seguradora
+    if (hasCompletedTrip) {
+      // Motorista com histórico de embarque efetivado: pula "1 - Ag. Cadastro" e inicia em "2 - Ag. Seguradora"
       initialStatus = ShipmentStatus.AguardandoSeguradora;
+    } else {
+      // Motorista sem histórico prévio: inicia em "1 - Ag. Cadastro"
+      initialStatus = ShipmentStatus.PreCadastro;
     }
 
     if (!driverToUse) {
@@ -1729,50 +1721,54 @@ const App: React.FC = () => {
     if (originalShipment.status === ShipmentStatus.AguardandoSeguradora && (grStatus === 'reprovado' || grStatus === 'reprovado_restrito')) {
         nextStatus = ShipmentStatus.Cancelado;
     } else if (originalShipment.status === ShipmentStatus.PreCadastro) {
-        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-        const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
-        const requiresGR = relatedProduct?.requiresRiskManagement !== false;
-
-        if (!requiresGR) {
-            nextStatus = ShipmentStatus.AguardandoCarregamento;
-        } else {
-            nextStatus = ShipmentStatus.AguardandoSeguradora;
-        }
-    } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
-        nextStatus = ShipmentStatus.AguardandoDescarga;
+        // 1 - Ag. Cadastro -> 2 - Ag. Seguradora
+        nextStatus = ShipmentStatus.AguardandoSeguradora;
+    } else if (originalShipment.status === ShipmentStatus.AguardandoSeguradora) {
+        // 2 - Ag. Seguradora -> 3 - Ag. Carregamento
+        nextStatus = ShipmentStatus.AguardandoCarregamento;
+    } else if (originalShipment.status === ShipmentStatus.AguardandoCarregamento) {
+        // 3 - Ag. Carregamento -> 4 - Ag. Nota
+        nextStatus = ShipmentStatus.AguardandoNota;
+    } else if (originalShipment.status === ShipmentStatus.AguardandoNota) {
+        // 4 - Ag. Nota -> 5 - Ag. Fiscal
+        nextStatus = ShipmentStatus.AguardandoFiscal;
     } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
+        // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7 se 0% de adiantamento)
         const advPct = advancePercentage !== undefined ? advancePercentage : originalShipment.advancePercentage;
         const advVal = advanceValue !== undefined ? advanceValue : originalShipment.advanceValue;
-        const is0PercentAdvance = advPct === 0 || advVal === 0;
+        const is0PercentAdvance = advPct === 0 || (advVal !== undefined && advVal === 0);
 
         if (is0PercentAdvance) {
-            const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-            if (relatedCargo?.requiresScheduling) {
-                nextStatus = ShipmentStatus.AguardandoAgendamento;
-            } else {
-                nextStatus = ShipmentStatus.AguardandoDescarga;
-            }
+            // Pula "6 - Ag. Adiantamento" e vai direto para "7 - Ag. Agend. ou Troca/nfe"
+            nextStatus = ShipmentStatus.AguardandoAgendamento;
         } else {
             nextStatus = ShipmentStatus.AguardandoAdiantamento;
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
-        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-        if (relatedCargo?.requiresScheduling) {
-            nextStatus = ShipmentStatus.AguardandoAgendamento;
-        } else {
-            nextStatus = ShipmentStatus.AguardandoDescarga;
-        }
+        // 6 - Ag. Adiantamento -> 7 - Ag. Agend. ou Troca/nfe
+        nextStatus = ShipmentStatus.AguardandoAgendamento;
+    } else if (originalShipment.status === ShipmentStatus.AguardandoAgendamento) {
+        // 7 - Ag. Agend. ou Troca/nfe -> 8 - Ag. Descarga
+        nextStatus = ShipmentStatus.AguardandoDescarga;
+    } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
+        nextStatus = ShipmentStatus.AguardandoDescarga;
     } else if (originalShipment.status === ShipmentStatus.AguardandoDescarga) {
+        // 8 - Ag. Descarga -> 9 - Valid. de Ticket
         nextStatus = ShipmentStatus.ValidacaoTicket;
     } else if (originalShipment.status === ShipmentStatus.ValidacaoTicket) {
+        // 9 - Valid. de Ticket -> 10 - Ag. Saldo (ou pula para 11 se 100% de adiantamento)
         const is100PercentAdvance = (originalShipment.advancePercentage !== undefined && originalShipment.advancePercentage >= 100) || 
                                      (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue <= 0.001 && originalShipment.advanceValue !== undefined && originalShipment.advanceValue > 0) ||
                                      (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
         if (is100PercentAdvance) {
+            // Pula "10 - Ag. Saldo" e vai direto para "11 - Finalizado"
             nextStatus = ShipmentStatus.Finalizado;
         } else {
             nextStatus = ShipmentStatus.AguardandoPagamentoSaldo;
         }
+    } else if (originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo) {
+        // 10 - Ag. Saldo -> 11 - Finalizado
+        nextStatus = ShipmentStatus.Finalizado;
     } else if (originalShipment.status === ShipmentStatus.Finalizado) {
         nextStatus = ShipmentStatus.Finalizado;
     } else {
@@ -2500,18 +2496,69 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
+
+    const newEmbarcador = users.find(u => u.id === newEmbarcadorId);
+    const newEmbarcadorName = newEmbarcador?.name || 'N/A';
+
+    // Identificação de regras de comissão / agência do novo responsável
+    const isNewAgenciador = newEmbarcador?.profile === UserProfile.Agenciador;
+    const newActiveAgenciador = isNewAgenciador ? newEmbarcador : null;
+    const newAgencyLeader = (newActiveAgenciador && newActiveAgenciador.agencyRole === 'embarque' && newActiveAgenciador.agencyLeaderId)
+      ? users.find(u => u.id === newActiveAgenciador.agencyLeaderId)
+      : newActiveAgenciador;
+
+    const newAgencyRateConfigured = newAgencyLeader?.agencyCommissionPercentage ?? 30;
+    const newAgencyNameAuto = newAgencyLeader
+      ? (newAgencyLeader.branchId ? `Agência ${newAgencyLeader.branchId} (${newAgencyLeader.name})` : newAgencyLeader.name)
+      : (newEmbarcador?.branchId ? `Agência ${newEmbarcador.branchId} (${newEmbarcador.name})` : newEmbarcador?.name);
+
+    const newShipperRateConfigured = newEmbarcador?.shipperCommissionRatePerTon;
+    const isNewShipperComm = Boolean(newShipperRateConfigured && newShipperRateConfigured > 0);
+
     let updated: Shipment | undefined;
     setShipments((prev: Shipment[]) => prev.map(s => {
         if (s.id === shipmentId) {
-            const oldEmbarcadorName = users.find(u => u.id === s.embarcadorId)?.name || 'N/A';
-            const newEmbarcadorName = users.find(u => u.id === newEmbarcadorId)?.name || 'N/A';
-            updated = { ...s, embarcadorId: newEmbarcadorId, history: [...s.history, createHistoryLog(`Embarcador responsável alterado de "${oldEmbarcadorName}" para "${newEmbarcadorName}".`)] };
+            const oldEmbarcadorName = users.find(u => u.id === s.embarcadorId || u.id === s.createdById)?.name || 'N/A';
+            
+            const docsUpdated = { ...(s.documents || {}) };
+            if (isNewAgenciador) {
+              docsUpdated.agency_commission_enabled = true;
+              docsUpdated.agency_commission_percentage = newAgencyRateConfigured;
+              docsUpdated.agency_commission_agency_name = newAgencyNameAuto;
+            }
+            if (isNewShipperComm) {
+              docsUpdated.shipper_commission_enabled = true;
+              docsUpdated.shipper_commission_rate_per_ton = newShipperRateConfigured;
+            }
+
+            updated = { 
+              ...s, 
+              embarcadorId: newEmbarcadorId,
+              createdById: newEmbarcadorId, // Atualiza também o solicitante do embarque
+              branchId: newEmbarcador?.branchId || s.branchId,
+              agencyCommissionEnabled: isNewAgenciador ? true : s.agencyCommissionEnabled,
+              agencyCommissionPercentage: isNewAgenciador ? newAgencyRateConfigured : s.agencyCommissionPercentage,
+              agencyCommissionAgencyName: isNewAgenciador ? newAgencyNameAuto : s.agencyCommissionAgencyName,
+              shipperCommissionEnabled: isNewShipperComm ? true : s.shipperCommissionEnabled,
+              shipperCommissionRatePerTon: isNewShipperComm ? newShipperRateConfigured : s.shipperCommissionRatePerTon,
+              documents: Object.keys(docsUpdated).length > 0 ? docsUpdated : s.documents,
+              history: [
+                ...s.history, 
+                createHistoryLog(`Embarque transferido: Solicitante e embarcador responsável alterados de "${oldEmbarcadorName}" para "${newEmbarcadorName}".`)
+              ] 
+            };
             return updated;
         }
         return s;
     }));
     if (updated) {
-      try { await upsertShipment(updated); } catch(err) { console.error('Erro ao transferir embarque:', err); }
+      try { 
+        await upsertShipment(updated); 
+        showToast(`Embarque transferido com sucesso para ${newEmbarcadorName}.`, 'success');
+      } catch(err) { 
+        console.error('Erro ao transferir embarque:', err); 
+        showToast('Erro ao transferir embarque no banco de dados.', 'error');
+      }
     }
   };
 
@@ -3178,16 +3225,71 @@ const App: React.FC = () => {
         return;
     }
 
-    if (!shipment.statusHistory || shipment.statusHistory.length <= 1) {
-        showToast("Não há histórico de status para reverter.", 'info');
-        return;
+    const currentStatus = shipment.status;
+
+    // Ordem estrita de reversão: 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+    const getStrictPreviousStatus = (status: ShipmentStatus, s: Shipment): ShipmentStatus | null => {
+      const is100PctAdv = (s.advancePercentage !== undefined && s.advancePercentage >= 100) || 
+                          (s.balanceToReceiveValue !== undefined && s.balanceToReceiveValue <= 0.001 && s.advanceValue !== undefined && s.advanceValue > 0) ||
+                          (s.advanceValue !== undefined && s.driverFreightValue !== undefined && (s.advanceValue + (s.tollValue || 0) >= s.driverFreightValue - 0.01));
+      
+      const is0PctAdv = s.advancePercentage === 0 || (s.advanceValue !== undefined && s.advanceValue === 0);
+
+      switch (status) {
+        case ShipmentStatus.Finalizado: // 11
+          // Se foi 100% adiantamento (pulou Ag. Saldo), volta direto para 9 - Valid. de Ticket
+          return is100PctAdv ? ShipmentStatus.ValidacaoTicket : ShipmentStatus.AguardandoPagamentoSaldo;
+        case ShipmentStatus.AguardandoPagamentoSaldo: // 10
+          return ShipmentStatus.ValidacaoTicket; // 9
+        case ShipmentStatus.ValidacaoTicket: // 9
+          return ShipmentStatus.AguardandoDescarga; // 8
+        case ShipmentStatus.AguardandoDescarga: // 8
+          return ShipmentStatus.AguardandoAgendamento; // 7
+        case ShipmentStatus.AguardandoAgendamento: // 7
+          // Se foi 0% adiantamento (pulou Ag. Adiantamento), volta direto para 5 - Ag. Fiscal
+          return is0PctAdv ? ShipmentStatus.AguardandoFiscal : ShipmentStatus.AguardandoAdiantamento;
+        case ShipmentStatus.AguardandoAdiantamento: // 6
+          return ShipmentStatus.AguardandoFiscal; // 5
+        case ShipmentStatus.AguardandoFiscal: // 5
+          return ShipmentStatus.AguardandoNota; // 4
+        case ShipmentStatus.AguardandoNota: // 4
+          return ShipmentStatus.AguardandoCarregamento; // 3
+        case ShipmentStatus.AguardandoCarregamento: // 3
+          return ShipmentStatus.AguardandoSeguradora; // 2
+        case ShipmentStatus.AguardandoSeguradora: // 2
+          // Se o motorista passou por Ag. Cadastro (1)
+          return s.statusHistory?.some(h => h.status === ShipmentStatus.PreCadastro) ? ShipmentStatus.PreCadastro : null;
+        case ShipmentStatus.PreCadastro: // 1
+          return null;
+        case ShipmentStatus.Cancelado:
+          return s.statusHistory && s.statusHistory.length > 1 ? s.statusHistory[s.statusHistory.length - 2].status : ShipmentStatus.PreCadastro;
+        default:
+          return null;
+      }
+    };
+
+    let previousStatus: ShipmentStatus | null = null;
+    let historyCopy = shipment.statusHistory ? [...shipment.statusHistory] : [];
+
+    if (historyCopy.length > 1) {
+      historyCopy.pop(); // Remove o status atual
+      const previousStatusEntry = historyCopy[historyCopy.length - 1];
+      previousStatus = previousStatusEntry?.status || getStrictPreviousStatus(currentStatus, shipment);
+    } else {
+      previousStatus = getStrictPreviousStatus(currentStatus, shipment);
+      if (previousStatus) {
+        historyCopy = [{
+          status: previousStatus,
+          timestamp: new Date().toISOString(),
+          userId: currentUser.id
+        }];
+      }
     }
 
-    const currentStatus = shipment.status;
-    const historyCopy = [...shipment.statusHistory];
-    historyCopy.pop(); // Remove the current status entry
-    const previousStatusEntry = historyCopy[historyCopy.length - 1];
-    const previousStatus = previousStatusEntry.status;
+    if (!previousStatus) {
+      showToast("Não há status anterior para reverter.", 'info');
+      return;
+    }
 
     // Build list of document and metadata keys to clear ONLY for the current status that is being reverted/cancelled
     const getDocKeysForStatus = (status: ShipmentStatus): string[] => {

@@ -327,7 +327,21 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const renderReport = () => {
     switch(activeReport) {
       case 'comercial':
-        return <SupervisorReport shipments={filteredShipments} cargos={cargos} users={users} branches={branches} stays={stays} onSaveUser={onSaveUser as any} currentUser={currentUser} />;
+        return (
+          <SupervisorReport 
+            shipments={filteredShipments} 
+            cargos={cargos} 
+            users={users} 
+            branches={branches} 
+            stays={stays} 
+            clients={clients}
+            companyLogo={companyLogo}
+            startDate={startDate}
+            endDate={endDate}
+            onSaveUser={onSaveUser as any} 
+            currentUser={currentUser} 
+          />
+        );
       case 'embarcadores':
         return <ShipperReport shipments={filteredShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} companyLogo={companyLogo} />;
       case 'clientes':
