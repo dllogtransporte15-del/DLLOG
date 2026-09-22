@@ -257,10 +257,14 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return user.id;
   };
 
-  // Filtrar usuários comerciais e agenciadores líderes
+  // Filtrar usuários comerciais e agenciadores líderes (Embarcadores, Clientes e Motoristas NUNCA entram no relatório comercial)
   const commercialUsers = useMemo(() => {
     return users.filter(u => {
       if (u.profile === UserProfile.Demonstracao || (u.profile as string) === 'Demo' || u.name?.toUpperCase().includes('DEMO')) {
+        return false;
+      }
+      // Embarcador, Cliente e Motorista não entram nos relatórios comerciais
+      if (u.profile === UserProfile.Embarcador || u.profile === UserProfile.Cliente || u.profile === UserProfile.Motorista) {
         return false;
       }
       // Agenciador de Embarque não aparece como linha individual na tabela principal de agências
@@ -268,7 +272,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         return false;
       }
       return (
-        u.hasCommercialCommission === true || 
+        (u.hasCommercialCommission === true && (u.profile === UserProfile.Comercial || u.profile === UserProfile.GerenteComercial || u.profile === UserProfile.Supervisor || u.profile === UserProfile.Agenciador || u.profile === UserProfile.Admin || u.profile === UserProfile.Diretor)) || 
         u.profile === UserProfile.GerenteComercial || 
         u.profile === UserProfile.Comercial ||
         u.profile === UserProfile.Supervisor ||
@@ -443,7 +447,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
       const cargo = cargoMap.get(s.cargoId);
       const client = clients.find(c => c.id === cargo?.clientId);
-      const clientName = client?.nomeFantasia || client?.razaoSocial || cargo?.clientName || 'N/A';
+      const clientName = client?.nomeFantasia || client?.razaoSocial || 'N/A';
 
       let belongsToUser = false;
 
@@ -530,8 +534,8 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
         cte: cteVal,
         date: effectiveDate,
         clientName,
-        origin: cargo?.originLocation ? `${cargo.origin || ''} - ${cargo.originLocation}` : (cargo?.origin || s.origin || 'N/A'),
-        destination: cargo?.destinationLocation ? `${cargo.destination || ''} - ${cargo.destinationLocation}` : (cargo?.destination || s.destination || 'N/A'),
+        origin: cargo?.originLocation ? `${cargo.origin || ''} - ${cargo.originLocation}` : (cargo?.origin || s.route || 'N/A'),
+        destination: cargo?.destinationLocation ? `${cargo.destination || ''} - ${cargo.destinationLocation}` : (cargo?.destination || 'N/A'),
         driverName: s.driverName || 'N/A',
         plate: s.horsePlate ? s.horsePlate.toUpperCase() : '-',
         operatorName,

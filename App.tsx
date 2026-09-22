@@ -1372,8 +1372,6 @@ const App: React.FC = () => {
     let historyMsg = `Embarque ${newShipmentId} criado.`;
     if (!hasCompletedTrip) {
       historyMsg += ` Primeiro embarque do motorista (sem histórico de viagem concluída) — direcionado para Ag. Cadastro.`;
-    } else if (!requiresGR) {
-      historyMsg += ` Carga com produto sem exigência de GR e motorista com histórico de viagem concluída — direcionado diretamente para Ag. Carregamento.`;
     } else {
       historyMsg += ` Motorista com histórico de viagem concluída — direcionado diretamente para Ag. Seguradora.`;
     }
@@ -1504,8 +1502,6 @@ const App: React.FC = () => {
     let toastMessage = `Novo embarque ${newShipmentId} criado com sucesso!`;
     if (!hasCompletedTrip) {
       toastMessage = `Embarque ${newShipmentId} criado! Primeiro embarque do motorista (sem histórico de viagem concluída) — direcionado para "Ag. Cadastro".`;
-    } else if (!requiresGR) {
-      toastMessage = `Embarque ${newShipmentId} criado! Produto não exige GR e motorista possui viagem concluída — direcionado direto para "Ag. Carregamento".`;
     } else {
       toastMessage = `Embarque ${newShipmentId} criado! Motorista com histórico de viagem concluída — direcionado direto para "Ag. Seguradora".`;
     }

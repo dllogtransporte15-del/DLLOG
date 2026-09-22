@@ -4,7 +4,7 @@ import type { Shipment, Cargo, User } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
-import { getShipmentEffectiveDate } from '../utils';
+import { getShipmentEffectiveDate, hasCteAttached } from '../utils';
 
 interface ShipperRankingCardProps {
   shipments: Shipment[];
@@ -81,12 +81,15 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
               netMargin += expenses.netProfit;
             }
 
-            effectiveTonnage += (shipment.shipmentTonnage || 0);
+            if (hasCteAttached(shipment)) {
+              effectiveTonnage += (shipment.shipmentTonnage || 0);
+            }
           }
         }
       });
 
-      const commission = effectiveTonnage * 2;
+      const ratePerTon = Number(shipper.shipperCommissionRatePerTon) || 2;
+      const commission = effectiveTonnage * ratePerTon;
 
       return {
         id: shipper.id,

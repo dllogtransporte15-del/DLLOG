@@ -1172,26 +1172,73 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       }
     }
 
+    let detectedInvoiceValue: number | undefined;
+    let detectedToll: number | undefined;
+    let detectedFederalTax: number | undefined;
+
     for (const url of allUrls) {
       try {
         const ext = await extractDetailedDocData(url, 'Documento');
         if (ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio > 0) {
+          detectedToll = ext.financeiro.valorPedagio;
           setAutoToll(ext.financeiro.valorPedagio);
         }
         if (ext.carga?.valorMercadoria !== undefined && ext.carga.valorMercadoria > 0) {
+          detectedInvoiceValue = ext.carga.valorMercadoria;
           setAutoInvoiceValue(ext.carga.valorMercadoria);
         }
         if (ext.financeiro?.valorPisCofinsFederal !== undefined && ext.financeiro.valorPisCofinsFederal > 0) {
+          detectedFederalTax = ext.financeiro.valorPisCofinsFederal;
           setAutoFederalTax(ext.financeiro.valorPisCofinsFederal);
         } else if (ext.financeiro?.valorPis !== undefined || ext.financeiro?.valorCofins !== undefined) {
           const sumFed = (ext.financeiro?.valorPis || 0) + (ext.financeiro?.valorCofins || 0);
-          if (sumFed > 0) setAutoFederalTax(sumFed);
+          if (sumFed > 0) {
+            detectedFederalTax = sumFed;
+            setAutoFederalTax(sumFed);
+          }
         }
       } catch {
         // ignore
       }
     }
-  }, [shipment.documents]);
+
+    if (onUpdateShipmentData) {
+      let hasPatch = false;
+      const patch: Partial<Shipment> = {};
+      const updatedRealProfit = { ...(shipment.realProfitData || {}) };
+      const updatedDocs = { ...(shipment.documents || {}) };
+
+      if (detectedInvoiceValue && detectedInvoiceValue > 0) {
+        if (!shipment.nfeValue || shipment.nfeValue !== detectedInvoiceValue || !shipment.realProfitData?.invoiceValue) {
+          patch.nfeValue = detectedInvoiceValue;
+          updatedRealProfit.invoiceValue = detectedInvoiceValue;
+          (updatedDocs as any).nfe_value = detectedInvoiceValue;
+          (updatedDocs as any).valor_mercadoria = detectedInvoiceValue;
+          hasPatch = true;
+        }
+      }
+
+      if (detectedToll && detectedToll > 0) {
+        if (!shipment.tollValue || shipment.tollValue !== detectedToll || !shipment.realProfitData?.toll) {
+          patch.tollValue = detectedToll;
+          updatedRealProfit.toll = detectedToll;
+          (updatedDocs as any).toll_value = detectedToll;
+          (updatedDocs as any).valor_pedagio = detectedToll;
+          hasPatch = true;
+        }
+      }
+
+      if (hasPatch) {
+        patch.realProfitData = updatedRealProfit as any;
+        patch.documents = updatedDocs;
+        try {
+          onUpdateShipmentData(shipment.id, patch);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, [shipment.documents, shipment.id, shipment.nfeValue, shipment.tollValue, shipment.realProfitData, onUpdateShipmentData]);
 
   React.useEffect(() => {
     syncDocs();

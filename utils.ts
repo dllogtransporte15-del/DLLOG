@@ -190,6 +190,33 @@ export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; do
   return '-';
 }
 
+export function hasCteAttached(shipment?: { cteNumber?: string; documents?: any; status?: any } | null): boolean {
+  if (!shipment) return false;
+  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '' && shipment.cteNumber.trim() !== '-') {
+    return true;
+  }
+  if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '' && String(shipment.documents.cte_number).trim() !== '-') {
+    return true;
+  }
+
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    for (const [key, val] of Object.entries(docs)) {
+      if (/ct[-_]?e/i.test(key)) {
+        if (Array.isArray(val) && val.length > 0) return true;
+        if (typeof val === 'string' && val.trim() !== '') return true;
+      }
+    }
+  }
+
+  const cteNum = getShipmentCte(shipment);
+  if (cteNum && cteNum !== '-') return true;
+
+  return false;
+}
+
+export const getShipmentCteNumber = getShipmentCte;
+
 export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any } | null): string | null {
   if (!shipment) return null;
   if (shipment.status && !isCteApplicableForStatus(shipment.status)) return null;

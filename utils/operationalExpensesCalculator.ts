@@ -188,7 +188,12 @@ export function calculateShipmentExpenses(
     : (isExportCargo ? 0 : impostoFederalMercadoInterno);
 
   // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
-  const toll = shipment.tollValue || shipment.realProfitData?.toll || 0;
+  const toll = shipment.tollValue || 
+               shipment.realProfitData?.toll || 
+               (shipment.documents as any)?.toll_value ||
+               (shipment.documents as any)?.valor_pedagio ||
+               (shipment.documents as any)?.financeiro?.valorPedagio ||
+               0;
   const baseInssPatronal = Math.max(0, driverFreight - toll);
   const inssPatronal = isShipmentPf && baseInssPatronal > 0 
     ? Number((baseInssPatronal * config.patronalPfRate).toFixed(2)) 
@@ -197,6 +202,11 @@ export function calculateShipmentExpenses(
   // 8. Valor da NF e Base de Seguro (+18% somente em carga de exportação)
   const invoiceValue = shipment.nfeValue || 
                        shipment.realProfitData?.invoiceValue || 
+                       (shipment.documents as any)?.nfe_value ||
+                       (shipment.documents as any)?.valor_mercadoria ||
+                       (shipment.documents as any)?.vMerc ||
+                       (shipment.documents as any)?.invoice_value ||
+                       (shipment.documents as any)?.carga?.valorMercadoria ||
                        0;
   const insuranceBaseValue = invoiceValue > 0 
     ? Number((invoiceValue * (isExportCargo ? 1.18 : 1.00)).toFixed(2)) 

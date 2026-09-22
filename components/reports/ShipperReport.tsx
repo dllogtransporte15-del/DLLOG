@@ -11,6 +11,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import MultiSelectDropdown from '../MultiSelectDropdown';
+import { hasCteAttached } from '../../utils';
 
 interface ShipperReportProps {
   shipments: Shipment[];
@@ -24,6 +25,7 @@ interface ShipperReportProps {
 interface OperatorStats {
   id: string;
   name: string;
+  ratePerTon: number;
   total: number;
   finalizado: number;
   emAndamento: number;
@@ -55,19 +57,22 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
 
     const canViewCommission = useMemo(() => {
         if (!currentUser) return false;
-        return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
+        return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao, UserProfile.Supervisor, UserProfile.GerenteComercial].includes(currentUser.profile);
     }, [currentUser]);
 
     const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
 
     const operatorStats = useMemo<OperatorStats[]>(() => {
+        const embarcadorUsers = users.filter(u => u.profile === UserProfile.Embarcador);
         const creatorIds = [...new Set([
+            ...embarcadorUsers.map(u => u.id),
             ...shipments.map(s => s.embarcadorId).filter(Boolean) as string[],
             ...shipments.map(s => s.createdById).filter(Boolean) as string[]
         ])];
 
         return creatorIds.map(creatorId => {
             const creator = users.find(u => u.id === creatorId);
+            const creatorRate = Number(creator?.shipperCommissionRatePerTon) || 0;
             const creatorShipments = shipments.filter(s => s.embarcadorId === creatorId || s.createdById === creatorId);
           
             const stats = creatorShipments.reduce((acc, shipment) => {
@@ -79,33 +84,29 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                   acc.emAndamento += 1;
                 }
 
-                const isEffective = [
-                    ShipmentStatus.PreCadastro,
-                    ShipmentStatus.AguardandoSeguradora,
-                    ShipmentStatus.AguardandoNota,
-                    ShipmentStatus.AguardandoAdiantamento,
-                    ShipmentStatus.AguardandoAgendamento,
-                    ShipmentStatus.AguardandoDescarga,
-                    ShipmentStatus.ValidacaoTicket,
-                    ShipmentStatus.AguardandoPagamentoSaldo,
-                    ShipmentStatus.Finalizado
-                ].includes(shipment.status);
+                const isEffective = shipment.status !== ShipmentStatus.Cancelado && hasCteAttached(shipment);
+
                 if (isEffective) {
-                    acc.effectiveTonnage += shipment.shipmentTonnage || 0;
+                    const tons = Number(shipment.shipmentTonnage) || 0;
+                    acc.effectiveTonnage += tons;
+                    const rateToUse = shipment.shipperCommissionRatePerTon !== undefined 
+                        ? Number(shipment.shipperCommissionRatePerTon) 
+                        : creatorRate;
+                    acc.commission += tons * rateToUse;
                 }
 
                 return acc;
             }, { finalizado: 0, cancelado: 0, emAndamento: 0, effectiveTonnage: 0, commission: 0 });
-            
-            stats.commission = stats.effectiveTonnage * 2;
     
             return {
                 id: creatorId,
                 name: creator?.name || `Usuário (${creatorId})`,
+                ratePerTon: creatorRate,
                 total: stats.finalizado + stats.emAndamento,
                 ...stats,
             };
-        }).sort((a, b) => b.total - a.total);
+        }).filter(item => item.total > 0 || (users.find(u => u.id === item.id)?.profile === UserProfile.Embarcador))
+          .sort((a, b) => b.total - a.total);
     }, [shipments, users]);
 
     const getShipmentsForPdfAndList = (embarcadorId?: string) => {
@@ -433,7 +434,14 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                 {operatorStats.map(stats => (
                     <div key={stats.id} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-                            <h3 className="text-xl font-bold text-primary dark:text-blue-400">{stats.name}</h3>
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <h3 className="text-xl font-bold text-primary dark:text-blue-400">{stats.name}</h3>
+                                {stats.ratePerTon > 0 && (
+                                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                                        Taxa: {formatCurrency(stats.ratePerTon)} / ton
+                                    </span>
+                                )}
+                            </div>
                             <div className="flex gap-2">
                                 <button 
                                     onClick={() => generatePDF(stats.id)}
@@ -449,12 +457,13 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                                 </button>
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                             <StatCard title="Total Embarques" value={stats.total} icon={<TruckIcon className="w-8 h-8 text-blue-500 dark:text-blue-400"/>} />
                             <StatCard title="Finalizados" value={stats.finalizado} icon={<CheckCircleIcon className="w-8 h-8 text-emerald-500 dark:text-emerald-400"/>} />
                             <StatCard title="Em Andamento" value={stats.emAndamento} icon={<ClockIcon className="w-8 h-8 text-amber-500 dark:text-amber-400"/>} />
                             <StatCard title="Cancelados" value={stats.cancelado} icon={<XCircleIcon className="w-8 h-8 text-rose-500 dark:text-rose-400"/>} />
-                            <StatCard title="Toneladas Efetivadas" value={`${stats.effectiveTonnage.toLocaleString('pt-BR')} t`} icon={<TruckIcon className="w-8 h-8 text-teal-500 dark:text-teal-400"/>} />
+                            <StatCard title="Toneladas Efetivadas" value={`${stats.effectiveTonnage.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t`} icon={<TruckIcon className="w-8 h-8 text-teal-500 dark:text-teal-400"/>} />
+                            <StatCard title="Comissão Total" value={formatCurrency(stats.commission)} icon={<DollarSignIcon className="w-8 h-8 text-emerald-500 dark:text-emerald-400"/>} />
                         </div>
                     </div>
                 ))}

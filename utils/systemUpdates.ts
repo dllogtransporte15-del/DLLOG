@@ -21,6 +21,44 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_21_v2_9_1',
+    version: 'v2.9.1',
+    date: '21/09/2026',
+    title: 'Apuração de Toneladas Efetivadas Exclusivamente com CT-e Anexado',
+    summary: 'Configurada regra para que as "Toneladas Efetivadas" e o cálculo da comissão de embarcadores contabilizem estritamente os embarques que possuam CT-e anexado / emitido.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Critério Rígido para Toneladas Efetivadas',
+        description: 'Os relatórios e rankings de embarcadores agora exigem a presença do CT-e (número fiscal ou documento anexado) para contabilizar o volume transportado como tonelagem efetivada.'
+      },
+      {
+        category: 'feature',
+        title: 'Cálculo de Comissão Condicionado ao CT-e',
+        description: 'A comissão por tonelada do embarcador passa a ser apurada somente sobre as cargas efetivamente acobertadas por CT-e.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_21_v2_9_0',
+    version: 'v2.9.0',
+    date: '21/09/2026',
+    title: 'Sincronização Automática da Base de Seguro e Lucro Líquido Real',
+    summary: 'Ajustada a captura e persistência do valor da Nota Fiscal (NF-e) e Vale-Pedágio dos documentos anexados, mantendo 100% de paridade entre a tabela de Lucro Real e o painel de automatização do CT-e.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Paridade de Seguros e Lucro Líquido Real',
+        description: 'Os valores de NF-e e Vale-Pedágio extraídos de documentos/XMLs agora são persistidos automaticamente e lidos em todos os cálculos do relatório de Lucro Real, garantindo que o Seguro Averbado da Carga (Acidente + Roubo) reflita de forma idêntica tanto na listagem quanto na janela de detalhamento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fallback Completo de Propriedades Fiscais',
+        description: 'O calculador de despesas operacionais agora verifica todas as propriedades fiscais e de documentos (nfe_value, valor_mercadoria, toll_value) para evitar divergências de arredondamento ou comissões de agência.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_21_v2_8_9',
     version: 'v2.8.9',
     date: '21/09/2026',
@@ -46,6 +84,11 @@ export const SYSTEM_RELEASES: SystemRelease[] = [
         category: 'feature',
         title: 'Edição de Forma de Pagamento e Adiantamento até "Ag. Adiantamento"',
         description: 'Disponibilizado botão direto de "Editar" para Forma de Pagamento (PIX - E-Frete, Depósito em Conta ou SMS Carta Frete, com chave Pix ou dados bancários) e Adiantamento (%) no modal de detalhes do embarque, disponível até a etapa de Ag. Adiantamento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Comissão do Embarcador e Separação do Relatório Comercial',
+        description: 'Usuários com perfil de Embarcador agora são estritamente direcionados para o Relatório de Embarcadores, com a apuração de comissão calculada exatamente por "Toneladas Efetivas" × "Comissão do Embarcador (R$/ton)" cadastrada no usuário.'
       }
     ]
   },
