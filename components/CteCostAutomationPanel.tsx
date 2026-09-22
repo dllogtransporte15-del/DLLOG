@@ -1159,16 +1159,16 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   const syncDocs = React.useCallback(async () => {
     if (!shipment.documents) return;
-    const allUrls: string[] = [];
+    const docEntries: Array<{ url: string; category: string }> = [];
     for (const [key, val] of Object.entries(shipment.documents)) {
       if (Array.isArray(val)) {
         for (const u of val) {
           if (typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) {
-            allUrls.push(u);
+            docEntries.push({ url: u, category: key });
           }
         }
       } else if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('/'))) {
-        allUrls.push(val);
+        docEntries.push({ url: val, category: key });
       }
     }
 
@@ -1176,10 +1176,22 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     let detectedToll: number | undefined;
     let detectedFederalTax: number | undefined;
 
-    for (const url of allUrls) {
+    for (const { url, category } of docEntries) {
       try {
-        const ext = await extractDetailedDocData(url, 'Documento');
-        if (ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio > 0) {
+        const ext = await extractDetailedDocData(url, category);
+        const isTransportDoc = 
+          ext.documentType === 'Carta Frete' || 
+          ext.documentType === 'CT-e' || 
+          ext.documentType === 'MDF-e' ||
+          category.toLowerCase().includes('carta') ||
+          category.toLowerCase().includes('frete') ||
+          category.toLowerCase().includes('contrato') ||
+          category.toLowerCase().includes('cte') ||
+          category.toLowerCase().includes('ct-e') ||
+          category.toLowerCase().includes('mdfe') ||
+          category.toLowerCase().includes('mdf-e');
+
+        if (isTransportDoc && ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio > 0) {
           detectedToll = ext.financeiro.valorPedagio;
           setAutoToll(ext.financeiro.valorPedagio);
         }

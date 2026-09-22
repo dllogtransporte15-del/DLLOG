@@ -495,11 +495,22 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         for (const file of files) {
           try {
             const ext = await extractDetailedDocData(file, docType);
+            const isTransport = 
+              ext.documentType === 'Carta Frete' || 
+              ext.documentType === 'CT-e' || 
+              ext.documentType === 'MDF-e' ||
+              docType.toLowerCase().includes('carta') ||
+              docType.toLowerCase().includes('frete') ||
+              docType.toLowerCase().includes('contrato') ||
+              docType.toLowerCase().includes('cte') ||
+              docType.toLowerCase().includes('ct-e') ||
+              docType.toLowerCase().includes('mdfe');
+
             if (ext.financeiro?.valorPisCofinsFederal) parsedFederalTax = ext.financeiro.valorPisCofinsFederal;
             if (ext.financeiro?.valorPis) parsedPis = ext.financeiro.valorPis;
             if (ext.financeiro?.valorCofins) parsedCofins = ext.financeiro.valorCofins;
             if (ext.carga?.valorMercadoria) parsedNfeValue = ext.carga.valorMercadoria;
-            if (ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
+            if (isTransport && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
           } catch {
             // ignore
           }
@@ -513,11 +524,22 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             if (typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) {
               try {
                 const ext = await extractDetailedDocData(u, key);
+                const isTransport = 
+                  ext.documentType === 'Carta Frete' || 
+                  ext.documentType === 'CT-e' || 
+                  ext.documentType === 'MDF-e' ||
+                  key.toLowerCase().includes('carta') ||
+                  key.toLowerCase().includes('frete') ||
+                  key.toLowerCase().includes('contrato') ||
+                  key.toLowerCase().includes('cte') ||
+                  key.toLowerCase().includes('ct-e') ||
+                  key.toLowerCase().includes('mdfe');
+
                 if (!parsedFederalTax && ext.financeiro?.valorPisCofinsFederal) parsedFederalTax = ext.financeiro.valorPisCofinsFederal;
                 if (!parsedPis && ext.financeiro?.valorPis) parsedPis = ext.financeiro.valorPis;
                 if (!parsedCofins && ext.financeiro?.valorCofins) parsedCofins = ext.financeiro.valorCofins;
                 if (!parsedNfeValue && ext.carga?.valorMercadoria) parsedNfeValue = ext.carga.valorMercadoria;
-                if (!parsedToll && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
+                if (isTransport && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
                 if (ext.suspensaoPercentual && ext.suspensaoPercentual > 0) parsedSuspensionPercent = ext.suspensaoPercentual;
               } catch {
                 // ignore

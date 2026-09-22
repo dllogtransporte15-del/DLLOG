@@ -415,14 +415,14 @@ export function extractFreightContractValues(text: string): {
 
   if (!text) return res;
 
-  // 1. Vale-Pedágio / Pedágio (Prefixo e Sufixo, ex: 'R$ 358,20 pedágio')
+  // 1. Vale-Pedágio / Pedágio (Prefixo e Sufixo, ex: 'R$ 358,20 pedágio', 'VALE-PEDÁGIO R$ 68,11')
   const tollPatterns = [
-    /VALE[- ]?PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
-    /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
-    /PED[ÁA]GIO[^\d\n]*R?\$\s*([\d.,]+)/i,
+    /VALE[- ]?PED[ÁA]GIO[^\d\n]*?R?\$\s*([\d.,]+)/i,
+    /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO[^\d\n]*?R?\$\s*([\d.,]+)/i,
+    /\bPED[ÁA]GIO[^\d\n]*?R?\$\s*([\d.,]+)/i,
     /R?\$\s*([\d.,]+)\s*(?:referente\s+(?:a[o]?\s+)?)?ped[áa]gio/i,
     /(?:[\d.]+\s+)?R?\$\s*([\d.,]+)\s*ped[áa]gio/i,
-    /R?\$\s*([\d.,]+)[^\n]*?(?:tag|vale[- ]?ped[áa]gio)/i,
+    /R?\$\s*([\d.,]+)\s*(?:em\s+tag|de\s+tag|tag\s+ped[áa]gio|vale[- ]?ped[áa]gio)/i,
   ];
   for (const re of tollPatterns) {
     const m = text.match(re);
@@ -681,15 +681,24 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     };
   }
 
-  // 11. Valores Financeiros e Frete
-  const contractVals = extractFreightContractValues(text);
-  const mFreteLiq = text.match(/(?:VALOR\s+L[ÍI]QUIDO|L[ÍI]QUIDO\s+A\s+RECEBER|FRETE\s+L[ÍI]QUIDO)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i);
-  const mSaldo = text.match(/(?:SALDO|VALOR\s+DO\s+SALDO|2[ªa]\s*Parcela)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i);
-  const mCombustivel = text.match(/(?:COMBUST[ÍI]VEL|ABASTECIMENTO|POSTO)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i);
-  const mIcms = text.match(/(?:VALOR\s+(?:DO\s+)?ICMS|VLR\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i);
-  const mBcIcms = text.match(/(?:BASE\s+DE\s+C[ÁA]LCULO\s+(?:DO\s+)?ICMS|BC\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i);
-  const mAliqIcms = text.match(/(?:AL[ÍI]QUOTA\s+(?:DO\s+)?ICMS|AL[ÍI]Q\s+ICMS)[\s\S]{0,20}?([\d.,]+)\s*%/i);
-  const mPix = text.match(/(?:PIX|CHAVE\s+PIX)[:\s]+([^\s\n\r]{4,50})/i);
+  // 11. Valores Financeiros e Frete (Isolado para documentos de frete/transporte: CT-e, MDF-e, Carta Frete)
+  const isPureNotaFiscalOrTicket = 
+    res.documentType === 'Nota Fiscal' || 
+    isNfeDocType(declaredDocType) || 
+    declaredDocType.toLowerCase().includes('ticket') || 
+    declaredDocType.toLowerCase().includes('carregamento') ||
+    declaredDocType.toLowerCase().includes('comprovante') ||
+    upper.includes('DANFE') || 
+    upper.includes('DOCUMENTO AUXILIAR DA NOTA FISCAL');
+
+  const contractVals = !isPureNotaFiscalOrTicket ? extractFreightContractValues(text) : {};
+  const mFreteLiq = !isPureNotaFiscalOrTicket ? text.match(/(?:VALOR\s+L[ÍI]QUIDO|L[ÍI]QUIDO\s+A\s+RECEBER|FRETE\s+L[ÍI]QUIDO)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
+  const mSaldo = !isPureNotaFiscalOrTicket ? text.match(/(?:SALDO|VALOR\s+DO\s+SALDO|2[ªa]\s*Parcela)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
+  const mCombustivel = !isPureNotaFiscalOrTicket ? text.match(/(?:COMBUST[ÍI]VEL|ABASTECIMENTO|POSTO)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
+  const mIcms = !isPureNotaFiscalOrTicket ? text.match(/(?:VALOR\s+(?:DO\s+)?ICMS|VLR\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
+  const mBcIcms = !isPureNotaFiscalOrTicket ? text.match(/(?:BASE\s+DE\s+C[ÁA]LCULO\s+(?:DO\s+)?ICMS|BC\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
+  const mAliqIcms = !isPureNotaFiscalOrTicket ? text.match(/(?:AL[ÍI]QUOTA\s+(?:DO\s+)?ICMS|AL[ÍI]Q\s+ICMS)[\s\S]{0,20}?([\d.,]+)\s*%/i) : null;
+  const mPix = !isPureNotaFiscalOrTicket ? text.match(/(?:PIX|CHAVE\s+PIX)[:\s]+([^\s\n\r]{4,50})/i) : null;
 
   res.financeiro = {
     valorTotalFrete: contractVals.totalFreightValue,
@@ -1157,7 +1166,7 @@ export async function extractFiscalDocNumbers(
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
         }
-        const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) && !isCteDocType(docType) && !isMdfeDocType(docType);
+        const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType) || docType.toLowerCase().includes('ticket') || docType.toLowerCase().includes('carregamento') || docType.toLowerCase().includes('comprovante')) && !isCteDocType(docType) && !isMdfeDocType(docType) && !isCartaFreteDocType(docType);
         if (!isPureNfe) {
           if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
             result.tollValue = detailed.financeiro.valorPedagio;
@@ -1206,7 +1215,7 @@ export async function extractFiscalDocNumbersFromUrls(
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
         }
-        const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) && !isCteDocType(docType) && !isMdfeDocType(docType);
+        const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType) || docType.toLowerCase().includes('ticket') || docType.toLowerCase().includes('carregamento') || docType.toLowerCase().includes('comprovante')) && !isCteDocType(docType) && !isMdfeDocType(docType) && !isCartaFreteDocType(docType);
         if (!isPureNfe) {
           if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
             result.tollValue = detailed.financeiro.valorPedagio;

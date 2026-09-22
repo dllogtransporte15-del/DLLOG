@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_22_v2_9_3',
+    version: 'v2.9.3',
+    date: '22/09/2026',
+    title: 'Correção na Captura de Vale-Pedágio e Prevenção de Leitura de NF-e/DANFE',
+    summary: 'Corrigido o padrão de leitura e sincronização de documentos para impedir que o valor total da mercadoria/NF-e seja interpretado como vale-pedágio ao ler textos ou observações complementares do DANFE.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Isolamento Rigoroso de Vale-Pedágio',
+        description: 'Expressões de busca do vale-pedágio foram refinadas com escopo estrito, eliminando captura indevida de valores da NF-e e preservando fielmente os valores emitidos na Carta Frete (VPO) e CT-e (ex: R$ 68,11).'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização por Categoria de Documento',
+        description: 'O painel de automação de custos do CT-e e o modal de anexos agora priorizam e restringem a leitura de adiantamento e vale-pedágio aos documentos legítimos de transporte (Carta Frete, CT-e e MDF-e).'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_22_v2_9_2',
     version: 'v2.9.2',
     date: '22/09/2026',
