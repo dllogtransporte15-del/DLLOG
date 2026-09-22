@@ -159,7 +159,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
 
   const visibleStageDefinitions = React.useMemo(() => {
     const is0PctAdv = shipment.advancePercentage === 0 || 
-                      (shipment.advanceValue !== undefined && shipment.advanceValue <= 0 && shipment.freightTotal !== undefined && shipment.freightTotal > 0);
+                      (shipment.advanceValue !== undefined && shipment.advanceValue <= 0 && shipment.driverFreightValue !== undefined && shipment.driverFreightValue > 0);
     const is100PctAdv = (shipment.advancePercentage !== undefined && shipment.advancePercentage >= 100) ||
                         (shipment.balanceToReceiveValue !== undefined && shipment.balanceToReceiveValue <= 0.001 && shipment.advanceValue !== undefined && shipment.advanceValue > 0);
     
@@ -186,7 +186,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
         ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
         : s.associatedDocTypes
     }));
-  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.freightTotal, shipment.status]);
+  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.driverFreightValue, shipment.status]);
 
   // Inicializa a aba ativa com o status atual do embarque
   const initialActiveStage = React.useMemo(() => {
