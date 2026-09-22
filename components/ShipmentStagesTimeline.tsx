@@ -158,8 +158,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const isClientUser = currentUser?.profile === UserProfile.Cliente || (currentUser?.profile as string) === 'Cliente';
 
   const visibleStageDefinitions = React.useMemo(() => {
-    const is0PctAdv = shipment.advancePercentage === 0 || 
-                      (shipment.advanceValue !== undefined && shipment.advanceValue <= 0 && shipment.driverFreightValue !== undefined && shipment.driverFreightValue > 0);
+    const is0PctAdv = shipment.advancePercentage === 0;
     const is100PctAdv = (shipment.advancePercentage !== undefined && shipment.advancePercentage >= 100) ||
                         (shipment.balanceToReceiveValue !== undefined && shipment.balanceToReceiveValue <= 0.001 && shipment.advanceValue !== undefined && shipment.advanceValue > 0);
     

@@ -1157,17 +1157,20 @@ export async function extractFiscalDocNumbers(
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
         }
-        if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
-          result.tollValue = detailed.financeiro.valorPedagio;
-        }
-        if (detailed.financeiro?.valorAdiantamento !== undefined && result.advanceValue === undefined) {
-          result.advanceValue = detailed.financeiro.valorAdiantamento;
-        }
-        if (detailed.financeiro?.valorTotalFrete !== undefined && result.totalFreightValue === undefined) {
-          result.totalFreightValue = detailed.financeiro.valorTotalFrete;
-        }
-        if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
-          result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
+        const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) && !isCteDocType(docType) && !isMdfeDocType(docType);
+        if (!isPureNfe) {
+          if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
+            result.tollValue = detailed.financeiro.valorPedagio;
+          }
+          if (detailed.financeiro?.valorAdiantamento !== undefined && result.advanceValue === undefined) {
+            result.advanceValue = detailed.financeiro.valorAdiantamento;
+          }
+          if (detailed.financeiro?.valorTotalFrete !== undefined && result.totalFreightValue === undefined) {
+            result.totalFreightValue = detailed.financeiro.valorTotalFrete;
+          }
+          if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
+            result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
+          }
         }
       } catch (e) {
         console.warn(`[fiscalDocParser] Could not read file "${file.name}":`, e);
@@ -1203,17 +1206,20 @@ export async function extractFiscalDocNumbersFromUrls(
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
         }
-        if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
-          result.tollValue = detailed.financeiro.valorPedagio;
-        }
-        if (detailed.financeiro?.valorAdiantamento !== undefined && result.advanceValue === undefined) {
-          result.advanceValue = detailed.financeiro.valorAdiantamento;
-        }
-        if (detailed.financeiro?.valorTotalFrete !== undefined && result.totalFreightValue === undefined) {
-          result.totalFreightValue = detailed.financeiro.valorTotalFrete;
-        }
-        if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
-          result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
+        const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) && !isCteDocType(docType) && !isMdfeDocType(docType);
+        if (!isPureNfe) {
+          if (detailed.financeiro?.valorPedagio !== undefined && result.tollValue === undefined) {
+            result.tollValue = detailed.financeiro.valorPedagio;
+          }
+          if (detailed.financeiro?.valorAdiantamento !== undefined && result.advanceValue === undefined) {
+            result.advanceValue = detailed.financeiro.valorAdiantamento;
+          }
+          if (detailed.financeiro?.valorTotalFrete !== undefined && result.totalFreightValue === undefined) {
+            result.totalFreightValue = detailed.financeiro.valorTotalFrete;
+          }
+          if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
+            result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
+          }
         }
       } catch (e) {
         console.warn(`[fiscalDocParser] Could not fetch URL "${url}":`, e);

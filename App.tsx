@@ -1729,10 +1729,9 @@ const App: React.FC = () => {
         // 4 - Ag. Nota -> 5 - Ag. Fiscal
         nextStatus = ShipmentStatus.AguardandoFiscal;
     } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
-        // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7 se 0% de adiantamento)
-        const advPct = advancePercentage !== undefined ? advancePercentage : originalShipment.advancePercentage;
-        const advVal = advanceValue !== undefined ? advanceValue : originalShipment.advanceValue;
-        const is0PercentAdvance = advPct === 0 || (advVal !== undefined && advVal === 0);
+        // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7 apenas se explicitamente 0% de adiantamento)
+        const advPct = advancePercentage !== undefined ? advancePercentage : (originalShipment.advancePercentage !== undefined ? originalShipment.advancePercentage : 70);
+        const is0PercentAdvance = advPct === 0;
 
         if (is0PercentAdvance) {
             // Pula "6 - Ag. Adiantamento" e vai direto para "7 - Ag. Agend. ou Troca/nfe"
@@ -3229,7 +3228,7 @@ const App: React.FC = () => {
                           (s.balanceToReceiveValue !== undefined && s.balanceToReceiveValue <= 0.001 && s.advanceValue !== undefined && s.advanceValue > 0) ||
                           (s.advanceValue !== undefined && s.driverFreightValue !== undefined && (s.advanceValue + (s.tollValue || 0) >= s.driverFreightValue - 0.01));
       
-      const is0PctAdv = s.advancePercentage === 0 || (s.advanceValue !== undefined && s.advanceValue === 0);
+      const is0PctAdv = s.advancePercentage === 0;
 
       switch (status) {
         case ShipmentStatus.Finalizado: // 11

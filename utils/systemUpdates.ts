@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_22_v2_9_2',
+    version: 'v2.9.2',
+    date: '22/09/2026',
+    title: 'Correção no Fluxo de Avanço para Ag. Adiantamento e Isolamento de Leitura de Pedágio',
+    summary: 'Ajustada a regra de transição de status para respeitar o adiantamento configurado (evitando que o sistema pule indevidamente a etapa financeira) e isolada a extração de pedágio/contrato para não capturar valores fiscais indevidos de NF-e.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Transição Confiável para Ag. Adiantamento',
+        description: 'A transição de status a partir de Ag. Fiscal agora pula Ag. Adiantamento estritamente quando a porcentagem de adiantamento for explicitamente 0%, impedindo pulos acidentais provocados por valores zerados transitórios.'
+      },
+      {
+        category: 'improvement',
+        title: 'Isolamento de Leitura em Notas Fiscais',
+        description: 'Documentos do tipo Nota Fiscal (NF-e/DANFE) não extraem mais campos de contrato de frete/pedágio do motorista, reservando essa leitura para CT-e, MDF-e e Contratos de Frete.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_21_v2_9_1',
     version: 'v2.9.1',
     date: '21/09/2026',
