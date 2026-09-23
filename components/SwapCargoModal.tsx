@@ -72,7 +72,7 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh]">
         <div className="p-6 border-b dark:border-gray-700">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Trocar Carga do Embarque</h2>
           <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">

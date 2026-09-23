@@ -63,7 +63,7 @@ const VehicleFormModal: React.FC<VehicleFormModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start mb-6">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-3">
             {vehicleToEdit ? 'Editar Veículo' : 'Novo Veículo'}

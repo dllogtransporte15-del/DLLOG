@@ -52,7 +52,7 @@ interface RiskManagementPageProps {
   onRestoreRiskQueryDefaults?: () => Promise<void> | void;
   profilePermissions?: ProfilePermissions;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onModalStateChange?: (isOpen: boolean) => void;

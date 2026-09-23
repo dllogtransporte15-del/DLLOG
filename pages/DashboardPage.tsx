@@ -103,7 +103,7 @@ interface DashboardPageProps {
   drivers?: Driver[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdateAnttAndBankDetails?: (shipmentId: string, data: { anttOwnerIdentifier: string; bankDetails?: string }) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;

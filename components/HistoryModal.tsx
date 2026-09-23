@@ -29,7 +29,7 @@ const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose, history, u
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
         <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">{title}</h2>
         
         <div className="flex-1 overflow-y-auto pr-2">

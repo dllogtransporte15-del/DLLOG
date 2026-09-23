@@ -146,12 +146,17 @@ export function calculateAdvanceAndBalance({
   advancePercentage?: number;
   driverFreightType?: 'PF' | 'PJ';
 }): AdvanceAndBalanceResult {
-  const totalFreight = driverFreightValue !== undefined && driverFreightValue > 0
-    ? driverFreightValue
-    : (driverFreightRate && tonnage ? driverFreightRate * tonnage : 0);
+  const safeDriverFreightVal = (driverFreightValue !== undefined && !isNaN(Number(driverFreightValue)) && Number(driverFreightValue) > 0)
+    ? Number(driverFreightValue)
+    : 0;
 
-  const tagVal = Number(tollValue || 0);
-  const advPct = advancePercentage !== undefined && !isNaN(advancePercentage) ? Number(advancePercentage) : 70;
+  const safeRate = (driverFreightRate !== undefined && !isNaN(Number(driverFreightRate))) ? Number(driverFreightRate) : 0;
+  const safeTonnage = (tonnage !== undefined && !isNaN(Number(tonnage))) ? Number(tonnage) : 0;
+
+  const totalFreight = safeDriverFreightVal > 0 ? safeDriverFreightVal : (safeRate * safeTonnage);
+
+  const tagVal = Math.max(0, (!isNaN(Number(tollValue)) ? Number(tollValue) : 0));
+  const advPct = (advancePercentage !== undefined && !isNaN(Number(advancePercentage))) ? Math.min(100, Math.max(0, Number(advancePercentage))) : 70;
 
   // Base do frete líquida de pedágio
   const baseFreight = Math.max(0, totalFreight - tagVal);

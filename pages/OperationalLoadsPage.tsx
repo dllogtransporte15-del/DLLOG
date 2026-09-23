@@ -63,7 +63,7 @@ interface OperationalLoadsPageProps {
     riskQueryCost?: number,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   riskQueryOptions?: RiskQueryOption[];
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }

@@ -87,7 +87,7 @@ interface ShipmentTableProps {
   onRevertStatus?: (shipmentId: string) => void;
   canUserAdvanceStatus?: (shipment: Shipment) => { allowed: boolean; reason: string };
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onOpenEditScheduledDateTime?: (shipment: Shipment) => void;
   currentUser: User;

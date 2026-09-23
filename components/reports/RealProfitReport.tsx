@@ -46,7 +46,7 @@ interface RealProfitReportProps {
   endDate?: string;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void>;
 }
 
 export const RealProfitReport: React.FC<RealProfitReportProps> = ({

@@ -20,7 +20,7 @@ interface ShipmentDetailsModalProps {
   cargo: Cargo | undefined;
   currentUser?: User | null;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void | Promise<void>;
@@ -282,7 +282,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       {/* Modal Container */}
       <div className="fixed inset-0 z-[9999] flex justify-center items-center pointer-events-none p-4">
         <div 
-          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700 pointer-events-auto"
+          className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-6xl w-full max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700 pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
         <div className="flex justify-between items-start mb-4 border-b pb-4 dark:border-gray-700 shrink-0">

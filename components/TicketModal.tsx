@@ -173,7 +173,7 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 transition-all duration-300">
-      <div className="glass-panel rounded-2xl p-5 max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-fade-in relative">
+      <div className="glass-panel rounded-2xl p-5 max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-fade-in relative">
         <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200/50 dark:border-gray-700/50">
             <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent dark:from-blue-400 dark:to-orange-400">
               Painel de Chamados

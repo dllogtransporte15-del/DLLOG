@@ -47,7 +47,7 @@ interface AttachmentModalProps {
   clients?: Client[];
   users?: User[];
   riskQueryOptions?: RiskQueryOption[];
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void> | void;
 }
 
 declare const L: any;

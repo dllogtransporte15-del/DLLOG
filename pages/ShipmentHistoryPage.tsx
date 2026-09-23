@@ -26,7 +26,7 @@ interface ShipmentHistoryPageProps {
   onRevertStatus?: (shipmentId: string) => void;
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   stays?: StayRecord[];
   riskQueryOptions?: RiskQueryOption[];

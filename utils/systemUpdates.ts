@@ -21,6 +21,87 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_22_v2_9_7',
+    version: 'v2.9.7',
+    date: '22/09/2026',
+    title: 'Automação WhatsApp 24h em Nuvem & Provisionamento Resiliente',
+    summary: 'Arquitetura e pacote completo de implantação da Evolution API na nuvem (Railway/VPS) com suporte a criação automática de instâncias, QR Code dinâmico em tempo real, persistência em PostgreSQL/Redis e disparos automáticos 24h ininterruptos sem depender do computador ligado.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Provisionamento Automático de Instância na Nuvem',
+        description: 'Integração inteligente com Evolution API v2: criação automática de instância na nuvem caso não exista e recuperação instantânea do QR Code criptografado.'
+      },
+      {
+        category: 'improvement',
+        title: 'Pacote de Deploy 24h (Railway & Docker)',
+        description: 'Disponibilização do pacote pronto em deploy-railway com docker-compose.yml de produção, healthchecks, Redis para cache de instâncias e guia de implantação rápida.'
+      },
+      {
+        category: 'security',
+        title: 'Persistência Blindada de Sessão e Configurações',
+        description: 'Sincronização contínua das sessões no PostgreSQL da nuvem e histórico completo de mensagens na fila do Supabase com tratamento de falhas e reenvios.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_22_v2_9_6',
+    version: 'v2.9.6',
+    date: '22/09/2026',
+    title: 'Dispensação Automática de Seguradora/GR para Produtos Isentos',
+    summary: 'Embarques gerados para cargas cujo produto está configurado sem exigência de Gerenciamento de Risco (GR) agora pulam automaticamente a etapa de "Ag. Seguradora", sendo direcionados diretamente para "Ag. Carregamento" ou avançando do cadastro direto para o carregamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Bypass Inteligente de Ag. Seguradora',
+        description: 'Quando a carga possui um produto sem exigência de GR, motoristas com histórico de viagem iniciam diretamente em "Ag. Carregamento". Para motoristas em primeiro cadastro, ao concluir o cadastro o embarque avança diretamente para "Ag. Carregamento".'
+      },
+      {
+        category: 'improvement',
+        title: 'Linha do Tempo e Histórico Otimizados',
+        description: 'A linha do tempo do embarque oculta automaticamente a etapa de seguradora para produtos isentos de GR, e os registros de histórico e reversão de status operam com total conformidade.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_22_v2_9_5',
+    version: 'v2.9.5',
+    date: '22/09/2026',
+    title: 'Auditoria de Erros, Refatoração Estrutural e Otimização de Performance (Code-Splitting)',
+    summary: 'Varredura completa e auditoria de erros no sistema logístico Transcunha: divisão inteligente de bundle (code-splitting dinâmico com React.lazy/Suspense), otimização de chunks Rollup/Vite, limpeza de dead code e blindagem nos cálculos de frete e tributos TAC.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Divisão Dinâmica de Módulos (Code-Splitting e Lazy Loading)',
+        description: 'Todas as páginas do sistema foram convertidas para carregamento sob demanda (lazy loading com React.Suspense). O tempo de carregamento inicial e o consumo de memória foram drasticamente reduzidos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Otimização de Pacotes e Redução de Bundle',
+        description: 'Configuração de manualChunks no Vite/Rollup isolando bibliotecas pesadas (PDF, mapas geográficos, ícones e Supabase) e remoção de dados estáticos não utilizados, diminuindo significativamente o peso do arquivo principal de código.'
+      },
+      {
+        category: 'security',
+        title: 'Blindagem de Cálculos de Frete e Tributos',
+        description: 'Tratamento rigoroso contra valores nulos, inválidos (NaN) e coerção de dados nas rotinas de partição de adiantamento, vale-pedágio e retenções fiscais de motoristas autônomos (TAC).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_22_v2_9_4',
+    version: 'v2.9.4',
+    date: '22/09/2026',
+    title: 'Sincronização Silenciosa de Dados Fiscais no Gerenciamento de Anexos',
+    summary: 'Ajustada a rotina de leitura e sincronização automática de documentos fiscais e DRE em segundo plano para não disparar toasts repetidos na abertura da tela de Gerenciar Anexos.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Sincronização em Segundo Plano Silenciosa',
+        description: 'A leitura e extração automática de dados fiscais (pedágio, valor de mercadoria, impostos) ao abrir a janela de anexos agora roda silenciosamente no background, reservando alertas e notificações visuais apenas para ações manuais de salvamento do usuário.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_22_v2_9_3',
     version: 'v2.9.3',
     date: '22/09/2026',

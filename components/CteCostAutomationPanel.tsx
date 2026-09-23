@@ -51,7 +51,7 @@ interface CteCostAutomationPanelProps {
   users?: User[];
   clients?: Client[];
   currentUser?: User | null;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void> | void;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void> | void;
 }
 
 export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
@@ -1244,7 +1244,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         patch.realProfitData = updatedRealProfit as any;
         patch.documents = updatedDocs;
         try {
-          onUpdateShipmentData(shipment.id, patch);
+          onUpdateShipmentData(shipment.id, patch, { silent: true });
         } catch {
           // ignore
         }

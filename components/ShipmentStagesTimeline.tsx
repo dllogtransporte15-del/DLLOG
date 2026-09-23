@@ -165,7 +165,14 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     const omitSaldo = isClientUser || (is100PctAdv && shipment.status !== ShipmentStatus.AguardandoPagamentoSaldo);
     const omitAdiantamento = is0PctAdv && shipment.status !== ShipmentStatus.AguardandoAdiantamento;
 
+    const product = products.find(p => p.id === cargo?.productId);
+    const doesNotRequireGr = product ? product.requiresRiskManagement === false : ((cargo as any)?.requiresRiskManagement === false);
+    const omitSeguradora = doesNotRequireGr && shipment.status !== ShipmentStatus.AguardandoSeguradora;
+
     let list = STAGES_DEFINITIONS;
+    if (omitSeguradora) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoSeguradora);
+    }
     if (omitSaldo) {
       list = list.filter(s => s.status !== ShipmentStatus.AguardandoPagamentoSaldo);
     }
@@ -185,7 +192,7 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
         ? s.associatedDocTypes.filter(d => !d.toLowerCase().includes('carta frete'))
         : s.associatedDocTypes
     }));
-  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.driverFreightValue, shipment.status]);
+  }, [isClientUser, shipment.advancePercentage, shipment.balanceToReceiveValue, shipment.advanceValue, shipment.driverFreightValue, shipment.status, products, cargo]);
 
   // Inicializa a aba ativa com o status atual do embarque
   const initialActiveStage = React.useMemo(() => {

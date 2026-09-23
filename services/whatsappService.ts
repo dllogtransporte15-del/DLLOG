@@ -259,7 +259,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
   try {
     const cleanUrl = cfg.url.replace(/\/$/, '');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     // 1. Checa se o gateway está online e se a instância já está aberta/conectada
     const stateRes = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
@@ -267,7 +267,6 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       headers: { 'apikey': cfg.apiKey },
       signal: controller.signal
     }).catch(() => null);
-    clearTimeout(timeoutId);
 
     if (stateRes && stateRes.ok) {
       const stateData = await stateRes.json().catch(() => ({}));
@@ -283,7 +282,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
         let phone = current.phone_number || '5511984219900';
         if (infoRes && infoRes.ok) {
           const infoData = await infoRes.json();
-          const target = Array.isArray(infoData) ? infoData[0] : infoData;
+          const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
           const found = target?.ownerJid?.replace('@s.whatsapp.net', '') || target?.number;
           if (found) phone = sanitizePhoneNumber(found);
         }
@@ -299,11 +298,71 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
         };
 
         await saveWhatsAppInstance(updated);
+        clearTimeout(timeoutId);
         return { qrCode: '', instance: updated, isRealGateway: true };
       }
     }
+
+    // 2. Se a instância não está conectada, tenta obter o QR code ou criar a instância se não existir
+    let qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
+      method: 'GET',
+      headers: { 'apikey': cfg.apiKey },
+      signal: controller.signal
+    }).catch(() => null);
+
+    if (!qrDataRes || !qrDataRes.ok) {
+      // Tenta criar a instância na Evolution API se ela ainda não existir
+      await fetch(`${cleanUrl}/instance/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cfg.apiKey
+        },
+        body: JSON.stringify({
+          instanceName: cfg.instanceName,
+          token: cfg.apiKey,
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS'
+        }),
+        signal: controller.signal
+      }).catch(() => null);
+
+      // Tenta buscar o connect novamente
+      qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
+        method: 'GET',
+        headers: { 'apikey': cfg.apiKey },
+        signal: controller.signal
+      }).catch(() => null);
+    }
+    clearTimeout(timeoutId);
+
+    if (qrDataRes && qrDataRes.ok) {
+      const qrData = await qrDataRes.json().catch(() => ({}));
+      let qrCodeString = qrData?.base64 || qrData?.qrcode?.base64 || qrData?.code || qrData?.qrcode?.code;
+
+      if (qrCodeString) {
+        if (!qrCodeString.startsWith('data:image')) {
+          if (qrCodeString.startsWith('iVBORw0KGgo') || qrCodeString.startsWith('/9j/')) {
+            qrCodeString = `data:image/png;base64,${qrCodeString}`;
+          } else {
+            qrCodeString = await QRCode.toDataURL(qrCodeString);
+          }
+        }
+
+        const updated: WhatsAppInstance = {
+          ...current,
+          instance_key: cfg.instanceName,
+          status: 'qrcode',
+          qr_code_base64: qrCodeString,
+          updated_at: new Date().toISOString()
+        };
+
+        await saveWhatsAppInstance(updated);
+        return { qrCode: qrCodeString, instance: updated, isRealGateway: true };
+      }
+    }
   } catch (err) {
-    console.warn('[Evolution API] Servidor gateway não respondeu, usando modo ativo integrado:', err);
+    console.warn('[Evolution API] Servidor gateway não respondeu ou em inicialização:', err);
   }
 
   // Fallback Inteligente: Garante que a instância fique 100% pronta e conectada

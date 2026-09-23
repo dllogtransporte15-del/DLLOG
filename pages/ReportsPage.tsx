@@ -39,7 +39,7 @@ interface ReportsPageProps {
   onSaveUser?: (userData: User | Omit<User, 'id'>) => void;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
-  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>) => Promise<void>;
+  onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void>;
 }
 
 type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real' | 'outros';

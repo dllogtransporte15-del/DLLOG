@@ -58,7 +58,7 @@ interface ShipmentsPageProps {
   onDeleteShipment: (shipmentId: string) => void;
   onRevertStatus: (shipmentId: string) => void;
   onUpdateScheduledDateTime: (shipmentId: string, data: { scheduledDate: string, scheduledTime?: string }) => void;
-  onUpdateShipmentData: (shipmentId: string, data: Partial<Shipment>) => void;
+  onUpdateShipmentData: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;
   activeLocks: ShipmentLock[];
   onModalStateChange: (isOpen: boolean) => void;
   companyLogo?: string | null;

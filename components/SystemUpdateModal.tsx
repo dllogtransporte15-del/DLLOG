@@ -75,7 +75,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div 
-        className="relative w-full max-w-2xl bg-white dark:bg-[#0c1427] rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
+        className="relative w-full max-w-4xl bg-white dark:bg-[#0c1427] rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* TOP GLOW & HEADER */}

@@ -28,7 +28,7 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overscroll-contain">
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700 overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700 overscroll-contain">
         <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
           <div>
             <h2 className="text-xl font-bold text-gray-800 dark:text-white">Selecionar Embarcador</h2>
