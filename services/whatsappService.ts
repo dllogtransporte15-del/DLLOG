@@ -34,12 +34,22 @@ export function getGatewayConfig(): WhatsAppGatewayConfig {
       const parsed = JSON.parse(local);
       const isLocalhost = parsed.url && (parsed.url.includes('localhost') || parsed.url.includes('127.0.0.1'));
       const isHttpOnHttps = isHttps && parsed.url && parsed.url.startsWith('http:');
+      const isInvalidOldKey = parsed.apiKey === 'c1f7333c96962458559ec3b861d0046b4a479d23a51e897c6f4d9129475509bc';
 
-      // Se não for localhost e não violar mixed content, usa a config local salva
-      if (!isLocalhost && !isHttpOnHttps && parsed.url && parsed.apiKey) {
+      // Se não for localhost, não violar HTTPS e não tiver a chave antiga inválida
+      if (!isLocalhost && !isHttpOnHttps && !isInvalidOldKey && parsed.url && parsed.apiKey) {
         return parsed;
       }
     } catch { /* ignore */ }
+  }
+
+  // Atualiza o localStorage automaticamente com a chave real da nuvem
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify({
+      url: defaultUrl,
+      apiKey: defaultKey,
+      instanceName: defaultInstance
+    }));
   }
 
   return {
@@ -360,26 +370,12 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
     console.warn('[Evolution API] Erro ao obter QR Code da nuvem:', err);
   }
 
-  // Se por qualquer razão a chamada direta não retornou o base64, geramos QR code de pareamento resiliente
-  const fallbackQrData = `https://wa.me/pair?inst=${cfg.instanceName}&t=${Date.now()}`;
-  const generatedQr = await QRCode.toDataURL(fallbackQrData).catch(() => '');
-
-  const updated: WhatsAppInstance = {
-    ...current,
-    instance_key: cfg.instanceName || 'transcunha_matriz',
-    status: 'qrcode',
-    phone_number: undefined,
-    qr_code_base64: generatedQr,
-    battery_level: 100,
-    is_plugged: true,
-    updated_at: new Date().toISOString()
-  };
-
-  await saveWhatsAppInstance(updated);
+  // Se a requisição não obteve o QR Code da Evolution API
   return { 
-    qrCode: generatedQr, 
-    instance: updated, 
-    isRealGateway: true
+    qrCode: '', 
+    instance: current, 
+    isRealGateway: false,
+    warning: 'Não foi possível conectar ao servidor Evolution API na nuvem. Verifique a conexão com o Railway.'
   };
 }
 
