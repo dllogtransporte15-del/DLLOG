@@ -291,7 +291,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
           headers: { 'apikey': cfg.apiKey }
         }).catch(() => null);
 
-        let phone = current.phone_number || '5511984219900';
+        let phone = current.phone_number;
         if (infoRes && infoRes.ok) {
           const infoData = await infoRes.json();
           const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
@@ -303,7 +303,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
           ...current,
           instance_key: cfg.instanceName,
           status: 'connected',
-          phone_number: phone,
+          phone_number: phone || undefined,
           qr_code_base64: undefined,
           last_connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -365,6 +365,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
           ...current,
           instance_key: cfg.instanceName,
           status: 'qrcode',
+          phone_number: undefined,
           qr_code_base64: qrCodeString,
           updated_at: new Date().toISOString()
         };
@@ -377,16 +378,15 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
     console.warn('[Evolution API] Servidor gateway não respondeu ou em inicialização:', err);
   }
 
-  // Fallback Inteligente: Garante que a instância fique 100% pronta e conectada
+  // Fallback Inteligente: Garante que a instância fique pronta
   const updated: WhatsAppInstance = {
     ...current,
     instance_key: cfg.instanceName || 'transcunha_matriz',
-    status: 'connected',
-    phone_number: current.phone_number || '5511984219900',
+    status: 'disconnected',
+    phone_number: undefined,
     qr_code_base64: undefined,
     battery_level: 100,
     is_plugged: true,
-    last_connected_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
@@ -540,12 +540,11 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
     id: 'wa_inst_matriz',
     name: 'Transcunha Logística - Matriz',
     instance_key: 'transcunha_matriz',
-    phone_number: '5511984219900',
-    status: 'connected',
-    battery_level: 94,
+    phone_number: undefined,
+    status: 'disconnected',
+    battery_level: 100,
     is_plugged: true,
     api_token: 'tk_transcunha_secure_token',
-    last_connected_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -607,6 +606,7 @@ export async function disconnectWhatsApp(): Promise<WhatsAppInstance> {
   const updated: WhatsAppInstance = {
     ...current,
     status: 'disconnected',
+    phone_number: undefined,
     qr_code_base64: undefined,
     last_disconnected_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -827,13 +827,13 @@ export async function enqueueWhatsAppMessage(params: {
  * Ativa o modo de WhatsApp Sempre Conectado / Nuvem Simulada
  * Garante que todos os disparos operacionais ocorram sem travar a interface
  */
-export async function activateAlwaysOnlineMode(phoneNumber: string = '5511984219900', companyName: string = 'Transcunha Logística - Matriz'): Promise<WhatsAppInstance> {
+export async function activateAlwaysOnlineMode(phoneNumber?: string, companyName: string = 'Transcunha Logística - Matriz'): Promise<WhatsAppInstance> {
   const current = await getWhatsAppInstance();
   const updated: WhatsAppInstance = {
     ...current,
     name: companyName,
     status: 'connected',
-    phone_number: sanitizePhoneNumber(phoneNumber),
+    phone_number: phoneNumber ? sanitizePhoneNumber(phoneNumber) : (current.phone_number || undefined),
     battery_level: 100,
     is_plugged: true,
     qr_code_base64: undefined,

@@ -209,7 +209,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   const handleActivateAlwaysOnline = async () => {
     setLoading(true);
     try {
-      const updated = await activateAlwaysOnlineMode(testPhoneInput || instance.phone_number || '5511984219900');
+      const updated = await activateAlwaysOnlineMode(testPhoneInput || instance.phone_number);
       onInstanceUpdated(updated);
       setShowGatewayModal(false);
       setShowPairModal(false);
@@ -297,7 +297,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
               </span>
               <p className="text-sm font-black text-slate-900 dark:text-white mt-1 flex items-center gap-1.5">
                 <PhoneCall className="w-3.5 h-3.5 text-blue-500" />
-                {instance.phone_number ? formatDisplayPhone(instance.phone_number) : 'Nenhum número pareado'}
+                {isConnected && instance.phone_number ? formatDisplayPhone(instance.phone_number) : 'Nenhum número vinculado'}
               </p>
             </div>
 
