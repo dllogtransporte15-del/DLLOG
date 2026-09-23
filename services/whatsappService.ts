@@ -23,17 +23,29 @@ export interface WhatsAppGatewayConfig {
  * Obtém as configurações do servidor de Gateway do WhatsApp (Evolution API / Baileys)
  */
 export function getGatewayConfig(): WhatsAppGatewayConfig {
-  const local = localStorage.getItem(STORAGE_GATEWAY_CONFIG_KEY);
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const defaultUrl = (import.meta as any).env?.VITE_WA_GATEWAY_URL || 'https://evolution-api-production-e3eb.up.railway.app';
+  const defaultKey = (import.meta as any).env?.VITE_WA_GATEWAY_KEY || '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd';
+  const defaultInstance = (import.meta as any).env?.VITE_WA_INSTANCE_NAME || 'transcunha_matriz';
+
+  const local = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_GATEWAY_CONFIG_KEY) : null;
   if (local) {
     try {
-      return JSON.parse(local);
+      const parsed = JSON.parse(local);
+      const isLocalhost = parsed.url && (parsed.url.includes('localhost') || parsed.url.includes('127.0.0.1'));
+      const isHttpOnHttps = isHttps && parsed.url && parsed.url.startsWith('http:');
+
+      // Se não for localhost e não violar mixed content, usa a config local salva
+      if (!isLocalhost && !isHttpOnHttps && parsed.url && parsed.apiKey) {
+        return parsed;
+      }
     } catch { /* ignore */ }
   }
 
   return {
-    url: (import.meta as any).env?.VITE_WA_GATEWAY_URL || 'https://evolution-api-production-e3eb.up.railway.app',
-    apiKey: (import.meta as any).env?.VITE_WA_GATEWAY_KEY || '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
-    instanceName: (import.meta as any).env?.VITE_WA_INSTANCE_NAME || 'transcunha_matriz'
+    url: defaultUrl,
+    apiKey: defaultKey,
+    instanceName: defaultInstance
   };
 }
 

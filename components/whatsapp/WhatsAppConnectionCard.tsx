@@ -631,6 +631,25 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cloudDefault = {
+                        url: 'https://evolution-api-production-e3eb.up.railway.app',
+                        apiKey: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
+                        instanceName: 'transcunha_matriz'
+                      };
+                      setGatewayConfigState(cloudDefault);
+                      saveGatewayConfig(cloudDefault);
+                    }}
+                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Restaurar Servidor Nuvem Oficial (Railway 24h)</span>
+                  </button>
+                </div>
+
                 {/* TESTE DE CONEXÃO RESULT */}
                 {gatewayTestResult && (
                   <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
