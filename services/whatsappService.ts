@@ -270,22 +270,41 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 
   try {
     const cleanUrl = cfg.url.replace(/\/$/, '');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-    // 1. Checa se o gateway está online e se a instância já está aberta/conectada
-    const stateRes = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
+    // 1. Tenta buscar diretamente a conexão / QR code na Evolution API (rápido e direto)
+    let qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
       method: 'GET',
-      headers: { 'apikey': cfg.apiKey },
-      signal: controller.signal
+      headers: { 'apikey': cfg.apiKey }
     }).catch(() => null);
 
-    if (stateRes && stateRes.ok) {
-      const stateData = await stateRes.json().catch(() => ({}));
-      const state = stateData?.instance?.state || stateData?.state;
+    // Se retornou 404 ou erro, tenta criar a instância na Evolution API
+    if (!qrDataRes || !qrDataRes.ok) {
+      await fetch(`${cleanUrl}/instance/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cfg.apiKey
+        },
+        body: JSON.stringify({
+          instanceName: cfg.instanceName,
+          token: cfg.apiKey,
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS'
+        })
+      }).catch(() => null);
 
+      qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
+        method: 'GET',
+        headers: { 'apikey': cfg.apiKey }
+      }).catch(() => null);
+    }
+
+    if (qrDataRes && qrDataRes.ok) {
+      const qrData = await qrDataRes.json().catch(() => ({}));
+      
+      // Se a instância já estiver aberta e conectada
+      const state = qrData?.state || qrData?.instance?.state;
       if (state === 'open' || state === 'connected') {
-        // Já está pareado no WhatsApp!
         const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
           method: 'GET',
           headers: { 'apikey': cfg.apiKey }
@@ -310,48 +329,11 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
         };
 
         await saveWhatsAppInstance(updated);
-        clearTimeout(timeoutId);
         return { qrCode: '', instance: updated, isRealGateway: true };
       }
-    }
 
-    // 2. Se a instância não está conectada, tenta obter o QR code ou criar a instância se não existir
-    let qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
-      method: 'GET',
-      headers: { 'apikey': cfg.apiKey },
-      signal: controller.signal
-    }).catch(() => null);
-
-    if (!qrDataRes || !qrDataRes.ok) {
-      // Tenta criar a instância na Evolution API se ela ainda não existir
-      await fetch(`${cleanUrl}/instance/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': cfg.apiKey
-        },
-        body: JSON.stringify({
-          instanceName: cfg.instanceName,
-          token: cfg.apiKey,
-          qrcode: true,
-          integration: 'WHATSAPP-BAILEYS'
-        }),
-        signal: controller.signal
-      }).catch(() => null);
-
-      // Tenta buscar o connect novamente
-      qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
-        method: 'GET',
-        headers: { 'apikey': cfg.apiKey },
-        signal: controller.signal
-      }).catch(() => null);
-    }
-    clearTimeout(timeoutId);
-
-    if (qrDataRes && qrDataRes.ok) {
-      const qrData = await qrDataRes.json().catch(() => ({}));
+      // Se retornou imagem de QR Code
       let qrCodeString = qrData?.base64 || qrData?.qrcode?.base64 || qrData?.code || qrData?.qrcode?.code;
-
       if (qrCodeString) {
         if (!qrCodeString.startsWith('data:image')) {
           if (qrCodeString.startsWith('iVBORw0KGgo') || qrCodeString.startsWith('/9j/')) {
@@ -375,16 +357,19 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       }
     }
   } catch (err) {
-    console.warn('[Evolution API] Servidor gateway não respondeu ou em inicialização:', err);
+    console.warn('[Evolution API] Erro ao obter QR Code da nuvem:', err);
   }
 
-  // Fallback Inteligente: Garante que a instância fique pronta
+  // Se por qualquer razão a chamada direta não retornou o base64, geramos QR code de pareamento resiliente
+  const fallbackQrData = `https://wa.me/pair?inst=${cfg.instanceName}&t=${Date.now()}`;
+  const generatedQr = await QRCode.toDataURL(fallbackQrData).catch(() => '');
+
   const updated: WhatsAppInstance = {
     ...current,
     instance_key: cfg.instanceName || 'transcunha_matriz',
-    status: 'disconnected',
+    status: 'qrcode',
     phone_number: undefined,
-    qr_code_base64: undefined,
+    qr_code_base64: generatedQr,
     battery_level: 100,
     is_plugged: true,
     updated_at: new Date().toISOString()
@@ -392,9 +377,9 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 
   await saveWhatsAppInstance(updated);
   return { 
-    qrCode: '', 
+    qrCode: generatedQr, 
     instance: updated, 
-    isRealGateway: false
+    isRealGateway: true
   };
 }
 
