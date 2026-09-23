@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_23_v2_10_1',
+    version: 'v2.10.1',
+    date: '23/09/2026',
+    title: 'Bypass Automático e Preciso de Ag. Seguradora para Produtos sem Exigência de GR',
+    summary: 'Aprimoramento das regras de transição de status para cargas com produtos configurados sem exigência de Gerenciamento de Risco (GR). O sistema realiza a resolução resiliente de ID e nome do produto e carga em todas as etapas operacionais, pulando a etapa de Ag. Seguradora na criação de novos embarques e no avanço do pré-cadastro.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Resolução Precisa de Produto e GR na Criação de Embarques',
+        description: 'Padronização da busca da carga e produto através de helpers tolerantes a prefixos (ex: CRG-225 vs 225) e nomes/IDs, assegurando que produtos com GR dispensado nunca caiam indevidamente em "Ag. Seguradora".'
+      },
+      {
+        category: 'improvement',
+        title: 'Fluxo Direto para Ag. Carregamento',
+        description: 'Motoristas com viagens anteriores em cargas sem exigência de GR são direcionados diretamente para "Ag. Carregamento" na criação do embarque. Novos motoristas, ao concluírem o "Ag. Cadastro", avançam diretamente para "Ag. Carregamento".'
+      },
+      {
+        category: 'improvement',
+        title: 'Timeline de Etapas e Validações Otimizadas',
+        description: 'A timeline de progresso do embarque e os modais de anexo ocultam/desabilitam automaticamente a obrigatoriedade de código de liberação e tipo de consulta para cargas com GR dispensado.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_23_v2_10_0',
     version: 'v2.10.0',
     date: '23/09/2026',

@@ -24,7 +24,7 @@ import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/Optim
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
 import DriverOrderRequestsList from '../components/DriverOrderRequestsList';
-import { getMatchedCargo, getShipmentEffectiveDate } from '../utils';
+import { getMatchedCargo, getShipmentEffectiveDate, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
@@ -980,7 +980,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           isOpen={!!detailsModalShipment}
           onClose={() => setDetailsModalShipment(null)}
           shipment={detailsModalShipment}
-          cargo={detailsModalShipment ? (cargos.find(c => String(c.id) === String(detailsModalShipment.cargoId)) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
+          cargo={detailsModalShipment ? (findCargoById(cargos, detailsModalShipment.cargoId) || cargos.find(c => c.id === detailsModalShipment.cargoId)) : undefined}
           currentUser={currentUser}
           clients={clients}
           products={products}
@@ -1014,7 +1014,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               });
               setOfferForNewShipment(null);
             }}
-            cargo={cargos.find(c => c.id === offerForNewShipment.cargoId) || null}
+            cargo={findCargoById(cargos, offerForNewShipment.cargoId) || null}
             drivers={drivers}
             clients={clients}
             vehicles={vehicles}
@@ -1145,10 +1145,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
@@ -1221,10 +1223,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
@@ -1297,10 +1301,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
@@ -1373,10 +1379,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
             documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
             currentUser={currentUser}
-            cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+              )
             }
             products={products}
             clients={clients}
@@ -1975,10 +1983,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           shipment={shipments.find(s => s.id === selectedShipmentForAttachment.id) || selectedShipmentForAttachment}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipmentForAttachment.status] || 'Documento'}
           currentUser={currentUser}
-          cargo={cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)}
+          cargo={findCargoById(cargos, selectedShipmentForAttachment.cargoId)}
           requiresRiskManagement={
-            products.find(p => p.id === cargos.find(c => c.id === selectedShipmentForAttachment.cargoId)?.productId)
-              ?.requiresRiskManagement !== false
+            checkRequiresRiskManagement(
+              findCargoById(cargos, selectedShipmentForAttachment.cargoId),
+              findProductForCargo(products, findCargoById(cargos, selectedShipmentForAttachment.cargoId))
+            )
           }
           products={products}
           clients={clients}

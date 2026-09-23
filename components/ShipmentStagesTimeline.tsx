@@ -7,6 +7,7 @@ import {
   ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle, FileCheck
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
+import { findProductForCargo, checkRequiresRiskManagement } from '../utils';
 
 interface ShipmentStagesTimelineProps {
   shipment: Shipment;
@@ -165,8 +166,8 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     const omitSaldo = isClientUser || (is100PctAdv && shipment.status !== ShipmentStatus.AguardandoPagamentoSaldo);
     const omitAdiantamento = is0PctAdv && shipment.status !== ShipmentStatus.AguardandoAdiantamento;
 
-    const product = products.find(p => p.id === cargo?.productId);
-    const doesNotRequireGr = product ? product.requiresRiskManagement === false : ((cargo as any)?.requiresRiskManagement === false);
+    const product = findProductForCargo(products, cargo);
+    const doesNotRequireGr = !checkRequiresRiskManagement(cargo, product);
     const omitSeguradora = doesNotRequireGr && shipment.status !== ShipmentStatus.AguardandoSeguradora;
 
     let list = STAGES_DEFINITIONS;

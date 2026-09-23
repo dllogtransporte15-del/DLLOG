@@ -18,6 +18,7 @@ import { CargoStatus, UserProfile, ShipmentStatus } from '../types';
 import ShipmentTable from '../components/ShipmentTable';
 import { StayRecord } from '../utils/toolStorage';
 import { formatFretebrasVehicleTypes } from '../utils/formatters';
+import { findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import type { Ticket } from '../types';
 
 interface OperationalLoadsPageProps {
@@ -504,10 +505,12 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           shipment={allShipments.find(s => s.id === selectedShipment.id) || selectedShipment}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
-          cargo={loads.find(c => c.id === selectedShipment.cargoId)}
+          cargo={findCargoById(loads, selectedShipment.cargoId)}
           requiresRiskManagement={
-            products.find(p => p.id === loads.find(c => c.id === selectedShipment.cargoId)?.productId)
-              ?.requiresRiskManagement !== false
+            checkRequiresRiskManagement(
+              findCargoById(loads, selectedShipment.cargoId),
+              findProductForCargo(products, findCargoById(loads, selectedShipment.cargoId))
+            )
           }
           products={products}
           clients={clients}

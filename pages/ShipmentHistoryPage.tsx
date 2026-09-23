@@ -9,7 +9,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CancellationReasonChart from '../components/CancellationReasonChart';
 import type { Shipment, Cargo, User, Product, Client, Vehicle, Driver, RiskQueryOption } from '../types';
 import { ShipmentStatus } from '../types';
-import { isCteApplicableForStatus, getShipmentCte, isStayForShipment } from '../utils';
+import { isCteApplicableForStatus, getShipmentCte, isStayForShipment, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
@@ -249,12 +249,14 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             onClose={() => setAttachmentModalOpen(false)}
             onSave={handleSaveAttachment}
             shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
-            cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
+            cargo={findCargoById(cargos, selectedShipment.cargoId)}
             documentName="Documento"
             currentUser={currentUser}
             requiresRiskManagement={
-              products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
-                ?.requiresRiskManagement !== false
+              checkRequiresRiskManagement(
+                findCargoById(cargos, selectedShipment.cargoId),
+                findProductForCargo(products, findCargoById(cargos, selectedShipment.cargoId))
+              )
             }
             products={products}
             clients={clients}

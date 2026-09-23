@@ -32,6 +32,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../utils/pdfGenerator';
 import { isDemoUser } from '../auth';
+import { findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EditRiskQueryModal from '../components/EditRiskQueryModal';
@@ -209,17 +210,17 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         );
 
         // Also check if cargo product requires risk management (or default true)
-        const cargo = cargoMap.get(s.cargoId);
-        const product = cargo?.productId ? productMap.get(cargo.productId) : undefined;
-        const requiresRisk = product ? product.requiresRiskManagement !== false : true;
+        const cargo = findCargoById(cargos, s.cargoId) || cargoMap.get(s.cargoId);
+        const product = findProductForCargo(products, cargo) || (cargo?.productId ? productMap.get(cargo.productId) : undefined);
+        const requiresRisk = checkRequiresRiskManagement(cargo, product);
         const isCancelledFromGRCargo = s.status === ShipmentStatus.Cancelado && requiresRisk;
 
         return isCurrentAgSeguradora || hasRiskInfo || hasPassedAgSeguradora || isCancelledForRisk || isCancelledFromGRCargo;
       })
       .map(s => {
-        const cargo = cargoMap.get(s.cargoId);
-        const product = cargo?.productId ? productMap.get(cargo.productId) : undefined;
-        const requiresRisk = product ? product.requiresRiskManagement !== false : ((cargo as any)?.requiresRiskManagement !== false);
+        const cargo = findCargoById(cargos, s.cargoId) || cargoMap.get(s.cargoId);
+        const product = findProductForCargo(products, cargo) || (cargo?.productId ? productMap.get(cargo.productId) : undefined);
+        const requiresRisk = checkRequiresRiskManagement(cargo, product);
         const client = cargo ? clientMap.get(cargo.clientId) : undefined;
         
         const cleanCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';

@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 import { useDatabase } from './hooks/useDatabase';
 import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Page, ProfilePermissions, HistoryLog, Ticket, TicketHistory, ShipmentLock, Branch, FreightOffer, RiskQueryOption, RealProfitData } from './types';
 import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus, DEFAULT_RISK_QUERY_OPTIONS } from './types';
-import { formatId, isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate } from './utils';
+import { formatId, isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, findCargoById, findProductForCargo, checkRequiresRiskManagement } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
 import { INITIAL_PERMISSIONS, can, isDemoUser } from './auth';
@@ -1284,9 +1284,9 @@ const App: React.FC = () => {
       return s.status !== ShipmentStatus.Cancelado;
     });
 
-    const relatedCargo = cargos.find(c => c.id === data.cargoId);
-    const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
-    const productRequiresRisk = relatedProduct?.requiresRiskManagement !== false && (relatedCargo as any)?.requiresRiskManagement !== false;
+    const relatedCargo = findCargoById(cargos, data.cargoId);
+    const relatedProduct = findProductForCargo(products, relatedCargo);
+    const productRequiresRisk = checkRequiresRiskManagement(relatedCargo, relatedProduct);
 
     let initialStatus: ShipmentStatus;
     if (!productRequiresRisk) {
@@ -1452,8 +1452,8 @@ const App: React.FC = () => {
       trailer3Plate: data.trailer3Plate,
       shipmentTonnage: data.shipmentTonnage,
       driverFreightValue: data.driverFreightValue,
-      driverFreightRateSnapshot: data.driverFreightRateSnapshot ?? (cargos.find(c => c.id === data.cargoId)?.driverFreightValuePerTon || 0),
-      companyFreightRateSnapshot: cargos.find(c => c.id === data.cargoId)?.companyFreightValuePerTon,
+      driverFreightRateSnapshot: data.driverFreightRateSnapshot ?? (findCargoById(cargos, data.cargoId)?.driverFreightValuePerTon || 0),
+      companyFreightRateSnapshot: findCargoById(cargos, data.cargoId)?.companyFreightValuePerTon,
       driverFreightType: data.driverFreightType || 'PJ',
       status: data.status || initialStatus,
       cancellationReason: data.cancellationReason,
@@ -1490,7 +1490,8 @@ const App: React.FC = () => {
     const newShipments = [newShipment, ...shipments];
     
     const newCargos = cargos.map(cargo => {
-      if (cargo.id === data.cargoId) {
+      const isTarget = cargo.id === data.cargoId || String(cargo.id) === String(data.cargoId) || (cargo.sequenceId && String(cargo.sequenceId) === String(data.cargoId).replace(/\D/g, ''));
+      if (isTarget) {
         const newScheduledVolume = cargo.scheduledVolume + data.shipmentTonnage;
         return {
           ...cargo,
@@ -1514,7 +1515,7 @@ const App: React.FC = () => {
 
     // Persist to Supabase
     try {
-      const updatedCargo = newCargos.find(c => c.id === data.cargoId);
+      const updatedCargo = findCargoById(newCargos, data.cargoId);
       if (addedOwner) await upsertOwner(addedOwner);
       await upsertManyDrivers(addedDrivers);
       await upsertManyVehicles(addedVehicles);
@@ -1712,10 +1713,9 @@ const App: React.FC = () => {
     if (originalShipment.status === ShipmentStatus.AguardandoSeguradora) {
         if (!grStatus || grStatus === 'aprovado') {
             // Resolve the product linked to this shipment's cargo
-            const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-            const relatedProduct = products.find(p => p.id === relatedCargo?.productId);
-            // requiresRiskManagement defaults to true when undefined (retrocompatibilidade)
-            const needsFullRiskFlow = relatedProduct?.requiresRiskManagement !== false;
+            const relatedCargo = findCargoById(cargos, originalShipment.cargoId);
+            const relatedProduct = findProductForCargo(products, relatedCargo);
+            const needsFullRiskFlow = checkRequiresRiskManagement(relatedCargo, relatedProduct);
 
             if (needsFullRiskFlow) {
                 // Fluxo completo: exige código de liberação + tipo de consulta
@@ -1748,9 +1748,9 @@ const App: React.FC = () => {
         throw new Error('O peso carregado é obrigatório para avançar para a próxima etapa.');
     }
 
-    const relatedCargoForTransition = cargos.find(c => c.id === originalShipment.cargoId);
-    const relatedProductForTransition = products.find(p => p.id === relatedCargoForTransition?.productId);
-    const productRequiresRiskForTransition = relatedProductForTransition?.requiresRiskManagement !== false && (relatedCargoForTransition as any)?.requiresRiskManagement !== false;
+    const relatedCargoForTransition = findCargoById(cargos, originalShipment.cargoId);
+    const relatedProductForTransition = findProductForCargo(products, relatedCargoForTransition);
+    const productRequiresRiskForTransition = checkRequiresRiskManagement(relatedCargoForTransition, relatedProductForTransition);
 
     let nextStatus: ShipmentStatus | undefined;
 
@@ -3297,9 +3297,9 @@ const App: React.FC = () => {
           return ShipmentStatus.AguardandoCarregamento; // 3
         case ShipmentStatus.AguardandoCarregamento: // 3
           {
-            const relCargo = cargos.find(c => c.id === s.cargoId);
-            const relProd = products.find(p => p.id === relCargo?.productId);
-            const prodRequiresRisk = relProd?.requiresRiskManagement !== false && (relCargo as any)?.requiresRiskManagement !== false;
+            const relCargo = findCargoById(cargos, s.cargoId);
+            const relProd = findProductForCargo(products, relCargo);
+            const prodRequiresRisk = checkRequiresRiskManagement(relCargo, relProd);
             if (!prodRequiresRisk) {
               return s.statusHistory?.some(h => h.status === ShipmentStatus.PreCadastro) ? ShipmentStatus.PreCadastro : null;
             }

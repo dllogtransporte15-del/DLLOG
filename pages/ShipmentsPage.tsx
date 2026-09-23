@@ -17,7 +17,7 @@ import type { Shipment, Cargo, Client, Driver, User, ProfilePermissions, Product
 import { ShipmentStatus, UserProfile, REQUIRED_DOCUMENT_MAP } from '../types';
 import { can, isDemoUser } from '../auth';
 import { FileText, X } from 'lucide-react';
-import { getShipmentCte, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, isCteApplicableForStatus, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import { StayRecord } from '../utils/toolStorage';
 import type { Ticket } from '../types';
 
@@ -335,13 +335,15 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           onClose={handleCloseAttachmentModal}
           onSave={handleSaveAttachment}
           shipment={shipments.find(s => s.id === selectedShipment.id) || selectedShipment}
-          cargo={cargos.find(c => c.id === selectedShipment.cargoId)}
+          cargo={findCargoById(cargos, selectedShipment.cargoId)}
           documentName={REQUIRED_DOCUMENT_MAP[selectedShipment.status] || 'Documento'}
           currentUser={currentUser}
           canSave={canUserAdvanceStatus(selectedShipment).allowed}
           requiresRiskManagement={
-            products.find(p => p.id === cargos.find(c => c.id === selectedShipment.cargoId)?.productId)
-              ?.requiresRiskManagement !== false
+            checkRequiresRiskManagement(
+              findCargoById(cargos, selectedShipment.cargoId),
+              findProductForCargo(products, findCargoById(cargos, selectedShipment.cargoId))
+            )
           }
           products={products}
           clients={clients}

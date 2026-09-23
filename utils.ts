@@ -84,8 +84,48 @@ export const formatWeightPtBr = (num: number): string => {
   return (result || 'zero toneladas').toUpperCase();
 };
 
-import type { FreightOffer, Cargo } from './types';
+import type { FreightOffer, Cargo, Product } from './types';
 import { FreightOfferStatus } from './types';
+
+/**
+ * Busca uma carga por id ou sequenceId com total tolerância a formatos ('CRG-123', '123', 123, etc.)
+ */
+export const findCargoById = (cargos?: Cargo[] | null, cargoId?: string | number | null): Cargo | undefined => {
+  if (!cargoId || !cargos || cargos.length === 0) return undefined;
+  const strId = String(cargoId).trim();
+  const cleanNum = strId.replace(/\D/g, '');
+  return cargos.find(c => 
+    c.id === strId ||
+    String(c.id).toLowerCase() === strId.toLowerCase() ||
+    (c.sequenceId !== undefined && c.sequenceId !== null && String(c.sequenceId) === strId) ||
+    (cleanNum && c.sequenceId !== undefined && c.sequenceId !== null && String(c.sequenceId) === cleanNum) ||
+    (c.sequenceId !== undefined && c.sequenceId !== null && `crg-${c.sequenceId}` === strId.toLowerCase())
+  );
+};
+
+/**
+ * Encontra o produto associado a uma carga por ID ou nome
+ */
+export const findProductForCargo = (products?: Product[] | null, cargo?: Cargo | null): Product | undefined => {
+  if (!cargo || !products || products.length === 0) return undefined;
+  const prodId = cargo.productId ? String(cargo.productId).trim() : '';
+  if (!prodId) return undefined;
+  return products.find(p => 
+    p.id === prodId ||
+    String(p.id).toLowerCase() === prodId.toLowerCase() ||
+    (p.name && p.name.trim().toLowerCase() === prodId.toLowerCase())
+  );
+};
+
+/**
+ * Verifica se a carga ou produto exige Gerenciamento de Risco (GR).
+ * Se o produto tiver requiresRiskManagement === false ou a carga tiver requiresRiskManagement === false, retorna false.
+ */
+export const checkRequiresRiskManagement = (cargo?: Cargo | null, product?: Product | null): boolean => {
+  if (product && product.requiresRiskManagement === false) return false;
+  if (cargo && (cargo as any).requiresRiskManagement === false) return false;
+  return true;
+};
 
 export const getMatchedCargo = (offer: FreightOffer, cargosList?: Cargo[]): Cargo | null => {
   if (!cargosList || cargosList.length === 0) return null;
