@@ -257,6 +257,8 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setGatewayConfigState(getGatewayConfig());
+                  setGatewayTestResult(null);
                   setActiveGatewayTab('config');
                   setShowGatewayModal(true);
                 }}

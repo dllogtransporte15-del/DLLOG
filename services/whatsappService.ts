@@ -217,9 +217,37 @@ export function formatDisplayPhone(phone: string): string {
   return phone;
 }
 
-// =========================================================================
-// MÉTODOS DE INTEGRAÇÃO COM EVOLUTION API / GATEWAY REAL
-// =========================================================================
+/**
+ * Executa requisições HTTP para a Evolution API com suporte a fallback automático para proxy Vercel (/api/evolution)
+ */
+async function fetchEvolution(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const cfg = getGatewayConfig();
+  const cleanUrl = cfg.url.replace(/\/$/, '');
+  const headers = {
+    'apikey': cfg.apiKey,
+    ...(options.headers || {})
+  };
+
+  // 1. Tenta a URL direta configurada
+  try {
+    const res = await fetch(`${cleanUrl}${endpoint}`, {
+      ...options,
+      headers
+    });
+    if (res.ok || res.status === 401 || res.status === 404) {
+      return res;
+    }
+  } catch (err) {
+    console.warn(`[Evolution Direct Fetch Failed] Tentando via Proxy Vercel /api/evolution${endpoint}...`, err);
+  }
+
+  // 2. Fallback resiliente via Proxy reverso do Vercel (/api/evolution/...)
+  const proxyUrl = `/api/evolution${endpoint}`;
+  return fetch(proxyUrl, {
+    ...options,
+    headers
+  });
+}
 
 /**
  * Testa a conexão com o servidor Gateway (Evolution API)
@@ -229,18 +257,9 @@ export async function testGatewayHealth(config?: WhatsAppGatewayConfig): Promise
   const isLocal = cfg.url.includes('localhost') || cfg.url.includes('127.0.0.1');
 
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-    const res = await fetch(`${cleanUrl}/`, {
-      method: 'GET',
-      headers: {
-        'apikey': cfg.apiKey
-      },
-      signal: controller.signal
+    const res = await fetchEvolution('/', {
+      method: 'GET'
     });
-    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -287,19 +306,16 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
   const current = await getWhatsAppInstance();
 
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-
     // 1. Tenta buscar diretamente a conexão / QR code na Evolution API (rápido e direto)
-    let qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
-      method: 'GET',
-      headers: { 'apikey': cfg.apiKey }
+    let qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
+      method: 'GET'
     }).catch(() => null);
 
     // Se a chave no cache for rejeitada com 401, tenta imediatamente com a chave oficial
     if (qrDataRes && qrDataRes.status === 401) {
       cfg.apiKey = CLOUD_GATEWAY_DEFAULT.apiKey;
       saveGatewayConfig({ ...cfg, apiKey: CLOUD_GATEWAY_DEFAULT.apiKey });
-      qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
+      qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
         method: 'GET',
         headers: { 'apikey': CLOUD_GATEWAY_DEFAULT.apiKey }
       }).catch(() => null);
@@ -307,11 +323,10 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 
     // Se retornou 404 ou erro, tenta criar a instância na Evolution API
     if (!qrDataRes || !qrDataRes.ok) {
-      await fetch(`${cleanUrl}/instance/create`, {
+      await fetchEvolution(`/instance/create`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'apikey': cfg.apiKey
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           instanceName: cfg.instanceName,
@@ -321,9 +336,8 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
         })
       }).catch(() => null);
 
-      qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
-        method: 'GET',
-        headers: { 'apikey': cfg.apiKey }
+      qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
+        method: 'GET'
       }).catch(() => null);
     }
 
@@ -333,9 +347,8 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       // Se a instância já estiver aberta e conectada
       const state = qrData?.state || qrData?.instance?.state;
       if (state === 'open' || state === 'connected') {
-        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
-          method: 'GET',
-          headers: { 'apikey': cfg.apiKey }
+        const infoRes = await fetchEvolution(`/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
+          method: 'GET'
         }).catch(() => null);
 
         let phone = current.phone_number;
@@ -415,12 +428,8 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 export async function checkGatewayConnectionStatus(): Promise<{ status: 'connected' | 'qrcode' | 'disconnected'; phone?: string; profileName?: string; battery?: number }> {
   const cfg = getGatewayConfig();
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-    const res = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
-      method: 'GET',
-      headers: {
-        'apikey': cfg.apiKey
-      }
+    const res = await fetchEvolution(`/instance/connectionState/${cfg.instanceName}`, {
+      method: 'GET'
     });
 
     if (res.ok) {
@@ -428,9 +437,8 @@ export async function checkGatewayConnectionStatus(): Promise<{ status: 'connect
       const state = data?.instance?.state || data?.state;
       if (state === 'open' || state === 'connected') {
         // Busca detalhes do número
-        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances`, {
-          method: 'GET',
-          headers: { 'apikey': cfg.apiKey }
+        const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
+          method: 'GET'
         }).catch(() => null);
 
         let phone: string | undefined;
@@ -466,10 +474,8 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
   const current = await getWhatsAppInstance();
 
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-    const stateRes = await fetch(`${cleanUrl}/instance/connectionState/${cfg.instanceName}`, {
-      method: 'GET',
-      headers: { 'apikey': cfg.apiKey }
+    const stateRes = await fetchEvolution(`/instance/connectionState/${cfg.instanceName}`, {
+      method: 'GET'
     });
 
     if (stateRes.ok) {
@@ -477,9 +483,8 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
       const state = stateData?.instance?.state || stateData?.state;
 
       if (state === 'open' || state === 'connected') {
-        const infoRes = await fetch(`${cleanUrl}/instance/fetchInstances`, {
-          method: 'GET',
-          headers: { 'apikey': cfg.apiKey }
+        const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
+          method: 'GET'
         }).catch(() => null);
 
         let phone = current.phone_number;
@@ -606,10 +611,8 @@ export async function simulatePairingSuccess(phoneNumber: string): Promise<Whats
 export async function disconnectWhatsApp(): Promise<WhatsAppInstance> {
   const cfg = getGatewayConfig();
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-    await fetch(`${cleanUrl}/instance/logout/${cfg.instanceName}`, {
-      method: 'DELETE',
-      headers: { 'apikey': cfg.apiKey }
+    await fetchEvolution(`/instance/logout/${cfg.instanceName}`, {
+      method: 'DELETE'
     });
   } catch { /* ignore */ }
 
@@ -769,15 +772,14 @@ export async function enqueueWhatsAppMessage(params: {
 
   // Tenta disparo imediato no Gateway se estiver configurado
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-    let endpoint = `${cleanUrl}/message/sendText/${cfg.instanceName}`;
+    let endpoint = `/message/sendText/${cfg.instanceName}`;
     let bodyPayload: any = {
       number: cleanPhone,
       text: params.renderedBody
     };
 
     if (params.mediaUrl) {
-      endpoint = `${cleanUrl}/message/sendMedia/${cfg.instanceName}`;
+      endpoint = `/message/sendMedia/${cfg.instanceName}`;
       bodyPayload = {
         number: cleanPhone,
         media: params.mediaUrl,
@@ -786,11 +788,10 @@ export async function enqueueWhatsAppMessage(params: {
       };
     }
 
-    const gatewayRes = await fetch(endpoint, {
+    const gatewayRes = await fetchEvolution(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'apikey': cfg.apiKey
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(bodyPayload)
     });
@@ -899,15 +900,14 @@ export async function enqueueAndDispatchMessage(params: {
 
   // Tenta disparo imediato no Gateway se estiver configurado
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
-    let endpoint = `${cleanUrl}/message/sendText/${cfg.instanceName}`;
+    let endpoint = `/message/sendText/${cfg.instanceName}`;
     let bodyPayload: any = {
       number: cleanPhone,
       text: params.renderedBody
     };
 
     if (params.mediaUrl) {
-      endpoint = `${cleanUrl}/message/sendMedia/${cfg.instanceName}`;
+      endpoint = `/message/sendMedia/${cfg.instanceName}`;
       bodyPayload = {
         number: cleanPhone,
         media: params.mediaUrl,
@@ -916,11 +916,10 @@ export async function enqueueAndDispatchMessage(params: {
       };
     }
 
-    const gatewayRes = await fetch(endpoint, {
+    const gatewayRes = await fetchEvolution(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'apikey': cfg.apiKey
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(bodyPayload)
     });
@@ -973,16 +972,14 @@ export async function processQueueItemImmediately(queueId: string): Promise<What
   let externalId = item.external_message_id;
 
   try {
-    const cleanUrl = cfg.url.replace(/\/$/, '');
     const endpoint = item.media_url 
-      ? `${cleanUrl}/message/sendMedia/${cfg.instanceName}`
-      : `${cleanUrl}/message/sendText/${cfg.instanceName}`;
+      ? `/message/sendMedia/${cfg.instanceName}`
+      : `/message/sendText/${cfg.instanceName}`;
 
-    const res = await fetch(endpoint, {
+    const res = await fetchEvolution(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'apikey': cfg.apiKey
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         number: item.recipient_phone,

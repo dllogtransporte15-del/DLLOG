@@ -2,6 +2,10 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/api/evolution/:path*",
+      "destination": "https://evolution-api-production-e3eb.up.railway.app/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
