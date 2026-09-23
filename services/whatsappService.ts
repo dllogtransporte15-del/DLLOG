@@ -301,12 +301,19 @@ export async function testGatewayHealth(config?: WhatsAppGatewayConfig): Promise
 /**
  * Gera o QR Code oficial criptografado na Evolution API ou ativa conexão resiliente
  */
-export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
+export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
   const cfg = getGatewayConfig();
   const current = await getWhatsAppInstance();
 
   try {
-    // 1. Tenta buscar diretamente a conexão / QR code na Evolution API
+    // Se for forçada a criação de novo QR (ex: usuário clicou em Reconectar / Gerar QR), reseta a instância
+    if (forceNew) {
+      await fetchEvolution(`/instance/logout/${cfg.instanceName}`, { method: 'DELETE' }).catch(() => null);
+      await fetchEvolution(`/instance/delete/${cfg.instanceName}`, { method: 'DELETE' }).catch(() => null);
+      await new Promise(r => setTimeout(r, 600));
+    }
+
+    // 1. Tenta buscar conexão / QR code na Evolution API
     let qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
       method: 'GET'
     }).catch(() => null);
@@ -321,7 +328,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       }).catch(() => null);
     }
 
-    // Se retornou 404 ou erro, tenta criar a instância na Evolution API
+    // Se retornou 404 ou erro, cria a instância na Evolution API
     if (!qrDataRes || !qrDataRes.ok) {
       await fetchEvolution(`/instance/create`, {
         method: 'POST',
@@ -336,6 +343,8 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
         })
       }).catch(() => null);
 
+      await new Promise(r => setTimeout(r, 800));
+
       qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
         method: 'GET'
       }).catch(() => null);
@@ -344,9 +353,9 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
     if (qrDataRes && qrDataRes.ok) {
       const qrData = await qrDataRes.json().catch(() => ({}));
       
-      // Se a instância já estiver aberta e conectada
+      // Se não for forçado novo QR e a instância já estiver aberta e conectada
       const state = qrData?.state || qrData?.instance?.state;
-      if (state === 'open' || state === 'connected') {
+      if (!forceNew && (state === 'open' || state === 'connected')) {
         const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
           method: 'GET'
         }).catch(() => null);
@@ -378,7 +387,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
         return { qrCode: '', instance: updated, isRealGateway: true };
       }
 
-      // Se retornou imagem de QR Code
+      // Se retornou imagem ou código de QR Code
       let qrCodeString = qrData?.base64 || qrData?.qrcode?.base64 || qrData?.code || qrData?.qrcode?.code;
       if (qrCodeString) {
         if (!qrCodeString.startsWith('data:image')) {
@@ -594,14 +603,14 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
   }
 
   const defaultInstance: WhatsAppInstance = {
-    id: 'wa_inst_matriz',
+    id: '30a60d31-18b2-44db-a31f-ee97f599023a',
     name: 'Transcunha Logística - Matriz',
     instance_key: 'transcunha_matriz',
     phone_number: undefined,
     status: 'disconnected',
     battery_level: 100,
     is_plugged: true,
-    api_token: 'tk_transcunha_secure_token',
+    api_token: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -611,10 +620,15 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
 }
 
 export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<WhatsAppInstance> {
+  const sanitizedInstance = {
+    ...instance,
+    id: (instance.id && instance.id.includes('-')) ? instance.id : '30a60d31-18b2-44db-a31f-ee97f599023a'
+  };
+
   try {
     const { data, error } = await supabase
       .from('whatsapp_instances')
-      .upsert(instance)
+      .upsert(sanitizedInstance, { onConflict: 'instance_key' })
       .select()
       .maybeSingle();
 
@@ -626,12 +640,12 @@ export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<
     console.warn('Erro ao salvar no Supabase, mantendo local:', err);
   }
 
-  localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(instance));
-  return instance;
+  localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(sanitizedInstance));
+  return sanitizedInstance;
 }
 
-export async function generateNewQRCode(): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
-  return fetchRealGatewayQRCode();
+export async function generateNewQRCode(forceNew: boolean = true): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
+  return fetchRealGatewayQRCode(forceNew);
 }
 
 export async function simulatePairingSuccess(phoneNumber: string): Promise<WhatsAppInstance> {
@@ -654,8 +668,14 @@ export async function disconnectWhatsApp(): Promise<WhatsAppInstance> {
   try {
     await fetchEvolution(`/instance/logout/${cfg.instanceName}`, {
       method: 'DELETE'
-    });
-  } catch { /* ignore */ }
+    }).catch(() => null);
+
+    await fetchEvolution(`/instance/delete/${cfg.instanceName}`, {
+      method: 'DELETE'
+    }).catch(() => null);
+  } catch (err) {
+    console.warn('[Evolution API] Erro ao desconectar:', err);
+  }
 
   const current = await getWhatsAppInstance();
   const updated: WhatsAppInstance = {

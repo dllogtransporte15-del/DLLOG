@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_23_v2_9_9',
+    version: 'v2.9.9',
+    date: '23/09/2026',
+    title: 'Ciclo de Vida Completo do WhatsApp: Reconexão, Pareamento e Desconexão Real',
+    summary: 'Aprimoramento completo do ciclo de vida da instância na Evolution API: geração forçada de novo QR Code limpo ao reconectar, encerramento real da sessão no WhatsApp do aparelho ao desconectar, polling reativo e identificação imediata do número oficial conectado.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Geração Forçada de Novo QR Code',
+        description: 'Ao clicar em "Reconectar QR" ou "Gerar QR Code", a sessão anterior é resetada na Evolution API garantindo a emissão de um QR Code limpo e pronto para leitura.'
+      },
+      {
+        category: 'fix',
+        title: 'Desconexão Fiel no Gateway e no Aparelho',
+        description: 'A ação de desconectar agora executa logout e remoção da sessão na Evolution API, desconectando o aparelho e resetando os estados no Supabase e LocalStorage.'
+      },
+      {
+        category: 'improvement',
+        title: 'Reconhecimento Imediato do Número do Aparelho',
+        description: 'Ao ler o QR Code com o WhatsApp corporativo, o sistema valida a conexão instantaneamente e exibe o número pareado formatado no painel.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_23_v2_9_8',
     version: 'v2.9.8',
     date: '23/09/2026',
