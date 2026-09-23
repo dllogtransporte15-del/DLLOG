@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_23_v2_10_0',
+    version: 'v2.10.0',
+    date: '23/09/2026',
+    title: 'Sincronização Realtime Instantânea e Reativa nos Dashboards Operacionais',
+    summary: 'Refinamento integral do fluxo de Realtime para todos os Dashboards (Fiscal, Financeiro, Geral e Supervisor). Aplicação síncrona imediata (0ms) de deltas de alteração de status de embarques entre usuários, múltiplos canais dedicados por tabela e heartbeat ultraleve com auto-sync ao focar na janela.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Atualização Instantânea de Status nos Dashboards',
+        description: 'Quando um usuário altera o status de um embarque (anexando documentos, alterando dados ou avançando etapas), os demais usuários têm seus Dashboards atualizados instantaneamente na coluna Kanban correspondente sem precisar recarregar a página.'
+      },
+      {
+        category: 'improvement',
+        title: 'Canais Dedicados e Aplicação Direta de Deltas',
+        description: 'Assinaturas específicas para cada tabela do Supabase Realtime com injeção direta de payload nos estados locais do React, eliminando requisições pesadas e gargalos de rede.'
+      },
+      {
+        category: 'improvement',
+        title: 'Heartbeat de Contingência e Sync por Foco na Aba',
+        description: 'Heartbeat ultraleve de 5 segundos monitorando carimbos de data/hora (updated_at) e sincronização imediata ao retornar ou focar na aba, garantindo sincronia total mesmo após suspensão de tela ou oscilações de conexão.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_23_v2_9_9',
     version: 'v2.9.9',
     date: '23/09/2026',

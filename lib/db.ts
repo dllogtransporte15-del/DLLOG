@@ -11,7 +11,7 @@ import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType } from '../types';
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
 // ─────────────────────────────────────────────
 
-const toFreightOffer = (row: any): FreightOffer => {
+export const toFreightOffer = (row: any): FreightOffer => {
   const rawHistory = row.history || [];
   const metaLog = rawHistory.find((h: any) => h.id === 'meta_dest_obs');
   let additionalDestinations = undefined;
@@ -164,7 +164,7 @@ export const upsertFreightOffer = async (offer: FreightOffer | Omit<FreightOffer
   if (error) throw error;
 };
 
-const toClient = (row: any): Client => ({
+export const toClient = (row: any): Client => ({
   id: row.id,
   razaoSocial: row.razao_social || '',
   nomeFantasia: row.nome_fantasia || '',
@@ -182,7 +182,7 @@ const toClient = (row: any): Client => ({
   salespersonCommissionPerTon: row.salesperson_commission_per_ton !== undefined && row.salesperson_commission_per_ton !== null ? Number(row.salesperson_commission_per_ton) : 0,
 });
 
-const fromClient = (c: Client | Omit<Client, 'id'>) => ({
+export const fromClient = (c: Client | Omit<Client, 'id'>) => ({
   id: (c as Client).id,
   razao_social: c.razaoSocial,
   nome_fantasia: c.nomeFantasia,
@@ -200,7 +200,7 @@ const fromClient = (c: Client | Omit<Client, 'id'>) => ({
   salesperson_commission_per_ton: c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon !== null ? Number(c.salespersonCommissionPerTon) : 0,
 });
 
-const toOwner = (row: any): Owner => ({
+export const toOwner = (row: any): Owner => ({
   id: row.id,
   name: row.name,
   cpfCnpj: row.cpf_cnpj,
@@ -209,7 +209,7 @@ const toOwner = (row: any): Owner => ({
   bankDetails: row.bank_details,
 });
 
-const fromOwner = (o: Owner | Omit<Owner, 'id'>) => ({
+export const fromOwner = (o: Owner | Omit<Owner, 'id'>) => ({
   id: (o as Owner).id,
   name: o.name,
   cpf_cnpj: o.cpfCnpj,
@@ -218,7 +218,7 @@ const fromOwner = (o: Owner | Omit<Owner, 'id'>) => ({
   bank_details: o.bankDetails,
 });
 
-const toDriver = (row: any): Driver => ({
+export const toDriver = (row: any): Driver => ({
   id: row.id,
   name: row.name,
   cpf: row.cpf,
@@ -231,7 +231,7 @@ const toDriver = (row: any): Driver => ({
   has_app: row.has_app ?? false,
 });
 
-const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
+export const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
   id: (d as Driver).id,
   name: d.name,
   cpf: d.cpf,
@@ -244,7 +244,7 @@ const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
   has_app: (d as Driver).has_app ?? false,
 });
 
-const toVehicle = (row: any): Vehicle => ({
+export const toVehicle = (row: any): Vehicle => ({
   id: row.id,
   plate: row.plate,
   setType: row.set_type,
@@ -254,7 +254,7 @@ const toVehicle = (row: any): Vehicle => ({
   ownerId: row.owner_id,
 });
 
-const fromVehicle = (v: Vehicle | Omit<Vehicle, 'id'>) => ({
+export const fromVehicle = (v: Vehicle | Omit<Vehicle, 'id'>) => ({
   id: (v as Vehicle).id,
   plate: v.plate,
   set_type: v.setType,
@@ -264,7 +264,7 @@ const fromVehicle = (v: Vehicle | Omit<Vehicle, 'id'>) => ({
   owner_id: v.ownerId || null,
 });
 
-const toProduct = (row: any): Product => ({
+export const toProduct = (row: any): Product => ({
   id: row.id,
   name: row.name,
   unit: row.unit,
@@ -529,7 +529,7 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
   return payload;
 };
 
-const toShipment = (row: any): Shipment => {
+export const toShipment = (row: any): Shipment => {
   const docs = (row.documents && typeof row.documents === 'object') ? row.documents : {};
   const realProfit = row.real_profit_data || docs.real_profit_data;
 
@@ -859,7 +859,7 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
   };
 };
 
-const toTicket = (row: any): Ticket => {
+export const toTicket = (row: any): Ticket => {
   let cleanDesc = row.description || '';
   const cargoMatch = cleanDesc.match(/\[CARGO_ID:\s*(.*?)\]/);
   const shipmentMatch = cleanDesc.match(/\[SHIPMENT_ID:\s*(.*?)\]/);
@@ -886,7 +886,7 @@ const toTicket = (row: any): Ticket => {
   };
 };
 
-const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
+export const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdAt' | 'createdById'>) => {
   let finalDesc = t.description;
   const ticketObj = t as Ticket;
   if (ticketObj.cargoId) finalDesc += `\n\n[CARGO_ID: ${ticketObj.cargoId}]`;
@@ -905,7 +905,7 @@ const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdAt' | 'c
   };
 };
 
-const toBranch = (row: any): Branch => ({
+export const toBranch = (row: any): Branch => ({
   id: row.id,
   name: row.name,
   city: row.city,
@@ -913,14 +913,14 @@ const toBranch = (row: any): Branch => ({
   createdAt: row.created_at,
 });
 
-const fromBranch = (b: Branch | Omit<Branch, 'id' | 'createdAt'>) => ({
+export const fromBranch = (b: Branch | Omit<Branch, 'id' | 'createdAt'>) => ({
   id: (b as Branch).id,
   name: b.name,
   city: b.city,
   state: b.state,
 });
 
-const toRiskQueryOption = (row: any): RiskQueryOption => ({
+export const toRiskQueryOption = (row: any): RiskQueryOption => ({
   id: row.id,
   name: row.name || '',
   cost: Number(row.cost !== undefined && row.cost !== null ? row.cost : 0),
@@ -930,7 +930,7 @@ const toRiskQueryOption = (row: any): RiskQueryOption => ({
   createdAt: row.created_at || '',
 });
 
-const fromRiskQueryOption = (opt: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => ({
+export const fromRiskQueryOption = (opt: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => ({
   id: (opt as RiskQueryOption).id,
   name: opt.name,
   cost: opt.cost,
