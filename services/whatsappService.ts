@@ -306,19 +306,37 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
   const current = await getWhatsAppInstance();
 
   try {
-    // Se for forçada a criação de novo QR (ex: usuário clicou em Reconectar / Gerar QR), reseta a instância
-    if (forceNew) {
+    // 1. Se não for reset forçado, primeiro verifica se já está conectado
+    if (!forceNew) {
+      const stateCheck = await checkGatewayConnectionStatus();
+      if (stateCheck.status === 'connected') {
+        const updated: WhatsAppInstance = {
+          ...current,
+          name: stateCheck.profileName || current.name,
+          instance_key: cfg.instanceName,
+          status: 'connected',
+          phone_number: stateCheck.phone || current.phone_number,
+          qr_code_base64: undefined,
+          battery_level: 100,
+          is_plugged: true,
+          last_connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        await saveWhatsAppInstance(updated);
+        return { qrCode: '', instance: updated, isRealGateway: true };
+      }
+    } else {
+      // Se for forçado novo QR Code, faz o logout na Evolution API
       await fetchEvolution(`/instance/logout/${cfg.instanceName}`, { method: 'DELETE' }).catch(() => null);
-      await fetchEvolution(`/instance/delete/${cfg.instanceName}`, { method: 'DELETE' }).catch(() => null);
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 400));
     }
 
-    // 1. Tenta buscar conexão / QR code na Evolution API
+    // 2. Busca conexão / QR Code na Evolution API
     let qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
       method: 'GET'
     }).catch(() => null);
 
-    // Se a chave no cache for rejeitada com 401, tenta imediatamente com a chave oficial
+    // Se a chave no cache for rejeitada com 401, tenta com a chave oficial
     if (qrDataRes && qrDataRes.status === 401) {
       cfg.apiKey = CLOUD_GATEWAY_DEFAULT.apiKey;
       saveGatewayConfig({ ...cfg, apiKey: CLOUD_GATEWAY_DEFAULT.apiKey });
@@ -328,9 +346,9 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
       }).catch(() => null);
     }
 
-    // Se retornou 404 ou erro, cria a instância na Evolution API
-    if (!qrDataRes || !qrDataRes.ok) {
-      await fetchEvolution(`/instance/create`, {
+    // Se retornou 404 (instância não existe), cria a instância
+    if (!qrDataRes || qrDataRes.status === 404 || !qrDataRes.ok) {
+      const createRes = await fetchEvolution(`/instance/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -343,7 +361,33 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
         })
       }).catch(() => null);
 
-      await new Promise(r => setTimeout(r, 800));
+      if (createRes && createRes.ok) {
+        const createData = await createRes.json().catch(() => ({}));
+        let createQr = createData?.qrcode?.base64 || createData?.base64 || createData?.qrcode?.code || createData?.code;
+        if (createQr) {
+          if (!createQr.startsWith('data:image')) {
+            if (createQr.startsWith('iVBORw0KGgo') || createQr.startsWith('/9j/')) {
+              createQr = `data:image/png;base64,${createQr}`;
+            } else {
+              createQr = await QRCode.toDataURL(createQr);
+            }
+          }
+
+          const updated: WhatsAppInstance = {
+            ...current,
+            instance_key: cfg.instanceName,
+            status: 'qrcode',
+            phone_number: undefined,
+            qr_code_base64: createQr,
+            updated_at: new Date().toISOString()
+          };
+
+          await saveWhatsAppInstance(updated);
+          return { qrCode: createQr, instance: updated, isRealGateway: true };
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 600));
 
       qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
         method: 'GET'
@@ -353,29 +397,17 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
     if (qrDataRes && qrDataRes.ok) {
       const qrData = await qrDataRes.json().catch(() => ({}));
       
-      // Se não for forçado novo QR e a instância já estiver aberta e conectada
+      // Se a instância estiver aberta e conectada
       const state = qrData?.state || qrData?.instance?.state;
-      if (!forceNew && (state === 'open' || state === 'connected')) {
-        const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
-          method: 'GET'
-        }).catch(() => null);
-
-        let phone = current.phone_number;
-        let profileName = current.name;
-        if (infoRes && infoRes.ok) {
-          const infoData = await infoRes.json().catch(() => null);
-          const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
-          const found = target?.ownerJid?.replace('@s.whatsapp.net', '') || target?.number;
-          if (found) phone = sanitizePhoneNumber(found);
-          if (target?.profileName) profileName = target.profileName;
-        }
+      if (state === 'open' || state === 'connected') {
+        const stateCheck = await checkGatewayConnectionStatus();
 
         const updated: WhatsAppInstance = {
           ...current,
-          name: profileName || current.name,
+          name: stateCheck.profileName || current.name,
           instance_key: cfg.instanceName,
           status: 'connected',
-          phone_number: phone || undefined,
+          phone_number: stateCheck.phone || current.phone_number,
           qr_code_base64: undefined,
           battery_level: 100,
           is_plugged: true,
@@ -415,7 +447,25 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
     console.warn('[Evolution API] Erro ao obter QR Code da nuvem:', err);
   }
 
-  // Se não foi possível obter o QR Code oficial da Evolution API
+  // Se a instância já estava conectada no Gateway mas deu timeout no QR, mantém conectada
+  const finalCheck = await checkGatewayConnectionStatus();
+  if (finalCheck.status === 'connected') {
+    const updated: WhatsAppInstance = {
+      ...current,
+      name: finalCheck.profileName || current.name,
+      instance_key: cfg.instanceName,
+      status: 'connected',
+      phone_number: finalCheck.phone || current.phone_number,
+      qr_code_base64: undefined,
+      battery_level: 100,
+      is_plugged: true,
+      last_connected_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    await saveWhatsAppInstance(updated);
+    return { qrCode: '', instance: updated, isRealGateway: true };
+  }
+
   const updated: WhatsAppInstance = {
     ...current,
     instance_key: cfg.instanceName || 'transcunha_matriz',
