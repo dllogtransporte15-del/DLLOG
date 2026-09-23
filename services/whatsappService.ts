@@ -19,14 +19,20 @@ export interface WhatsAppGatewayConfig {
   instanceName: string;
 }
 
+export const CLOUD_GATEWAY_DEFAULT: WhatsAppGatewayConfig = {
+  url: 'https://evolution-api-production-e3eb.up.railway.app',
+  apiKey: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
+  instanceName: 'transcunha_matriz'
+};
+
 /**
  * Obtém as configurações do servidor de Gateway do WhatsApp (Evolution API / Baileys)
  */
 export function getGatewayConfig(): WhatsAppGatewayConfig {
   const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-  const defaultUrl = (import.meta as any).env?.VITE_WA_GATEWAY_URL || 'https://evolution-api-production-e3eb.up.railway.app';
-  const defaultKey = (import.meta as any).env?.VITE_WA_GATEWAY_KEY || '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd';
-  const defaultInstance = (import.meta as any).env?.VITE_WA_INSTANCE_NAME || 'transcunha_matriz';
+  const defaultUrl = (import.meta as any).env?.VITE_WA_GATEWAY_URL || CLOUD_GATEWAY_DEFAULT.url;
+  const defaultKey = (import.meta as any).env?.VITE_WA_GATEWAY_KEY || CLOUD_GATEWAY_DEFAULT.apiKey;
+  const defaultInstance = (import.meta as any).env?.VITE_WA_INSTANCE_NAME || CLOUD_GATEWAY_DEFAULT.instanceName;
 
   const local = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_GATEWAY_CONFIG_KEY) : null;
   if (local) {
@@ -34,22 +40,24 @@ export function getGatewayConfig(): WhatsAppGatewayConfig {
       const parsed = JSON.parse(local);
       const isLocalhost = parsed.url && (parsed.url.includes('localhost') || parsed.url.includes('127.0.0.1'));
       const isHttpOnHttps = isHttps && parsed.url && parsed.url.startsWith('http:');
-      const isInvalidOldKey = parsed.apiKey === 'c1f7333c96962458559ec3b861d0046b4a479d23a51e897c6f4d9129475509bc';
+      const isOldKey = parsed.apiKey === 'c1f7333c96962458559ec3b861d0046b4a479d23a51e897c6f4d9129475509bc';
 
-      // Se não for localhost, não violar HTTPS e não tiver a chave antiga inválida
-      if (!isLocalhost && !isHttpOnHttps && !isInvalidOldKey && parsed.url && parsed.apiKey) {
+      // Se for configuração válida e com chave atualizada, usa ela
+      if (!isLocalhost && !isHttpOnHttps && !isOldKey && parsed.url && parsed.apiKey) {
         return parsed;
       }
     } catch { /* ignore */ }
   }
 
-  // Atualiza o localStorage automaticamente com a chave real da nuvem
+  // Atualiza automaticamente o localStorage para evitar chamadas com chaves antigas
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify({
-      url: defaultUrl,
-      apiKey: defaultKey,
-      instanceName: defaultInstance
-    }));
+    try {
+      localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify({
+        url: defaultUrl,
+        apiKey: defaultKey,
+        instanceName: defaultInstance
+      }));
+    } catch { /* ignore */ }
   }
 
   return {
@@ -287,6 +295,16 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       headers: { 'apikey': cfg.apiKey }
     }).catch(() => null);
 
+    // Se a chave no cache for rejeitada com 401, tenta imediatamente com a chave oficial
+    if (qrDataRes && qrDataRes.status === 401) {
+      cfg.apiKey = CLOUD_GATEWAY_DEFAULT.apiKey;
+      saveGatewayConfig({ ...cfg, apiKey: CLOUD_GATEWAY_DEFAULT.apiKey });
+      qrDataRes = await fetch(`${cleanUrl}/instance/connect/${cfg.instanceName}`, {
+        method: 'GET',
+        headers: { 'apikey': CLOUD_GATEWAY_DEFAULT.apiKey }
+      }).catch(() => null);
+    }
+
     // Se retornou 404 ou erro, tenta criar a instância na Evolution API
     if (!qrDataRes || !qrDataRes.ok) {
       await fetch(`${cleanUrl}/instance/create`, {
@@ -370,10 +388,22 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
     console.warn('[Evolution API] Erro ao obter QR Code da nuvem:', err);
   }
 
-  // Se a requisição não obteve o QR Code da Evolution API
+  // Se não foi possível obter o QR Code oficial da Evolution API
+  const updated: WhatsAppInstance = {
+    ...current,
+    instance_key: cfg.instanceName || 'transcunha_matriz',
+    status: 'disconnected',
+    phone_number: undefined,
+    qr_code_base64: undefined,
+    battery_level: 100,
+    is_plugged: true,
+    updated_at: new Date().toISOString()
+  };
+
+  await saveWhatsAppInstance(updated);
   return { 
     qrCode: '', 
-    instance: current, 
+    instance: updated, 
     isRealGateway: false,
     warning: 'Não foi possível conectar ao servidor Evolution API na nuvem. Verifique a conexão com o Railway.'
   };
