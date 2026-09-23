@@ -306,7 +306,7 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
   const current = await getWhatsAppInstance();
 
   try {
-    // 1. Tenta buscar diretamente a conexão / QR code na Evolution API (rápido e direto)
+    // 1. Tenta buscar diretamente a conexão / QR code na Evolution API
     let qrDataRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
       method: 'GET'
     }).catch(() => null);
@@ -347,24 +347,29 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
       // Se a instância já estiver aberta e conectada
       const state = qrData?.state || qrData?.instance?.state;
       if (state === 'open' || state === 'connected') {
-        const infoRes = await fetchEvolution(`/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
+        const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
           method: 'GET'
         }).catch(() => null);
 
         let phone = current.phone_number;
+        let profileName = current.name;
         if (infoRes && infoRes.ok) {
-          const infoData = await infoRes.json();
+          const infoData = await infoRes.json().catch(() => null);
           const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
           const found = target?.ownerJid?.replace('@s.whatsapp.net', '') || target?.number;
           if (found) phone = sanitizePhoneNumber(found);
+          if (target?.profileName) profileName = target.profileName;
         }
 
         const updated: WhatsAppInstance = {
           ...current,
+          name: profileName || current.name,
           instance_key: cfg.instanceName,
           status: 'connected',
           phone_number: phone || undefined,
           qr_code_base64: undefined,
+          battery_level: 100,
+          is_plugged: true,
           last_connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -428,38 +433,46 @@ export async function fetchRealGatewayQRCode(): Promise<{ qrCode: string; instan
 export async function checkGatewayConnectionStatus(): Promise<{ status: 'connected' | 'qrcode' | 'disconnected'; phone?: string; profileName?: string; battery?: number }> {
   const cfg = getGatewayConfig();
   try {
+    const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
+      method: 'GET'
+    }).catch(() => null);
+
+    let target: any = null;
+    if (infoRes && infoRes.ok) {
+      const infoData = await infoRes.json().catch(() => null);
+      if (infoData) {
+        target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
+      }
+    }
+
     const res = await fetchEvolution(`/instance/connectionState/${cfg.instanceName}`, {
       method: 'GET'
-    });
+    }).catch(() => null);
 
-    if (res.ok) {
-      const data = await res.json();
-      const state = data?.instance?.state || data?.state;
-      if (state === 'open' || state === 'connected') {
-        // Busca detalhes do número
-        const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
-          method: 'GET'
-        }).catch(() => null);
+    let state = 'disconnected';
+    if (res && res.ok) {
+      const data = await res.json().catch(() => ({}));
+      state = data?.instance?.state || data?.state || 'disconnected';
+    } else if (target?.connectionStatus) {
+      state = target.connectionStatus;
+    }
 
-        let phone: string | undefined;
-        let profileName: string | undefined;
-        if (infoRes && infoRes.ok) {
-          const infoData = await infoRes.json();
-          const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
-          if (target?.ownerJid) {
-            phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
-          } else if (target?.number) {
-            phone = sanitizePhoneNumber(target.number);
-          }
-          if (target?.profileName) {
-            profileName = target.profileName;
-          }
-        }
+    let phone: string | undefined;
+    let profileName: string | undefined;
 
-        return { status: 'connected', phone, profileName, battery: 100 };
-      } else if (state === 'connecting' || state === 'qrcode') {
-        return { status: 'qrcode' };
-      }
+    if (target?.ownerJid) {
+      phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
+    } else if (target?.number) {
+      phone = sanitizePhoneNumber(target.number);
+    }
+    if (target?.profileName) {
+      profileName = target.profileName;
+    }
+
+    if (state === 'open' || state === 'connected') {
+      return { status: 'connected', phone, profileName, battery: 100 };
+    } else if (state === 'connecting' || state === 'qrcode') {
+      return { status: 'qrcode', phone, profileName };
     }
   } catch { /* ignore */ }
 
@@ -474,49 +487,77 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
   const current = await getWhatsAppInstance();
 
   try {
+    const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
+      method: 'GET'
+    }).catch(() => null);
+
+    let target: any = null;
+    if (infoRes && infoRes.ok) {
+      const infoData = await infoRes.json().catch(() => null);
+      if (infoData) {
+        target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
+      }
+    }
+
     const stateRes = await fetchEvolution(`/instance/connectionState/${cfg.instanceName}`, {
       method: 'GET'
-    });
+    }).catch(() => null);
 
-    if (stateRes.ok) {
+    let state = 'disconnected';
+    if (stateRes && stateRes.ok) {
       const stateData = await stateRes.json().catch(() => ({}));
-      const state = stateData?.instance?.state || stateData?.state;
+      state = stateData?.instance?.state || stateData?.state || 'disconnected';
+    } else if (target?.connectionStatus) {
+      state = target.connectionStatus;
+    }
 
-      if (state === 'open' || state === 'connected') {
-        const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
-          method: 'GET'
-        }).catch(() => null);
+    let phone = current.phone_number;
+    let profileName = current.name;
 
-        let phone = current.phone_number;
-        let profileName = current.name;
-        if (infoRes && infoRes.ok) {
-          const infoData = await infoRes.json();
-          const target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
-          if (target?.ownerJid) {
-            phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
-          } else if (target?.number) {
-            phone = sanitizePhoneNumber(target.number);
-          }
-          if (target?.profileName) {
-            profileName = `${target.profileName} (Matriz)`;
-          }
-        }
-
-        const updated: WhatsAppInstance = {
-          ...current,
-          name: profileName || current.name,
-          phone_number: phone || current.phone_number,
-          instance_key: cfg.instanceName,
-          status: 'connected',
-          qr_code_base64: undefined,
-          battery_level: 100,
-          is_plugged: true,
-          last_connected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-
-        return await saveWhatsAppInstance(updated);
+    if (target) {
+      if (target.ownerJid) {
+        phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
+      } else if (target.number) {
+        phone = sanitizePhoneNumber(target.number);
       }
+      if (target.profileName) {
+        profileName = target.profileName;
+      }
+    }
+
+    if (state === 'open' || state === 'connected') {
+      const updated: WhatsAppInstance = {
+        ...current,
+        name: profileName || current.name,
+        phone_number: phone || current.phone_number,
+        instance_key: cfg.instanceName,
+        status: 'connected',
+        qr_code_base64: undefined,
+        battery_level: 100,
+        is_plugged: true,
+        last_connected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      return await saveWhatsAppInstance(updated);
+    } else if (state === 'connecting' || state === 'qrcode') {
+      const updated: WhatsAppInstance = {
+        ...current,
+        instance_key: cfg.instanceName,
+        status: current.qr_code_base64 ? 'qrcode' : 'disconnected',
+        phone_number: phone || current.phone_number,
+        updated_at: new Date().toISOString()
+      };
+      return await saveWhatsAppInstance(updated);
+    } else {
+      const updated: WhatsAppInstance = {
+        ...current,
+        instance_key: cfg.instanceName,
+        status: 'disconnected',
+        qr_code_base64: undefined,
+        updated_at: new Date().toISOString()
+      };
+      return await saveWhatsAppInstance(updated);
     }
   } catch (err) {
     console.warn('[Evolution API] Erro ao sincronizar instância:', err);

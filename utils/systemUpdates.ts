@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_23_v2_9_8',
+    version: 'v2.9.8',
+    date: '23/09/2026',
+    title: 'Sincronização do Número Oficial e Estado Ativo do WhatsApp',
+    summary: 'Aprimoramento da sincronização em tempo real com a Evolution API na nuvem: extração automática do número pareado (ownerJid), tratamento de conflitos de sessão do Baileys e botão de reconexão instantânea de QR Code.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Exibição do Número Pareado em Tempo Real',
+        description: 'Correção na extração do JID/número do aparelho pareado no Gateway, exibindo o número oficial formatado no card de conexão sem exibir "Nenhum número vinculado".'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção de Conflitos e Botão de Reconexão',
+        description: 'Adicionado botão "Reconectar QR" no card operacional para facilitar a leitura de um novo QR Code caso a sessão no celular seja desconectada ou alterada.'
+      },
+      {
+        category: 'security',
+        title: 'Sincronização de Estado Fidedigno',
+        description: 'O status da conexão agora reflete fielmente a resposta do WebSocket da Evolution API no Railway, prevenindo estados fantasmas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_22_v2_9_7',
     version: 'v2.9.7',
     date: '22/09/2026',
