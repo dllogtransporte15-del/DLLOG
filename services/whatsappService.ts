@@ -658,10 +658,10 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
 
   const defaultInstance: WhatsAppInstance = {
     id: '30a60d31-18b2-44db-a31f-ee97f599023a',
-    name: 'Transcunha Logística - Matriz',
+    name: 'Transcunha Transporte',
     instance_key: 'transcunha_matriz',
-    phone_number: undefined,
-    status: 'disconnected',
+    phone_number: '553598721970',
+    status: 'connected',
     battery_level: 100,
     is_plugged: true,
     api_token: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',

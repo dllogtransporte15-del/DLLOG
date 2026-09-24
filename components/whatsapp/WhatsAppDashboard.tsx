@@ -16,6 +16,7 @@ import {
 import type { WhatsAppInstance, WhatsAppTemplate, WhatsAppQueueItem } from '../../types/whatsapp';
 import { 
   getWhatsAppInstance, 
+  syncWhatsAppInstanceFromGateway,
   getWhatsAppTemplates, 
   getWhatsAppQueue, 
   saveWhatsAppTemplate, 
@@ -41,7 +42,7 @@ export const WhatsAppDashboard: React.FC = () => {
     setLoading(true);
     try {
       const [instData, tplData, queueData] = await Promise.all([
-        getWhatsAppInstance(),
+        syncWhatsAppInstanceFromGateway().catch(() => getWhatsAppInstance()),
         getWhatsAppTemplates(),
         getWhatsAppQueue()
       ]);
