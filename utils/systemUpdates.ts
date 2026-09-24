@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_11_3',
+    version: 'v2.11.3',
+    date: '24/09/2026',
+    title: 'Desconexão Automática & Limpeza Segura do Histórico de Conversas',
+    summary: 'Ao desconectar a sessão do WhatsApp, todo o histórico de conversas, mensagens e mídias é imediatamente desconectado e limpo do sistema por segurança e privacidade.',
+    items: [
+      {
+        category: 'security',
+        title: 'Desconexão Segura do Histórico',
+        description: 'Ao clicar em desconectar ou encerrar a sessão, as mensagens e conversas locais são apagadas automaticamente e a tela de chat é esvaziada em tempo real.'
+      },
+      {
+        category: 'improvement',
+        title: 'Bloqueio de Carregamento sem Conexão',
+        description: 'Impede o carregamento de conversas em instâncias desconectadas, exigindo nova autenticação via QR Code para sincronização.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_11_2',
     version: 'v2.11.2',
     date: '24/09/2026',

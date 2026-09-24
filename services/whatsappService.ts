@@ -749,6 +749,34 @@ export async function simulatePairingSuccess(phoneNumber: string): Promise<Whats
   return saveWhatsAppInstance(updated);
 }
 
+/**
+ * Limpa completamente todo o histórico de conversas e mensagens locais
+ */
+export function clearWhatsAppHistoryData(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(STORAGE_CHATS_KEY);
+      
+      // Remove todas as chaves de mensagens de contatos
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith(STORAGE_CHAT_MSGS_KEY) || key.startsWith('transcunha_wa_chat_messages_local'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+
+      window.dispatchEvent(new CustomEvent('transcunha:whatsapp_disconnected'));
+      window.dispatchEvent(new CustomEvent('transcunha:whatsapp_history_synced', {
+        detail: { chatsCount: 0, messagesCount: 0 }
+      }));
+    }
+  } catch (err) {
+    console.warn('Erro ao limpar histórico de WhatsApp:', err);
+  }
+}
+
 export async function disconnectWhatsApp(): Promise<WhatsAppInstance> {
   const cfg = getGatewayConfig();
   try {
@@ -762,6 +790,9 @@ export async function disconnectWhatsApp(): Promise<WhatsAppInstance> {
   } catch (err) {
     console.warn('[Evolution API] Erro ao desconectar:', err);
   }
+
+  // Limpa completamente todo o histórico de mensagens e conversas locais
+  clearWhatsAppHistoryData();
 
   const current = await getWhatsAppInstance();
   const updated: WhatsAppInstance = {
@@ -1430,6 +1461,13 @@ export async function syncAllWhatsAppConversationsAndHistory(options: { limit?: 
  */
 export async function getWhatsAppChats(): Promise<WhatsAppChat[]> {
   const cfg = getGatewayConfig();
+  const currentInstance = await getWhatsAppInstance();
+
+  // Se o WhatsApp estiver explicitamente desconectado, não carrega conversas
+  if (currentInstance.status === 'disconnected') {
+    return [];
+  }
+
   const chatMap = new Map<string, WhatsAppChat>();
 
   // 1. Carrega dados de conversas do localStorage primeiro
@@ -1480,8 +1518,8 @@ export async function getWhatsAppChats(): Promise<WhatsAppChat[]> {
     console.warn('Erro ao mapear chats da fila:', err);
   }
 
-  // 3. Se ainda não houver conversas ou tiver poucas, tenta sincronizar direto da Evolution API
-  if (chatMap.size === 0) {
+  // 3. Se ainda não houver conversas ou tiver poucas e estiver conectado, tenta sincronizar direto da Evolution API
+  if (chatMap.size === 0 && currentInstance.status === 'connected') {
     try {
       const syncRes = await syncAllWhatsAppConversationsAndHistory({ limit: 50 });
       if (syncRes.chats && syncRes.chats.length > 0) {
@@ -1490,66 +1528,9 @@ export async function getWhatsAppChats(): Promise<WhatsAppChat[]> {
     } catch { /* ignore */ }
   }
 
-  // 4. Se não houver conversas, cria exemplos de conversas úteis com motoristas cadastrados
-  if (chatMap.size === 0) {
-    const defaultSampleChats: WhatsAppChat[] = [
-      {
-        id: 'chat_sample_1',
-        remote_jid: '5564993058754@s.whatsapp.net',
-        phone_number: '5564993058754',
-        name: 'Carlos Silva (Bitrem Graneleiro)',
-        unread_count: 1,
-        last_message: {
-          id: 'msg_sample_1',
-          text: 'Boa tarde! Ordem de carregamento recebida com sucesso, estou a caminho da fazenda.',
-          timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-          from_me: false,
-          status: 'read'
-        },
-        updated_at: new Date(Date.now() - 15 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'chat_sample_2',
-        remote_jid: '5511988887777@s.whatsapp.net',
-        phone_number: '5511988887777',
-        name: 'Roberto Mendes (Rodotrem)',
-        unread_count: 0,
-        last_message: {
-          id: 'msg_sample_2',
-          text: 'Comprovante do adiantamento recebido. Obrigado!',
-          timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-          from_me: false,
-          status: 'read'
-        },
-        updated_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
-      },
-      {
-        id: 'chat_sample_3',
-        remote_jid: '5519997654321@s.whatsapp.net',
-        phone_number: '5519997654321',
-        name: 'Marcos Oliveira (Vanderleia)',
-        unread_count: 0,
-        last_message: {
-          id: 'msg_sample_3',
-          text: '📋 Ordem de Carregamento Transcunha - Embarque #TC-8492 enviada em anexo.',
-          timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
-          from_me: true,
-          status: 'delivered'
-        },
-        updated_at: new Date(Date.now() - 5 * 3600 * 1000).toISOString()
-      }
-    ];
-
-    defaultSampleChats.forEach(sc => chatMap.set(sc.phone_number, sc));
-  }
-
   const result = Array.from(chatMap.values()).sort((a, b) => {
     return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
   });
-
-  try {
-    localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(result));
-  } catch { /* ignore */ }
 
   return result;
 }

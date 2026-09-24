@@ -181,9 +181,19 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     const handleExternalSync = () => {
       loadChats();
     };
+
+    const handleDisconnected = () => {
+      setChats([]);
+      setSelectedChat(null);
+      setMessages([]);
+      setLoadingChats(false);
+    };
+
     window.addEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
+    window.addEventListener('transcunha:whatsapp_disconnected', handleDisconnected);
     return () => {
       window.removeEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
+      window.removeEventListener('transcunha:whatsapp_disconnected', handleDisconnected);
     };
   }, []);
 
