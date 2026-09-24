@@ -50,7 +50,6 @@ interface TopNavBarProps {
   onRefuseOrderRequest?: (offer: FreightOffer, reason?: string) => void | Promise<void>;
   onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void> | void;
   onOpenUpdates?: () => void;
-  onToggleWhatsApp?: () => void;
 }
 
 interface NavItem {
@@ -137,8 +136,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   onAcceptOrderRequest,
   onRefuseOrderRequest,
   onSaveFreightOffer,
-  onOpenUpdates,
-  onToggleWhatsApp
+  onOpenUpdates
 }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -347,19 +345,6 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  <span className="hidden 2xl:inline text-[11px]">Escuro</span>
                </button>
              </div>
-
-              {/* Botão de Janela Flutuante de WhatsApp */}
-              {onToggleWhatsApp && (
-                <button
-                  type="button"
-                  onClick={onToggleWhatsApp}
-                  title="Abrir Janela Flutuante de WhatsApp"
-                  className="p-1.5 xl:px-2.5 xl:py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="hidden 2xl:inline text-[11px]">WhatsApp</span>
-                </button>
-              )}
 
               {/* Botão de Novidades / Atualizações do Sistema */}
               <button

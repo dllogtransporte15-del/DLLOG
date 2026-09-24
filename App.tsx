@@ -165,7 +165,6 @@ const App: React.FC = () => {
   const [offerForNewShipment, setOfferForNewShipment] = useState<FreightOffer | null>(null);
   const [isSelectEmbarcadorModalOpen, setIsSelectEmbarcadorModalOpen] = useState(false);
   const [selectedCargoForRequest, setSelectedCargoForRequest] = useState<Cargo | null>(null);
-  const [isGlobalWhatsAppFloatingOpen, setIsGlobalWhatsAppFloatingOpen] = useState(false);
 
   // Theme Mode ('dark' or 'light')
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
@@ -219,6 +218,22 @@ const App: React.FC = () => {
 
   const { showToast } = useToast();
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isGlobalWhatsAppFloatingOpen, setIsGlobalWhatsAppFloatingOpen] = useState(false);
+  const [globalWhatsAppInitialPhone, setGlobalWhatsAppInitialPhone] = useState<string | undefined>(undefined);
+  const [globalWhatsAppInitialName, setGlobalWhatsAppInitialName] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const handleOpenFloating = (e: any) => {
+      const detail = e.detail || {};
+      setGlobalWhatsAppInitialPhone(detail.phone);
+      setGlobalWhatsAppInitialName(detail.name);
+      setIsGlobalWhatsAppFloatingOpen(true);
+    };
+    window.addEventListener('transcunha:open_whatsapp_chat', handleOpenFloating);
+    return () => {
+      window.removeEventListener('transcunha:open_whatsapp_chat', handleOpenFloating);
+    };
+  }, []);
 
   useEffect(() => {
     if (currentUser?.id && !isLoading) {
@@ -3655,7 +3670,6 @@ const App: React.FC = () => {
         onRefuseOrderRequest={handleRefuseOrderRequestFromNotification}
         onSaveFreightOffer={handleSaveFreightOffer}
         onOpenUpdates={() => setIsUpdateModalOpen(true)}
-        onToggleWhatsApp={() => setIsGlobalWhatsAppFloatingOpen(prev => !prev)}
       />
       <main className="relative z-10 flex-1 overflow-y-auto" style={{ zoom: 0.72 }}>
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -3726,11 +3740,13 @@ const App: React.FC = () => {
         currentUser={currentUser} 
       />
 
-      {/* JANELA FLUTUANTE GLOBAL DE WHATSAPP (SOBREPOSTA AO CABEÇALHO E ATIVA EM QUALQUER TELA) */}
+      {/* JANELA FLUTUANTE GLOBAL DE WHATSAPP (SOBREPOSTA A TODAS AS TELAS E CABEÇALHO) */}
       {isGlobalWhatsAppFloatingOpen && (
-        <WhatsAppChatPanel 
-          mode="floating" 
-          onClose={() => setIsGlobalWhatsAppFloatingOpen(false)} 
+        <WhatsAppChatPanel
+          mode="floating"
+          onClose={() => setIsGlobalWhatsAppFloatingOpen(false)}
+          initialPhone={globalWhatsAppInitialPhone}
+          initialName={globalWhatsAppInitialName}
         />
       )}
     </div>

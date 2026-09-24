@@ -208,8 +208,8 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isDragging) {
-      const newX = Math.max(0, Math.min(window.innerWidth - 120, e.clientX - dragStartOffset.x));
-      const newY = Math.max(0, Math.min(window.innerHeight - 60, e.clientY - dragStartOffset.y));
+      const newX = Math.max(10, Math.min(window.innerWidth - 200, e.clientX - dragStartOffset.x));
+      const newY = Math.max(10, Math.min(window.innerHeight - 80, e.clientY - dragStartOffset.y));
       setPosition({ x: newX, y: newY });
     } else if (isResizing) {
       const deltaX = e.clientX - resizeStart.x;
@@ -219,10 +219,10 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
       let newHeight = resizeStart.height;
 
       if (isResizing.includes('e')) {
-        newWidth = Math.max(460, Math.min(window.innerWidth - position.x - 10, resizeStart.width + deltaX));
+        newWidth = Math.max(480, Math.min(window.innerWidth - position.x - 20, resizeStart.width + deltaX));
       }
       if (isResizing.includes('s')) {
-        newHeight = Math.max(380, Math.min(window.innerHeight - position.y - 10, resizeStart.height + deltaY));
+        newHeight = Math.max(420, Math.min(window.innerHeight - position.y - 20, resizeStart.height + deltaY));
       }
 
       setSize({ width: newWidth, height: newHeight });
@@ -346,7 +346,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     return (
       <div 
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-6 right-6 z-[99999] flex items-center gap-3 px-4 py-3 rounded-2xl bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-900 text-white shadow-2xl border border-emerald-400/40 cursor-pointer hover:scale-105 transition-all animate-bounce-short select-none"
+        className="fixed bottom-6 right-6 z-[999999] flex items-center gap-3 px-4 py-3 rounded-2xl bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-900 text-white shadow-2xl border border-emerald-400/40 cursor-pointer hover:scale-105 transition-all animate-bounce-short select-none"
         title="Clique para restaurar a janela de WhatsApp"
       >
         <div className="relative">
@@ -375,8 +375,11 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
           bottom: 0,
           width: '100vw',
           height: '100vh',
-          zIndex: 99999,
-          borderRadius: 0
+          maxWidth: '100vw',
+          maxHeight: '100vh',
+          zIndex: 999999,
+          borderRadius: 0,
+          margin: 0
         }
       : {
           position: 'fixed',
@@ -384,8 +387,8 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
           left: `${position.x}px`,
           width: `${size.width}px`,
           height: `${size.height}px`,
-          zIndex: 99999,
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.15)'
+          zIndex: 999999,
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.15)'
         }
     : {
         width: '100%',
@@ -396,12 +399,12 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     <>
       {/* BACKDROP QUANDO MAXIMIZADO */}
       {isOverlayMode && isMaximized && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]" />
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[999998]" />
       )}
 
       <div 
         style={windowStyle}
-        className={`flex flex-col bg-slate-50 dark:bg-slate-950 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl transition-shadow ${
+        className={`flex flex-col bg-slate-50 dark:bg-slate-950 ${isMaximized ? 'rounded-none' : 'rounded-3xl'} overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl transition-shadow ${
           isDragging ? 'select-none opacity-95 ring-2 ring-emerald-500' : ''
         }`}
       >
@@ -428,11 +431,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                   WhatsApp Transcunha
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 </span>
-                {isOverlayMode && (
-                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    Janela Flutuante & Arrastável
-                  </span>
-                )}
               </div>
               <span className="text-[10px] text-slate-400 block -mt-0.5">
                 {selectedChat ? `Conversando com ${selectedChat.name}` : 'Central de Mensagens e Atendimento'}

@@ -23,6 +23,7 @@ import {
   Check
 } from 'lucide-react';
 import type { WhatsAppInstance } from '../../types/whatsapp';
+import type { User } from '../../types';
 import { 
   generateNewQRCode, 
   disconnectWhatsApp, 
@@ -39,11 +40,13 @@ import {
 
 interface WhatsAppConnectionCardProps {
   instance: WhatsAppInstance;
+  currentUser?: User | null;
   onInstanceUpdated: (updated: WhatsAppInstance) => void;
 }
 
 export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   instance,
+  currentUser,
   onInstanceUpdated
 }) => {
   const [loading, setLoading] = useState(false);
@@ -58,6 +61,23 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   const [syncing, setSyncing] = useState(false);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [copiedDocker, setCopiedDocker] = useState(false);
+
+  // Identifica se o usuário logado é "Suporte"
+  let isSupportUser = false;
+  const userToCheck = currentUser || (() => {
+    try {
+      const stored = localStorage.getItem('dllog_logged_in_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (userToCheck) {
+    const name = (userToCheck.name || '').trim().toLowerCase();
+    const email = (userToCheck.email || '').trim().toLowerCase();
+    isSupportUser = name.includes('suporte') || email.includes('suporte');
+  }
 
   const pollingRef = useRef<any>(null);
 
@@ -257,20 +277,22 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                 <span>{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setGatewayConfigState(getGatewayConfig());
-                  setGatewayTestResult(null);
-                  setActiveGatewayTab('config');
-                  setShowGatewayModal(true);
-                }}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Configurar Servidor Gateway (Evolution API) ou Nuvem 24h"
-              >
-                <Server className="w-3.5 h-3.5 text-blue-500" />
-                <span>Servidor / Nuvem</span>
-              </button>
+              {isSupportUser && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGatewayConfigState(getGatewayConfig());
+                    setGatewayTestResult(null);
+                    setActiveGatewayTab('config');
+                    setShowGatewayModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Configurar Servidor Gateway (Evolution API) ou Nuvem 24h"
+                >
+                  <Server className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Servidor / Nuvem</span>
+                </button>
+              )}
 
               {/* STATUS BADGE */}
               {isConnected ? (

@@ -22,13 +22,18 @@ import {
   saveWhatsAppTemplate, 
   deleteWhatsAppTemplate 
 } from '../../services/whatsappService';
+import type { User } from '../../types';
 import { WhatsAppConnectionCard } from './WhatsAppConnectionCard';
 import { WhatsAppTemplateEditor } from './WhatsAppTemplateEditor';
 import { WhatsAppLogsTable } from './WhatsAppLogsTable';
 import { WhatsAppLiveTestModal } from './WhatsAppLiveTestModal';
 import { WhatsAppChatPanel } from './WhatsAppChatPanel';
 
-export const WhatsAppDashboard: React.FC = () => {
+interface WhatsAppDashboardProps {
+  currentUser?: User | null;
+}
+
+export const WhatsAppDashboard: React.FC<WhatsAppDashboardProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<'chats' | 'templates' | 'connection' | 'logs'>('chats');
   const [instance, setInstance] = useState<WhatsAppInstance | null>(null);
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
@@ -105,9 +110,9 @@ export const WhatsAppDashboard: React.FC = () => {
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
               type="button"
-              onClick={() => setChatModalOpen(true)}
+              onClick={() => window.dispatchEvent(new CustomEvent('transcunha:open_whatsapp_chat'))}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer transition-all border border-emerald-400/30"
-              title="Abrir Janela Flutuante / Modal de Conversas"
+              title="Abrir Janela Flutuante Global de Conversas"
             >
               <MessageSquare className="w-3.5 h-3.5" />
               <span>Abrir Janela de Chat</span>
@@ -233,7 +238,7 @@ export const WhatsAppDashboard: React.FC = () => {
       {activeTab === 'chats' && (
         <WhatsAppChatPanel 
           mode="embedded" 
-          onOpenFloating={() => setChatModalOpen(true)}
+          onOpenFloating={() => window.dispatchEvent(new CustomEvent('transcunha:open_whatsapp_chat'))}
         />
       )}
 
@@ -249,6 +254,7 @@ export const WhatsAppDashboard: React.FC = () => {
       {activeTab === 'connection' && instance && (
         <WhatsAppConnectionCard
           instance={instance}
+          currentUser={currentUser}
           onInstanceUpdated={(updated) => setInstance(updated)}
         />
       )}
@@ -257,14 +263,6 @@ export const WhatsAppDashboard: React.FC = () => {
         <WhatsAppLogsTable
           queue={queue}
           onReload={loadAllData}
-        />
-      )}
-
-      {/* JANELA SOBREPOSTA FLUTUANTE & ARRASTÁVEL DE CHAT */}
-      {chatModalOpen && (
-        <WhatsAppChatPanel
-          mode="floating"
-          onClose={() => setChatModalOpen(false)}
         />
       )}
 
