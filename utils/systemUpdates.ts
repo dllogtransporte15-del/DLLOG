@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_11_2',
+    version: 'v2.11.2',
+    date: '24/09/2026',
+    title: 'Janela de WhatsApp Global Sobreposta ao Cabeçalho e Ativa em Todas as Telas',
+    summary: 'A janela flutuante do WhatsApp agora fica sobreposta até mesmo acima do cabeçalho superior do sistema, sem travar nem bloquear cliques em outros campos, botões ou telas, permitindo operar todo o Transcunha enquanto conversa com motoristas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sobreposição Completa ao Cabeçalho (Z-Index Máximo)',
+        description: 'A janela flutuante agora se move livremente inclusive por cima do topo/cabeçalho superior sem ser recortada ou ficar atrás dos menus.'
+      },
+      {
+        category: 'feature',
+        title: 'Uso Simultâneo sem Bloqueio de Tela',
+        description: 'Você pode preencher formulários, abrir cadastros, trocar de tela e emitir ordens sem precisar fechar o chat do WhatsApp.'
+      },
+      {
+        category: 'feature',
+        title: 'Botão Rápido de WhatsApp no Cabeçalho Superior',
+        description: 'Novo botão "WhatsApp" no topo da navegação para abrir ou ocultar a janela flutuante a qualquer momento de qualquer página.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_11_1',
     version: 'v2.11.1',
     date: '24/09/2026',

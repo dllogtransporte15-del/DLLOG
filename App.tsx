@@ -48,6 +48,7 @@ import DriverPortal from './components/DriverPortal';
 import NewShipmentModal from './components/NewShipmentModal';
 import SystemUpdateModal from './components/SystemUpdateModal';
 import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
+import { WhatsAppChatPanel } from './components/whatsapp/WhatsAppChatPanel';
 import { shouldShowUpdateModal } from './utils/systemUpdates';
 
 import {
@@ -164,6 +165,7 @@ const App: React.FC = () => {
   const [offerForNewShipment, setOfferForNewShipment] = useState<FreightOffer | null>(null);
   const [isSelectEmbarcadorModalOpen, setIsSelectEmbarcadorModalOpen] = useState(false);
   const [selectedCargoForRequest, setSelectedCargoForRequest] = useState<Cargo | null>(null);
+  const [isGlobalWhatsAppFloatingOpen, setIsGlobalWhatsAppFloatingOpen] = useState(false);
 
   // Theme Mode ('dark' or 'light')
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
@@ -3653,6 +3655,7 @@ const App: React.FC = () => {
         onRefuseOrderRequest={handleRefuseOrderRequestFromNotification}
         onSaveFreightOffer={handleSaveFreightOffer}
         onOpenUpdates={() => setIsUpdateModalOpen(true)}
+        onToggleWhatsApp={() => setIsGlobalWhatsAppFloatingOpen(prev => !prev)}
       />
       <main className="relative z-10 flex-1 overflow-y-auto" style={{ zoom: 0.72 }}>
         <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -3722,6 +3725,14 @@ const App: React.FC = () => {
         onClose={() => setIsUpdateModalOpen(false)} 
         currentUser={currentUser} 
       />
+
+      {/* JANELA FLUTUANTE GLOBAL DE WHATSAPP (SOBREPOSTA AO CABEÇALHO E ATIVA EM QUALQUER TELA) */}
+      {isGlobalWhatsAppFloatingOpen && (
+        <WhatsAppChatPanel 
+          mode="floating" 
+          onClose={() => setIsGlobalWhatsAppFloatingOpen(false)} 
+        />
+      )}
     </div>
   );
 };
