@@ -652,7 +652,10 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
   const local = localStorage.getItem(STORAGE_INSTANCE_KEY);
   if (local) {
     try {
-      return JSON.parse(local);
+      const parsed = JSON.parse(local);
+      if (parsed.status === 'connected' && parsed.phone_number && parsed.name === 'Transcunha Transporte') {
+        return parsed;
+      }
     } catch { /* ignore */ }
   }
 
