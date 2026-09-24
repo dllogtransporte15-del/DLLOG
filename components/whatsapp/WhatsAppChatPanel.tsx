@@ -112,6 +112,9 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     posY: 0
   });
 
+  const [isInstanceConnected, setIsInstanceConnected] = useState<boolean>(false);
+  const [connectedPhoneNumber, setConnectedPhoneNumber] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -123,7 +126,11 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     setLoadingChats(true);
     try {
       const instance = await getWhatsAppInstance();
-      if (instance.status === 'disconnected') {
+      const connected = instance.status === 'connected' && Boolean(instance.phone_number);
+      setIsInstanceConnected(connected);
+      setConnectedPhoneNumber(instance.phone_number || null);
+
+      if (!connected) {
         setChats([]);
         setSelectedChat(null);
         setMessages([]);
@@ -152,18 +159,23 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   };
 
   const handleFullSync = async () => {
+    const instance = await getWhatsAppInstance();
+    const connected = instance.status === 'connected' && Boolean(instance.phone_number);
+    setIsInstanceConnected(connected);
+    setConnectedPhoneNumber(instance.phone_number || null);
+
+    if (!connected) {
+      setChats([]);
+      setSelectedChat(null);
+      setMessages([]);
+      setSyncFeedback('WhatsApp Desconectado! Conecte um número via QR Code para sincronizar.');
+      setTimeout(() => setSyncFeedback(null), 4000);
+      return;
+    }
+
     setSyncingHistory(true);
     setSyncFeedback(null);
     try {
-      const instance = await getWhatsAppInstance();
-      if (instance.status !== 'connected' || !instance.phone_number) {
-        setChats([]);
-        setSelectedChat(null);
-        setMessages([]);
-        setSyncFeedback('WhatsApp Desconectado! Conecte um número via QR Code para sincronizar.');
-        return;
-      }
-
       const result = await syncAllWhatsAppConversationsAndHistory({ limit: 150 });
       if (result.success && result.chatsCount > 0) {
         setChats(result.chats);
@@ -214,6 +226,8 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     };
 
     const handleDisconnected = () => {
+      setIsInstanceConnected(false);
+      setConnectedPhoneNumber(null);
       setChats([]);
       setSelectedChat(null);
       setMessages([]);
@@ -227,7 +241,10 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     const checkInterval = setInterval(async () => {
       try {
         const inst = await getWhatsAppInstance();
-        if (inst.status === 'disconnected') {
+        const connected = inst.status === 'connected' && Boolean(inst.phone_number);
+        setIsInstanceConnected(connected);
+        setConnectedPhoneNumber(inst.phone_number || null);
+        if (!connected) {
           handleDisconnected();
         }
       } catch { /* ignore */ }
@@ -517,11 +534,14 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black tracking-tight text-white flex items-center gap-1.5">
                   WhatsApp Transcunha
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span 
+                    className={`w-2 h-2 rounded-full ${isInstanceConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}
+                    title={isInstanceConnected ? (connectedPhoneNumber ? `Conectado: ${formatDisplayPhone(connectedPhoneNumber)}` : 'Conectado') : 'Desconectado'}
+                  ></span>
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 block -mt-0.5">
-                {selectedChat ? `Conversando com ${selectedChat.name}` : 'Central de Mensagens e Atendimento'}
+                {selectedChat ? `Conversando com ${selectedChat.name}` : (isInstanceConnected ? 'Central de Mensagens e Atendimento' : 'Sem aparelho conectado')}
               </span>
             </div>
           </div>
@@ -589,16 +609,22 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
             {/* CABEÇALHO DA LISTA */}
             <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50/50 dark:bg-slate-900/50">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
+                  isInstanceConnected 
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
+                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                }`}>
                   <MessageSquare className="w-3.5 h-3.5" />
                 </div>
                 <div>
                   <h2 className="text-xs font-black text-slate-800 dark:text-white leading-tight flex items-center gap-1.5">
                     Conversas
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isInstanceConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
                   </h2>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    {chats.length} chats • WhatsApp Web
+                    {isInstanceConnected
+                      ? `${chats.length} chats • WhatsApp Web`
+                      : 'Desconectado • Sem número'}
                   </span>
                 </div>
               </div>
@@ -607,9 +633,9 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 <button
                   type="button"
                   onClick={handleFullSync}
-                  disabled={syncingHistory}
-                  className="px-2.5 py-1 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-600 dark:text-emerald-300 hover:text-white border border-emerald-500/30 text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-50"
-                  title="Sincronizar todo o histórico de conversas e mensagens com a nuvem do WhatsApp"
+                  disabled={syncingHistory || !isInstanceConnected}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-600 dark:text-emerald-300 hover:text-white border border-emerald-500/30 text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600/20 disabled:hover:text-emerald-600 dark:disabled:hover:text-emerald-300"
+                  title={!isInstanceConnected ? "Conecte um número de WhatsApp via QR Code para sincronizar conversas" : "Sincronizar todo o histórico de conversas e mensagens com a nuvem do WhatsApp"}
                 >
                   <RefreshCw className={`w-3 h-3 ${syncingHistory ? 'animate-spin' : ''}`} />
                   <span>{syncingHistory ? 'Sincronizando...' : 'Sincronizar'}</span>
@@ -626,8 +652,9 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowNewChatModal(true)}
-                  className="p-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center justify-center shadow-sm cursor-pointer"
-                  title="Nova Conversa"
+                  disabled={!isInstanceConnected}
+                  className="p-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center justify-center shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={!isInstanceConnected ? "Conecte o WhatsApp para abrir conversas" : "Nova Conversa"}
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                 </button>
@@ -666,18 +693,27 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
               ) : filteredChats.length === 0 ? (
                 <div className="p-8 text-center text-slate-400">
                   <MessageSquare className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700 mb-2" />
-                  <p className="text-xs font-bold text-slate-600 dark:text-slate-400">Nenhuma conversa encontrada</p>
-                  <p className="text-[10px] text-slate-400 mt-1">Sincronize com a nuvem ou inicie um novo chat</p>
-                  <div className="flex items-center justify-center gap-2 mt-3">
-                    <button
-                      type="button"
-                      onClick={handleFullSync}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Sincronizar Histórico
-                    </button>
-                  </div>
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                    {!isInstanceConnected ? 'WhatsApp Desconectado' : 'Nenhuma conversa encontrada'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {!isInstanceConnected 
+                      ? 'Conecte um aparelho via QR Code no painel para carregar e sincronizar conversas.'
+                      : 'Sincronize com a nuvem ou inicie um novo chat.'}
+                  </p>
+                  {isInstanceConnected && (
+                    <div className="flex items-center justify-center gap-2 mt-3">
+                      <button
+                        type="button"
+                        onClick={handleFullSync}
+                        disabled={syncingHistory || !isInstanceConnected}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Sincronizar Histórico
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 filteredChats.map(chat => {
