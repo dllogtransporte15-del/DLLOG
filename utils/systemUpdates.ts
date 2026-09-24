@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_11_0',
+    version: 'v2.11.0',
+    date: '24/09/2026',
+    title: 'Janela e Central de Conversas do WhatsApp Integrada',
+    summary: 'Nova funcionalidade de chat e janela integrada para abrir, acompanhar e responder conversas de WhatsApp diretamente dentro do sistema Transcunha, com visualização em tempo real de mensagens, envio de anexos, respostas rápidas com modelos e histórico sincronizado.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Central de Conversas & Chat ao Vivo',
+        description: 'Nova aba dedicada dentro do módulo de WhatsApp permitindo visualizar a lista de motoristas/contatos, mensagens enviadas e recebidas com balões estilizados e status de entrega.'
+      },
+      {
+        category: 'feature',
+        title: 'Janela Modal / Flutuante de WhatsApp',
+        description: 'Botão "Abrir Janela de Chat" para abrir uma janela ampla com suporte a maximização, busca de contatos e envio direto de mensagens.'
+      },
+      {
+        category: 'feature',
+        title: 'Início de Nova Conversa & Respostas Rápidas',
+        description: 'Permite digitar qualquer número com DDD ou selecionar contatos para iniciar conversas, além de menu de respostas rápidas com os modelos de aviso de carga, adiantamento, CT-e e saldo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Suporte a Anexos e Link Rápido para WhatsApp Web',
+        description: 'Envio de documentos/PDFs e botão de atalho para abrir qualquer conversa no WhatsApp Web oficial com um único clique.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_10_9',
     version: 'v2.10.9',
     date: '24/09/2026',

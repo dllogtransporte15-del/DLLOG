@@ -111,3 +111,37 @@ export interface WhatsAppMessageLog {
   payload?: any;
   created_at: string;
 }
+
+export interface WhatsAppChatMessage {
+  id: string;
+  chat_id?: string;
+  remote_jid: string;
+  from_me: boolean;
+  text: string;
+  media_url?: string;
+  media_type?: WhatsAppMessageType;
+  media_filename?: string;
+  timestamp: string;
+  status: WhatsAppQueueStatus;
+  sender_name?: string;
+}
+
+export interface WhatsAppChat {
+  id: string;
+  remote_jid: string;
+  phone_number: string;
+  name: string;
+  push_name?: string;
+  profile_pic_url?: string;
+  unread_count?: number;
+  last_message?: {
+    id?: string;
+    text?: string;
+    timestamp: string;
+    from_me: boolean;
+    status?: WhatsAppQueueStatus;
+  };
+  is_group?: boolean;
+  updated_at: string;
+}
+

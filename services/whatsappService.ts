@@ -5,13 +5,17 @@ import type {
   WhatsAppTemplate, 
   WhatsAppQueueItem, 
   WhatsAppTriggerEvent,
-  WhatsAppMessageType
+  WhatsAppMessageType,
+  WhatsAppChat,
+  WhatsAppChatMessage
 } from '../types/whatsapp';
 
 const STORAGE_INSTANCE_KEY = 'transcunha_wa_instance_local';
 const STORAGE_TEMPLATES_KEY = 'transcunha_wa_templates_local';
 const STORAGE_QUEUE_KEY = 'transcunha_wa_queue_local';
 const STORAGE_GATEWAY_CONFIG_KEY = 'transcunha_wa_gateway_config';
+const STORAGE_CHATS_KEY = 'transcunha_wa_chats_local';
+const STORAGE_CHAT_MSGS_KEY = 'transcunha_wa_chat_messages_local';
 
 export interface WhatsAppGatewayConfig {
   url: string;
@@ -1174,3 +1178,440 @@ export async function clearWhatsAppQueue(): Promise<void> {
 
   localStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify([]));
 }
+
+// =========================================================================
+// MÉTODOS DE CONVERSAS & CHAT AO VIVO (WHATSAPP WEB INTEGRADO)
+// =========================================================================
+
+/**
+ * Retorna as conversas ativas no WhatsApp, mesclando dados da Evolution API,
+ * mensagens enviadas na fila e dados locais de cache.
+ */
+export async function getWhatsAppChats(): Promise<WhatsAppChat[]> {
+  const cfg = getGatewayConfig();
+  const chatMap = new Map<string, WhatsAppChat>();
+
+  // 1. Carrega dados de conversas do localStorage primeiro
+  try {
+    const localChats = localStorage.getItem(STORAGE_CHATS_KEY);
+    if (localChats) {
+      const parsed: WhatsAppChat[] = JSON.parse(localChats);
+      parsed.forEach(c => {
+        if (c.phone_number) {
+          const key = sanitizePhoneNumber(c.phone_number);
+          chatMap.set(key, c);
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('Erro ao ler chats locais:', err);
+  }
+
+  // 2. Extrai conversas a partir dos itens já disparados na fila (queue)
+  try {
+    const queue = await getWhatsAppQueue();
+    queue.forEach(item => {
+      const phone = sanitizePhoneNumber(item.recipient_phone || (item as any).phone_number || '');
+      if (!phone) return;
+
+      const existing = chatMap.get(phone);
+      const itemTimestamp = item.sent_at || item.created_at;
+
+      if (!existing || new Date(itemTimestamp).getTime() > new Date(existing.updated_at || 0).getTime()) {
+        chatMap.set(phone, {
+          id: `chat_${phone}`,
+          remote_jid: `${phone}@s.whatsapp.net`,
+          phone_number: phone,
+          name: item.recipient_name || existing?.name || `Motorista (${formatDisplayPhone(phone)})`,
+          unread_count: 0,
+          last_message: {
+            id: item.id,
+            text: item.rendered_body || item.message_body || (item.media_filename ? `[Documento: ${item.media_filename}]` : 'Mensagem enviada'),
+            timestamp: itemTimestamp,
+            from_me: true,
+            status: item.status
+          },
+          updated_at: itemTimestamp
+        });
+      }
+    });
+  } catch (err) {
+    console.warn('Erro ao mapear chats da fila:', err);
+  }
+
+  // 3. Tenta buscar da Evolution API em tempo real se disponível
+  try {
+    const res = await fetchEvolution(`/chat/findChats/${cfg.instanceName}`, {
+      method: 'GET'
+    });
+
+    if (res.ok) {
+      const evolutionChats = await res.json();
+      if (Array.isArray(evolutionChats)) {
+        evolutionChats.forEach((ec: any) => {
+          const rawJid = ec.id || ec.remoteJid || '';
+          const phone = sanitizePhoneNumber(rawJid.replace(/@.+$/, ''));
+          if (!phone) return;
+
+          const existing = chatMap.get(phone);
+          const contactName = ec.name || ec.pushName || existing?.name || `Contato (${formatDisplayPhone(phone)})`;
+          const lastMsgText = ec.lastMessage?.message?.conversation || 
+                              ec.lastMessage?.message?.extendedTextMessage?.text || 
+                              existing?.last_message?.text || '';
+
+          chatMap.set(phone, {
+            id: `chat_${phone}`,
+            remote_jid: rawJid || `${phone}@s.whatsapp.net`,
+            phone_number: phone,
+            name: contactName,
+            push_name: ec.pushName,
+            profile_pic_url: ec.profilePicUrl,
+            unread_count: ec.unreadCount || 0,
+            is_group: rawJid.includes('@g.us'),
+            last_message: {
+              id: ec.lastMessage?.key?.id || existing?.last_message?.id,
+              text: lastMsgText || existing?.last_message?.text || 'Conversa iniciada',
+              timestamp: ec.lastMessage?.messageTimestamp ? new Date(Number(ec.lastMessage.messageTimestamp) * 1000).toISOString() : (existing?.updated_at || new Date().toISOString()),
+              from_me: ec.lastMessage?.key?.fromMe ?? existing?.last_message?.from_me ?? true,
+              status: existing?.last_message?.status || 'delivered'
+            },
+            updated_at: ec.lastMessage?.messageTimestamp ? new Date(Number(ec.lastMessage.messageTimestamp) * 1000).toISOString() : (existing?.updated_at || new Date().toISOString())
+          });
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Evolution API findChats offline ou não disponível:', err);
+  }
+
+  // 4. Se não houver conversas, cria exemplos de conversas úteis com motoristas cadastrados
+  if (chatMap.size === 0) {
+    const defaultSampleChats: WhatsAppChat[] = [
+      {
+        id: 'chat_sample_1',
+        remote_jid: '5564993058754@s.whatsapp.net',
+        phone_number: '5564993058754',
+        name: 'Carlos Silva (Bitrem Graneleiro)',
+        unread_count: 1,
+        last_message: {
+          id: 'msg_sample_1',
+          text: 'Boa tarde! Ordem de carregamento recebida com sucesso, estou a caminho da fazenda.',
+          timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+          from_me: false,
+          status: 'read'
+        },
+        updated_at: new Date(Date.now() - 15 * 60 * 1000).toISOString()
+      },
+      {
+        id: 'chat_sample_2',
+        remote_jid: '5511988887777@s.whatsapp.net',
+        phone_number: '5511988887777',
+        name: 'Roberto Mendes (Rodotrem)',
+        unread_count: 0,
+        last_message: {
+          id: 'msg_sample_2',
+          text: 'Comprovante do adiantamento recebido. Obrigado!',
+          timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+          from_me: false,
+          status: 'read'
+        },
+        updated_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+      },
+      {
+        id: 'chat_sample_3',
+        remote_jid: '5519997654321@s.whatsapp.net',
+        phone_number: '5519997654321',
+        name: 'Marcos Oliveira (Vanderleia)',
+        unread_count: 0,
+        last_message: {
+          id: 'msg_sample_3',
+          text: '📋 Ordem de Carregamento Transcunha - Embarque #TC-8492 enviada em anexo.',
+          timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+          from_me: true,
+          status: 'delivered'
+        },
+        updated_at: new Date(Date.now() - 5 * 3600 * 1000).toISOString()
+      }
+    ];
+
+    defaultSampleChats.forEach(sc => chatMap.set(sc.phone_number, sc));
+  }
+
+  const result = Array.from(chatMap.values()).sort((a, b) => {
+    return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
+  });
+
+  try {
+    localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(result));
+  } catch { /* ignore */ }
+
+  return result;
+}
+
+/**
+ * Retorna as mensagens de um chat específico, mesclando mensagens da Evolution API,
+ * mensagens enfileiradas e histórico local.
+ */
+export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise<WhatsAppChatMessage[]> {
+  const cleanPhone = sanitizePhoneNumber(remoteJidOrPhone.replace(/@.+$/, ''));
+  const cfg = getGatewayConfig();
+  const messagesMap = new Map<string, WhatsAppChatMessage>();
+
+  // 1. Mensagens do cache local (localStorage)
+  try {
+    const localStore = localStorage.getItem(`${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`);
+    if (localStore) {
+      const parsed: WhatsAppChatMessage[] = JSON.parse(localStore);
+      parsed.forEach(m => messagesMap.set(m.id, m));
+    }
+  } catch (err) {
+    console.warn('Erro ao ler mensagens locais:', err);
+  }
+
+  // 2. Mensagens da fila de disparos (queue)
+  try {
+    const queue = await getWhatsAppQueue();
+    const phoneMatches = queue.filter(q => {
+      const qPhone = sanitizePhoneNumber(q.recipient_phone || (q as any).phone_number || '');
+      return qPhone === cleanPhone;
+    });
+
+    phoneMatches.forEach(item => {
+      if (!messagesMap.has(item.id)) {
+        messagesMap.set(item.id, {
+          id: item.id,
+          remote_jid: `${cleanPhone}@s.whatsapp.net`,
+          from_me: true,
+          text: item.rendered_body || item.message_body || '',
+          media_url: item.media_url,
+          media_type: item.message_type,
+          media_filename: item.media_filename,
+          timestamp: item.sent_at || item.created_at,
+          status: item.status,
+          sender_name: 'Transcunha Logística'
+        });
+      }
+    });
+  } catch (err) {
+    console.warn('Erro ao sincronizar mensagens da fila:', err);
+  }
+
+  // 3. Tenta buscar mensagens da Evolution API
+  try {
+    const res = await fetchEvolution(`/chat/findMessages/${cfg.instanceName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        where: {
+          key: {
+            remoteJid: `${cleanPhone}@s.whatsapp.net`
+          }
+        },
+        limit: 50
+      })
+    });
+
+    if (res.ok) {
+      const evoData = await res.json();
+      const records = Array.isArray(evoData) ? evoData : (evoData?.messages?.records || evoData?.messages || []);
+      if (Array.isArray(records)) {
+        records.forEach((msg: any) => {
+          const msgId = msg.key?.id || `evo_${Date.now()}_${Math.random()}`;
+          const isFromMe = !!msg.key?.fromMe;
+          const text = msg.message?.conversation || 
+                       msg.message?.extendedTextMessage?.text || 
+                       msg.message?.imageMessage?.caption || 
+                       msg.message?.documentMessage?.fileName || '';
+          const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString();
+
+          messagesMap.set(msgId, {
+            id: msgId,
+            remote_jid: `${cleanPhone}@s.whatsapp.net`,
+            from_me: isFromMe,
+            text: text,
+            timestamp: ts,
+            status: isFromMe ? 'read' : 'delivered',
+            sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Motorista')
+          });
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Evolution API findMessages offline:', err);
+  }
+
+  // 4. Se a conversa estiver vazia para os contatos de exemplo, gera mensagens de demonstração
+  if (messagesMap.size === 0) {
+    if (cleanPhone.includes('993058754')) {
+      const samples: WhatsAppChatMessage[] = [
+        {
+          id: 'sample_m1',
+          remote_jid: `${cleanPhone}@s.whatsapp.net`,
+          from_me: true,
+          text: '🚛 *Transcunha Logística - Oportunidade de Carga*\n\nOlá, *Carlos Silva*! Temos uma nova carga disponível:\n\n📍 *Origem:* Rio Verde - GO\n🎯 *Destino:* Santos - SP\n📦 *Mercadoria:* Soja a Granel\n⚖️ *Peso:* 38.000 kg\n💰 *Valor do Frete:* R$ 9.800,00',
+          timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+          status: 'read',
+          sender_name: 'Transcunha Logística'
+        },
+        {
+          id: 'sample_m2',
+          remote_jid: `${cleanPhone}@s.whatsapp.net`,
+          from_me: false,
+          text: 'Olá! Tenho interesse sim, consigo encostar o caminhão amanhã às 08h.',
+          timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+          status: 'read',
+          sender_name: 'Carlos Silva'
+        },
+        {
+          id: 'sample_m3',
+          remote_jid: `${cleanPhone}@s.whatsapp.net`,
+          from_me: true,
+          text: 'Perfeito, Carlos! Ordem de carregamento gerada com sucesso. Segue anexo em PDF.',
+          timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+          status: 'read',
+          sender_name: 'Transcunha Logística'
+        },
+        {
+          id: 'sample_m4',
+          remote_jid: `${cleanPhone}@s.whatsapp.net`,
+          from_me: false,
+          text: 'Boa tarde! Ordem de carregamento recebida com sucesso, estou a caminho da fazenda.',
+          timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+          status: 'read',
+          sender_name: 'Carlos Silva'
+        }
+      ];
+      samples.forEach(s => messagesMap.set(s.id, s));
+    }
+  }
+
+  const result = Array.from(messagesMap.values()).sort((a, b) => {
+    return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+  });
+
+  return result;
+}
+
+/**
+ * Envia uma mensagem direta dentro do chat do WhatsApp
+ */
+export async function sendDirectChatMessage(params: {
+  recipientPhone: string;
+  recipientName?: string;
+  text: string;
+  mediaUrl?: string;
+  mediaFilename?: string;
+}): Promise<WhatsAppChatMessage> {
+  const cleanPhone = sanitizePhoneNumber(params.recipientPhone);
+  const cfg = getGatewayConfig();
+
+  // Enfileira e dispara no gateway
+  const queueItem = await enqueueWhatsAppMessage({
+    recipientPhone: cleanPhone,
+    recipientName: params.recipientName,
+    messageType: params.mediaUrl ? 'document' : 'text',
+    renderedBody: params.text,
+    mediaUrl: params.mediaUrl,
+    mediaFilename: params.mediaFilename
+  });
+
+  const chatMessage: WhatsAppChatMessage = {
+    id: queueItem.id,
+    remote_jid: `${cleanPhone}@s.whatsapp.net`,
+    from_me: true,
+    text: params.text,
+    media_url: params.mediaUrl,
+    media_type: params.mediaUrl ? 'document' : 'text',
+    media_filename: params.mediaFilename,
+    timestamp: new Date().toISOString(),
+    status: queueItem.status || 'sent',
+    sender_name: 'Transcunha Logística'
+  };
+
+  // Salva no cache local de mensagens do contato
+  try {
+    const localStoreKey = `${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`;
+    const existing = localStorage.getItem(localStoreKey);
+    const msgs: WhatsAppChatMessage[] = existing ? JSON.parse(existing) : [];
+    msgs.push(chatMessage);
+    localStorage.setItem(localStoreKey, JSON.stringify(msgs));
+
+    // Atualiza lista de conversas com a última mensagem
+    const chatsStore = localStorage.getItem(STORAGE_CHATS_KEY);
+    const chats: WhatsAppChat[] = chatsStore ? JSON.parse(chatsStore) : [];
+    const chatIdx = chats.findIndex(c => sanitizePhoneNumber(c.phone_number) === cleanPhone);
+
+    const updatedChat: WhatsAppChat = {
+      id: chatIdx >= 0 ? chats[chatIdx].id : `chat_${cleanPhone}`,
+      remote_jid: `${cleanPhone}@s.whatsapp.net`,
+      phone_number: cleanPhone,
+      name: params.recipientName || (chatIdx >= 0 ? chats[chatIdx].name : `Contato (${formatDisplayPhone(cleanPhone)})`),
+      unread_count: 0,
+      last_message: {
+        id: chatMessage.id,
+        text: params.text || (params.mediaFilename ? `[Arquivo: ${params.mediaFilename}]` : 'Mensagem enviada'),
+        timestamp: chatMessage.timestamp,
+        from_me: true,
+        status: chatMessage.status
+      },
+      updated_at: chatMessage.timestamp
+    };
+
+    if (chatIdx >= 0) {
+      chats[chatIdx] = updatedChat;
+    } else {
+      chats.unshift(updatedChat);
+    }
+    localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(chats));
+  } catch (err) {
+    console.warn('Erro ao atualizar cache local de mensagens:', err);
+  }
+
+  return chatMessage;
+}
+
+/**
+ * Cria ou obtém uma conversa para um número de telefone informado
+ */
+export async function createOrGetChat(phoneNumber: string, name?: string): Promise<WhatsAppChat> {
+  const cleanPhone = sanitizePhoneNumber(phoneNumber);
+  const chats = await getWhatsAppChats();
+  const existing = chats.find(c => sanitizePhoneNumber(c.phone_number) === cleanPhone);
+
+  if (existing) {
+    return existing;
+  }
+
+  const newChat: WhatsAppChat = {
+    id: `chat_${cleanPhone}`,
+    remote_jid: `${cleanPhone}@s.whatsapp.net`,
+    phone_number: cleanPhone,
+    name: name || `Motorista (${formatDisplayPhone(cleanPhone)})`,
+    unread_count: 0,
+    last_message: {
+      text: 'Conversa iniciada',
+      timestamp: new Date().toISOString(),
+      from_me: true,
+      status: 'pending'
+    },
+    updated_at: new Date().toISOString()
+  };
+
+  const updatedChats = [newChat, ...chats];
+  localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(updatedChats));
+  return newChat;
+}
+
+/**
+ * Remove uma conversa do histórico
+ */
+export async function deleteWhatsAppChat(chatPhoneOrJid: string): Promise<void> {
+  const cleanPhone = sanitizePhoneNumber(chatPhoneOrJid.replace(/@.+$/, ''));
+  const chats = await getWhatsAppChats();
+  const filtered = chats.filter(c => sanitizePhoneNumber(c.phone_number) !== cleanPhone);
+  localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(filtered));
+  localStorage.removeItem(`${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`);
+}
+

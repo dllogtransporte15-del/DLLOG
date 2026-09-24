@@ -25,14 +25,16 @@ import { WhatsAppConnectionCard } from './WhatsAppConnectionCard';
 import { WhatsAppTemplateEditor } from './WhatsAppTemplateEditor';
 import { WhatsAppLogsTable } from './WhatsAppLogsTable';
 import { WhatsAppLiveTestModal } from './WhatsAppLiveTestModal';
+import { WhatsAppChatPanel } from './WhatsAppChatPanel';
 
 export const WhatsAppDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'connection' | 'templates' | 'logs'>('templates');
+  const [activeTab, setActiveTab] = useState<'chats' | 'templates' | 'connection' | 'logs'>('chats');
   const [instance, setInstance] = useState<WhatsAppInstance | null>(null);
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [queue, setQueue] = useState<WhatsAppQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [testModalOpen, setTestModalOpen] = useState(false);
+  const [chatModalOpen, setChatModalOpen] = useState(false);
   const [selectedTemplateForTest, setSelectedTemplateForTest] = useState<WhatsAppTemplate | null>(null);
 
   const loadAllData = async () => {
@@ -99,13 +101,22 @@ export const WhatsAppDashboard: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setChatModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer transition-all border border-emerald-400/30"
+              title="Abrir Janela Flutuante / Modal de Conversas"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Abrir Janela de Chat</span>
+            </button>
             <button
               type="button"
               onClick={() => handleOpenTestModal()}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 flex items-center gap-2 cursor-pointer transition-all"
+              className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-xs border border-white/10 flex items-center gap-2 cursor-pointer transition-all"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-3.5 h-3.5 text-emerald-400" />
               <span>Disparo de Teste</span>
             </button>
             <button
@@ -153,11 +164,25 @@ export const WhatsAppDashboard: React.FC = () => {
       </div>
 
       {/* TABS NAVIGATION */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setActiveTab('chats')}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+            activeTab === 'chats'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>Conversas & Chat ao Vivo</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveTab('templates')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
             activeTab === 'templates'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
               : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
@@ -173,7 +198,7 @@ export const WhatsAppDashboard: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('connection')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
             activeTab === 'connection'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
               : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
@@ -189,7 +214,7 @@ export const WhatsAppDashboard: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('logs')}
-          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
             activeTab === 'logs'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
               : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800'
@@ -204,6 +229,10 @@ export const WhatsAppDashboard: React.FC = () => {
       </div>
 
       {/* TAB CONTENT */}
+      {activeTab === 'chats' && (
+        <WhatsAppChatPanel mode="embedded" />
+      )}
+
       {activeTab === 'templates' && (
         <WhatsAppTemplateEditor
           templates={templates}
@@ -224,6 +253,14 @@ export const WhatsAppDashboard: React.FC = () => {
         <WhatsAppLogsTable
           queue={queue}
           onReload={loadAllData}
+        />
+      )}
+
+      {/* JANELA MODAL FLUTUANTE DE CHAT */}
+      {chatModalOpen && (
+        <WhatsAppChatPanel
+          mode="modal"
+          onClose={() => setChatModalOpen(false)}
         />
       )}
 
