@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_11_1',
+    version: 'v2.11.1',
+    date: '24/09/2026',
+    title: 'Janela de WhatsApp Sobreposta, Arrastável & Redimensionável',
+    summary: 'A janela de conversas do WhatsApp agora pode ser aberta de forma flutuante/sobreposta na tela, permitindo ser arrastada livremente para qualquer posição e ter seu tamanho (largura e altura) redimensionado pelas bordas e cantos.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Movimentação Livre (Arrastar / Drag & Drop)',
+        description: 'Basta clicar e segurar na barra superior da janela para movê-la para qualquer local da tela enquanto você navega pelo sistema.'
+      },
+      {
+        category: 'feature',
+        title: 'Redimensionamento Personalizado (Resize)',
+        description: 'Alças de redimensionamento no canto inferior direito e bordas para ajustar a largura e altura conforme sua preferência.'
+      },
+      {
+        category: 'feature',
+        title: 'Botão "Destacar Janela" e Modo Minimizado',
+        description: 'Opção de destacar a conversa direto da aba ou minimizar a janela para um botão discreto no canto inferior direito com retorno em 1 clique.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_11_0',
     version: 'v2.11.0',
     date: '24/09/2026',

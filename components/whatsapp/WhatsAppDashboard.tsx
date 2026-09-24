@@ -231,7 +231,10 @@ export const WhatsAppDashboard: React.FC = () => {
 
       {/* TAB CONTENT */}
       {activeTab === 'chats' && (
-        <WhatsAppChatPanel mode="embedded" />
+        <WhatsAppChatPanel 
+          mode="embedded" 
+          onOpenFloating={() => setChatModalOpen(true)}
+        />
       )}
 
       {activeTab === 'templates' && (
@@ -257,10 +260,10 @@ export const WhatsAppDashboard: React.FC = () => {
         />
       )}
 
-      {/* JANELA MODAL FLUTUANTE DE CHAT */}
+      {/* JANELA SOBREPOSTA FLUTUANTE & ARRASTÁVEL DE CHAT */}
       {chatModalOpen && (
         <WhatsAppChatPanel
-          mode="modal"
+          mode="floating"
           onClose={() => setChatModalOpen(false)}
         />
       )}

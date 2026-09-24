@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MessageSquare, 
   Send, 
@@ -22,7 +22,11 @@ import {
   Copy, 
   FileCheck2,
   ChevronRight,
-  UserPlus
+  UserPlus,
+  Move,
+  GripHorizontal,
+  Layers,
+  Minus
 } from 'lucide-react';
 import type { WhatsAppChat, WhatsAppChatMessage, WhatsAppTemplate } from '../../types/whatsapp';
 import { 
@@ -39,6 +43,7 @@ import {
 interface WhatsAppChatPanelProps {
   mode?: 'embedded' | 'modal' | 'floating';
   onClose?: () => void;
+  onOpenFloating?: () => void;
   initialPhone?: string;
   initialName?: string;
 }
@@ -46,6 +51,7 @@ interface WhatsAppChatPanelProps {
 export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   mode = 'embedded',
   onClose,
+  onOpenFloating,
   initialPhone,
   initialName
 }) => {
@@ -63,8 +69,43 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   const [newChatPhone, setNewChatPhone] = useState('');
   const [newChatName, setNewChatName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(mode === 'modal');
   const [copyFeedback, setCopyFeedback] = useState(false);
+
+  // Estados de Manipulação da Janela Flutuante (Arrastar & Redimensionar)
+  const [isFloatingActive, setIsFloatingActive] = useState(mode === 'floating' || mode === 'modal');
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => {
+    if (typeof window !== 'undefined') {
+      const startX = Math.max(20, Math.floor((window.innerWidth - 920) / 2));
+      const startY = Math.max(40, Math.floor((window.innerHeight - 680) / 2));
+      return { x: startX, y: startY };
+    }
+    return { x: 100, y: 80 };
+  });
+
+  const [size, setSize] = useState<{ width: number; height: number }>(() => {
+    if (typeof window !== 'undefined') {
+      const initialW = Math.min(960, Math.max(500, window.innerWidth - 80));
+      const initialH = Math.min(720, Math.max(450, window.innerHeight - 100));
+      return { width: initialW, height: initialH };
+    }
+    return { width: 920, height: 680 };
+  });
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartOffset, setDragStartOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const [isResizing, setIsResizing] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number; posX: number; posY: number }>({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    posX: 0,
+    posY: 0
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,7 +120,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
       const chatList = await getWhatsAppChats();
       setChats(chatList);
 
-      // Se passou telefone inicial, seleciona ou cria
       if (initialPhone) {
         const clean = sanitizePhoneNumber(initialPhone);
         let found = chatList.find(c => sanitizePhoneNumber(c.phone_number) === clean);
@@ -135,6 +175,80 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     scrollToBottom();
   }, [messages, loadingMessages]);
 
+  // =========================================================================
+  // LOGICA DE ARRASTAR (DRAG) & REDIMENSIONAR (RESIZE)
+  // =========================================================================
+
+  const handleMouseDownHeader = (e: React.MouseEvent) => {
+    if (isMaximized || mode === 'embedded') return;
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) return;
+
+    setIsDragging(true);
+    setDragStartOffset({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    });
+  };
+
+  const handleMouseDownResize = (e: React.MouseEvent, direction: string) => {
+    if (isMaximized || mode === 'embedded') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsResizing(direction);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height,
+      posX: position.x,
+      posY: position.y
+    });
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isDragging) {
+      const newX = Math.max(10, Math.min(window.innerWidth - 200, e.clientX - dragStartOffset.x));
+      const newY = Math.max(10, Math.min(window.innerHeight - 80, e.clientY - dragStartOffset.y));
+      setPosition({ x: newX, y: newY });
+    } else if (isResizing) {
+      const deltaX = e.clientX - resizeStart.x;
+      const deltaY = e.clientY - resizeStart.y;
+
+      let newWidth = resizeStart.width;
+      let newHeight = resizeStart.height;
+
+      if (isResizing.includes('e')) {
+        newWidth = Math.max(480, Math.min(window.innerWidth - position.x - 20, resizeStart.width + deltaX));
+      }
+      if (isResizing.includes('s')) {
+        newHeight = Math.max(420, Math.min(window.innerHeight - position.y - 20, resizeStart.height + deltaY));
+      }
+
+      setSize({ width: newWidth, height: newHeight });
+    }
+  }, [isDragging, isResizing, dragStartOffset, resizeStart, position.x, position.y]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+    setIsResizing(null);
+  }, []);
+
+  useEffect(() => {
+    if (isDragging || isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, isResizing, handleMouseMove, handleMouseUp]);
+
+  // =========================================================================
+  // ENVIO DE MENSAGENS & CRIAÇÃO DE CHATS
+  // =========================================================================
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if ((!inputText.trim() && !selectedFile) || !selectedChat || sending) return;
@@ -145,7 +259,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
     if (selectedFile) {
       mediaFilename = selectedFile.name;
-      // Converte arquivo temporário em DataURL/Blob URL para visualização
       mediaUrl = URL.createObjectURL(selectedFile);
     }
 
@@ -163,7 +276,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
       setInputText('');
       setSelectedFile(null);
 
-      // Atualiza lista de conversas
       const updatedChats = await getWhatsAppChats();
       setChats(updatedChats);
     } catch (err) {
@@ -229,72 +341,177 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     );
   });
 
-  const containerClasses = mode === 'modal'
-    ? isFullscreen 
-      ? 'fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4'
-      : 'fixed inset-4 sm:inset-10 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center'
-    : 'w-full h-[720px] rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900';
+  // WIDGET MINIMIZADO FLUTUANTE
+  if (isMinimized && mode !== 'embedded') {
+    return (
+      <div 
+        onClick={() => setIsMinimized(false)}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-900 text-white shadow-2xl border border-emerald-400/40 cursor-pointer hover:scale-105 transition-all animate-bounce-short select-none"
+        title="Clique para restaurar a janela de WhatsApp"
+      >
+        <div className="relative">
+          <MessageSquare className="w-5 h-5 text-emerald-300" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+        </div>
+        <div>
+          <span className="text-xs font-black block">WhatsApp Ativo</span>
+          <span className="text-[10px] text-emerald-200">{selectedChat ? selectedChat.name : `${chats.length} conversas`}</span>
+        </div>
+        <Maximize2 className="w-3.5 h-3.5 text-emerald-300 ml-1" />
+      </div>
+    );
+  }
+
+  // ESTILOS DINÂMICOS DA JANELA
+  const isOverlayMode = mode === 'modal' || mode === 'floating';
+
+  const windowStyle: React.CSSProperties = isOverlayMode
+    ? isMaximized
+      ? {
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 9999,
+          borderRadius: 0
+        }
+      : {
+          position: 'fixed',
+          top: `${position.y}px`,
+          left: `${position.x}px`,
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          zIndex: 9999,
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+        }
+    : {
+        width: '100%',
+        height: '720px'
+      };
 
   return (
-    <div className={containerClasses}>
-      <div className="w-full h-full flex flex-col bg-slate-50 dark:bg-slate-950 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl">
-        {/* TOPO DE CONTROLE DA JANELA (quando em modo modal) */}
-        {mode === 'modal' && (
-          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 text-white select-none">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-                <MessageSquare className="w-4 h-4" />
+    <>
+      {/* BACKDROP QUANDO MAXIMIZADO */}
+      {isOverlayMode && isMaximized && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]" />
+      )}
+
+      <div 
+        style={windowStyle}
+        className={`flex flex-col bg-slate-50 dark:bg-slate-950 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl transition-shadow ${
+          isDragging ? 'select-none opacity-95 ring-2 ring-emerald-500' : ''
+        }`}
+      >
+        {/* BARRA DE TÍTULO SUPERIOR (COM SUPORTE A ARRASTAR / DRAG) */}
+        <div 
+          onMouseDown={handleMouseDownHeader}
+          className={`px-4 py-2.5 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between select-none ${
+            isOverlayMode && !isMaximized ? 'cursor-move' : ''
+          }`}
+        >
+          {/* LADO ESQUERDO: ÍCONE E TÍTULO */}
+          <div className="flex items-center gap-2.5">
+            {isOverlayMode && !isMaximized && (
+              <div className="text-slate-400 hover:text-white p-1" title="Clique e arraste para mover a janela">
+                <GripHorizontal className="w-4 h-4 text-emerald-400" />
               </div>
-              <div>
-                <span className="text-xs font-black tracking-tight flex items-center gap-1.5">
-                  WhatsApp Web Transcunha
+            )}
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0">
+              <MessageSquare className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black tracking-tight text-white flex items-center gap-1.5">
+                  WhatsApp Transcunha
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 </span>
-                <span className="text-[10px] text-slate-400 block -mt-0.5">
-                  Central de Atendimento e Conversas ao Vivo
-                </span>
+                {isOverlayMode && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Janela Flutuante & Arrastável
+                  </span>
+                )}
               </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setIsFullscreen(!isFullscreen)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                title={isFullscreen ? 'Restaurar Tamanho' : 'Maximizar'}
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
-              {onClose && (
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                  title="Fechar Janela"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+              <span className="text-[10px] text-slate-400 block -mt-0.5">
+                {selectedChat ? `Conversando com ${selectedChat.name}` : 'Central de Mensagens e Atendimento'}
+              </span>
             </div>
           </div>
-        )}
+
+          {/* LADO DIREITO: CONTROLES DA JANELA (DESTACAR, MINIMIZAR, MAXIMIZAR, FECHAR) */}
+          <div className="flex items-center gap-1.5">
+            {/* SE ESTIVER EM MODO EMBEDDED, BOTÃO PARA DESTACAR JANELA FLUTUANTE */}
+            {!isOverlayMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenFloating) onOpenFloating();
+                  setIsFloatingActive(true);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Destacar esta conversa em uma Janela Flutuante que pode ser arrastada e redimensionada"
+              >
+                <Move className="w-3.5 h-3.5" />
+                <span className="text-[11px]">Destacar Janela</span>
+              </button>
+            )}
+
+            {isOverlayMode && (
+              <>
+                {/* BOTÃO MINIMIZAR */}
+                <button
+                  type="button"
+                  onClick={() => setIsMinimized(true)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Minimizar para canto da tela"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+
+                {/* BOTÃO MAXIMIZAR / RESTAURAR */}
+                <button
+                  type="button"
+                  onClick={() => setIsMaximized(!isMaximized)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  title={isMaximized ? 'Restaurar Janela Arrastável' : 'Maximizar Tela Inteira'}
+                >
+                  {isMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+
+                {/* BOTÃO FECHAR */}
+                {onClose && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    title="Fechar Janela"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
 
         {/* CORPO PRINCIPAL: 2 COLUNAS (LISTA DE CONVERSAS + ÁREA DO CHAT) */}
-        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden relative">
           {/* COLUNA ESQUERDA: LISTA DE CONVERSAS */}
-          <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 flex-shrink-0">
+          <div className="w-full md:w-80 lg:w-88 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 flex-shrink-0">
             {/* CABEÇALHO DA LISTA */}
-            <div className="p-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+            <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
-                  <MessageSquare className="w-4 h-4" />
+                <div className="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
+                  <MessageSquare className="w-3.5 h-3.5" />
                 </div>
                 <div>
                   <h2 className="text-xs font-black text-slate-800 dark:text-white leading-tight">
                     Conversas
                   </h2>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    {chats.length} {chats.length === 1 ? 'contato ativo' : 'contatos ativos'}
+                    {chats.length} contatos ativos
                   </span>
                 </div>
               </div>
@@ -303,16 +520,16 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowNewChatModal(true)}
-                  className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
                   title="Nova Conversa"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline text-[11px]">Novo</span>
+                  <span className="text-[11px]">Novo</span>
                 </button>
                 <button
                   type="button"
                   onClick={loadChats}
-                  className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   title="Recarregar Conversas"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingChats ? 'animate-spin' : ''}`} />
@@ -321,7 +538,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
             </div>
 
             {/* BUSCA DE CONTATOS */}
-            <div className="p-2.5 border-b border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-950/40">
+            <div className="p-2 border-b border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-950/40">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -376,10 +593,10 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                     >
                       {/* AVATAR */}
                       <div className="relative flex-shrink-0">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 border border-slate-600/40 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 border border-slate-600/40 text-white flex items-center justify-center font-bold text-xs shadow-sm">
                           {initials || <User className="w-4 h-4 text-slate-300" />}
                         </div>
-                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
+                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
                       </div>
 
                       {/* DETALHES DA CONVERSA */}
@@ -393,7 +610,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                           </span>
                         </div>
 
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate mt-0.5">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate mt-0.5">
                           {formatDisplayPhone(chat.phone_number)}
                         </span>
 
@@ -423,9 +640,9 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
             {selectedChat ? (
               <>
                 {/* CABEÇALHO DO CHAT ATIVO */}
-                <div className="px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shadow-sm z-10">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-sm flex-shrink-0">
+                <div className="px-4 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shadow-sm z-10">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-xs flex-shrink-0">
                       {selectedChat.name.substring(0, 2).toUpperCase()}
                     </div>
                     <div className="min-w-0">
@@ -438,7 +655,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                           WhatsApp Conectado
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
                         <span>{formatDisplayPhone(selectedChat.phone_number)}</span>
                         <span>•</span>
                         <button
@@ -460,11 +677,11 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                       href={`https://wa.me/${selectedChat.phone_number}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
                       title="Abrir no WhatsApp Web Oficial"
                     >
                       <ExternalLink className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="hidden sm:inline">WhatsApp Web</span>
+                      <span className="hidden sm:inline text-[11px]">WhatsApp Web</span>
                     </a>
 
                     <button
@@ -478,26 +695,25 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                         };
                         loadMsgs();
                       }}
-                      className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       title="Atualizar histórico de mensagens"
                     >
-                      <RefreshCw className={`w-4 h-4 ${loadingMessages ? 'animate-spin' : ''}`} />
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingMessages ? 'animate-spin' : ''}`} />
                     </button>
 
                     <button
                       type="button"
                       onClick={handleDeleteCurrentChat}
-                      className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                       title="Excluir histórico desta conversa"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
                 {/* HISTÓRICO DE MENSAGENS */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 relative">
-                  {/* BACKGROUND PATTERN SUAVE */}
+                <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 relative">
                   <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px]"></div>
 
                   {loadingMessages ? (
@@ -526,50 +742,46 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                           className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-fade-in`}
                         >
                           <div
-                            className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-md relative ${
+                            className={`max-w-[88%] sm:max-w-[75%] rounded-2xl p-3 shadow-md relative ${
                               isMe
                                 ? 'bg-gradient-to-br from-emerald-800 via-emerald-900 to-teal-950 text-white rounded-tr-none border border-emerald-700/50'
                                 : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-none border border-slate-200 dark:border-slate-700'
                             }`}
                           >
-                            {/* NOME DO REMETENTE CASO NÃO SEJA O SISTEMA */}
                             {!isMe && (
                               <span className="text-[10px] font-bold text-emerald-400 block mb-1">
                                 {msg.sender_name || selectedChat.name}
                               </span>
                             )}
 
-                            {/* DOCUMENTO / MÍDIA ANEXADA */}
                             {msg.media_filename && (
                               <div className="mb-2 p-2.5 rounded-xl bg-black/20 border border-white/10 flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                                  <FileText className="w-4 h-4" />
+                                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                                  <FileText className="w-3.5 h-3.5" />
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <span className="text-xs font-bold block truncate">{msg.media_filename}</span>
-                                  <span className="text-[10px] text-slate-300">Documento Anexado</span>
+                                  <span className="text-[9px] text-slate-300">Documento Anexado</span>
                                 </div>
                                 {msg.media_url && (
                                   <a
                                     href={msg.media_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs"
+                                    className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs"
                                     title="Visualizar anexo"
                                   >
-                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
                               </div>
                             )}
 
-                            {/* CORPO DE TEXTO DA MENSAGEM */}
                             <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words">
                               {msg.text}
                             </p>
 
-                            {/* RODAPÉ DO BALÃO COM HORÁRIO E STATUS DE ENTREGA */}
-                            <div className="flex items-center justify-end gap-1 mt-1.5 -mb-0.5 text-[10px] opacity-75">
+                            <div className="flex items-center justify-end gap-1 mt-1 -mb-0.5 text-[10px] opacity-75">
                               <span>{timeString}</span>
                               {isMe && (
                                 <span>
@@ -593,10 +805,10 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
                 {/* PAINEL DE ANEXO SELECIONADO */}
                 {selectedFile && (
-                  <div className="px-4 py-2 bg-emerald-950/40 border-t border-emerald-900/50 flex items-center justify-between gap-2">
+                  <div className="px-4 py-1.5 bg-emerald-950/40 border-t border-emerald-900/50 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-xs text-emerald-300">
-                      <FileText className="w-4 h-4 text-emerald-400" />
-                      <span className="font-bold">Anexo pronto para envio:</span>
+                      <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="font-bold">Anexo:</span>
                       <span className="truncate max-w-xs">{selectedFile.name}</span>
                     </div>
                     <button
@@ -605,17 +817,17 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                       className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
                       title="Remover anexo"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <X className="w-3 h-3" />
                     </button>
                   </div>
                 )}
 
                 {/* BARRA INFERIOR DE ENVIO DE MENSAGENS */}
-                <div className="p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative z-20">
+                <div className="p-2.5 sm:p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative z-20">
                   {/* DROPDOWN DE TEMPLATES / RÉGUAS */}
                   {showTemplatesDropdown && (
-                    <div className="absolute bottom-full left-4 right-4 sm:left-6 sm:right-auto sm:w-96 mb-2 p-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-30 max-h-72 overflow-y-auto space-y-1 animate-fade-in">
-                      <div className="px-2 py-1.5 flex items-center justify-between border-b border-slate-800 text-xs font-bold text-slate-300">
+                    <div className="absolute bottom-full left-3 right-3 sm:left-4 sm:right-auto sm:w-96 mb-2 p-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-30 max-h-64 overflow-y-auto space-y-1 animate-fade-in">
+                      <div className="px-2 py-1 flex items-center justify-between border-b border-slate-800 text-xs font-bold text-slate-300">
                         <span className="flex items-center gap-1.5">
                           <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                           Modelos & Respostas Rápidas
@@ -635,7 +847,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                           onClick={() => handleSelectTemplate(tpl)}
                           className="w-full text-left p-2 rounded-xl hover:bg-slate-800/80 transition-colors flex items-start gap-2 text-white group cursor-pointer"
                         >
-                          <FileCheck2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                          <FileCheck2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
                           <div className="min-w-0 flex-1">
                             <span className="text-xs font-bold block truncate group-hover:text-emerald-300">
                               {tpl.name}
@@ -650,7 +862,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                   )}
 
                   <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                    {/* BOTÃO DE ANEXO */}
                     <input
                       type="file"
                       ref={fileInputRef}
@@ -661,17 +872,16 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer flex-shrink-0"
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer flex-shrink-0"
                       title="Anexar documento ou imagem"
                     >
                       <Paperclip className="w-4 h-4" />
                     </button>
 
-                    {/* BOTÃO DE MODELOS RÁPIDOS */}
                     <button
                       type="button"
                       onClick={() => setShowTemplatesDropdown(!showTemplatesDropdown)}
-                      className={`p-2.5 rounded-xl transition-colors cursor-pointer flex-shrink-0 ${
+                      className={`p-2 rounded-xl transition-colors cursor-pointer flex-shrink-0 ${
                         showTemplatesDropdown 
                           ? 'bg-emerald-600 text-white' 
                           : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
@@ -681,7 +891,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                       <Sparkles className="w-4 h-4" />
                     </button>
 
-                    {/* CAMPO DE DIGITAÇÃO */}
                     <div className="flex-1 relative">
                       <textarea
                         value={inputText}
@@ -694,15 +903,14 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                         }}
                         placeholder="Digite uma mensagem... (Enter para enviar)"
                         rows={1}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none max-h-32 transition-all leading-normal"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none max-h-28 transition-all leading-normal"
                       />
                     </div>
 
-                    {/* BOTÃO DE ENVIAR */}
                     <button
                       type="submit"
                       disabled={(!inputText.trim() && !selectedFile) || sending}
-                      className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white font-bold transition-all shadow-md shadow-emerald-900/30 flex items-center justify-center cursor-pointer flex-shrink-0"
+                      className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white font-bold transition-all shadow-md shadow-emerald-900/30 flex items-center justify-center cursor-pointer flex-shrink-0"
                       title="Enviar Mensagem"
                     >
                       {sending ? (
@@ -715,34 +923,59 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 </div>
               </>
             ) : (
-              /* ESTADO VAZIO: NENHUMA CONVERSA SELECIONADA */
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-950/40 mb-4">
-                  <MessageSquare className="w-8 h-8" />
+                <div className="w-14 h-14 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-950/40 mb-3">
+                  <MessageSquare className="w-7 h-7" />
                 </div>
-                <h3 className="text-base font-black text-slate-800 dark:text-white">
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">
                   Canal Integrado de Mensagens WhatsApp
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1 leading-relaxed">
-                  Selecione uma conversa à esquerda para visualizar o histórico em tempo real ou inicie um novo chat com qualquer motorista ou parceiro.
+                  Selecione uma conversa à esquerda para visualizar o histórico em tempo real ou inicie um novo chat.
                 </p>
                 <button
                   type="button"
                   onClick={() => setShowNewChatModal(true)}
-                  className="mt-4 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 inline-flex items-center gap-2 cursor-pointer transition-all"
+                  className="mt-3 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 inline-flex items-center gap-2 cursor-pointer transition-all"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                   Nova Conversa
                 </button>
               </div>
             )}
           </div>
         </div>
+
+        {/* ALÇAS DE REDIMENSIONAMENTO (RESIZE HANDLES) */}
+        {isOverlayMode && !isMaximized && (
+          <>
+            {/* BORDA DIREITA */}
+            <div 
+              onMouseDown={(e) => handleMouseDownResize(e, 'e')}
+              className="absolute right-0 top-0 bottom-0 w-2 cursor-e-resize hover:bg-emerald-500/20 transition-colors z-30"
+              title="Redimensionar largura"
+            />
+            {/* BORDA INFERIOR */}
+            <div 
+              onMouseDown={(e) => handleMouseDownResize(e, 's')}
+              className="absolute left-0 right-0 bottom-0 h-2 cursor-s-resize hover:bg-emerald-500/20 transition-colors z-30"
+              title="Redimensionar altura"
+            />
+            {/* CANTO INFERIOR DIREITO */}
+            <div 
+              onMouseDown={(e) => handleMouseDownResize(e, 'se')}
+              className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize flex items-end justify-end p-0.5 z-40 group"
+              title="Clique e arraste para redimensionar tamanho da janela"
+            >
+              <div className="w-2.5 h-2.5 border-r-2 border-b-2 border-slate-500 group-hover:border-emerald-400 transition-colors rounded-br-sm"></div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* MODAL DE NOVA CONVERSA */}
       {showNewChatModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-white animate-scale-up">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -814,6 +1047,6 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
