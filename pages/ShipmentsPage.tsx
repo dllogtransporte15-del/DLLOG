@@ -273,6 +273,16 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         return { allowed: false, reason: 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.' };
     }
 
+    if (currentStatus === ShipmentStatus.AguardandoDescarga) {
+        if ([UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Financeiro, UserProfile.Agenciador, UserProfile.Motorista].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'Você não tem permissão para anexar o comprovante de descarga.' };
+    }
+
+    if (currentStatus === ShipmentStatus.ValidacaoTicket) {
+        if ([UserProfile.Fiscal, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Financeiro].includes(userProfile)) return defaultResponse;
+        return { allowed: false, reason: 'A validação do ticket e peso é restrita aos perfis Fiscal, Supervisor, Financeiro, Diretor ou Administrador (bloqueado para Embarcador).' };
+    }
+
     if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo) {
         if ([UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor].includes(userProfile)) return defaultResponse;
         return { allowed: false, reason: 'Apenas Financeiro, Diretor, Supervisor ou Admin podem avançar.' };

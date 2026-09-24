@@ -257,27 +257,29 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return user.id;
   };
 
-  // Filtrar usuários comerciais e agenciadores líderes (Embarcadores, Clientes e Motoristas NUNCA entram no relatório comercial)
+  // Filtrar usuários comerciais e agenciadores líderes (Supervisores, Diretores, Administradores, Embarcadores, Clientes, Motoristas, Fiscal, Financeiro, etc. NUNCA entram no relatório comercial)
   const commercialUsers = useMemo(() => {
     return users.filter(u => {
       if (u.profile === UserProfile.Demonstracao || (u.profile as string) === 'Demo' || u.name?.toUpperCase().includes('DEMO')) {
         return false;
       }
-      // Embarcador, Cliente e Motorista não entram nos relatórios comerciais
-      if (u.profile === UserProfile.Embarcador || u.profile === UserProfile.Cliente || u.profile === UserProfile.Motorista) {
+      
+      // Apenas perfis estritamente comerciais e agenciadores líderes
+      const isCommercialProfile = 
+        u.profile === UserProfile.Comercial ||
+        u.profile === UserProfile.GerenteComercial ||
+        u.profile === UserProfile.Agenciador;
+
+      if (!isCommercialProfile) {
         return false;
       }
+
       // Agenciador de Embarque não aparece como linha individual na tabela principal de agências
       if (u.profile === UserProfile.Agenciador && u.agencyRole === 'embarque') {
         return false;
       }
-      return (
-        (u.hasCommercialCommission === true && (u.profile === UserProfile.Comercial || u.profile === UserProfile.GerenteComercial || u.profile === UserProfile.Supervisor || u.profile === UserProfile.Agenciador || u.profile === UserProfile.Admin || u.profile === UserProfile.Diretor)) || 
-        u.profile === UserProfile.GerenteComercial || 
-        u.profile === UserProfile.Comercial ||
-        u.profile === UserProfile.Supervisor ||
-        u.profile === UserProfile.Agenciador
-      );
+
+      return true;
     });
   }, [users]);
 

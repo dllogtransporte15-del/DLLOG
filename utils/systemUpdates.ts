@@ -21,6 +21,153 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_10_9',
+    version: 'v2.10.9',
+    date: '24/09/2026',
+    title: 'Destaque Visual do App e Botão "Baixar App"',
+    summary: 'Substituição da nomenclatura "Instalar PWA" para "Baixar App", com novo botão em destaque com animação de pulso no login, card do aplicativo com visual premium e modal interativo com guia de instalação para Android, iOS e Computador.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Nomenclatura "Baixar App"',
+        description: 'Atualizada a nomenclatura técnica de PWA para o termo mais amigável e direto "Baixar App".'
+      },
+      {
+        category: 'feature',
+        title: 'Super Destaque Visual do App na Tela de Acesso',
+        description: 'Card dedicado ao App com gradientes modernos, badge de disponibilidade, efeitos de brilho e botão de ação direta.'
+      },
+      {
+        category: 'feature',
+        title: 'Modal de Instalação Rápida',
+        description: 'Modal elegante com passo a passo ilustrado para baixar/instalar o aplicativo no Android, iPhone (Safari) e Computador.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_24_v2_10_8',
+    version: 'v2.10.8',
+    date: '24/09/2026',
+    title: 'Liberação de Anexo em Ag. Descarga e Bloqueio de Validação para Embarcador',
+    summary: 'O perfil Embarcador agora possui permissão para anexar o comprovante de descarga/ticket na etapa "Ag. Descarga" e salvar o avanço para "Valid. de Ticket". A validação formal e avanço da etapa "Valid. de Ticket" permanecem bloqueados exclusivamente para a equipe interna (Fiscal, Supervisor, Financeiro, Diretor e Admin).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Permissão de Anexo de Descarga para Embarcador',
+        description: 'Embarcadores podem anexar o ticket/comprovante de descarga e informar o peso descarregado diretamente no status "Ag. Descarga", avançando para "Valid. de Ticket".'
+      },
+      {
+        category: 'security',
+        title: 'Bloqueio Estrito na Validação de Ticket',
+        description: 'A etapa "Valid. de Ticket" fica bloqueada para o perfil Embarcador, sendo necessária a validação formal da equipe interna antes de liberar o avanço para quitação de saldo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_23_v2_10_7',
+    version: 'v2.10.7',
+    date: '23/09/2026',
+    title: 'Previsão Total de Pagamentos de Saldo na Gestão Financeira',
+    summary: 'Novo indicador financeiro em tempo real no painel de "Gestão Financeira dos Embarques", contabilizando o valor total previsto de saldos a pagar somando os embarques nas etapas de "Ag. Descarga", "Valid. de Ticket" e "Ag. Saldo".',
+    items: [
+      {
+        category: 'feature',
+        title: 'Total Previsto de Saldos a Pagar',
+        description: 'Exibe no topo do painel financeiro o montante consolidado em R$ e a quantidade de embarques em fase de liquidação de saldo (abrangendo Ag. Descarga, Valid. de Ticket e Ag. Saldo).'
+      },
+      {
+        category: 'improvement',
+        title: 'Detalhamento de Saldos por Etapa',
+        description: 'Tooltip interativo que detalha valores e contagem de cargas divididos entre as etapas de trânsito/descarga, validação de ticket e aguardando liquidação de saldo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_23_v2_10_6',
+    version: 'v2.10.6',
+    date: '23/09/2026',
+    title: 'Previsão Total de Adiantamentos a Fazer na Gestão Financeira',
+    summary: 'Novo indicador financeiro em tempo real no cabeçalho da "Gestão Financeira dos Embarques", calculando o valor monetário total previsto de adiantamentos a pagar considerando os embarques nas etapas entre "Ag. Cadastro" e "Ag. Adiantamento".',
+    items: [
+      {
+        category: 'feature',
+        title: 'Total Previsto de Adiantamentos a Fazer',
+        description: 'Exibe no topo do painel financeiro o total acumulado em R$ e a quantidade de embarques previstos para adiantamento (abrangendo Ag. Cadastro, Ag. Seguradora, Ag. Carregamento, Ag. Nota, Ag. Fiscal e Ag. Adiantamento).'
+      },
+      {
+        category: 'improvement',
+        title: 'Detalhamento por Etapa em Popover',
+        description: 'Ao passar o cursor sobre o card de adiantamentos, é exibido o detalhamento com a contagem de cargas e a soma de valores em cada uma das etapas do fluxo operacional.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_23_v2_10_5',
+    version: 'v2.10.5',
+    date: '23/09/2026',
+    title: 'Alerta Inteligente de Divergência de Peso (Ticket vs CT-e)',
+    summary: 'Validação e leitura automática do peso bruto informado no CT-e (XML/PDF) ao anexar documentos fiscais, emitindo alertas visuais imediatos e confirmação de segurança caso o peso do CT-e seja diferente do peso registrado no Passo: Ticket de Carregamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Detecção Automática de Divergência de Peso',
+        description: 'Ao anexar os documentos fiscais ou importar o CT-e (XML/PDF), o sistema compara o peso do CT-e com o peso do Ticket de Carregamento e exibe um alerta detalhado com as diferenças em toneladas e quilogramas.'
+      },
+      {
+        category: 'security',
+        title: 'Confirmação de Segurança ao Salvar',
+        description: 'Caso exista divergência superior a 10 kg entre o ticket e o CT-e, o sistema solicita confirmação explícita do usuário antes de concluir o avanço de status da viagem.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_23_v2_10_4',
+    version: 'v2.10.4',
+    date: '23/09/2026',
+    title: 'Remoção do Perfil Supervisor da Tabela de Equipe Comercial',
+    summary: 'Ajuste no filtro de usuários do Relatório Comercial e de Agenciamento para exibir apenas os membros diretamente operacionais de vendas e agenciamento (Comercial, Gerente Comercial e Agenciador Líder), excluindo o perfil Supervisor.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Exclusão do Perfil Supervisor do Relatório Comercial',
+        description: 'Usuários com perfil "Supervisor" não são mais exibidos na tabela nem contabilizados nas comissões da equipe comercial.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_23_v2_10_3',
+    version: 'v2.10.3',
+    date: '23/09/2026',
+    title: 'Busca Rápida e Filtro por Solicitante no Relatório de Lucro Real',
+    summary: 'Inclusão do campo de Solicitante (embarcador, operador ou agência responsável) na Busca Rápida e adição de dropdown de seleção múltipla por Solicitante nos filtros avançados do Relatório de Lucro Real da Operação, além de exibir o solicitante na tabela e exportações.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Filtro e Busca Rápida por Solicitante',
+        description: 'A Busca Rápida agora pesquisa diretamente pelo nome e email do Solicitante/Agência do frete, além de contar com um filtro dedicado de seleção múltipla no painel de filtros.'
+      },
+      {
+        category: 'improvement',
+        title: 'Exibição e Exportação com Solicitante',
+        description: 'O solicitante responsável é exibido na primeira coluna da tabela de Lucro Real e incluído nas exportações em CSV e PDF.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_23_v2_10_2',
+    version: 'v2.10.2',
+    date: '23/09/2026',
+    title: 'Filtragem Estrita de Membros no Relatório Comercial e de Agenciamento',
+    summary: 'Ajuste no filtro de usuários exibidos na tabela de "Equipe Comercial, Agenciadores e Gerentes", garantindo que apenas perfis estritamente operacionais da área comercial (Comercial, Gerente Comercial, Supervisor e Agenciadores Líderes) sejam listados, excluindo usuários de diretoria (Diretor) e administração.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Remoção de Usuários com Perfil Diretor da Tabela Comercial',
+        description: 'Usuários com perfil "Diretor" foram removidos da listagem e da contagem de comissões ativas do relatório comercial, mantendo apenas membros da equipe comercial, agenciadores e gerentes.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_23_v2_10_1',
     version: 'v2.10.1',
     date: '23/09/2026',

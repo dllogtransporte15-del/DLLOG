@@ -76,6 +76,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const isAgenciador = currentUser?.profile === UserProfile.Agenciador || (currentUser?.profile as string) === 'Agenciador';
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [selectedRequesters, setSelectedRequesters] = useState<string[]>([]);
   const [selectedExport, setSelectedExport] = useState<string[]>([]);
   const [selectedDriverRegimes, setSelectedDriverRegimes] = useState<string[]>([]);
   const [onlyWithOcr, setOnlyWithOcr] = useState(false);
@@ -128,6 +129,17 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
   const driverOptions = Array.from(new Set(shipments.map(s => s.driverName))).filter(Boolean).sort();
   
+  const requesterOptions = useMemo(() => {
+    const names = new Set<string>();
+    shipments.forEach(s => {
+      const cargo = cargoMap.get(s.cargoId);
+      const requesterUser = userMap.get(s.embarcadorId) || userMap.get(s.createdById) || (cargo?.createdById ? userMap.get(cargo.createdById) : undefined);
+      const requesterName = requesterUser?.name || s.agencyCommissionAgencyName || s.embarcadorId || s.createdById;
+      if (requesterName) names.add(requesterName);
+    });
+    return Array.from(names).filter(Boolean).sort();
+  }, [shipments, cargoMap, userMap]);
+
   const branchOptions = useMemo(() => {
     const names = new Set(branches.map(b => b.name));
     names.add('Matriz');
@@ -141,7 +153,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const client = cargo ? clientMap.get(cargo.clientId) : undefined;
       const clientName = client?.nomeFantasia || client?.razaoSocial || '';
 
-      // Filtro de texto (ID, CT-e, NF-e, Motorista, Placa)
+      // Filtro de texto (ID, CT-e, NF-e, Motorista, Placa, Solicitante)
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase().trim();
         const matchesId = s.id.toLowerCase().includes(term);
@@ -153,7 +165,13 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         const matchesOrigin = cargo?.origin?.toLowerCase().includes(term);
         const matchesDest = cargo?.destination?.toLowerCase().includes(term);
 
-        if (!matchesId && !matchesCte && !matchesNfe && !matchesDriver && !matchesPlate && !matchesClient && !matchesOrigin && !matchesDest) {
+        // Solicitante / Usuário responsável / Agência
+        const requesterUser = userMap.get(s.embarcadorId) || userMap.get(s.createdById) || (cargo?.createdById ? userMap.get(cargo.createdById) : undefined);
+        const requesterName = requesterUser?.name || s.agencyCommissionAgencyName || s.embarcadorId || s.createdById || '';
+        const requesterEmail = requesterUser?.email || '';
+        const matchesRequester = requesterName.toLowerCase().includes(term) || requesterEmail.toLowerCase().includes(term);
+
+        if (!matchesId && !matchesCte && !matchesNfe && !matchesDriver && !matchesPlate && !matchesClient && !matchesOrigin && !matchesDest && !matchesRequester) {
           return false;
         }
       }
@@ -227,6 +245,15 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         return false;
       }
 
+      // Filtro de Solicitante
+      if (selectedRequesters.length > 0) {
+        const requesterUser = userMap.get(s.embarcadorId) || userMap.get(s.createdById) || (cargo?.createdById ? userMap.get(cargo.createdById) : undefined);
+        const requesterName = requesterUser?.name || s.agencyCommissionAgencyName || s.embarcadorId || s.createdById || '';
+        if (!selectedRequesters.includes(requesterName)) {
+          return false;
+        }
+      }
+
       // Filtro de Filial / Matriz (verificando filial do embarque e filial dos usuários vinculados)
       if (selectedBranches.length > 0) {
         const branchName = getShipmentBranchName(s, cargo);
@@ -257,7 +284,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
       return true;
     });
-  }, [shipments, cargoMap, clientMap, branches, userBranchMap, searchTerm, startDate, endDate, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedBranches, onlyWithOcr]);
+  }, [shipments, cargoMap, clientMap, userMap, branches, userBranchMap, searchTerm, startDate, endDate, selectedStatus, selectedExport, selectedDriverRegimes, selectedClients, selectedDrivers, selectedRequesters, selectedBranches, onlyWithOcr]);
 
   const canViewFinalNetProfit = useMemo(() => {
     if (!currentUser) return false;
@@ -389,9 +416,10 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         demurrageRevenue,
         demurrageDriverPaid,
         demurrageProfit,
+        requesterName: requesterUser?.name || s.agencyCommissionAgencyName || s.embarcadorId || s.createdById || 'N/A',
       };
     });
-  }, [filteredData, cargoMap, clientMap, stays, users]);
+  }, [filteredData, cargoMap, clientMap, stays, users, userMap]);
 
   // Totais Gerais
   const totals = useMemo(() => {
@@ -825,7 +853,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       {/* PAINEL DE FILTROS */}
       {showFilters && (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-4 animate-in fade-in duration-200 w-full">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-9 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-10 gap-3">
             {/* Busca textual */}
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
@@ -835,7 +863,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="ID, CT-e, Motorista, Placa..."
+                  placeholder="ID, CT-e, Motorista, Placa, Solicitante..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-xs border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -939,6 +967,19 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
               />
             </div>
 
+            {/* Filtro Solicitante */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                Solicitante
+              </label>
+              <MultiSelectDropdown
+                options={requesterOptions}
+                selectedValues={selectedRequesters}
+                onChange={setSelectedRequesters}
+                placeholder="Todos os solicitantes"
+              />
+            </div>
+
             {/* Filtro Filial / Matriz */}
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
@@ -975,6 +1016,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                 setSelectedStatus([]);
                 setSelectedClients([]);
                 setSelectedDrivers([]);
+                setSelectedRequesters([]);
                 setSelectedBranches([]);
                 setOnlyWithOcr(false);
               }}
@@ -1028,6 +1070,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                       <p className="text-[10px] text-gray-500 dark:text-gray-400">
                         {row.shipment.scheduledDate ? new Date(row.shipment.scheduledDate + 'T00:00:00').toLocaleDateString('pt-BR') : '---'}
                       </p>
+                      {row.requesterName && row.requesterName !== 'N/A' && (
+                        <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate max-w-[120px]" title={`Solicitante: ${row.requesterName}`}>
+                          <span className="font-semibold text-gray-600 dark:text-gray-300">Sol:</span> {row.requesterName}
+                        </p>
+                      )}
                       <span className="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                         {row.shipment.status}
                       </span>

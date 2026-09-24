@@ -6,8 +6,8 @@ import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../ser
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, Check, Paperclip } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
@@ -233,6 +233,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   onUpdateShipmentData,
 }) => {
   const isDemo = isDemoUser(currentUser);
+  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador || (currentUser?.profile as string) === 'Embarcador';
+  const canValidateTicket = !isEmbarcador && currentUser?.profile !== UserProfile.Cliente && currentUser?.profile !== UserProfile.Motorista;
   const riskQueryOptions = React.useMemo<RiskQueryOption[]>(() => {
     if (propRiskQueryOptions && propRiskQueryOptions.length > 0) {
       return propRiskQueryOptions;
@@ -277,6 +279,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     docName: string;
   } | null>(null);
 
+  // Estado para armazenar o peso extraído do CT-e anexado
+  const [cteExtractedWeightKg, setCteExtractedWeightKg] = useState<number | undefined>(undefined);
+
   const ticketFiles: string[] = React.useMemo(() => {
     if (!shipment.documents) return [];
     const files: string[] = [];
@@ -319,9 +324,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     if (extracted.financeiro?.chavePix) {
       setBankDetails(prev => prev ? `${prev} | PIX: ${extracted.financeiro?.chavePix}` : (extracted.financeiro?.chavePix || ''));
     }
-    if (extracted.carga?.pesoBrutoKg && shipment.status === ShipmentStatus.AguardandoCarregamento) {
-      const ton = extracted.carga.pesoBrutoKg >= 1000 ? Number((extracted.carga.pesoBrutoKg / 1000).toFixed(3)) : extracted.carga.pesoBrutoKg;
-      setLoadedTonnage(ton);
+    if (extracted.carga?.pesoBrutoKg || extracted.carga?.pesoLiquidoKg) {
+      const wKg = extracted.carga.pesoBrutoKg || extracted.carga.pesoLiquidoKg;
+      if (wKg) {
+        setCteExtractedWeightKg(wKg);
+        if (shipment.status === ShipmentStatus.AguardandoCarregamento) {
+          const ton = wKg >= 1000 ? Number((wKg / 1000).toFixed(3)) : wKg;
+          setLoadedTonnage(ton);
+        }
+      }
     }
     showToast('Dados lidos do documento aplicados no formulário!', 'success');
   };
@@ -329,6 +340,64 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const routeLayerRef = useRef<any>(null);
+
+  // Cálculo e Validação de Divergência de Peso (Ticket de Carregamento vs CT-e)
+  const ticketLoadedWeightTon = React.useMemo(() => {
+    let raw = shipment.shipmentTonnage;
+    if (!raw && (shipment.documents as any)?.loaded_tonnage) {
+      raw = Number((shipment.documents as any).loaded_tonnage);
+    }
+    if (!raw && loadedTonnage !== '' && Number(loadedTonnage) > 0) {
+      raw = Number(loadedTonnage);
+    }
+    if (!raw && cargo?.totalVolume) {
+      raw = Number(cargo.totalVolume);
+    }
+    if (!raw) return 0;
+    const num = Number(raw);
+    return num > 500 ? num / 1000 : num; // Normaliza para Toneladas
+  }, [shipment.shipmentTonnage, shipment.documents, loadedTonnage, cargo?.totalVolume]);
+
+  const cteWeightTon = React.useMemo(() => {
+    if (!cteExtractedWeightKg || cteExtractedWeightKg <= 0) return 0;
+    return cteExtractedWeightKg > 500 ? cteExtractedWeightKg / 1000 : cteExtractedWeightKg;
+  }, [cteExtractedWeightKg]);
+
+  const weightDivergenceInfo = React.useMemo(() => {
+    if (ticketLoadedWeightTon <= 0 || cteWeightTon <= 0) return null;
+    const ticketKg = Math.round(ticketLoadedWeightTon * 1000);
+    const cteKg = Math.round(cteWeightTon * 1000);
+    const diffKg = Math.abs(ticketKg - cteKg);
+    const diffTon = Math.abs(ticketLoadedWeightTon - cteWeightTon);
+
+    // Considera divergência relevante se a diferença for maior que 10 kg
+    if (diffKg > 10) {
+      return {
+        ticketTon: ticketLoadedWeightTon,
+        ticketKg,
+        ticketWeightTon: ticketLoadedWeightTon,
+        cteTon: cteWeightTon,
+        cteKg,
+        cteWeightTon,
+        diffKg,
+        diffTon,
+        diffFormatted: `${diffTon.toFixed(2)} ton`,
+        diffKgFormatted: `${diffKg.toLocaleString('pt-BR')} kg`,
+      };
+    }
+    return null;
+  }, [ticketLoadedWeightTon, cteWeightTon]);
+
+  // Alerta em tempo real quando houver divergência de peso
+  useEffect(() => {
+    if (isOpen && weightDivergenceInfo) {
+      showToast(
+        `⚠️ Divergência de Peso Detectada! Ticket de Carregamento: ${weightDivergenceInfo.ticketTon.toFixed(2)}t (${weightDivergenceInfo.ticketKg}kg) vs CT-e: ${weightDivergenceInfo.cteTon.toFixed(2)}t (${weightDivergenceInfo.cteKg}kg). Diferença: ${weightDivergenceInfo.diffKg}kg.`,
+        'warning',
+        7000
+      );
+    }
+  }, [weightDivergenceInfo, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -338,6 +407,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setMultiFiles({});
       setBankDetails(shipment.bankDetails || '');
       setLoadedTonnage(shipment.shipmentTonnage || '');
+      setCteExtractedWeightKg(undefined);
 
       const initialAdvPct = shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70;
       const initialToll = shipment.tollValue || 0;
@@ -371,15 +441,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setRiskQueryType((shipment.riskQueryType as RiskQueryType) || '');
       setGrStatus('aprovado');
 
-      // Se o pedágio ou adiantamento não estiverem preenchidos, verifica os documentos já anexados
-      if ((!shipment.tollValue || shipment.tollValue === 0) && shipment.documents) {
+      // Se o pedágio ou adiantamento ou peso do CT-e não estiverem preenchidos, verifica os documentos já anexados
+      if (shipment.documents) {
         const urlMap: { [key: string]: string[] } = {};
         for (const [k, v] of Object.entries(shipment.documents)) {
           if (Array.isArray(v) && v.length > 0) urlMap[k] = v;
+          else if (typeof v === 'string' && v.trim() !== '') urlMap[k] = [v];
         }
         if (Object.keys(urlMap).length > 0) {
           extractFiscalDocNumbersFromUrls(urlMap).then(extracted => {
-            if (extracted.tollValue !== undefined && extracted.tollValue > 0) {
+            if (extracted.tollValue !== undefined && extracted.tollValue > 0 && (!shipment.tollValue || shipment.tollValue === 0)) {
               setTollValue(extracted.tollValue);
             }
             if (extracted.advanceValue !== undefined && extracted.advanceValue > 0 && !shipment.advanceValue) {
@@ -387,6 +458,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             }
             if (extracted.advancePercentage !== undefined && extracted.advancePercentage > 0 && !shipment.advancePercentage) {
               setAdvancePercentage(extracted.advancePercentage);
+            }
+            if (extracted.cteWeightKg !== undefined && extracted.cteWeightKg > 0) {
+              setCteExtractedWeightKg(extracted.cteWeightKg);
             }
           }).catch(err => console.warn('[AttachmentModal] Auto extract from URLs error:', err));
         }
@@ -433,7 +507,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     };
   }, [isOpen]);
 
-  // AUTO-PARSING: Extração de informações do Contrato de Frete (Pedágio, Adiantamento, % Adiantamento)
+  // AUTO-PARSING: Extração de informações do Contrato de Frete (Pedágio, Adiantamento, % Adiantamento) e CT-e (Peso)
   useEffect(() => {
     const autoParseFreightDoc = async () => {
       const filesToProcess: { [key: string]: File[] } = {};
@@ -458,6 +532,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           if (parsed.advancePercentage !== undefined) {
             setAdvancePercentage(parsed.advancePercentage);
             extractedAny = true;
+          }
+          if (parsed.cteWeightKg !== undefined && parsed.cteWeightKg > 0) {
+            setCteExtractedWeightKg(parsed.cteWeightKg);
           }
           if (extractedAny) {
             showToast('Informações de frete extraídas do documento com sucesso!', 'success');
@@ -901,6 +978,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         setError('Dados bancários são obrigatórios.');
         return;
       }
+      if (weightDivergenceInfo) {
+        const confirmMsg = `⚠️ ATENÇÃO: DIVERGÊNCIA DE PESO DETECTADA!\n\n` +
+          `• Peso no Ticket de Carregamento: ${weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton (${(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
+          `• Peso no CT-e: ${weightDivergenceInfo.cteWeightTon.toFixed(2)} ton (${(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
+          `• Diferença: ${weightDivergenceInfo.diffFormatted} (${weightDivergenceInfo.diffKgFormatted})\n\n` +
+          `Deseja prosseguir e salvar mesmo com a divergência de peso informada?`;
+        if (!window.confirm(confirmMsg)) {
+          return;
+        }
+      }
       filesToAttach = multiFiles;
     } else {
       const existingDocs = shipment.documents?.[documentName];
@@ -963,6 +1050,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
 
     if (shipment.status === ShipmentStatus.ValidacaoTicket) {
+      if (!canValidateTicket) {
+        showToast('A validação de ticket é restrita à equipe interna (Fiscal, Supervisor, Financeiro, Diretor ou Admin).', 'error');
+        return;
+      }
       if (!isTicketValidated) {
         showToast('É obrigatório validar o ticket e conferir o peso descarregado para prosseguir.', 'warning');
         return;
@@ -1442,6 +1533,53 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       MDF-e nº {shipment.mdfeNumber}
                     </span>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Alerta de Divergência de Peso (Ticket vs CT-e) */}
+            {weightDivergenceInfo && (
+              <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600 rounded-xl shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-amber-100 dark:bg-amber-900/60 rounded-lg text-amber-600 dark:text-amber-400 shrink-0">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                        ⚠️ Atenção: Divergência de Peso Detectada!
+                      </h4>
+                      <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                        Diferença: {weightDivergenceInfo.diffFormatted} ({weightDivergenceInfo.diffKgFormatted})
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
+                      O peso registrado no <strong>Passo: Ticket de Carregamento</strong> difere do peso constante no <strong>CT-e</strong>:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2.5 text-xs">
+                      <div className="bg-white/90 dark:bg-gray-800/90 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <span className="text-gray-500 dark:text-gray-400 block font-medium">Ticket de Carregamento:</span>
+                        <span className="text-base font-bold text-gray-900 dark:text-white">
+                          {weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton{' '}
+                          <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                            ({(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)
+                          </span>
+                        </span>
+                      </div>
+                      <div className="bg-white/90 dark:bg-gray-800/90 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <span className="text-gray-500 dark:text-gray-400 block font-medium">CT-e Emitido:</span>
+                        <span className="text-base font-bold text-amber-700 dark:text-amber-400">
+                          {weightDivergenceInfo.cteWeightTon.toFixed(2)} ton{' '}
+                          <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
+                            ({(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2 italic">
+                      * Verifique se houve erro de digitação no ticket ou se o CT-e foi emitido com peso divergente antes de concluir o envio.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -1967,63 +2105,79 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 </div>
 
                 {/* Seção 3: Botão / Caixa de Validação Formal */}
-                <div className={`p-4 rounded-2xl border transition-all ${
-                  isTicketValidated
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700'
-                    : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
-                }`}>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2.5 rounded-xl ${
-                        isTicketValidated
-                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                          : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                      }`}>
-                        {isTicketValidated ? <CheckCircle2 className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
-                      </div>
-                      <div>
-                        <h5 className={`text-sm font-bold ${isTicketValidated ? 'text-emerald-900 dark:text-emerald-200' : 'text-gray-900 dark:text-white'}`}>
-                          {isTicketValidated ? 'Ticket e Peso Descarregado Validados com Sucesso!' : 'Validação Obrigatória para Prosseguir'}
-                        </h5>
-                        <p className="text-xs text-gray-600 dark:text-gray-300">
-                          {isTicketValidated
-                            ? `Validado por ${currentUser?.name || 'Operador'} • Peso confirmado: ${unloadedTonnage} ton. O avanço para Quitação de Saldo está liberado.`
-                            : 'Confira o ticket e peso acima e confirme a validação para desbloquear o botão Salvar e Avançar.'}
-                        </p>
-                      </div>
+                {!canValidateTicket ? (
+                  <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+                      <ShieldAlert className="w-6 h-6" />
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!unloadedTonnage || Number(unloadedTonnage) <= 0) {
-                          showToast('Informe o peso descarregado antes de validar.', 'warning');
-                          return;
-                        }
-                        const nextVal = !isTicketValidated;
-                        setIsTicketValidated(nextVal);
-                        if (nextVal) {
-                          showToast('Ticket e peso validados com sucesso! Botão "Salvar e Avançar" liberado.', 'success');
-                        }
-                      }}
-                      className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition-all whitespace-nowrap active:scale-95 ${
-                        isTicketValidated
-                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                          : 'bg-primary text-white hover:bg-primary-dark shadow-primary/20 hover:shadow-md'
-                      }`}
-                    >
-                      {isTicketValidated ? (
-                        <>
-                          <Check className="w-4 h-4" /> Validado (Clique para Desmarcar)
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" /> Validar Ticket e Peso
-                        </>
-                      )}
-                    </button>
+                    <div>
+                      <h5 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Validação de Ticket Restrita à Equipe Interna
+                      </h5>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 leading-relaxed">
+                        O ticket de descarga e o peso descarregado foram registrados. A validação formal do ticket e o avanço para a etapa de liquidação de saldo são restritos aos perfis Fiscal, Supervisor, Financeiro, Diretor ou Administrador (bloqueado para Embarcador).
+                      </p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    isTicketValidated
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700'
+                      : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
+                  }`}>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl ${
+                          isTicketValidated
+                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                            : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                        }`}>
+                          {isTicketValidated ? <CheckCircle2 className="w-6 h-6" /> : <ShieldCheck className="w-6 h-6" />}
+                        </div>
+                        <div>
+                          <h5 className={`text-sm font-bold ${isTicketValidated ? 'text-emerald-900 dark:text-emerald-200' : 'text-gray-900 dark:text-white'}`}>
+                            {isTicketValidated ? 'Ticket e Peso Descarregado Validados com Sucesso!' : 'Validação Obrigatória para Prosseguir'}
+                          </h5>
+                          <p className="text-xs text-gray-600 dark:text-gray-300">
+                            {isTicketValidated
+                              ? `Validado por ${currentUser?.name || 'Operador'} • Peso confirmado: ${unloadedTonnage} ton. O avanço para Quitação de Saldo está liberado.`
+                              : 'Confira o ticket e peso acima e confirme a validação para desbloquear o botão Salvar e Avançar.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!unloadedTonnage || Number(unloadedTonnage) <= 0) {
+                            showToast('Informe o peso descarregado antes de validar.', 'warning');
+                            return;
+                          }
+                          const nextVal = !isTicketValidated;
+                          setIsTicketValidated(nextVal);
+                          if (nextVal) {
+                            showToast('Ticket e peso validados com sucesso! Botão "Salvar e Avançar" liberado.', 'success');
+                          }
+                        }}
+                        className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition-all whitespace-nowrap active:scale-95 ${
+                          isTicketValidated
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                            : 'bg-primary text-white hover:bg-primary-dark shadow-primary/20 hover:shadow-md'
+                        }`}
+                      >
+                        {isTicketValidated ? (
+                          <>
+                            <Check className="w-4 h-4" /> Validado (Clique para Desmarcar)
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4 h-4" /> Validar Ticket e Peso
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? (
               <div className="space-y-6">
@@ -2351,8 +2505,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 <div className="relative group">
                   <button
                     onClick={handleSave}
-                    disabled={isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && !isTicketValidated)}
-                    className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && !isTicketValidated))
+                    disabled={isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated))}
+                    className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)))
                         ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-none'
                         : 'bg-primary hover:bg-primary-dark shadow-primary/20'
                       }`}
@@ -2363,9 +2517,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       </>
                     ) : 'Salvar e Avançar'}
                   </button>
-                  {shipment.status === ShipmentStatus.ValidacaoTicket && !isTicketValidated && (
+                  {shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated) && (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-gray-900 text-white text-[11px] font-semibold py-1 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
-                      ⚠️ Valide o ticket e o peso para liberar este botão
+                      {!canValidateTicket 
+                        ? '⛔ Validação restrita à equipe interna (bloqueado para Embarcador)' 
+                        : '⚠️ Valide o ticket e o peso para liberar este botão'}
                     </div>
                   )}
                 </div>

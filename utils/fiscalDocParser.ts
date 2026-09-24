@@ -1130,6 +1130,7 @@ export async function extractDetailedDocData(
 export interface FiscalDocNumbers {
   cteNumber?: string;
   cteEmissionDate?: string;
+  cteWeightKg?: number;
   nfeNumber?: string;
   nfeValue?: number;
   mdfeNumber?: string;
@@ -1156,6 +1157,11 @@ export async function extractFiscalDocNumbers(
         if (detailed.documentType === 'CT-e' || isCteDocType(docType)) {
           if (detailed.docNumber && !result.cteNumber) result.cteNumber = detailed.docNumber;
           if (detailed.emissionDate && !result.cteEmissionDate) result.cteEmissionDate = detailed.emissionDate;
+          if (detailed.carga?.pesoBrutoKg !== undefined && !result.cteWeightKg) {
+            result.cteWeightKg = detailed.carga.pesoBrutoKg;
+          } else if (detailed.carga?.pesoLiquidoKg !== undefined && !result.cteWeightKg) {
+            result.cteWeightKg = detailed.carga.pesoLiquidoKg;
+          }
         }
         if (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) {
           if (detailed.docNumber && !result.nfeNumber) result.nfeNumber = detailed.docNumber;
@@ -1205,6 +1211,11 @@ export async function extractFiscalDocNumbersFromUrls(
         if (detailed.documentType === 'CT-e' || isCteDocType(docType)) {
           if (detailed.docNumber && !result.cteNumber) result.cteNumber = detailed.docNumber;
           if (detailed.emissionDate && !result.cteEmissionDate) result.cteEmissionDate = detailed.emissionDate;
+          if (detailed.carga?.pesoBrutoKg !== undefined && !result.cteWeightKg) {
+            result.cteWeightKg = detailed.carga.pesoBrutoKg;
+          } else if (detailed.carga?.pesoLiquidoKg !== undefined && !result.cteWeightKg) {
+            result.cteWeightKg = detailed.carga.pesoLiquidoKg;
+          }
         }
         if (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) {
           if (detailed.docNumber && !result.nfeNumber) result.nfeNumber = detailed.docNumber;

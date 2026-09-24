@@ -1826,9 +1826,12 @@ const App: React.FC = () => {
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
         isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.Financeiro].includes(currentUser.profile);
         alertMessage = 'Apenas o perfil Gerenciadora de Risco, Embarcador ou Administrador do Sistema pode avançar embarques neste status.';
+    } else if (currentStatus === ShipmentStatus.AguardandoDescarga) {
+        isUserAllowed = [UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro, UserProfile.Agenciador, UserProfile.Motorista].includes(currentUser.profile);
+        alertMessage = 'Você não tem permissão para anexar o comprovante de descarga.';
     } else if (currentStatus === ShipmentStatus.ValidacaoTicket) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Fiscal, Embarcador, Supervisor, Diretor, Comercial, Financeiro ou Administrador do Sistema podem validar o ticket do embarque.';
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Fiscal, Supervisor, Diretor, Comercial, Financeiro ou Administrador do Sistema podem validar o ticket do embarque (bloqueado para Embarcador).';
     } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo || currentStatus === ShipmentStatus.Finalizado) {
         isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Fiscal, UserProfile.Comercial].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor, Fiscal, Comercial ou Administrador do Sistema podem realizar esta ação.';

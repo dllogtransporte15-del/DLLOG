@@ -23,7 +23,9 @@ import {
   Maximize2,
   Minimize2,
   Tv,
-  Radio
+  Radio,
+  Wallet,
+  Banknote
 } from 'lucide-react';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { Shipment, Cargo, Client, Product, Driver, Vehicle, User, ShipmentStatus, REQUIRED_DOCUMENT_MAP } from '../types';
@@ -397,6 +399,199 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
     return { total: shipments.length, normal, warning, critical };
   }, [shipments, getShipmentSlaInfo]);
 
+  // Statuses configurados entre "Ag. Cadastro" e "Ag. Adiantamento"
+  const ADVANCE_PREVISION_STATUSES = useMemo(() => [
+    ShipmentStatus.PreCadastro,
+    'Ag. Cadastro',
+    'PreCadastro',
+    ShipmentStatus.AguardandoSeguradora,
+    'Ag. Seguradora',
+    'Aguardando Seguradora',
+    ShipmentStatus.AguardandoCarregamento,
+    'Ag. Carregamento',
+    'Aguardando Carregamento',
+    ShipmentStatus.AguardandoNota,
+    'Ag. Nota',
+    'Aguardando Nota',
+    ShipmentStatus.AguardandoFiscal,
+    'Ag. Fiscal',
+    'Aguardando Fiscal',
+    ShipmentStatus.AguardandoAdiantamento,
+    'Ag. Adiantamento',
+    'Aguardando Adiantamento',
+    'Aguardando Pagamento de Adiantamento',
+  ], []);
+
+  // Cálculo da Previsão Total de Adiantamentos a Fazer (Etapas: Ag. Cadastro até Ag. Adiantamento)
+  const advancePrevisionStats = useMemo(() => {
+    const isFinancialBoard = (title || '').toLowerCase().includes('financeir') || columns.some(c => c.id.includes('adiantamento') || c.id.includes('saldo'));
+
+    let totalValue = 0;
+    let count = 0;
+    const statusBreakdown: Record<string, { count: number; total: number }> = {
+      'Ag. Cadastro': { count: 0, total: 0 },
+      'Ag. Seguradora': { count: 0, total: 0 },
+      'Ag. Carregamento': { count: 0, total: 0 },
+      'Ag. Nota': { count: 0, total: 0 },
+      'Ag. Fiscal': { count: 0, total: 0 },
+      'Ag. Adiantamento': { count: 0, total: 0 },
+    };
+
+    const normalizeKey = (st: string) => {
+      const s = (st || '').toLowerCase();
+      if (s.includes('cadastro')) return 'Ag. Cadastro';
+      if (s.includes('seguradora')) return 'Ag. Seguradora';
+      if (s.includes('carregamento')) return 'Ag. Carregamento';
+      if (s.includes('nota')) return 'Ag. Nota';
+      if (s.includes('fiscal')) return 'Ag. Fiscal';
+      if (s.includes('adiantamento')) return 'Ag. Adiantamento';
+      return null;
+    };
+
+    // Considera os embarques da tela respeitando os filtros ativos se houver busca ou solicitante selecionado
+    const pool = (searchTerm || selectedEmbarcadorId !== 'all' || slaFilter !== 'all')
+      ? filteredShipments
+      : shipments;
+
+    pool.forEach(s => {
+      if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado' || s.status === ShipmentStatus.Finalizado) return;
+
+      const isMatch = ADVANCE_PREVISION_STATUSES.some(st => 
+        st === s.status || normalizeStatusStr(st) === normalizeStatusStr(s.status)
+      );
+
+      if (isMatch) {
+        const cargo = cargoMap.get(s.cargoId);
+        let advVal = 0;
+
+        if (s.advanceValue !== undefined && !isNaN(Number(s.advanceValue)) && Number(s.advanceValue) > 0) {
+          advVal = Number(s.advanceValue);
+        } else {
+          const rate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+          const tonnage = s.shipmentTonnage || cargo?.totalVolume || 0;
+          const totalFreight = s.driverFreightValue || (rate * tonnage);
+          const toll = s.tollValue || 0;
+          const advPct = (s.advancePercentage !== undefined && !isNaN(Number(s.advancePercentage)))
+            ? Number(s.advancePercentage)
+            : 70;
+
+          if (advPct > 0) {
+            const baseFreight = Math.max(0, totalFreight - toll);
+            advVal = Number((baseFreight * (advPct / 100)).toFixed(2));
+          }
+        }
+
+        totalValue += advVal;
+        count++;
+
+        const key = normalizeKey(s.status);
+        if (key && statusBreakdown[key]) {
+          statusBreakdown[key].count++;
+          statusBreakdown[key].total += advVal;
+        }
+      }
+    });
+
+    return {
+      isFinancialBoard,
+      totalValue,
+      count,
+      statusBreakdown,
+      formattedTotal: totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    };
+  }, [title, columns, shipments, filteredShipments, searchTerm, selectedEmbarcadorId, slaFilter, cargoMap, ADVANCE_PREVISION_STATUSES, normalizeStatusStr]);
+
+  // Statuses configurados entre "Ag. Descarga" e "Ag. Saldo"
+  const BALANCE_PREVISION_STATUSES = useMemo(() => [
+    ShipmentStatus.AguardandoDescarga,
+    'Ag. Descarga',
+    'Aguardando Descarga',
+    'Em Trânsito',
+    'Em Transito',
+    ShipmentStatus.ValidacaoTicket,
+    'Valid. de Ticket',
+    'Validação de Ticket',
+    'Validacao de Ticket',
+    ShipmentStatus.AguardandoPagamentoSaldo,
+    'Ag. Saldo',
+    'Aguardando Saldo',
+    'Aguardando Pagamento de Saldo',
+  ], []);
+
+  // Cálculo da Previsão Total de Saldos a Pagar (Etapas: Ag. Descarga até Ag. Saldo)
+  const balancePrevisionStats = useMemo(() => {
+    const isFinancialBoard = (title || '').toLowerCase().includes('financeir') || columns.some(c => c.id.includes('adiantamento') || c.id.includes('saldo'));
+
+    let totalValue = 0;
+    let count = 0;
+    const statusBreakdown: Record<string, { count: number; total: number }> = {
+      'Ag. Descarga': { count: 0, total: 0 },
+      'Valid. de Ticket': { count: 0, total: 0 },
+      'Ag. Saldo': { count: 0, total: 0 },
+    };
+
+    const normalizeKey = (st: string) => {
+      const s = (st || '').toLowerCase();
+      if (s.includes('descarga') || s.includes('trânsito') || s.includes('transito')) return 'Ag. Descarga';
+      if (s.includes('ticket') || s.includes('valida')) return 'Valid. de Ticket';
+      if (s.includes('saldo')) return 'Ag. Saldo';
+      return null;
+    };
+
+    const pool = (searchTerm || selectedEmbarcadorId !== 'all' || slaFilter !== 'all')
+      ? filteredShipments
+      : shipments;
+
+    pool.forEach(s => {
+      if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado' || s.status === ShipmentStatus.Finalizado) return;
+
+      const isMatch = BALANCE_PREVISION_STATUSES.some(st => 
+        st === s.status || normalizeStatusStr(st) === normalizeStatusStr(s.status)
+      );
+
+      if (isMatch) {
+        const cargo = cargoMap.get(s.cargoId);
+        let balVal = 0;
+
+        if (s.netBalanceValue !== undefined && !isNaN(Number(s.netBalanceValue)) && Number(s.netBalanceValue) > 0) {
+          balVal = Number(s.netBalanceValue);
+        } else if (s.balanceToReceiveValue !== undefined && !isNaN(Number(s.balanceToReceiveValue)) && Number(s.balanceToReceiveValue) > 0) {
+          balVal = Number(s.balanceToReceiveValue);
+        } else {
+          const rate = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+          const tonnage = s.unloadedTonnage || s.shipmentTonnage || cargo?.totalVolume || 0;
+          const totalFreight = s.driverFreightValue || (rate * tonnage);
+          const toll = s.tollValue || 0;
+          const advPct = (s.advancePercentage !== undefined && !isNaN(Number(s.advancePercentage)))
+            ? Number(s.advancePercentage)
+            : 70;
+
+          if (advPct < 100) {
+            const baseFreight = Math.max(0, totalFreight - toll);
+            balVal = Number((baseFreight * ((100 - advPct) / 100)).toFixed(2));
+          }
+        }
+
+        totalValue += balVal;
+        count++;
+
+        const key = normalizeKey(s.status);
+        if (key && statusBreakdown[key]) {
+          statusBreakdown[key].count++;
+          statusBreakdown[key].total += balVal;
+        }
+      }
+    });
+
+    return {
+      isFinancialBoard,
+      totalValue,
+      count,
+      statusBreakdown,
+      formattedTotal: totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    };
+  }, [title, columns, shipments, filteredShipments, searchTerm, selectedEmbarcadorId, slaFilter, cargoMap, BALANCE_PREVISION_STATUSES, normalizeStatusStr]);
+
   // Group and sort Shipments by Column (Standardized: most delayed on top)
   const shipmentsByColumn = useMemo(() => {
     const grouped: Record<string, Shipment[]> = {};
@@ -487,8 +682,117 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
             </div>
           </div>
 
-          {/* Quick SLA KPI Pills & TV Mode Toggle */}
+          {/* Quick SLA KPI Pills, Advance Prevision KPI & TV Mode Toggle */}
           <div className="flex flex-wrap items-center gap-2">
+            
+            {/* Previsão Total de Adiantamentos a Fazer (Etapas: Ag. Cadastro até Ag. Adiantamento) */}
+            {advancePrevisionStats.isFinancialBoard && (
+              <div 
+                className="relative group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100 hover:from-emerald-100 hover:to-teal-100 dark:from-emerald-950/70 dark:via-teal-950/60 dark:to-emerald-900/60 dark:hover:from-emerald-900/80 dark:hover:to-teal-900/80 border border-emerald-300/80 dark:border-emerald-700/80 shadow-xs cursor-pointer transition-all hover:scale-[1.02]"
+                title="Passe o mouse para ver o detalhamento por etapa"
+              >
+                <div className="p-1 rounded-lg bg-emerald-600 text-white shadow-xs">
+                  <Wallet className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider">
+                      Prev. Adiantamentos a Fazer
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-emerald-200/80 dark:bg-emerald-800 text-emerald-950 dark:text-emerald-100 text-[10px] font-extrabold font-mono">
+                      {advancePrevisionStats.count} emb.
+                    </span>
+                  </div>
+                  <div className="text-xs sm:text-sm font-extrabold text-emerald-700 dark:text-emerald-300 font-mono leading-tight">
+                    {advancePrevisionStats.formattedTotal}
+                  </div>
+                </div>
+
+                {/* Popover / Tooltip com Detalhamento por Etapa (Ag. Cadastro -> Ag. Adiantamento) */}
+                <div className="hidden group-hover:block absolute top-full right-0 sm:left-0 sm:right-auto mt-2 z-50 w-72 p-3 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 text-xs animate-in fade-in zoom-in-95 duration-150">
+                  <div className="font-bold text-gray-900 dark:text-white pb-2 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                    <span className="flex items-center gap-1.5">
+                      <Wallet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Detalhamento por Etapa
+                    </span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                      {advancePrevisionStats.formattedTotal}
+                    </span>
+                  </div>
+                  <div className="mt-2.5 space-y-1.5">
+                    {Object.entries(advancePrevisionStats.statusBreakdown).map(([stName, data]) => (
+                      <div key={stName} className="flex justify-between items-center text-[11px] py-0.5 border-b border-gray-50 dark:border-gray-700/40 last:border-0">
+                        <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span className="font-medium">{stName}:</span>
+                        </span>
+                        <span className="font-mono font-bold text-gray-800 dark:text-gray-200">
+                          {data.count} <span className="text-[10px] font-normal text-gray-500">({data.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-700 text-[10px] text-gray-400 text-center font-medium">
+                    Contabiliza embarques entre <strong className="text-gray-600 dark:text-gray-300">Ag. Cadastro</strong> e <strong className="text-gray-600 dark:text-gray-300">Ag. Adiantamento</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Previsão Total de Saldos a Pagar (Etapas: Ag. Descarga até Ag. Saldo) */}
+            {balancePrevisionStats.isFinancialBoard && (
+              <div 
+                className="relative group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 hover:from-amber-100 hover:to-orange-100 dark:from-amber-950/70 dark:via-orange-950/60 dark:to-amber-900/60 dark:hover:from-amber-900/80 dark:hover:to-orange-900/80 border border-amber-300/80 dark:border-amber-700/80 shadow-xs cursor-pointer transition-all hover:scale-[1.02]"
+                title="Passe o mouse para ver o detalhamento por etapa"
+              >
+                <div className="p-1 rounded-lg bg-amber-600 text-white shadow-xs">
+                  <Banknote className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider">
+                      Prev. Saldos a Pagar
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-200/80 dark:bg-amber-800 text-amber-950 dark:text-amber-100 text-[10px] font-extrabold font-mono">
+                      {balancePrevisionStats.count} emb.
+                    </span>
+                  </div>
+                  <div className="text-xs sm:text-sm font-extrabold text-amber-700 dark:text-amber-300 font-mono leading-tight">
+                    {balancePrevisionStats.formattedTotal}
+                  </div>
+                </div>
+
+                {/* Popover / Tooltip com Detalhamento por Etapa (Ag. Descarga -> Ag. Saldo) */}
+                <div className="hidden group-hover:block absolute top-full right-0 sm:left-0 sm:right-auto mt-2 z-50 w-72 p-3 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 text-xs animate-in fade-in zoom-in-95 duration-150">
+                  <div className="font-bold text-gray-900 dark:text-white pb-2 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                    <span className="flex items-center gap-1.5">
+                      <Banknote className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      Detalhamento por Etapa
+                    </span>
+                    <span className="text-amber-600 dark:text-amber-400 font-mono font-bold">
+                      {balancePrevisionStats.formattedTotal}
+                    </span>
+                  </div>
+                  <div className="mt-2.5 space-y-1.5">
+                    {Object.entries(balancePrevisionStats.statusBreakdown).map(([stName, data]) => (
+                      <div key={stName} className="flex justify-between items-center text-[11px] py-0.5 border-b border-gray-50 dark:border-gray-700/40 last:border-0">
+                        <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                          <span className="font-medium">{stName}:</span>
+                        </span>
+                        <span className="font-mono font-bold text-gray-800 dark:text-gray-200">
+                          {data.count} <span className="text-[10px] font-normal text-gray-500">({data.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-700 text-[10px] text-gray-400 text-center font-medium">
+                    Contabiliza embarques entre <strong className="text-gray-600 dark:text-gray-300">Ag. Descarga</strong> e <strong className="text-gray-600 dark:text-gray-300">Ag. Saldo</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!isTvMode ? (
               <>
                 <button

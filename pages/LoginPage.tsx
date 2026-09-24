@@ -6,7 +6,8 @@ import { formatCPF, formatPhone } from '../utils/formatters';
 import { 
   UserPlus, ArrowLeft, Eye, EyeOff, CheckCircle2, 
   ShieldCheck, Activity, Clock, Smartphone, Mail, Lock, 
-  Check, Sparkles, Building2, Truck, HelpCircle, Download
+  Check, Sparkles, Building2, Truck, HelpCircle, Download,
+  X, Share2, Monitor, ArrowRight, ExternalLink
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -81,17 +82,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
     return val.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
   };
 
-  const handlePwaInstall = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const [showAppInstallModal, setShowAppInstallModal] = useState(false);
+
+  const handlePwaInstall = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
     if (deferredPrompt) {
       deferredPrompt.prompt();
       deferredPrompt.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
           setDeferredPrompt(null);
+          setShowAppInstallModal(false);
         }
       });
     } else {
-      alert("Para instalar o aplicativo no seu dispositivo:\n\n• No Android (Chrome): Toque no menu (3 pontinhos) e selecione 'Adicionar à tela inicial'.\n• No iPhone (Safari): Toque no ícone Compartilhar e selecione 'Adicionar à Tela de Início'.\n• No Computador (Chrome/Edge): Clique no ícone de instalação na barra de endereço.");
+      setShowAppInstallModal(true);
     }
   };
 
@@ -1019,23 +1023,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
               )}
 
               {/* Card Footer Links */}
-              <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-center gap-4 text-xs text-slate-400">
+              <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between gap-3 text-xs text-slate-400">
                 <button
                   type="button"
                   onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@transcunha.com.br.")}
-                  className="hover:text-slate-200 transition-colors flex items-center gap-1"
+                  className="hover:text-slate-200 transition-colors flex items-center gap-1.5"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
                   <span>Precisa de ajuda?</span>
                 </button>
-                <span className="text-slate-700">•</span>
+
                 <button
                   type="button"
                   onClick={handlePwaInstall}
-                  className="hover:text-sky-400 transition-colors flex items-center gap-1"
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-sky-500/20 via-blue-600/20 to-indigo-600/25 hover:from-sky-500/30 hover:via-blue-600/30 hover:to-indigo-600/35 border border-sky-400/40 text-sky-300 hover:text-white font-bold text-xs transition-all shadow-md shadow-sky-950/60 group"
+                  title="Baixar e instalar o aplicativo TransCunha"
                 >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Instalar PWA</span>
+                  <Download className="w-3.5 h-3.5 text-sky-400 group-hover:translate-y-0.5 transition-transform" />
+                  <span>Baixar App</span>
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-400"></span>
+                  </span>
                 </button>
               </div>
 
@@ -1102,14 +1111,39 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                 </div>
               </div>
 
-              {/* Card 4: App para Motoristas */}
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-start gap-3.5 backdrop-blur-md group hover:-translate-y-0.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 transition-colors">
-                  <Smartphone className="w-5 h-5 text-purple-400" />
+              {/* Card 4: App para Celular / Motoristas (Super Destacado) */}
+              <div 
+                onClick={handlePwaInstall}
+                className="relative p-4 rounded-2xl bg-gradient-to-br from-indigo-950/80 via-slate-900/90 to-purple-950/60 border-2 border-indigo-500/50 hover:border-indigo-400 transition-all flex flex-col justify-between gap-3 backdrop-blur-md group hover:-translate-y-1 shadow-lg shadow-indigo-950/50 cursor-pointer overflow-hidden"
+              >
+                {/* Glow Effect */}
+                <div className="absolute -top-10 -right-10 w-28 h-28 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none group-hover:bg-indigo-500/30 transition-all"></div>
+
+                <div className="flex items-start gap-3.5 relative z-10">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border border-indigo-400/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-inner">
+                    <Smartphone className="w-5 h-5 text-indigo-300" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <h2 className="text-sm font-extrabold text-white group-hover:text-indigo-200 transition-colors">App no Celular</h2>
+                      <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500/30 to-purple-500/30 border border-indigo-400/40 text-[10px] font-black tracking-wide text-indigo-200 uppercase">
+                        Disponível
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Instale o app oficial direto no seu celular para acompanhar fretes, status e canhotos.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white mb-0.5">App para Motoristas</h2>
-                  <p className="text-xs text-slate-400 leading-relaxed">Acesso via PWA sem complicação diretamente do celular.</p>
+
+                {/* Direct Action Button Inside Card */}
+                <div className="pt-1 flex items-center justify-between border-t border-indigo-500/20 text-xs relative z-10">
+                  <span className="text-[11px] font-semibold text-indigo-300/80">Sem ocupar memória da loja</span>
+                  <div className="inline-flex items-center gap-1.5 font-black text-xs text-indigo-300 group-hover:text-white group-hover:translate-x-0.5 transition-all">
+                    <Download className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Baixar App</span>
+                    <ArrowRight className="w-3 h-3 text-indigo-400" />
+                  </div>
                 </div>
               </div>
 
@@ -1142,6 +1176,122 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         </div>
 
       </div>
+
+      {/* ========================================================= */}
+      {/* MODAL DE INSTRUÇÕES PARA BAIXAR O APP                    */}
+      {/* ========================================================= */}
+      {showAppInstallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl overflow-hidden text-left text-white">
+            
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-blue-900/60 via-indigo-900/40 to-slate-900 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 p-0.5 shadow-lg shadow-indigo-950/50 shrink-0 flex items-center justify-center">
+                  <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                    <Smartphone className="w-6 h-6 text-sky-400" />
+                  </div>
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-wider mb-1">
+                    <Sparkles className="w-3 h-3 text-indigo-400" />
+                    App Oficial
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-white leading-tight">
+                    Baixar App TransCunha
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAppInstallModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                Instale o aplicativo direto no seu celular ou computador para ter acesso instantâneo, com notificações e visual otimizado:
+              </p>
+
+              {/* Botão de instalação direta se disponível */}
+              {deferredPrompt && (
+                <button
+                  type="button"
+                  onClick={() => handlePwaInstall()}
+                  className="w-full py-3 px-4 rounded-xl font-black text-sm text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>CLIQUE AQUI PARA INSTALAR AGORA</span>
+                </button>
+              )}
+
+              {/* Guias por Plataforma */}
+              <div className="space-y-3 pt-1">
+                {/* Android */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                      <span>No Android (Chrome / Edge)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Toque no menu <span className="font-bold text-slate-200">⋮ (3 pontinhos)</span> no topo do navegador e selecione <span className="text-emerald-300 font-bold">"Instalar aplicativo"</span> ou <span className="text-emerald-300 font-bold">"Adicionar à tela inicial"</span>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* iPhone / iPad */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Share2 className="w-4 h-4 text-sky-400" />
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                      <span>No iPhone / iPad (Safari)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Toque no ícone de <span className="font-bold text-slate-200">Compartilhar</span> (quadrado com seta para cima) na barra inferior e escolha <span className="text-sky-300 font-bold">"Adicionar à Tela de Início"</span>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Computador */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                    <Monitor className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                      <span>No Computador (Chrome / Edge)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Clique no ícone de <span className="text-purple-300 font-bold">instalar aplicativo ⊕</span> localizado no canto direito da barra de endereço do navegador.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAppInstallModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-colors"
+              >
+                Entendi
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Footer Bottom Bar */}
       <div className="relative z-10 w-full border-t border-slate-800/80 bg-[#060a14]/90 py-4 px-6 text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
