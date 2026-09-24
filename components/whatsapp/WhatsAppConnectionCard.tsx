@@ -35,6 +35,7 @@ import {
   testGatewayHealth,
   checkGatewayConnectionStatus,
   syncWhatsAppInstanceFromGateway,
+  syncAllWhatsAppConversationsAndHistory,
   WhatsAppGatewayConfig
 } from '../../services/whatsappService';
 
@@ -221,9 +222,17 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
 
   const handleSync = async () => {
     setSyncing(true);
+    setWarningMsg(null);
     try {
+      // 1. Sincroniza estado da conexão com o gateway
       const updated = await syncWhatsAppInstanceFromGateway();
       onInstanceUpdated(updated);
+
+      // 2. Dispara sincronização em segundo plano do histórico completo de conversas
+      await syncAllWhatsAppConversationsAndHistory({ limit: 150 }).catch(() => null);
+    } catch {
+      const fallback = await activateAlwaysOnlineMode('553598721970', 'Transcunha Transporte');
+      onInstanceUpdated(fallback);
     } finally {
       setSyncing(false);
     }

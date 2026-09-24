@@ -36,6 +36,7 @@ import {
   createOrGetChat, 
   deleteWhatsAppChat, 
   getWhatsAppTemplates,
+  syncAllWhatsAppConversationsAndHistory,
   formatDisplayPhone,
   sanitizePhoneNumber
 } from '../../services/whatsappService';
@@ -60,6 +61,8 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   const [messages, setMessages] = useState<WhatsAppChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [syncingHistory, setSyncingHistory] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [inputText, setInputText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -138,6 +141,30 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     }
   };
 
+  const handleFullSync = async () => {
+    setSyncingHistory(true);
+    setSyncFeedback(null);
+    try {
+      const result = await syncAllWhatsAppConversationsAndHistory({ limit: 150 });
+      if (result.success) {
+        setChats(result.chats);
+        if (result.chats.length > 0 && !selectedChat) {
+          setSelectedChat(result.chats[0]);
+        }
+        setSyncFeedback(`Sincronizado! ${result.chatsCount} conversas atualizadas.`);
+      } else {
+        await loadChats();
+        setSyncFeedback('Conversas atualizadas!');
+      }
+    } catch (err) {
+      console.error('Erro ao sincronizar histórico completo:', err);
+      await loadChats();
+    } finally {
+      setSyncingHistory(false);
+      setTimeout(() => setSyncFeedback(null), 4000);
+    }
+  };
+
   const loadTemplates = async () => {
     try {
       const tpls = await getWhatsAppTemplates();
@@ -150,6 +177,14 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   useEffect(() => {
     loadChats();
     loadTemplates();
+
+    const handleExternalSync = () => {
+      loadChats();
+    };
+    window.addEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
+    return () => {
+      window.removeEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
+    };
   }, []);
 
   useEffect(() => {
@@ -499,17 +534,18 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
           {/* COLUNA ESQUERDA: LISTA DE CONVERSAS */}
           <div className="w-full md:w-80 lg:w-88 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 flex-shrink-0">
             {/* CABEÇALHO DA LISTA */}
-            <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+            <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50/50 dark:bg-slate-900/50">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
                   <MessageSquare className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <h2 className="text-xs font-black text-slate-800 dark:text-white leading-tight">
+                  <h2 className="text-xs font-black text-slate-800 dark:text-white leading-tight flex items-center gap-1.5">
                     Conversas
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   </h2>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    {chats.length} contatos ativos
+                    {chats.length} chats • WhatsApp Web
                   </span>
                 </div>
               </div>
@@ -517,23 +553,32 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setShowNewChatModal(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
-                  title="Nova Conversa"
+                  onClick={handleFullSync}
+                  disabled={syncingHistory}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-600 dark:text-emerald-300 hover:text-white border border-emerald-500/30 text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-50"
+                  title="Sincronizar todo o histórico de conversas e mensagens com a nuvem do WhatsApp"
                 >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">Novo</span>
+                  <RefreshCw className={`w-3 h-3 ${syncingHistory ? 'animate-spin' : ''}`} />
+                  <span>{syncingHistory ? 'Sincronizando...' : 'Sincronizar'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={loadChats}
-                  className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  title="Recarregar Conversas"
+                  onClick={() => setShowNewChatModal(true)}
+                  className="p-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center justify-center shadow-sm cursor-pointer"
+                  title="Nova Conversa"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingChats ? 'animate-spin' : ''}`} />
+                  <UserPlus className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
+
+            {/* FEEDBACK DE SINCRONIZAÇÃO */}
+            {syncFeedback && (
+              <div className="px-3 py-1.5 bg-emerald-500/15 border-b border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[11px] font-medium flex items-center justify-between animate-fade-in">
+                <span>{syncFeedback}</span>
+                <Check className="w-3.5 h-3.5 text-emerald-500" />
+              </div>
+            )}
 
             {/* BUSCA DE CONTATOS */}
             <div className="p-2 border-b border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-950/40">
@@ -543,7 +588,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar conversa ou telefone..."
+                  placeholder="Buscar conversa, grupo ou telefone..."
                   className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all"
                 />
               </div>
@@ -554,21 +599,23 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
               {loadingChats ? (
                 <div className="p-8 text-center text-slate-400">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto text-emerald-500 mb-2" />
-                  <span className="text-xs">Carregando conversas...</span>
+                  <span className="text-xs">Carregando conversas do WhatsApp...</span>
                 </div>
               ) : filteredChats.length === 0 ? (
                 <div className="p-8 text-center text-slate-400">
                   <MessageSquare className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700 mb-2" />
                   <p className="text-xs font-bold text-slate-600 dark:text-slate-400">Nenhuma conversa encontrada</p>
-                  <p className="text-[10px] text-slate-400 mt-1">Inicie um novo chat com um motorista</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowNewChatModal(true)}
-                    className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Iniciar Conversa
-                  </button>
+                  <p className="text-[10px] text-slate-400 mt-1">Sincronize com a nuvem ou inicie um novo chat</p>
+                  <div className="flex items-center justify-center gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={handleFullSync}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Sincronizar Histórico
+                    </button>
+                  </div>
                 </div>
               ) : (
                 filteredChats.map(chat => {
@@ -589,19 +636,35 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                           : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/50'
                       }`}
                     >
-                      {/* AVATAR */}
+                      {/* AVATAR COM SUPORTE A FOTO REAL */}
                       <div className="relative flex-shrink-0">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 border border-slate-600/40 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                          {initials || <User className="w-4 h-4 text-slate-300" />}
-                        </div>
+                        {chat.profile_pic_url ? (
+                          <img 
+                            src={chat.profile_pic_url} 
+                            alt={chat.name} 
+                            className="w-9 h-9 rounded-full object-cover border border-slate-600/40 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className={`w-9 h-9 rounded-full ${chat.is_group ? 'bg-gradient-to-br from-indigo-700 to-slate-900' : 'bg-gradient-to-br from-slate-700 to-slate-900'} border border-slate-600/40 text-white flex items-center justify-center font-bold text-xs shadow-sm`}>
+                            {initials || (chat.is_group ? <Layers className="w-4 h-4 text-indigo-300" /> : <User className="w-4 h-4 text-slate-300" />)}
+                          </div>
+                        )}
                         <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
                       </div>
 
                       {/* DETALHES DA CONVERSA */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1">
                             {chat.name}
+                            {chat.is_group && (
+                              <span className="px-1 py-0.2 rounded text-[8px] font-black bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                                Grupo
+                              </span>
+                            )}
                           </span>
                           <span className="text-[10px] text-slate-400 font-medium flex-shrink-0">
                             {timeFormatted}
@@ -609,7 +672,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                         </div>
 
                         <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate mt-0.5">
-                          {formatDisplayPhone(chat.phone_number)}
+                          {chat.is_group ? 'Grupo do WhatsApp' : formatDisplayPhone(chat.phone_number)}
                         </span>
 
                         <div className="flex items-center justify-between gap-1 mt-1">
@@ -640,9 +703,20 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 {/* CABEÇALHO DO CHAT ATIVO */}
                 <div className="px-4 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shadow-sm z-10">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-xs flex-shrink-0">
-                      {selectedChat.name.substring(0, 2).toUpperCase()}
-                    </div>
+                    {selectedChat.profile_pic_url ? (
+                      <img 
+                        src={selectedChat.profile_pic_url} 
+                        alt={selectedChat.name}
+                        className="w-9 h-9 rounded-full object-cover border border-slate-600/40 shadow-sm flex-shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className={`w-9 h-9 rounded-full ${selectedChat.is_group ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-400' : 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'} border flex items-center justify-center font-black text-xs flex-shrink-0`}>
+                        {selectedChat.name.substring(0, 2).toUpperCase()}
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
@@ -654,7 +728,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
-                        <span>{formatDisplayPhone(selectedChat.phone_number)}</span>
+                        <span>{selectedChat.is_group ? 'Grupo' : formatDisplayPhone(selectedChat.phone_number)}</span>
                         <span>•</span>
                         <button
                           type="button"

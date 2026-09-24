@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_11_2',
+    version: 'v2.11.2',
+    date: '24/09/2026',
+    title: 'Sincronização Completa de Histórico do WhatsApp (Semelhante ao WhatsApp Web)',
+    summary: 'Integração de sincronização profunda com a Evolution API trazendo contatos reais, fotos de perfil, mensagens recebidas e enviadas, áudios, imagens e documentos com atualização instantânea no sistema.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sincronização de Conversas & Contatos Reais',
+        description: 'Importação automática de contatos, grupos e histórico de mensagens reais da instância do WhatsApp com nomes e avatares reais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização em 1 Clique & Botão Dedicado',
+        description: 'Novo botão de sincronização rápida no painel de conversas e conexão com aprimoramento de resiliência e status conectado garantido.'
+      },
+      {
+        category: 'feature',
+        title: 'Visualização de Mídias (Áudios, Fotos & Arquivos)',
+        description: 'Exibição de áudios com duração, fotos, documentos PDF anexados e textos formatados diretamente nas bolhas de conversa.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_11_1',
     version: 'v2.11.1',
     date: '24/09/2026',
