@@ -37,6 +37,8 @@ import {
   deleteWhatsAppChat, 
   getWhatsAppTemplates,
   syncAllWhatsAppConversationsAndHistory,
+  clearWhatsAppHistoryData,
+  getWhatsAppInstance,
   formatDisplayPhone,
   sanitizePhoneNumber
 } from '../../services/whatsappService';
@@ -120,6 +122,14 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   const loadChats = async () => {
     setLoadingChats(true);
     try {
+      const instance = await getWhatsAppInstance();
+      if (instance.status === 'disconnected') {
+        setChats([]);
+        setSelectedChat(null);
+        setMessages([]);
+        return;
+      }
+
       const chatList = await getWhatsAppChats();
       setChats(chatList);
 
@@ -165,6 +175,18 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     }
   };
 
+  const handleClearAllHistory = () => {
+    if (chats.length === 0) return;
+    if (window.confirm('Deseja realmente excluir todo o histórico de conversas da tela?')) {
+      clearWhatsAppHistoryData();
+      setChats([]);
+      setSelectedChat(null);
+      setMessages([]);
+      setSyncFeedback('Histórico de conversas excluído da tela!');
+      setTimeout(() => setSyncFeedback(null), 3000);
+    }
+  };
+
   const loadTemplates = async () => {
     try {
       const tpls = await getWhatsAppTemplates();
@@ -191,9 +213,21 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
     window.addEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
     window.addEventListener('transcunha:whatsapp_disconnected', handleDisconnected);
+
+    // Verificação periódica do status da conexão
+    const checkInterval = setInterval(async () => {
+      try {
+        const inst = await getWhatsAppInstance();
+        if (inst.status === 'disconnected') {
+          handleDisconnected();
+        }
+      } catch { /* ignore */ }
+    }, 4000);
+
     return () => {
       window.removeEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
       window.removeEventListener('transcunha:whatsapp_disconnected', handleDisconnected);
+      clearInterval(checkInterval);
     };
   }, []);
 
@@ -570,6 +604,15 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 >
                   <RefreshCw className={`w-3 h-3 ${syncingHistory ? 'animate-spin' : ''}`} />
                   <span>{syncingHistory ? 'Sincronizando...' : 'Sincronizar'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAllHistory}
+                  disabled={chats.length === 0}
+                  className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800 transition-all flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Excluir / Limpar todo o histórico de conversas da tela"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
