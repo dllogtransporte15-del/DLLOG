@@ -155,8 +155,17 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     setSyncingHistory(true);
     setSyncFeedback(null);
     try {
+      const instance = await getWhatsAppInstance();
+      if (instance.status !== 'connected' || !instance.phone_number) {
+        setChats([]);
+        setSelectedChat(null);
+        setMessages([]);
+        setSyncFeedback('WhatsApp Desconectado! Conecte um número via QR Code para sincronizar.');
+        return;
+      }
+
       const result = await syncAllWhatsAppConversationsAndHistory({ limit: 150 });
-      if (result.success) {
+      if (result.success && result.chatsCount > 0) {
         setChats(result.chats);
         if (result.chats.length > 0 && !selectedChat) {
           setSelectedChat(result.chats[0]);

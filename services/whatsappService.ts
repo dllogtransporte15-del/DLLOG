@@ -1300,6 +1300,17 @@ export async function syncAllWhatsAppConversationsAndHistory(options: { limit?: 
   messagesCount: number;
   chats: WhatsAppChat[];
 }> {
+  const currentInstance = await getWhatsAppInstance();
+  // Se a instância NÃO estiver explicitamente conectada, não busca nem restaura nenhum histórico
+  if (currentInstance.status !== 'connected' || !currentInstance.phone_number) {
+    return {
+      success: false,
+      chatsCount: 0,
+      messagesCount: 0,
+      chats: []
+    };
+  }
+
   const cfg = getGatewayConfig();
   const limit = options.limit || 150;
   const chatMap = new Map<string, WhatsAppChat>();
@@ -1540,6 +1551,12 @@ export async function getWhatsAppChats(): Promise<WhatsAppChat[]> {
  * mensagens enfileiradas e histórico local.
  */
 export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise<WhatsAppChatMessage[]> {
+  const currentInstance = await getWhatsAppInstance();
+  // Se o WhatsApp estiver desconectado, não retorna mensagens
+  if (currentInstance.status !== 'connected') {
+    return [];
+  }
+
   const cleanPhone = sanitizePhoneNumber(remoteJidOrPhone.replace(/@.+$/, '')) || remoteJidOrPhone;
   const cfg = getGatewayConfig();
   const messagesMap = new Map<string, WhatsAppChatMessage>();

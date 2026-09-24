@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_11_4',
+    version: 'v2.11.4',
+    date: '24/09/2026',
+    title: 'Botão de Exclusão de Histórico & Trava Rigorosa de Desconexão',
+    summary: 'Botão dedicado na barra de conversas para limpar o histórico da tela com 1 clique e bloqueio rigoroso que impede o retorno de conversas enquanto o WhatsApp estiver desconectado.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Botão Excluir Histórico da Tela',
+        description: 'Ícone de lixeira no cabeçalho da lista de conversas permitindo apagar instantaneamente todas as mensagens e conversas exibidas.'
+      },
+      {
+        category: 'security',
+        title: 'Trava de Sincronização Desconectada',
+        description: 'Ao clicar em "Sincronizar" com o WhatsApp desconectado, o sistema bloqueia a requisição e exige conexão ativa para restaurar qualquer dado.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_11_3',
     version: 'v2.11.3',
     date: '24/09/2026',
