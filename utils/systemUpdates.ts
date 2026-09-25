@@ -24,18 +24,23 @@ export const SYSTEM_RELEASES: SystemRelease[] = [
     id: 'rel_2026_09_24_v2_11_5',
     version: 'v2.11.5',
     date: '24/09/2026',
-    title: 'Bloqueio do Botão de Sincronizar Conversas sem WhatsApp Conectado',
-    summary: 'O botão de sincronização de conversas agora fica completamente desabilitado e bloqueado quando não há nenhum aparelho ou número de WhatsApp conectado.',
+    title: 'Bloqueio de Sincronização Desconectada & Conexão QR Code Multi-Máquinas',
+    summary: 'O botão de sincronização de conversas foi protegido para exigir conexão ativa e o mecanismo de geração do QR Code foi aprimorado com tentativas automáticas para permitir que qualquer máquina/usuário pareie o WhatsApp na nuvem.',
     items: [
+      {
+        category: 'feature',
+        title: 'Geração Resiliente de QR Code Multi-Dispositivos',
+        description: 'Implementado loop de polling e retry automático na comunicação com a Evolution API / Railway, permitindo que outros usuários conectem e leiam o QR Code sem erros de timeout.'
+      },
       {
         category: 'security',
         title: 'Bloqueio Visual e Funcional do Sincronizar',
-        description: 'O botão "Sincronizar" no painel de conversas passa a exibir estado desabilitado (cursor bloqueado, opacidade reduzida e tooltip explicativo) sempre que a sessão estiver desconectada.'
+        description: 'O botão "Sincronizar" no painel de conversas passa a exibir estado desabilitado sempre que a sessão estiver desconectada.'
       },
       {
         category: 'improvement',
-        title: 'Indicador em Tempo Real de Conexão no Chat',
-        description: 'Status do cabeçalho atualizado em tempo real para exibir "Desconectado • Sem número", evitando disparos de requisições desnecessárias à nuvem.'
+        title: 'Sincronização em Tempo Real no Supabase',
+        description: 'O QR Code e o estado de conexão são sincronizados em nuvem entre todos os terminais conectados.'
       }
     ]
   },
