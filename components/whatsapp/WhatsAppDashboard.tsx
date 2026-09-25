@@ -181,7 +181,7 @@ export const WhatsAppDashboard: React.FC<WhatsAppDashboardProps> = ({ currentUse
           }`}
         >
           <MessageSquare className="w-4 h-4" />
-          <span>Conversas & Chat ao Vivo</span>
+          <span>Chat</span>
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         </button>
 

@@ -5,7 +5,7 @@ export type WhatsAppConnectionStatus =
   | 'connected' 
   | 'banned';
 
-export type WhatsAppMessageType = 'text' | 'image' | 'document' | 'audio' | 'video';
+export type WhatsAppMessageType = 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker';
 
 export type WhatsAppQueueStatus = 
   | 'pending' 
@@ -121,6 +121,8 @@ export interface WhatsAppChatMessage {
   media_url?: string;
   media_type?: WhatsAppMessageType;
   media_filename?: string;
+  media_duration?: number;
+  media_size?: string;
   timestamp: string;
   status: WhatsAppQueueStatus;
   sender_name?: string;

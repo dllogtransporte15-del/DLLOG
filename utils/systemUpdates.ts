@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_24_v2_12_0',
+    version: 'v2.12.0',
+    date: '24/09/2026',
+    title: 'Novo Módulo "Chat" com Player de Áudio, Visualizador de Fotos/Figurinhas e Documentos',
+    summary: 'A ferramenta de atendimento foi renomeada para "Chat" e agora conta com suporte nativo para ouvir mensagens de áudio, abrir documentos/arquivos e visualizar imagens e figurinhas com lightbox interativo.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Player de Áudio Integrado',
+        description: 'Reprodução de áudios e mensagens de voz do WhatsApp com controle de play/pause, onda de frequência animada, contador de tempo e seletor de velocidade (1x, 1.5x e 2x).'
+      },
+      {
+        category: 'feature',
+        title: 'Visualizador de Imagens e Figurinhas (Lightbox)',
+        description: 'Exibição de fotos e figurinhas com modal de tela cheia, zoom in/out, rotação e download direto.'
+      },
+      {
+        category: 'feature',
+        title: 'Abertura e Download de Documentos',
+        description: 'Cards inteligentes para arquivos anexados (PDF, Word, Excel, ZIP) com pré-visualização e download rápido.'
+      },
+      {
+        category: 'improvement',
+        title: 'Renomeação para "Chat"',
+        description: 'Interface e menus atualizados para a nomenclatura padrão "Chat".'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_11_5',
     version: 'v2.11.5',
     date: '24/09/2026',

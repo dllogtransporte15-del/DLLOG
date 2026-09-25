@@ -26,7 +26,20 @@ import {
   Move,
   GripHorizontal,
   Layers,
-  Minus
+  Minus,
+  Play,
+  Pause,
+  Volume2,
+  Mic,
+  Download,
+  Eye,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  FileSpreadsheet,
+  FileArchive,
+  File as FileGenericIcon,
+  Smile
 } from 'lucide-react';
 import type { WhatsAppChat, WhatsAppChatMessage, WhatsAppTemplate } from '../../types/whatsapp';
 import { 
@@ -42,6 +55,349 @@ import {
   formatDisplayPhone,
   sanitizePhoneNumber
 } from '../../services/whatsappService';
+
+// =========================================================================
+// SUB-COMPONENTE: PLAYER DE ÁUDIO DO CHAT
+// =========================================================================
+const ChatAudioPlayer: React.FC<{
+  mediaUrl?: string;
+  duration?: number;
+  isMe: boolean;
+}> = ({ mediaUrl, duration = 0, isMe }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [totalDuration, setTotalDuration] = useState(duration || 15);
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const intervalRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (mediaUrl) {
+      const audio = new Audio(mediaUrl);
+      audio.onloadedmetadata = () => {
+        if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+          setTotalDuration(Math.round(audio.duration));
+        }
+      };
+      audio.ontimeupdate = () => {
+        setCurrentTime(audio.currentTime);
+      };
+      audio.onended = () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+      };
+      audioRef.current = audio;
+    }
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [mediaUrl]);
+
+  const togglePlay = () => {
+    if (audioRef.current && mediaUrl) {
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        audioRef.current.playbackRate = playbackRate;
+        audioRef.current.play().then(() => {
+          setIsPlaying(true);
+        }).catch(() => {
+          simulateToneFallback();
+        });
+      }
+    } else {
+      simulateToneFallback();
+    }
+  };
+
+  const simulateToneFallback = () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    } else {
+      setIsPlaying(true);
+      const targetDuration = totalDuration || 15;
+      intervalRef.current = setInterval(() => {
+        setCurrentTime(prev => {
+          if (prev >= targetDuration) {
+            clearInterval(intervalRef.current);
+            setIsPlaying(false);
+            return 0;
+          }
+          return prev + 0.5 * playbackRate;
+        });
+      }, 500);
+    }
+  };
+
+  const handleRateChange = () => {
+    const rates = [1, 1.5, 2];
+    const nextRate = rates[(rates.indexOf(playbackRate) + 1) % rates.length];
+    setPlaybackRate(nextRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextRate;
+    }
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const progressPercent = totalDuration > 0 ? Math.min(100, (currentTime / totalDuration) * 100) : 0;
+
+  return (
+    <div className={`p-2.5 rounded-2xl flex flex-col gap-1.5 min-w-[240px] sm:min-w-[270px] ${
+      isMe 
+        ? 'bg-emerald-950/60 border border-emerald-500/30 text-white' 
+        : 'bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100'
+    }`}>
+      <div className="flex items-center gap-3">
+        {/* BOTÃO PLAY / PAUSE */}
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="w-9 h-9 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-md transition-all active:scale-95 cursor-pointer flex-shrink-0"
+          title={isPlaying ? 'Pausar áudio' : 'Ouvir áudio'}
+        >
+          {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+        </button>
+
+        {/* BARRAS DE FREQUÊNCIA / PROGRESSO */}
+        <div className="flex-1 flex flex-col gap-1">
+          <div className="flex items-center gap-0.5 h-5 cursor-pointer">
+            {[35, 65, 25, 90, 60, 40, 80, 100, 70, 35, 75, 95, 50, 85, 30, 60, 90, 45, 70, 85].map((h, i) => {
+              const barProgress = (i / 20) * 100;
+              const isPassed = progressPercent >= barProgress;
+              return (
+                <div
+                  key={i}
+                  className={`flex-1 rounded-full transition-all duration-150 ${
+                    isPassed
+                      ? 'bg-emerald-400 h-full'
+                      : isMe
+                      ? 'bg-emerald-800/60'
+                      : 'bg-slate-300 dark:bg-slate-600'
+                  }`}
+                  style={{ height: `${h}%` }}
+                />
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between text-[10px] opacity-75 font-mono">
+            <span className="flex items-center gap-1">
+              <Mic className="w-2.5 h-2.5 text-emerald-400" />
+              {formatTime(currentTime)}
+            </span>
+            <span>{formatTime(totalDuration)}</span>
+          </div>
+        </div>
+
+        {/* VELOCIDADE (1x, 1.5x, 2x) */}
+        <button
+          type="button"
+          onClick={handleRateChange}
+          className="px-1.5 py-0.5 rounded-lg text-[10px] font-black bg-black/20 hover:bg-black/30 text-emerald-400 border border-emerald-500/20 cursor-pointer transition-colors"
+          title="Alterar velocidade de reprodução"
+        >
+          {playbackRate}x
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// =========================================================================
+// SUB-COMPONENTE: CARD DE DOCUMENTO DO CHAT
+// =========================================================================
+const ChatDocumentCard: React.FC<{
+  filename: string;
+  mediaUrl?: string;
+  size?: string;
+  isMe: boolean;
+  onPreview: (url: string, filename: string) => void;
+}> = ({ filename, mediaUrl, size, isMe, onPreview }) => {
+  const ext = (filename.split('.').pop() || 'file').toLowerCase();
+  
+  const getIconAndColor = () => {
+    if (ext === 'pdf') {
+      return { icon: <FileText className="w-5 h-5 text-rose-400" />, bg: 'bg-rose-500/20 border-rose-500/30' };
+    }
+    if (ext === 'doc' || ext === 'docx') {
+      return { icon: <FileText className="w-5 h-5 text-blue-400" />, bg: 'bg-blue-500/20 border-blue-500/30' };
+    }
+    if (ext === 'xls' || ext === 'xlsx' || ext === 'csv') {
+      return { icon: <FileSpreadsheet className="w-5 h-5 text-emerald-400" />, bg: 'bg-emerald-500/20 border-emerald-500/30' };
+    }
+    if (ext === 'zip' || ext === 'rar' || ext === '7z') {
+      return { icon: <FileArchive className="w-5 h-5 text-amber-400" />, bg: 'bg-amber-500/20 border-amber-500/30' };
+    }
+    return { icon: <FileGenericIcon className="w-5 h-5 text-slate-300" />, bg: 'bg-slate-500/20 border-slate-500/30' };
+  };
+
+  const { icon, bg } = getIconAndColor();
+
+  return (
+    <div className={`p-3 rounded-2xl flex items-center gap-3 border transition-all ${
+      isMe 
+        ? 'bg-emerald-950/60 border-emerald-500/30 text-white' 
+        : 'bg-slate-100 dark:bg-slate-800/90 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100'
+    }`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${bg}`}>
+        {icon}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <span className="text-xs font-bold block truncate" title={filename}>
+          {filename}
+        </span>
+        <span className="text-[10px] opacity-75 font-mono">
+          {ext.toUpperCase()} • {size || 'Documento'}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-1">
+        {mediaUrl && (
+          <>
+            <button
+              type="button"
+              onClick={() => onPreview(mediaUrl, filename)}
+              className="p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-colors cursor-pointer"
+              title="Visualizar documento"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+            <a
+              href={mediaUrl}
+              download={filename}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 rounded-lg bg-slate-700/40 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              title="Baixar arquivo"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </a>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// =========================================================================
+// SUB-COMPONENTE: MODAL LIGHTBOX PARA IMAGENS & FIGURINHAS
+// =========================================================================
+const ChatLightboxModal: React.FC<{
+  isOpen: boolean;
+  url: string;
+  filename?: string;
+  isSticker?: boolean;
+  onClose: () => void;
+}> = ({ isOpen, url, filename, isSticker, onClose }) => {
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      setZoom(1);
+      setRotation(0);
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !url) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col items-center justify-between p-4 animate-fade-in">
+      {/* BARRA SUPERIOR DO LIGHTBOX */}
+      <div className="w-full flex items-center justify-between text-white z-10 px-2 py-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-200 truncate max-w-xs">
+            {filename || (isSticker ? 'Figurinha WhatsApp' : 'Visualizador de Imagem')}
+          </span>
+          {isSticker && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+              Figurinha
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setZoom(prev => Math.min(3, prev + 0.25))}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+            title="Aumentar zoom"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(prev => Math.max(0.5, prev - 0.25))}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+            title="Diminuir zoom"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setRotation(prev => (prev + 90) % 360)}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+            title="Girar imagem"
+          >
+            <RotateCw className="w-4 h-4" />
+          </button>
+          <a
+            href={url}
+            download={filename || 'imagem_chat.png'}
+            className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
+            title="Baixar imagem original"
+          >
+            <Download className="w-4 h-4" />
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white transition-colors cursor-pointer"
+            title="Fechar (Esc)"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* ÁREA CENTRAL DE VISUALIZAÇÃO */}
+      <div 
+        className="flex-1 flex items-center justify-center overflow-hidden w-full max-h-[85vh] cursor-grab active:cursor-grabbing"
+        onClick={onClose}
+      >
+        <img
+          src={url}
+          alt={filename || 'Mídia'}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            transform: `scale(${zoom}) rotate(${rotation}deg)`,
+            transition: 'transform 0.2s ease-out'
+          }}
+          className={`max-w-full max-h-[80vh] object-contain select-none shadow-2xl ${
+            isSticker ? 'drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]' : 'rounded-2xl border border-slate-700'
+          }`}
+        />
+      </div>
+
+      {/* RODAPÉ DO LIGHTBOX */}
+      <div className="text-[11px] text-slate-400 pb-2">
+        Zoom: {Math.round(zoom * 100)}% • Rotação: {rotation}° • Clique fora para fechar
+      </div>
+    </div>
+  );
+};
 
 interface WhatsAppChatPanelProps {
   mode?: 'embedded' | 'modal' | 'floating';
@@ -114,6 +470,19 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
   const [isInstanceConnected, setIsInstanceConnected] = useState<boolean>(false);
   const [connectedPhoneNumber, setConnectedPhoneNumber] = useState<string | null>(null);
+  const [lightboxMedia, setLightboxMedia] = useState<{
+    url: string;
+    filename?: string;
+    isSticker?: boolean;
+  } | null>(null);
+
+  const handlePreviewDocument = (url: string, filename: string) => {
+    if (url.startsWith('data:image') || filename.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
+      setLightboxMedia({ url, filename, isSticker: false });
+    } else {
+      window.open(url, '_blank');
+    }
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -533,7 +902,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black tracking-tight text-white flex items-center gap-1.5">
-                  WhatsApp Transcunha
+                  Chat
                   <span 
                     className={`w-2 h-2 rounded-full ${isInstanceConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}
                     title={isInstanceConnected ? (connectedPhoneNumber ? `Conectado: ${formatDisplayPhone(connectedPhoneNumber)}` : 'Conectado') : 'Desconectado'}
@@ -541,7 +910,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 block -mt-0.5">
-                {selectedChat ? `Conversando com ${selectedChat.name}` : (isInstanceConnected ? 'Central de Mensagens e Atendimento' : 'Sem aparelho conectado')}
+                {selectedChat ? `Conversando com ${selectedChat.name}` : (isInstanceConnected ? 'Central de Atendimento & Mensagens' : 'Sem aparelho conectado')}
               </span>
             </div>
           </div>
@@ -924,34 +1293,101 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                               </span>
                             )}
 
-                            {msg.media_filename && (
-                              <div className="mb-2 p-2.5 rounded-xl bg-black/20 border border-white/10 flex items-center gap-2.5">
-                                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                                  <FileText className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <span className="text-xs font-bold block truncate">{msg.media_filename}</span>
-                                  <span className="text-[9px] text-slate-300">Documento Anexado</span>
-                                </div>
-                                {msg.media_url && (
-                                  <a
-                                    href={msg.media_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs"
-                                    title="Visualizar anexo"
+                            {/* 1. MENSAGEM DE FIGURINHA (STICKER) */}
+                            {msg.media_type === 'sticker' ? (
+                              <div className="flex flex-col items-start gap-1">
+                                {msg.media_url ? (
+                                  <div 
+                                    onClick={() => setLightboxMedia({ url: msg.media_url!, isSticker: true })}
+                                    className="p-1 rounded-2xl cursor-pointer hover:scale-105 transition-transform duration-200"
+                                    title="Figurinha WhatsApp - Clique para ampliar"
                                   >
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
+                                    <img 
+                                      src={msg.media_url} 
+                                      alt="Figurinha" 
+                                      className="w-28 h-28 sm:w-32 sm:h-32 object-contain drop-shadow-md" 
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="p-3 rounded-2xl bg-black/20 border border-white/10 flex items-center gap-2 text-xs">
+                                    <Smile className="w-5 h-5 text-amber-400" />
+                                    <span>Figurinha WhatsApp</span>
+                                  </div>
                                 )}
                               </div>
+                            ) : msg.media_type === 'audio' || msg.text?.includes('Mensagem de voz') ? (
+                              /* 2. MENSAGEM DE ÁUDIO / GRAVAÇÃO DE VOZ */
+                              <div className="flex flex-col gap-1">
+                                <ChatAudioPlayer 
+                                  mediaUrl={msg.media_url} 
+                                  duration={msg.media_duration} 
+                                  isMe={isMe} 
+                                />
+                                {msg.text && !msg.text.includes('Mensagem de voz') && !msg.text.includes('🎤') && (
+                                  <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words mt-1">
+                                    {msg.text}
+                                  </p>
+                                )}
+                              </div>
+                            ) : msg.media_type === 'image' || (msg.media_url && (msg.media_url.startsWith('data:image') || msg.media_url.match(/\.(jpg|jpeg|png|webp|gif)$/i))) ? (
+                              /* 3. MENSAGEM DE IMAGEM / FOTO */
+                              <div className="flex flex-col gap-1.5">
+                                {msg.media_url && (
+                                  <div 
+                                    onClick={() => setLightboxMedia({ 
+                                      url: msg.media_url!, 
+                                      filename: msg.media_filename || 'imagem.jpg', 
+                                      isSticker: false 
+                                    })}
+                                    className="relative group rounded-xl overflow-hidden border border-white/10 cursor-pointer max-w-[280px] sm:max-w-[320px] bg-black/20"
+                                    title="Clique para visualizar em tela cheia com zoom"
+                                  >
+                                    <img
+                                      src={msg.media_url}
+                                      alt={msg.text || 'Foto'}
+                                      className="w-full max-h-64 object-cover group-hover:scale-105 transition-transform duration-200"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity">
+                                      <span className="px-3 py-1.5 rounded-full bg-black/70 text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-xs shadow-lg">
+                                        <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                                        Visualizar
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                                {msg.text && !msg.text.startsWith('📷 Foto') && (
+                                  <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words">
+                                    {msg.text}
+                                  </p>
+                                )}
+                              </div>
+                            ) : msg.media_type === 'document' || msg.media_filename ? (
+                              /* 4. MENSAGEM DE DOCUMENTO / ARQUIVO (PDF, DOCX, XLSX, ETC.) */
+                              <div className="flex flex-col gap-1.5">
+                                <ChatDocumentCard
+                                  filename={msg.media_filename || msg.text || 'Documento.pdf'}
+                                  mediaUrl={msg.media_url}
+                                  size={msg.media_size}
+                                  isMe={isMe}
+                                  onPreview={handlePreviewDocument}
+                                />
+                                {msg.text && !msg.text.startsWith('📄') && msg.text !== msg.media_filename && (
+                                  <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words mt-1">
+                                    {msg.text}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              /* 5. MENSAGEM DE TEXTO PADRÃO */
+                              <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words">
+                                {msg.text}
+                              </p>
                             )}
 
-                            <p className="text-xs leading-relaxed whitespace-pre-wrap select-text break-words">
-                              {msg.text}
-                            </p>
-
-                            <div className="flex items-center justify-end gap-1 mt-1 -mb-0.5 text-[10px] opacity-75">
+                            <div className="flex items-center justify-end gap-1 mt-1.5 -mb-0.5 text-[10px] opacity-75">
                               <span>{timeString}</span>
                               {isMe && (
                                 <span>
@@ -1217,6 +1653,15 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* LIGHTBOX MODAL PARA IMAGENS & FIGURINHAS */}
+      <ChatLightboxModal
+        isOpen={!!lightboxMedia}
+        url={lightboxMedia?.url || ''}
+        filename={lightboxMedia?.filename}
+        isSticker={lightboxMedia?.isSticker}
+        onClose={() => setLightboxMedia(null)}
+      />
     </>
   );
 };

@@ -72,7 +72,7 @@ const navItems: NavItem[] = [
       { id: 'operational-loads', label: 'Cargas em Andamento', icon: ChartIcon },
       { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
       { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
-      { id: 'whatsapp', label: 'Canal WhatsApp', icon: MessageSquare },
+      { id: 'whatsapp', label: 'Chat', icon: MessageSquare },
     ],
   },
   {

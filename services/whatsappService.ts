@@ -1257,36 +1257,109 @@ export async function clearWhatsAppQueue(): Promise<void> {
  * mensagens enviadas na fila e dados locais de cache.
  */
 /**
- * Auxiliar para extrair o texto/resumo de uma mensagem da Evolution API
+ * Auxiliar para extrair o texto, áudio, imagem, figurinha e documentos de uma mensagem da Evolution API
  */
-export function extractMessageContent(r: any): { text: string; mediaUrl?: string; mediaType?: WhatsAppMessageType; mediaFilename?: string } {
+export function extractMessageContent(r: any): { 
+  text: string; 
+  mediaUrl?: string; 
+  mediaType?: WhatsAppMessageType; 
+  mediaFilename?: string;
+  mediaDuration?: number;
+  mediaSize?: string;
+} {
   if (!r) return { text: 'Mensagem' };
   const m = r.message || {};
   
+  // 1. Imagem
+  if (m.imageMessage) {
+    const rawUrl = m.imageMessage.url || r.mediaUrl || '';
+    const rawB64 = m.imageMessage.base64 || r.base64 || m.imageMessage.jpegThumbnail;
+    let finalUrl = rawUrl;
+    if (rawB64) {
+      finalUrl = rawB64.startsWith('data:') ? rawB64 : `data:${m.imageMessage.mimetype || 'image/jpeg'};base64,${rawB64}`;
+    }
+    const caption = m.imageMessage.caption ? m.imageMessage.caption : '';
+    return { 
+      text: caption || 'Foto', 
+      mediaUrl: finalUrl || rawUrl, 
+      mediaType: 'image' 
+    };
+  }
+
+  // 2. Áudio / Mensagem de Voz
+  if (m.audioMessage) {
+    const secs = m.audioMessage.seconds || Math.round(Number(m.audioMessage.fileLength || 0) / 16000) || 0;
+    const rawUrl = m.audioMessage.url || r.mediaUrl || '';
+    const rawB64 = m.audioMessage.base64 || r.base64;
+    let finalUrl = rawUrl;
+    if (rawB64) {
+      finalUrl = rawB64.startsWith('data:') ? rawB64 : `data:${m.audioMessage.mimetype || 'audio/ogg; codecs=opus'};base64,${rawB64}`;
+    }
+    return { 
+      text: m.audioMessage.ptt ? 'Mensagem de voz' : 'Áudio', 
+      mediaUrl: finalUrl || rawUrl, 
+      mediaType: 'audio',
+      mediaDuration: secs
+    };
+  }
+
+  // 3. Figurinha (Sticker)
+  if (m.stickerMessage) {
+    const rawUrl = m.stickerMessage.url || r.mediaUrl || '';
+    const rawB64 = m.stickerMessage.base64 || r.base64;
+    let finalUrl = rawUrl;
+    if (rawB64) {
+      finalUrl = rawB64.startsWith('data:') ? rawB64 : `data:image/webp;base64,${rawB64}`;
+    }
+    return { 
+      text: 'Figurinha', 
+      mediaUrl: finalUrl || rawUrl, 
+      mediaType: 'sticker' 
+    };
+  }
+
+  // 4. Documento (PDF, DOCX, XLSX, etc.)
+  if (m.documentMessage) {
+    const fileName = m.documentMessage.fileName || m.documentMessage.title || 'Documento.pdf';
+    const rawUrl = m.documentMessage.url || r.mediaUrl || '';
+    const rawB64 = m.documentMessage.base64 || r.base64;
+    let finalUrl = rawUrl;
+    if (rawB64) {
+      finalUrl = rawB64.startsWith('data:') ? rawB64 : `data:${m.documentMessage.mimetype || 'application/pdf'};base64,${rawB64}`;
+    }
+    const bytes = m.documentMessage.fileLength;
+    const sizeStr = bytes ? (bytes > 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`) : undefined;
+    return { 
+      text: m.documentMessage.caption || fileName, 
+      mediaUrl: finalUrl || rawUrl, 
+      mediaFilename: fileName, 
+      mediaType: 'document',
+      mediaSize: sizeStr
+    };
+  }
+
+  // 5. Vídeo
+  if (m.videoMessage) {
+    const caption = m.videoMessage.caption ? m.videoMessage.caption : 'Vídeo';
+    const rawUrl = m.videoMessage.url || r.mediaUrl || '';
+    const rawB64 = m.videoMessage.base64 || r.base64;
+    let finalUrl = rawUrl;
+    if (rawB64) {
+      finalUrl = rawB64.startsWith('data:') ? rawB64 : `data:${m.videoMessage.mimetype || 'video/mp4'};base64,${rawB64}`;
+    }
+    return { 
+      text: caption, 
+      mediaUrl: finalUrl || rawUrl, 
+      mediaType: 'video' 
+    };
+  }
+
+  // 6. Texto Padrão
   if (m.conversation) {
     return { text: m.conversation, mediaType: 'text' };
   }
   if (m.extendedTextMessage?.text) {
     return { text: m.extendedTextMessage.text, mediaType: 'text' };
-  }
-  if (m.imageMessage) {
-    const caption = m.imageMessage.caption ? `📷 ${m.imageMessage.caption}` : '📷 Foto';
-    return { text: caption, mediaUrl: m.imageMessage.url, mediaType: 'image' };
-  }
-  if (m.audioMessage) {
-    const secs = m.audioMessage.seconds || 0;
-    return { text: `🎤 Mensagem de Áudio (${secs}s)`, mediaUrl: m.audioMessage.url, mediaType: 'audio' };
-  }
-  if (m.videoMessage) {
-    const caption = m.videoMessage.caption ? `🎥 ${m.videoMessage.caption}` : '🎥 Vídeo';
-    return { text: caption, mediaUrl: m.videoMessage.url, mediaType: 'document' };
-  }
-  if (m.documentMessage) {
-    const fileName = m.documentMessage.fileName || 'Documento';
-    return { text: `📄 ${fileName}`, mediaUrl: m.documentMessage.url, mediaFilename: fileName, mediaType: 'document' };
-  }
-  if (m.stickerMessage) {
-    return { text: '✨ Figurinha', mediaType: 'image' };
   }
   if (m.contactMessage) {
     return { text: `👤 Contato: ${m.contactMessage.displayName || ''}`, mediaType: 'text' };
@@ -1648,6 +1721,8 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
               media_url: parsed.mediaUrl,
               media_type: parsed.mediaType,
               media_filename: parsed.mediaFilename,
+              media_duration: parsed.mediaDuration,
+              media_size: parsed.mediaSize,
               timestamp: ts,
               status: isFromMe ? 'read' : 'delivered',
               sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Motorista')
@@ -1661,7 +1736,7 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
     console.warn('Evolution API findMessages offline:', err);
   }
 
-  // 4. Se a conversa estiver vazia para os contatos de exemplo, gera mensagens de demonstração
+  // 4. Se a conversa estiver vazia para os contatos de exemplo, gera mensagens de demonstração com áudio, imagem e PDF
   if (messagesMap.size === 0) {
     if (cleanPhone.includes('993058754')) {
       const samples: WhatsAppChatMessage[] = [
@@ -1688,6 +1763,9 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
           remote_jid: `${cleanPhone}@s.whatsapp.net`,
           from_me: true,
           text: 'Perfeito, Carlos! Ordem de carregamento gerada com sucesso. Segue anexo em PDF.',
+          media_type: 'document',
+          media_filename: 'Ordem_Carregamento_Transcunha_8921.pdf',
+          media_size: '420 KB',
           timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
           status: 'read',
           sender_name: 'Transcunha Logística'
@@ -1696,8 +1774,21 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
           id: 'sample_m4',
           remote_jid: `${cleanPhone}@s.whatsapp.net`,
           from_me: false,
-          text: 'Boa tarde! Ordem de carregamento recebida com sucesso, estou a caminho da fazenda.',
+          text: 'Mensagem de voz recebida do motorista',
+          media_type: 'audio',
+          media_duration: 18,
           timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+          status: 'read',
+          sender_name: 'Carlos Silva'
+        },
+        {
+          id: 'sample_m5',
+          remote_jid: `${cleanPhone}@s.whatsapp.net`,
+          from_me: false,
+          text: 'Foto da balança e comprovante de pesagem',
+          media_type: 'image',
+          media_url: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=800&q=80',
+          timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
           status: 'read',
           sender_name: 'Carlos Silva'
         }
