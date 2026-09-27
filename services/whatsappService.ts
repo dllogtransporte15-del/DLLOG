@@ -1469,7 +1469,26 @@ export function extractMessageContent(r: any): {
   mediaSize?: string;
 } {
   if (!r) return { text: 'Mensagem' };
-  const m = r.message || {};
+  
+  let m = r.message || {};
+  // Desembrulha contêineres aninhados (ephemeral, viewOnce, etc.)
+  let depth = 0;
+  while (
+    depth < 5 &&
+    (m.ephemeralMessage?.message ||
+      m.viewOnceMessage?.message ||
+      m.viewOnceMessageV2?.message ||
+      m.viewOnceMessageV2Extension?.message ||
+      m.documentWithCaptionMessage?.message)
+  ) {
+    m =
+      m.ephemeralMessage?.message ||
+      m.viewOnceMessage?.message ||
+      m.viewOnceMessageV2?.message ||
+      m.viewOnceMessageV2Extension?.message ||
+      m.documentWithCaptionMessage?.message;
+    depth++;
+  }
   
   // 1. Imagem
   if (m.imageMessage) {
@@ -1555,12 +1574,29 @@ export function extractMessageContent(r: any): {
     };
   }
 
-  // 6. Texto Padrão
+  // 6. Reação com Emojis
+  if (m.reactionMessage) {
+    return {
+      text: m.reactionMessage.text ? `Reação: ${m.reactionMessage.text}` : 'Reação',
+      mediaType: 'text'
+    };
+  }
+
+  // 7. Texto Padrão e Variações
   if (m.conversation) {
     return { text: m.conversation, mediaType: 'text' };
   }
   if (m.extendedTextMessage?.text) {
     return { text: m.extendedTextMessage.text, mediaType: 'text' };
+  }
+  if (r.body && typeof r.body === 'string') {
+    return { text: r.body, mediaType: 'text' };
+  }
+  if (r.text && typeof r.text === 'string') {
+    return { text: r.text, mediaType: 'text' };
+  }
+  if (typeof r.content === 'string' && r.content.trim()) {
+    return { text: r.content, mediaType: 'text' };
   }
   if (m.contactMessage) {
     return { text: `👤 Contato: ${m.contactMessage.displayName || ''}`, mediaType: 'text' };
@@ -1568,7 +1604,8 @@ export function extractMessageContent(r: any): {
   if (m.locationMessage) {
     return { text: '📍 Localização compartilhada', mediaType: 'text' };
   }
-  return { text: 'Mensagem recebida', mediaType: 'text' };
+
+  return { text: r.pushName ? `Mensagem de ${r.pushName}` : 'Mensagem', mediaType: 'text' };
 }
 
 /**
@@ -1895,12 +1932,13 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
     console.warn('Erro ao sincronizar mensagens da fila:', err);
   }
 
-  // 3. Tenta buscar mensagens da Evolution API para todas as variações de JID (com e sem 9º dígito)
+  // 3. Estratégia A: Busca mensagens direcionadas por JID na Evolution API
   try {
     const jidPatterns = getPossibleJids(cleanPhone);
 
     for (const jid of jidPatterns) {
       try {
+        // Tenta formato padrão Evolution v1 / v2
         const res = await fetchEvolution(`/chat/findMessages/${cfg.instanceName}`, {
           method: 'POST',
           headers: {
@@ -1924,7 +1962,7 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
               const msgId = msg.key?.id || msg.id || `evo_${Date.now()}_${Math.random()}`;
               const isFromMe = !!msg.key?.fromMe;
               const parsed = extractMessageContent(msg);
-              const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString();
+              const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : (msg.createdAt || new Date().toISOString());
 
               messagesMap.set(msgId, {
                 id: msgId,
@@ -1938,7 +1976,7 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
                 media_size: parsed.mediaSize,
                 timestamp: ts,
                 status: isFromMe ? 'read' : 'delivered',
-                sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Motorista')
+                sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Contato')
               });
             });
           }
@@ -1946,7 +1984,57 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
       } catch { /* ignore specific jid error */ }
     }
   } catch (err) {
-    console.warn('Evolution API findMessages offline:', err);
+    console.warn('Evolution API findMessages targeted error:', err);
+  }
+
+  // 4. Estratégia B (Global Recent Feed): Busca lote recente geral de mensagens para capturar respostas em tempo real
+  try {
+    const globalRes = await fetchEvolution(`/chat/findMessages/${cfg.instanceName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        where: {},
+        limit: 150
+      })
+    });
+
+    if (globalRes.ok) {
+      const evoGlobal = await globalRes.json();
+      const globalRecords = Array.isArray(evoGlobal) ? evoGlobal : (evoGlobal?.messages?.records || evoGlobal?.messages || []);
+      if (Array.isArray(globalRecords) && globalRecords.length > 0) {
+        globalRecords.forEach((msg: any) => {
+          const rawJid = msg.key?.remoteJidAlt || msg.key?.remoteJid || msg.remoteJid || '';
+          if (!rawJid || rawJid.includes('status@broadcast')) return;
+
+          const msgPhone = sanitizePhoneNumber(rawJid.replace(/@.+$/, ''));
+          if (arePhoneNumbersEqual(msgPhone, cleanPhone)) {
+            const msgId = msg.key?.id || msg.id || `evo_${Date.now()}_${Math.random()}`;
+            const isFromMe = !!msg.key?.fromMe;
+            const parsed = extractMessageContent(msg);
+            const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : (msg.createdAt || new Date().toISOString());
+
+            messagesMap.set(msgId, {
+              id: msgId,
+              remote_jid: rawJid,
+              from_me: isFromMe,
+              text: parsed.text,
+              media_url: parsed.mediaUrl,
+              media_type: parsed.mediaType,
+              media_filename: parsed.mediaFilename,
+              media_duration: parsed.mediaDuration,
+              media_size: parsed.mediaSize,
+              timestamp: ts,
+              status: isFromMe ? 'read' : 'delivered',
+              sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Contato')
+            });
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Evolution API global feed findMessages error:', err);
   }
 
   const rawList = Array.from(messagesMap.values()).sort((a, b) => {
@@ -1978,6 +2066,11 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
       deduped.push(msg);
     }
   }
+
+  // Persiste no cache local para resiliência offline e carregamento instantâneo
+  try {
+    localStorage.setItem(`${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`, JSON.stringify(deduped));
+  } catch { /* ignore quota */ }
 
   return deduped;
 }

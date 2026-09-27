@@ -891,7 +891,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
       };
       loadMsgs();
 
-      // Polling automático de mensagens em segundo plano enquanto a conversa está aberta
+      // Polling automático de mensagens em segundo plano enquanto a conversa está aberta (a cada 2s)
       const pollInterval = setInterval(async () => {
         try {
           const latestMsgs = await getWhatsAppChatMessages(selectedChat.phone_number);
@@ -906,7 +906,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
             });
           }
         } catch { /* ignore background poll errors */ }
-      }, 4000);
+      }, 2000);
 
       return () => clearInterval(pollInterval);
     } else {
@@ -1523,17 +1523,21 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        const loadMsgs = async () => {
-                          setLoadingMessages(true);
+                      onClick={async () => {
+                        setLoadingMessages(true);
+                        try {
+                          await syncAllWhatsAppConversationsAndHistory({ limit: 150 });
+                          loadChats();
                           const msgs = await getWhatsAppChatMessages(selectedChat.phone_number);
                           setMessages(msgs);
+                        } catch (err) {
+                          console.error('Erro ao recarregar mensagens:', err);
+                        } finally {
                           setLoadingMessages(false);
-                        };
-                        loadMsgs();
+                        }
                       }}
                       className="p-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                      title="Atualizar histórico de mensagens"
+                      title="Sincronizar e atualizar mensagens do WhatsApp"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${loadingMessages ? 'animate-spin' : ''}`} />
                     </button>

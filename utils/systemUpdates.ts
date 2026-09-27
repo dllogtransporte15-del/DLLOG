@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_27_v2_21_0',
+    version: 'v2.21.0',
+    date: '27/09/2026',
+    title: 'Sincronização em Tempo Real de Respostas e Mídias no WhatsApp Web',
+    summary: 'Aprimorado o mecanismo de recepção de mensagens do WhatsApp para capturar instantaneamente respostas enviadas pelos motoristas/contatos, incluindo suporte a mensagens de texto, mídias (fotos, vídeos, áudios/mensagens de voz, figurinhas e documentos), contêineres efêmeros e feed recente global.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Recepção e Exibição Imediata de Respostas de Contatos',
+        description: 'Corrigido o fluxo de consulta de mensagens da Evolution API para utilizar estratégia de busca híbrida (JID direcionado com e sem 9º dígito + feed recente global), garantindo que mensagens de texto e áudio/mídia recebidas apareçam no painel de chat sem atrasos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Desembrulhamento Completo de Mensagens e Mídias',
+        description: 'Implementado suporte a contêineres efêmeros, view-once e reações de emojis, permitindo que todas as mensagens enviadas pelo WhatsApp do motorista sejam lidas e renderizadas com precisão.'
+      },
+      {
+        category: 'improvement',
+        title: 'Polling Acelerado e Atualização Forçada na Interface',
+        description: 'Intervalo de atualização em segundo plano acelerado para 2 segundos e botão de sincronização configurado para consultar o histórico completo da nuvem.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_27_v2_20_0',
     version: 'v2.20.0',
     date: '27/09/2026',
