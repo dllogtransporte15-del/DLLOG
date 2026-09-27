@@ -5,7 +5,7 @@ import {
   Search, 
   Paperclip, 
   Phone, 
-  User, 
+  User as UserIcon, 
   Check, 
   CheckCheck, 
   Clock, 
@@ -42,6 +42,7 @@ import {
   Smile
 } from 'lucide-react';
 import type { WhatsAppChat, WhatsAppChatMessage, WhatsAppTemplate } from '../../types/whatsapp';
+import type { User as UserType } from '../../types';
 import { 
   getWhatsAppChats, 
   getWhatsAppChatMessages, 
@@ -53,12 +54,21 @@ import {
   clearWhatsAppHistoryData,
   getWhatsAppInstance,
   formatDisplayPhone,
-  sanitizePhoneNumber
+  sanitizePhoneNumber,
+  arePhoneNumbersEqual,
+  subscribeToWhatsAppRealtime,
+  broadcastWhatsAppEvent
 } from '../../services/whatsappService';
 
 // =========================================================================
-// SUB-COMPONENTE: PLAYER DE ÁUDIO DO CHAT
+// CATÁLOGO DE EMOJIS RÁPIDOS ESTILO WHATSAPP WEB
 // =========================================================================
+const EMOJI_CATEGORIES = [
+  { name: 'Populares', emojis: ['👍', '🤝', '✅', '🚛', '📦', '📍', '💰', '📄', '📞', '⛽', '🙏', '😊'] },
+  { name: 'Rostos & Expressões', emojis: ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😌', '😍', '😎', '🤝', '🙌', '👍', '👏', '💪', '🙏'] },
+  { name: 'Logística & Frota', emojis: ['🚛', '🚚', '🚜', '🚗', '📦', '📍', '🗺️', '⛽', '🛣️', '🏢', '🏗️', '🚢', '🧭', '🚨', '🛑', '⏳'] },
+  { name: 'Documentos & Valores', emojis: ['📄', '📑', '🧾', '💰', '💵', '💳', '🏦', '✅', '❌', '⚠️', '🕒', '🔒', '🔑', '📊', '📈'] }
+];
 const ChatAudioPlayer: React.FC<{
   mediaUrl?: string;
   duration?: number;
@@ -405,6 +415,7 @@ interface WhatsAppChatPanelProps {
   onOpenFloating?: () => void;
   initialPhone?: string;
   initialName?: string;
+  currentUser?: UserType | null;
 }
 
 export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
@@ -412,7 +423,8 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   onClose,
   onOpenFloating,
   initialPhone,
-  initialName
+  initialName,
+  currentUser
 }) => {
   const [chats, setChats] = useState<WhatsAppChat[]>([]);
   const [selectedChat, setSelectedChat] = useState<WhatsAppChat | null>(null);
@@ -431,6 +443,150 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
   const [newChatName, setNewChatName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
+
+  // Estados estilo WhatsApp Web (Gravação de Voz, Emojis e Busca na Conversa)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isSearchingInChat, setIsSearchingInChat] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+
+  // Refs de estado para evitar closures desatualizadas nos listeners do Realtime
+  const selectedChatRef = useRef<WhatsAppChat | null>(null);
+  const chatsRef = useRef<WhatsAppChat[]>([]);
+
+  useEffect(() => {
+    selectedChatRef.current = selectedChat;
+  }, [selectedChat]);
+
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
+
+  // Gravação de Áudio ao vivo no microfone
+  const startAudioRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert('Seu navegador não suporta gravação de áudio.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.start(100);
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecordingAudio(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Erro ao acessar microfone:', err);
+      alert('Não foi possível acessar o microfone. Verifique as permissões do seu navegador.');
+    }
+  };
+
+  const stopAndSendAudioRecording = async () => {
+    if (!mediaRecorderRef.current || !selectedChat) return;
+    const currentDuration = recordingSeconds || 1;
+
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+
+    mediaRecorderRef.current.onstop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string;
+
+        const senderDisplayName = currentUser?.name
+          ? `${currentUser.name} (${currentUser.profile || 'Administrador do Sistema'})`
+          : 'Administrador do Sistema';
+
+        setSending(true);
+        try {
+          const newMsg = await sendDirectChatMessage({
+            recipientPhone: selectedChat.phone_number,
+            recipientName: selectedChat.name,
+            senderName: senderDisplayName,
+            text: 'Mensagem de voz 🎤',
+            messageType: 'audio',
+            mediaUrl: base64Audio,
+            mediaDuration: currentDuration
+          });
+
+          setMessages(prev => [...prev, newMsg]);
+          const updatedChats = await getWhatsAppChats();
+          setChats(updatedChats);
+        } catch (err) {
+          console.error('Erro ao despachar áudio de voz:', err);
+        } finally {
+          setSending(false);
+        }
+      };
+
+      mediaRecorderRef.current?.stream.getTracks().forEach(t => t.stop());
+    };
+
+    mediaRecorderRef.current.stop();
+    setIsRecordingAudio(false);
+    setRecordingSeconds(0);
+  };
+
+  const cancelAudioRecording = () => {
+    if (mediaRecorderRef.current) {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      setIsRecordingAudio(false);
+      setRecordingSeconds(0);
+      audioChunksRef.current = [];
+    }
+  };
+
+  const handleInsertEmoji = (emoji: string) => {
+    setInputText(prev => prev + emoji);
+  };
+
+  const handleCopyMessageText = (text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setSyncFeedback('Texto da mensagem copiado!');
+    setTimeout(() => setSyncFeedback(null), 2000);
+  };
+
+  // Função auxiliar para tocar um chime de mensagem recebida em tempo real
+  const playIncomingChime = () => {
+    try {
+      if (typeof window === 'undefined') return;
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.26);
+    } catch { /* ignore */ }
+  };
 
   // Estados de Manipulação da Janela Flutuante (Arrastar & Redimensionar)
   const [isFloatingActive, setIsFloatingActive] = useState(mode === 'floating' || mode === 'modal');
@@ -586,9 +742,116 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     }
   };
 
+  // =========================================================================
+  // SINCRONIZAÇÃO EM TEMPO REAL (REALTIME HUB MULTI-USUÁRIOS)
+  // =========================================================================
   useEffect(() => {
     loadChats();
     loadTemplates();
+
+    // Inscrição no canal Realtime do Supabase (Broadcasts + Postgres Changes)
+    const unsubscribeRealtime = subscribeToWhatsAppRealtime((event, payload) => {
+      if (event === 'chat_message_sent' && payload?.message) {
+        const incomingMsg = payload.message as WhatsAppChatMessage;
+        const cleanMsgPhone = sanitizePhoneNumber(incomingMsg.remote_jid.replace(/@.+$/, '')) || incomingMsg.remote_jid;
+        const currentActiveChat = selectedChatRef.current;
+
+        // 1. Se a mensagem pertencer à conversa atualmente aberta na tela
+        if (currentActiveChat && arePhoneNumbersEqual(currentActiveChat.phone_number, cleanMsgPhone)) {
+          setMessages(prev => {
+            const exists = prev.some(m => m.id === incomingMsg.id || (m.from_me === incomingMsg.from_me && (m.text || '').trim() === (incomingMsg.text || '').trim() && Math.abs(new Date(m.timestamp).getTime() - new Date(incomingMsg.timestamp).getTime()) < 15000));
+            if (exists) return prev;
+            return [...prev, incomingMsg];
+          });
+          if (!incomingMsg.from_me) {
+            playIncomingChime();
+          }
+          setTimeout(scrollToBottom, 50);
+        }
+
+        // 2. Atualiza a lista lateral de conversas em tempo real para todos
+        setChats(prev => {
+          const chatIdx = prev.findIndex(c => arePhoneNumbersEqual(c.phone_number, cleanMsgPhone));
+          const isCurrentSelected = currentActiveChat && arePhoneNumbersEqual(currentActiveChat.phone_number, cleanMsgPhone);
+
+          if (chatIdx >= 0) {
+            const targetChat = prev[chatIdx];
+            const updatedChat: WhatsAppChat = {
+              ...targetChat,
+              last_message: {
+                id: incomingMsg.id,
+                text: incomingMsg.text || (incomingMsg.media_filename ? `[Arquivo: ${incomingMsg.media_filename}]` : 'Mensagem enviada'),
+                timestamp: incomingMsg.timestamp,
+                from_me: incomingMsg.from_me,
+                status: incomingMsg.status
+              },
+              unread_count: isCurrentSelected ? 0 : ((targetChat.unread_count || 0) + (incomingMsg.from_me ? 0 : 1)),
+              updated_at: incomingMsg.timestamp
+            };
+            const copy = [...prev];
+            copy.splice(chatIdx, 1);
+            return [updatedChat, ...copy];
+          } else if (payload?.chat) {
+            return [payload.chat, ...prev];
+          } else {
+            const newChat: WhatsAppChat = {
+              id: `chat_${cleanMsgPhone}`,
+              remote_jid: incomingMsg.remote_jid,
+              phone_number: cleanMsgPhone,
+              name: incomingMsg.sender_name || `Contato (${formatDisplayPhone(cleanMsgPhone)})`,
+              unread_count: isCurrentSelected ? 0 : (incomingMsg.from_me ? 0 : 1),
+              last_message: {
+                id: incomingMsg.id,
+                text: incomingMsg.text,
+                timestamp: incomingMsg.timestamp,
+                from_me: incomingMsg.from_me,
+                status: incomingMsg.status
+              },
+              updated_at: incomingMsg.timestamp
+            };
+            return [newChat, ...prev];
+          }
+        });
+      } else if (event === 'chat_created' && payload?.chat) {
+        const newChat = payload.chat as WhatsAppChat;
+        setChats(prev => {
+          const exists = prev.some(c => arePhoneNumbersEqual(c.phone_number, newChat.phone_number));
+          return exists ? prev : [newChat, ...prev];
+        });
+      } else if (event === 'chat_deleted' && payload?.phoneNumber) {
+        const deletedPhone = payload.phoneNumber;
+        setChats(prev => prev.filter(c => !arePhoneNumbersEqual(c.phone_number, deletedPhone)));
+        if (selectedChatRef.current && arePhoneNumbersEqual(selectedChatRef.current.phone_number, deletedPhone)) {
+          setSelectedChat(null);
+          setMessages([]);
+        }
+      } else if (event === 'instance_status_changed' && payload?.instance) {
+        const inst = payload.instance;
+        const connected = inst.status === 'connected' && Boolean(inst.phone_number);
+        setIsInstanceConnected(connected);
+        setConnectedPhoneNumber(inst.phone_number || null);
+        if (!connected) {
+          setChats([]);
+          setSelectedChat(null);
+          setMessages([]);
+        } else {
+          loadChats();
+        }
+      } else if (event === 'chat_history_synced') {
+        if (payload?.chats && Array.isArray(payload.chats)) {
+          setChats(payload.chats);
+        } else {
+          loadChats();
+        }
+        if (selectedChatRef.current) {
+          getWhatsAppChatMessages(selectedChatRef.current.phone_number).then(setMessages).catch(() => {});
+        }
+      } else if (event === 'chats_cleared') {
+        setChats([]);
+        setSelectedChat(null);
+        setMessages([]);
+      }
+    });
 
     const handleExternalSync = () => {
       loadChats();
@@ -606,23 +869,10 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
     window.addEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
     window.addEventListener('transcunha:whatsapp_disconnected', handleDisconnected);
 
-    // Verificação periódica do status da conexão
-    const checkInterval = setInterval(async () => {
-      try {
-        const inst = await getWhatsAppInstance();
-        const connected = inst.status === 'connected' && Boolean(inst.phone_number);
-        setIsInstanceConnected(connected);
-        setConnectedPhoneNumber(inst.phone_number || null);
-        if (!connected) {
-          handleDisconnected();
-        }
-      } catch { /* ignore */ }
-    }, 4000);
-
     return () => {
+      unsubscribeRealtime();
       window.removeEventListener('transcunha:whatsapp_history_synced', handleExternalSync);
       window.removeEventListener('transcunha:whatsapp_disconnected', handleDisconnected);
-      clearInterval(checkInterval);
     };
   }, []);
 
@@ -640,6 +890,25 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
         }
       };
       loadMsgs();
+
+      // Polling automático de mensagens em segundo plano enquanto a conversa está aberta
+      const pollInterval = setInterval(async () => {
+        try {
+          const latestMsgs = await getWhatsAppChatMessages(selectedChat.phone_number);
+          if (selectedChatRef.current && arePhoneNumbersEqual(selectedChatRef.current.phone_number, selectedChat.phone_number)) {
+            setMessages(prev => {
+              if (latestMsgs.length === prev.length) {
+                const lastPrev = prev[prev.length - 1]?.id;
+                const lastNew = latestMsgs[latestMsgs.length - 1]?.id;
+                if (lastPrev === lastNew) return prev;
+              }
+              return latestMsgs;
+            });
+          }
+        } catch { /* ignore background poll errors */ }
+      }, 4000);
+
+      return () => clearInterval(pollInterval);
     } else {
       setMessages([]);
     }
@@ -736,17 +1005,25 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
       mediaUrl = URL.createObjectURL(selectedFile);
     }
 
+    const senderDisplayName = currentUser?.name
+      ? `${currentUser.name} (${currentUser.profile || 'Administrador do Sistema'})`
+      : 'Administrador do Sistema';
+
     setSending(true);
     try {
       const newMsg = await sendDirectChatMessage({
         recipientPhone: selectedChat.phone_number,
         recipientName: selectedChat.name,
+        senderName: senderDisplayName,
         text: messageText,
         mediaUrl,
         mediaFilename
       });
 
-      setMessages(prev => [...prev, newMsg]);
+      setMessages(prev => {
+        const exists = prev.some(m => m.id === newMsg.id || (m.from_me === newMsg.from_me && (m.text || '').trim() === (newMsg.text || '').trim() && Math.abs(new Date(m.timestamp).getTime() - new Date(newMsg.timestamp).getTime()) < 15000));
+        return exists ? prev : [...prev, newMsg];
+      });
       setInputText('');
       setSelectedFile(null);
 
@@ -908,9 +1185,13 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                     title={isInstanceConnected ? (connectedPhoneNumber ? `Conectado: ${formatDisplayPhone(connectedPhoneNumber)}` : 'Conectado') : 'Desconectado'}
                   ></span>
                 </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-xs" title="Sincronização bidirecional em tempo real ativa entre Administrador do Sistema e todos os operadores">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  Realtime Ativo
+                </span>
               </div>
               <span className="text-[10px] text-slate-400 block -mt-0.5">
-                {selectedChat ? `Conversando com ${selectedChat.name}` : (isInstanceConnected ? 'Central de Atendimento & Mensagens' : 'Sem aparelho conectado')}
+                {selectedChat ? `Conversando com ${selectedChat.name}` : (isInstanceConnected ? 'Central de Atendimento & Mensagens em Tempo Real' : 'Sem aparelho conectado')}
               </span>
             </div>
           </div>
@@ -1116,7 +1397,7 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                           />
                         ) : (
                           <div className={`w-9 h-9 rounded-full ${chat.is_group ? 'bg-gradient-to-br from-indigo-700 to-slate-900' : 'bg-gradient-to-br from-slate-700 to-slate-900'} border border-slate-600/40 text-white flex items-center justify-center font-bold text-xs shadow-sm`}>
-                            {initials || (chat.is_group ? <Layers className="w-4 h-4 text-indigo-300" /> : <User className="w-4 h-4 text-slate-300" />)}
+                            {initials || (chat.is_group ? <Layers className="w-4 h-4 text-indigo-300" /> : <UserIcon className="w-4 h-4 text-slate-300" />)}
                           </div>
                         )}
                         <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
@@ -1212,6 +1493,23 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
 
                   {/* AÇÕES RÁPIDAS NO TOPO DO CHAT */}
                   <div className="flex items-center gap-1.5">
+                    {/* BUSCA NA CONVERSA */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSearchingInChat(!isSearchingInChat);
+                        if (isSearchingInChat) setChatSearchQuery('');
+                      }}
+                      className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                        isSearchingInChat 
+                          ? 'bg-emerald-600 text-white' 
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                      title="Pesquisar mensagens nesta conversa"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                    </button>
+
                     <a
                       href={`https://wa.me/${selectedChat.phone_number}`}
                       target="_blank"
@@ -1251,8 +1549,39 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                   </div>
                 </div>
 
+                {/* BARRA DE BUSCA INTERNA DE MENSAGENS */}
+                {isSearchingInChat && (
+                  <div className="px-4 py-2 bg-slate-100 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 animate-fade-in">
+                    <Search className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={chatSearchQuery}
+                      onChange={(e) => setChatSearchQuery(e.target.value)}
+                      placeholder="Pesquisar texto, valores, placas ou comprovantes nesta conversa..."
+                      className="flex-1 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-xl text-xs text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      autoFocus
+                    />
+                    {chatSearchQuery && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {messages.filter(m => m.text?.toLowerCase().includes(chatSearchQuery.toLowerCase())).length} resultados
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSearchingInChat(false);
+                        setChatSearchQuery('');
+                      }}
+                      className="p-1 text-slate-400 hover:text-white"
+                      title="Fechar pesquisa"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 {/* HISTÓRICO DE MENSAGENS */}
-                <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 relative">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 relative bg-[#efeae2]/40 dark:bg-[#0c1317]">
                   <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px]"></div>
 
                   {loadingMessages ? (
@@ -1271,27 +1600,49 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                       </div>
                     </div>
                   ) : (
-                    messages.map((msg, index) => {
+                    messages
+                      .filter(m => !chatSearchQuery || m.text?.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+                      .map((msg, index) => {
                       const isMe = msg.from_me;
                       const timeString = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                       return (
                         <div
                           key={msg.id || index}
-                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-fade-in`}
+                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-fade-in group`}
                         >
                           <div
                             className={`max-w-[88%] sm:max-w-[75%] rounded-2xl p-3 shadow-md relative ${
                               isMe
-                                ? 'bg-gradient-to-br from-emerald-800 via-emerald-900 to-teal-950 text-white rounded-tr-none border border-emerald-700/50'
-                                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-none border border-slate-200 dark:border-slate-700'
+                                ? 'bg-[#005c4b] text-white rounded-tr-none border border-emerald-600/30'
+                                : 'bg-white dark:bg-[#202c33] text-slate-800 dark:text-slate-100 rounded-tl-none border border-slate-200 dark:border-slate-700/60 shadow-xs'
                             }`}
                           >
-                            {!isMe && (
-                              <span className="text-[10px] font-bold text-emerald-400 block mb-1">
-                                {msg.sender_name || selectedChat.name}
-                              </span>
-                            )}
+                            {/* REMETENTE DA MENSAGEM */}
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              {!isMe ? (
+                                <span className="text-[10px] font-bold text-emerald-400 block truncate">
+                                  {msg.sender_name || selectedChat.name}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-semibold text-emerald-200/90 flex items-center gap-1">
+                                  <UserIcon className="w-2.5 h-2.5" />
+                                  <span className="truncate max-w-[180px]">{msg.sender_name || 'Administrador do Sistema'}</span>
+                                </span>
+                              )}
+
+                              {/* BOTÃO COPIAR MENSAGEM */}
+                              {msg.text && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyMessageText(msg.text)}
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-white transition-opacity"
+                                  title="Copiar texto da mensagem"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
 
                             {/* 1. MENSAGEM DE FIGURINHA (STICKER) */}
                             {msg.media_type === 'sticker' ? (
@@ -1428,8 +1779,8 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                   </div>
                 )}
 
-                {/* BARRA INFERIOR DE ENVIO DE MENSAGENS */}
-                <div className="p-2.5 sm:p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 relative z-20">
+                {/* BARRA INFERIOR DE ENVIO DE MENSAGENS ESTILO WHATSAPP WEB */}
+                <div className="p-2.5 sm:p-3 bg-white dark:bg-[#202c33] border-t border-slate-200 dark:border-slate-800 relative z-20">
                   {/* DROPDOWN DE TEMPLATES / RÉGUAS */}
                   {showTemplatesDropdown && (
                     <div className="absolute bottom-full left-3 right-3 sm:left-4 sm:right-auto sm:w-96 mb-2 p-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-30 max-h-64 overflow-y-auto space-y-1 animate-fade-in">
@@ -1467,65 +1818,162 @@ export const WhatsAppChatPanel: React.FC<WhatsAppChatPanelProps> = ({
                     </div>
                   )}
 
-                  <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      className="hidden"
-                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer flex-shrink-0"
-                      title="Anexar documento ou imagem"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowTemplatesDropdown(!showTemplatesDropdown)}
-                      className={`p-2 rounded-xl transition-colors cursor-pointer flex-shrink-0 ${
-                        showTemplatesDropdown 
-                          ? 'bg-emerald-600 text-white' 
-                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
-                      }`}
-                      title="Usar Modelo / Resposta Rápida"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                    </button>
-
-                    <div className="flex-1 relative">
-                      <textarea
-                        value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                        placeholder="Digite uma mensagem... (Enter para enviar)"
-                        rows={1}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none max-h-28 transition-all leading-normal"
-                      />
+                  {/* POPOVER DE EMOJIS */}
+                  {showEmojiPicker && (
+                    <div className="absolute bottom-full left-2 sm:left-4 mb-2 w-72 sm:w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-30 p-2 space-y-2 animate-fade-in">
+                      <div className="flex items-center justify-between border-b border-slate-800 px-2 py-1 text-xs font-bold text-slate-300">
+                        <span>Selecione um Emoji</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker(false)}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                        {EMOJI_CATEGORIES.map((cat, idx) => (
+                          <div key={idx} className="space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 px-1 uppercase tracking-wider">{cat.name}</span>
+                            <div className="grid grid-cols-7 gap-1">
+                              {cat.emojis.map((em, eIdx) => (
+                                <button
+                                  key={eIdx}
+                                  type="button"
+                                  onClick={() => handleInsertEmoji(em)}
+                                  className="w-8 h-8 rounded-lg hover:bg-slate-800 text-lg flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                  {em}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  )}
 
-                    <button
-                      type="submit"
-                      disabled={(!inputText.trim() && !selectedFile) || sending}
-                      className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white font-bold transition-all shadow-md shadow-emerald-900/30 flex items-center justify-center cursor-pointer flex-shrink-0"
-                      title="Enviar Mensagem"
-                    >
-                      {sending ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
+                  {/* BARRA DE GRAVAÇÃO DE ÁUDIO ATIVA */}
+                  {isRecordingAudio ? (
+                    <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-2xl bg-rose-950/40 border border-rose-500/40 animate-pulse">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
+                        <Mic className="w-4 h-4 text-rose-400" />
+                        <span className="text-xs font-mono font-bold text-rose-300">
+                          Gravando áudio de voz... {Math.floor(recordingSeconds / 60)}:{recordingSeconds % 60 < 10 ? '0' : ''}{recordingSeconds % 60}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelAudioRecording}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                          title="Cancelar gravação"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopAndSendAudioRecording}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-900/40 flex items-center gap-1.5 cursor-pointer transition-all"
+                          title="Enviar áudio de voz"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar Áudio</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+                      />
+
+                      {/* BOTÃO EMOJI */}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className={`p-2 rounded-xl transition-colors cursor-pointer flex-shrink-0 ${
+                          showEmojiPicker 
+                            ? 'bg-amber-500/20 text-amber-400' 
+                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                        title="Inserir Emoji"
+                      >
+                        <Smile className="w-4 h-4" />
+                      </button>
+
+                      {/* BOTÃO ANEXO */}
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer flex-shrink-0"
+                        title="Anexar documento ou imagem"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
+
+                      {/* BOTÃO MODELOS */}
+                      <button
+                        type="button"
+                        onClick={() => setShowTemplatesDropdown(!showTemplatesDropdown)}
+                        className={`p-2 rounded-xl transition-colors cursor-pointer flex-shrink-0 ${
+                          showTemplatesDropdown 
+                            ? 'bg-emerald-600 text-white' 
+                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                        title="Usar Modelo / Resposta Rápida"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                      </button>
+
+                      {/* CAMPO DE TEXTO DA MENSAGEM */}
+                      <div className="flex-1 relative">
+                        <textarea
+                          value={inputText}
+                          onChange={(e) => setInputText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
+                          placeholder="Digite uma mensagem... (Enter para enviar)"
+                          rows={1}
+                          className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-100 dark:bg-[#2a3942] border border-slate-200 dark:border-slate-700/60 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none max-h-28 transition-all leading-normal shadow-inner"
+                        />
+                      </div>
+
+                      {/* BOTÃO DINÂMICO: GRAVAR VOZ OU ENVIAR TEXTO */}
+                      {(!inputText.trim() && !selectedFile) ? (
+                        <button
+                          type="button"
+                          onClick={startAudioRecording}
+                          className="p-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-md shadow-emerald-900/30 flex items-center justify-center cursor-pointer flex-shrink-0"
+                          title="Gravar mensagem de voz"
+                        >
+                          <Mic className="w-4 h-4" />
+                        </button>
                       ) : (
-                        <Send className="w-4 h-4" />
+                        <button
+                          type="submit"
+                          disabled={sending}
+                          className="p-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white font-bold transition-all shadow-md shadow-emerald-900/30 flex items-center justify-center cursor-pointer flex-shrink-0"
+                          title="Enviar Mensagem"
+                        >
+                          {sending ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Send className="w-4 h-4" />
+                          )}
+                        </button>
                       )}
-                    </button>
-                  </form>
+                    </form>
+                  )}
                 </div>
               </>
             ) : (

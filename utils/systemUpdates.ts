@@ -21,6 +21,102 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_27_v2_16_0',
+    version: 'v2.16.0',
+    date: '27/09/2026',
+    title: 'Fim da Duplicação de Balões de Mensagens no Chat do WhatsApp',
+    summary: 'Implementação de algoritmo de deduplicação inteligente no carregamento e envio de mensagens, vinculando o ID oficial do WhatsApp retornado pela Evolution API e impedindo balões repetidos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Deduplicação Inteligente de Balões',
+        description: 'Eliminada a duplicação visual de mensagens enviadas pelo operador decorrente da sobreposição entre o cache local temporário e as mensagens oficiais da Evolution API.'
+      },
+      {
+        category: 'improvement',
+        title: 'Vinculação Direta de IDs Oficiais',
+        description: 'As mensagens enviadas agora herdam imediatamente o identificador único oficial retornado pelo WhatsApp (3EB0...), mantendo histórico consistente e limpo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_27_v2_15_0',
+    version: 'v2.15.0',
+    date: '27/09/2026',
+    title: 'Sincronização Bidirecional do Chat do WhatsApp (Envios e Respostas ao Vivo)',
+    summary: 'Correção e aprimoramento completo do fluxo de envio e recebimento de mensagens no Chat. Tratamento de variações de 9º dígito móvel do Brasil (JIDs com 12 e 13 dígitos) e polling reativo em segundo plano para exibição contínua de respostas em tempo real.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Tratamento de Variações de JID (9º Dígito do Brasil)',
+        description: 'Compatibilização de números com e sem o nono dígito (ex: 556499305... e 55649305...), garantindo que mensagens reais da Evolution API sejam vinculadas corretamente à conversa correspondente.'
+      },
+      {
+        category: 'feature',
+        title: 'Atualização Contínua de Respostas no Chat Aberto',
+        description: 'Adicionado mecanismo de auto-refresh em segundo plano que sincroniza mensagens recebidas e lidas a cada 4 segundos enquanto o operador conversa.'
+      },
+      {
+        category: 'improvement',
+        title: 'Remoção de Mensagens Fictícias de Demonstração',
+        description: 'Exibição exclusiva do histórico real do WhatsApp oficial pareado na Evolution API.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_27_v2_14_0',
+    version: 'v2.14.0',
+    date: '27/09/2026',
+    title: 'Otimização de Desconexão Real do WhatsApp e Alta Performance da Conexão',
+    summary: 'Aprimoramento completo do ciclo de conexão e desconexão do WhatsApp. A ação de desconectar agora encerra efetivamente a sessão e remove o número vinculado tanto no servidor da nuvem (Railway) quanto no Supabase e banco local, além de otimizar a velocidade de carregamento da aba de Conexão & Aparelho.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Desconexão Real e Limpeza do Número Vinculado',
+        description: 'Eliminado o fallback forçado que restaurava o número anterior. Agora, ao clicar em "Desconectar", a instância é verdadeiramente encerrada na Evolution API e zerada no sistema.'
+      },
+      {
+        category: 'improvement',
+        title: 'Alta Performance e Fim da Lentidão',
+        description: 'Implementado AbortController com timeout de 6s em todas as chamadas da Evolution API, eliminando travamentos e garantindo transições instantâneas entre abas.'
+      },
+      {
+        category: 'security',
+        title: 'Restauração e Estabilidade do PostgreSQL no Railway',
+        description: 'Banco de dados da Evolution API restaurado e reconfigurado no Railway com persistência em volume seguro.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_26_v2_13_0',
+    version: 'v2.13.0',
+    date: '26/09/2026',
+    title: 'Sincronização em Tempo Real (Realtime Hub) Multi-Usuários no Chat do WhatsApp',
+    summary: 'Refinamento completo da infraestrutura de tempo real da tela do Chat. Qualquer mensagem enviada, nova conversa criada, conversa excluída ou alteração feita por Administradores do Sistema ou operadores agora é sincronizada instantaneamente para todos os outros usuários sem necessidade de atualizar a página.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Realtime Hub Bidirecional Multi-Usuários',
+        description: 'Implementação de canal Supabase Realtime Broadcast integrado a eventos Postgres Changes, propagando alterações de conversas e mensagens para todas as sessões em milissegundos.'
+      },
+      {
+        category: 'fix',
+        title: 'Estabilidade de Conexão do Realtime Hub',
+        description: 'Correção na ordem de registro dos ouvintes postgres_changes e broadcast no Supabase Realtime, evitando erros de renderização inicial no carregamento do Chat.'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificação de Remetente / Operador',
+        description: 'Exibição em tempo real do perfil e nome do operador (ex: "Administrador do Sistema") que despachou cada mensagem no chat.'
+      },
+      {
+        category: 'improvement',
+        title: 'Reordenação e Alertas Visuais/Sonoros Imediatos',
+        description: 'Atualização instantânea da lista lateral de conversas com a última mensagem, reordenação ao topo, contadores de não lidas e chime sonoro sutil.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_24_v2_12_0',
     version: 'v2.12.0',
     date: '24/09/2026',

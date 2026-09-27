@@ -222,6 +222,66 @@ export function formatDisplayPhone(phone: string): string {
 }
 
 /**
+ * Compara dois números de telefone considerando o 9º dígito móvel do Brasil
+ */
+export function arePhoneNumbersEqual(phone1?: string | null, phone2?: string | null): boolean {
+  if (!phone1 || !phone2) return false;
+  const s1 = sanitizePhoneNumber(phone1.replace(/@.+$/, ''));
+  const s2 = sanitizePhoneNumber(phone2.replace(/@.+$/, ''));
+  if (s1 === s2) return true;
+
+  if (s1.startsWith('55') && s2.startsWith('55')) {
+    const ddd1 = s1.substring(2, 4);
+    const ddd2 = s2.substring(2, 4);
+    if (ddd1 === ddd2) {
+      const num1 = s1.substring(4);
+      const num2 = s2.substring(4);
+      const norm1 = num1.length === 9 && num1.startsWith('9') ? num1.substring(1) : num1;
+      const norm2 = num2.length === 9 && num2.startsWith('9') ? num2.substring(1) : num2;
+      if (norm1 === norm2) return true;
+    }
+  }
+
+  if (s1.length >= 8 && s2.length >= 8 && s1.slice(-8) === s2.slice(-8)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Gera todas as variações possíveis de JID para um número de telefone brasileiro
+ */
+export function getPossibleJids(phoneNumber: string): string[] {
+  if (!phoneNumber) return [];
+  const clean = sanitizePhoneNumber(phoneNumber.replace(/@.+$/, ''));
+  const jids = new Set<string>();
+
+  if (phoneNumber.includes('@')) {
+    jids.add(phoneNumber);
+  }
+
+  if (clean) {
+    jids.add(`${clean}@s.whatsapp.net`);
+    jids.add(`${clean}@g.us`);
+    jids.add(`${clean}@lid`);
+
+    // Variação brasileira de 9º dígito: 55 + DDD + 9XXXX-XXXX <-> 55 + DDD + XXXX-XXXX
+    if (clean.startsWith('55') && clean.length === 13) {
+      const withoutNine = clean.substring(0, 4) + clean.substring(5);
+      jids.add(`${withoutNine}@s.whatsapp.net`);
+      jids.add(`${withoutNine}@lid`);
+    } else if (clean.startsWith('55') && clean.length === 12) {
+      const withNine = clean.substring(0, 4) + '9' + clean.substring(4);
+      jids.add(`${withNine}@s.whatsapp.net`);
+      jids.add(`${withNine}@lid`);
+    }
+  }
+
+  return Array.from(jids);
+}
+
+/**
  * Executa requisições HTTP para a Evolution API com suporte a fallback automático para proxy Vercel (/api/evolution)
  */
 async function fetchEvolution(endpoint: string, options: RequestInit = {}): Promise<Response> {
@@ -229,28 +289,45 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
   const cleanUrl = cfg.url.replace(/\/$/, '');
   const headers = {
     'apikey': cfg.apiKey,
+    'Content-Type': 'application/json',
     ...(options.headers || {})
   };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
 
   // 1. Tenta a URL direta configurada
   try {
     const res = await fetch(`${cleanUrl}${endpoint}`, {
       ...options,
-      headers
+      headers,
+      signal: options.signal || controller.signal
     });
+    clearTimeout(timeoutId);
     if (res.ok || res.status === 401 || res.status === 404) {
       return res;
     }
   } catch (err) {
+    clearTimeout(timeoutId);
     console.warn(`[Evolution Direct Fetch Failed] Tentando via Proxy Vercel /api/evolution${endpoint}...`, err);
   }
 
   // 2. Fallback resiliente via Proxy reverso do Vercel (/api/evolution/...)
-  const proxyUrl = `/api/evolution${endpoint}`;
-  return fetch(proxyUrl, {
-    ...options,
-    headers
-  });
+  const proxyController = new AbortController();
+  const proxyTimeout = setTimeout(() => proxyController.abort(), 6000);
+  try {
+    const proxyUrl = `/api/evolution${endpoint}`;
+    const proxyRes = await fetch(proxyUrl, {
+      ...options,
+      headers,
+      signal: options.signal || proxyController.signal
+    });
+    clearTimeout(proxyTimeout);
+    return proxyRes;
+  } catch (err) {
+    clearTimeout(proxyTimeout);
+    throw err;
+  }
 }
 
 /**
@@ -492,7 +569,7 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
     qrCode: '', 
     instance: updated, 
     isRealGateway: false,
-    warning: 'Não foi possível conectar ao servidor Evolution API na nuvem. Verifique se o Railway está ativo e tente gerar novamente.'
+    warning: 'O servidor Evolution API está online, mas o banco de dados Postgres no Railway está pausado ou inacessível (postgres.railway.internal). Reinicie o serviço do Postgres no Railway.'
   };
 }
 
@@ -580,8 +657,8 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
       state = target.connectionStatus;
     }
 
-    let phone = current.phone_number;
-    let profileName = current.name;
+    let phone: string | undefined;
+    let profileName = current.name || 'Transcunha Transporte';
 
     if (target) {
       if (target.ownerJid) {
@@ -598,69 +675,39 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
       const updated: WhatsAppInstance = {
         ...current,
         name: profileName || 'Transcunha Transporte',
-        phone_number: phone || '553598721970',
+        phone_number: phone || current.phone_number,
         instance_key: cfg.instanceName,
         status: 'connected',
         qr_code_base64: undefined,
         battery_level: 100,
         is_plugged: true,
-        last_connected_at: new Date().toISOString(),
+        last_connected_at: current.last_connected_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-
       return await saveWhatsAppInstance(updated);
     } else if (state === 'connecting' || state === 'qrcode') {
       const updated: WhatsAppInstance = {
         ...current,
         instance_key: cfg.instanceName,
         status: current.qr_code_base64 ? 'qrcode' : 'disconnected',
-        phone_number: phone || current.phone_number,
+        phone_number: undefined,
         updated_at: new Date().toISOString()
       };
       return await saveWhatsAppInstance(updated);
     } else {
-      // Fallback: se o gateway for o cloud padrão e já estiver pareado na nuvem
-      if (cfg.url.includes('railway.app') || !current.phone_number) {
-        const fallback: WhatsAppInstance = {
-          ...current,
-          name: 'Transcunha Transporte',
-          phone_number: '553598721970',
-          instance_key: cfg.instanceName,
-          status: 'connected',
-          qr_code_base64: undefined,
-          battery_level: 100,
-          is_plugged: true,
-          last_connected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        return await saveWhatsAppInstance(fallback);
-      }
-
       const updated: WhatsAppInstance = {
         ...current,
         instance_key: cfg.instanceName,
         status: 'disconnected',
+        phone_number: undefined,
         qr_code_base64: undefined,
         updated_at: new Date().toISOString()
       };
       return await saveWhatsAppInstance(updated);
     }
   } catch (err) {
-    console.warn('[Evolution API] Erro ao sincronizar instância:', err);
-    // Fallback garantido
-    const fallback: WhatsAppInstance = {
-      ...current,
-      name: 'Transcunha Transporte',
-      phone_number: '553598721970',
-      instance_key: cfg.instanceName,
-      status: 'connected',
-      qr_code_base64: undefined,
-      battery_level: 100,
-      is_plugged: true,
-      last_connected_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-    return await saveWhatsAppInstance(fallback);
+    console.warn('[Evolution API] Sincronização offline, mantendo estado atual:', err);
+    return current;
   }
 }
 
@@ -688,8 +735,8 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
   if (local) {
     try {
       const parsed = JSON.parse(local);
-      if (parsed.status === 'connected' && parsed.phone_number && parsed.name === 'Transcunha Transporte') {
-        return parsed;
+      if (parsed && parsed.id) {
+        return parsed as WhatsAppInstance;
       }
     } catch { /* ignore */ }
   }
@@ -698,8 +745,7 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
     id: '30a60d31-18b2-44db-a31f-ee97f599023a',
     name: 'Transcunha Transporte',
     instance_key: 'transcunha_matriz',
-    phone_number: '553598721970',
-    status: 'connected',
+    status: 'disconnected',
     battery_level: 100,
     is_plugged: true,
     api_token: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
@@ -711,10 +757,156 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
   return defaultInstance;
 }
 
+// =========================================================================
+// REALTIME HUB & BROADCAST DO WHATSAPP (SINCRONIZAÇÃO INSTANTÂNEA MULTI-USUÁRIOS)
+// =========================================================================
+
+const WA_REALTIME_CHANNEL_NAME = 'transcunha_whatsapp_realtime_hub';
+let waRealtimeChannelInstance: ReturnType<typeof supabase.channel> | null = null;
+const waRealtimeSubscribers = new Set<WhatsAppRealtimeEventHandler>();
+
+function notifyLocalSubscribers(event: string, payload: any) {
+  waRealtimeSubscribers.forEach(handler => {
+    try {
+      handler(event, payload);
+    } catch (err) {
+      console.error('[WhatsApp Realtime Handler Error]', err);
+    }
+  });
+}
+
+function initWARealtimeChannel(): ReturnType<typeof supabase.channel> {
+  if (!waRealtimeChannelInstance) {
+    const channel = supabase.channel(WA_REALTIME_CHANNEL_NAME, {
+      config: { broadcast: { self: false } }
+    });
+
+    // 1. Escuta broadcasts do Supabase Channel
+    channel.on('broadcast', { event: '*' }, (data: any) => {
+      if (data && data.event) {
+        notifyLocalSubscribers(data.event, data.payload);
+      }
+    });
+
+    // 2. Escuta mudanças direto no banco (Postgres Changes) na fila de mensagens
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'whatsapp_messages_queue' },
+      (payload: any) => {
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const row = payload.new;
+          const cleanPhone = sanitizePhoneNumber(row.recipient_phone || '');
+          if (cleanPhone) {
+            const chatMsg: WhatsAppChatMessage = {
+              id: row.id,
+              remote_jid: `${cleanPhone}@s.whatsapp.net`,
+              from_me: true,
+              text: row.rendered_body || row.message_body || '',
+              media_url: row.media_url,
+              media_type: row.message_type,
+              media_filename: row.media_filename,
+              timestamp: row.sent_at || row.created_at || new Date().toISOString(),
+              status: row.status || 'sent',
+              sender_name: row.recipient_name || 'Transcunha Logística'
+            };
+            notifyLocalSubscribers('chat_message_sent', { message: chatMsg });
+          }
+        }
+      }
+    );
+
+    // 3. Escuta mudanças na tabela de instâncias do Supabase
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'whatsapp_instances' },
+      (payload: any) => {
+        if (payload.new) {
+          notifyLocalSubscribers('instance_status_changed', { instance: payload.new });
+        }
+      }
+    );
+
+    // Conecta o canal somente APÓS registrar todos os ouvintes (.on)
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[WhatsApp Realtime Hub] Conectado com sucesso ao canal central.');
+      }
+    });
+
+    waRealtimeChannelInstance = channel;
+  }
+  return waRealtimeChannelInstance;
+}
+
+/**
+ * Emite um evento em tempo real via Supabase Broadcast para todos os clientes conectados
+ * e simultaneamente dispara um CustomEvent para as abas/janelas do navegador local.
+ */
+export async function broadcastWhatsAppEvent(event: string, payload: any): Promise<void> {
+  try {
+    const channel = initWARealtimeChannel();
+    await channel.send({
+      type: 'broadcast',
+      event,
+      payload
+    });
+  } catch (err) {
+    console.warn('[WhatsApp Realtime] Erro ao transmitir broadcast:', err);
+  }
+
+  // Notifica também os inscritos locais na mesma aba
+  notifyLocalSubscribers(event, payload);
+
+  // Notifica outras abas e componentes da mesma instância de navegador
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('transcunha:whatsapp_realtime', {
+        detail: { event, payload }
+      }));
+    } catch { /* ignore */ }
+  }
+}
+
+export type WhatsAppRealtimeEventHandler = (event: string, payload: any) => void;
+
+/**
+ * Inscreve um ouvinte para todas as alterações em tempo real do Chat de WhatsApp:
+ * - Broadcasts de mensagens enviadas por outros operadores/admin
+ * - Criação e exclusão de conversas
+ * - Alterações de conexão da instância (conectar/desconectar/QR code)
+ * - Sincronização em massa de histórico
+ * - Postgres Changes na fila de mensagens e instâncias do Supabase
+ */
+export function subscribeToWhatsAppRealtime(handler: WhatsAppRealtimeEventHandler): () => void {
+  initWARealtimeChannel();
+  waRealtimeSubscribers.add(handler);
+
+  // Escuta eventos locais adicionais da janela
+  const handleLocalEvent = (e: any) => {
+    const detail = e.detail;
+    if (detail && detail.event) {
+      handler(detail.event, detail.payload);
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('transcunha:whatsapp_realtime', handleLocalEvent);
+  }
+
+  return () => {
+    waRealtimeSubscribers.delete(handler);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('transcunha:whatsapp_realtime', handleLocalEvent);
+    }
+  };
+}
+
 export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<WhatsAppInstance> {
   const sanitizedInstance = {
     ...instance,
-    id: (instance.id && instance.id.includes('-')) ? instance.id : '30a60d31-18b2-44db-a31f-ee97f599023a'
+    id: (instance.id && instance.id.includes('-')) ? instance.id : '30a60d31-18b2-44db-a31f-ee97f599023a',
+    phone_number: instance.phone_number || null,
+    qr_code_base64: instance.qr_code_base64 || null
   };
 
   try {
@@ -726,6 +918,7 @@ export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<
 
     if (!error && data) {
       localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(data));
+      broadcastWhatsAppEvent('instance_status_changed', { instance: data });
       return data as WhatsAppInstance;
     }
   } catch (err) {
@@ -733,7 +926,8 @@ export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<
   }
 
   localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(sanitizedInstance));
-  return sanitizedInstance;
+  broadcastWhatsAppEvent('instance_status_changed', { instance: sanitizedInstance });
+  return sanitizedInstance as unknown as WhatsAppInstance;
 }
 
 export async function generateNewQRCode(forceNew: boolean = true): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
@@ -777,6 +971,7 @@ export function clearWhatsAppHistoryData(): void {
       window.dispatchEvent(new CustomEvent('transcunha:whatsapp_history_synced', {
         detail: { chatsCount: 0, messagesCount: 0 }
       }));
+      broadcastWhatsAppEvent('chats_cleared', {});
     }
   } catch (err) {
     console.warn('Erro ao limpar histórico de WhatsApp:', err);
@@ -962,7 +1157,13 @@ export async function enqueueWhatsAppMessage(params: {
       text: params.renderedBody
     };
 
-    if (params.mediaUrl) {
+    if (params.messageType === 'audio' || (params.mediaUrl && params.mediaUrl.startsWith('data:audio'))) {
+      endpoint = `/message/sendWhatsAppAudio/${cfg.instanceName}`;
+      bodyPayload = {
+        number: cleanPhone,
+        audio: params.mediaUrl
+      };
+    } else if (params.mediaUrl) {
       endpoint = `/message/sendMedia/${cfg.instanceName}`;
       bodyPayload = {
         number: cleanPhone,
@@ -1528,6 +1729,13 @@ export async function syncAllWhatsAppConversationsAndHistory(options: { limit?: 
       }));
     }
 
+    // Transmite sincronização em tempo real para todos os outros usuários
+    broadcastWhatsAppEvent('chat_history_synced', {
+      chatsCount: sortedChats.length,
+      messagesCount: totalMessagesImported,
+      chats: sortedChats
+    });
+
     return {
       success: true,
       chatsCount: sortedChats.length,
@@ -1640,12 +1848,20 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
   const cfg = getGatewayConfig();
   const messagesMap = new Map<string, WhatsAppChatMessage>();
 
-  // 1. Mensagens do cache local (localStorage)
+  // 1. Mensagens do cache local (localStorage) considerando variações de número
   try {
-    const localStore = localStorage.getItem(`${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`);
-    if (localStore) {
-      const parsed: WhatsAppChatMessage[] = JSON.parse(localStore);
-      parsed.forEach(m => messagesMap.set(m.id, m));
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(STORAGE_CHAT_MSGS_KEY)) {
+        const keyPhone = key.replace(`${STORAGE_CHAT_MSGS_KEY}_`, '');
+        if (arePhoneNumbersEqual(keyPhone, cleanPhone)) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed: WhatsAppChatMessage[] = JSON.parse(raw);
+            parsed.forEach(m => messagesMap.set(m.id, m));
+          }
+        }
+      }
     }
   } catch (err) {
     console.warn('Erro ao ler mensagens locais:', err);
@@ -1655,8 +1871,8 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
   try {
     const queue = await getWhatsAppQueue();
     const phoneMatches = queue.filter(q => {
-      const qPhone = sanitizePhoneNumber(q.recipient_phone || (q as any).phone_number || '');
-      return qPhone === cleanPhone;
+      const qPhone = q.recipient_phone || (q as any).phone_number || '';
+      return arePhoneNumbersEqual(qPhone, cleanPhone);
     });
 
     phoneMatches.forEach(item => {
@@ -1671,7 +1887,7 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
           media_filename: item.media_filename,
           timestamp: item.sent_at || item.created_at,
           status: item.status,
-          sender_name: 'Transcunha Logística'
+          sender_name: item.recipient_name || 'Transcunha Logística'
         });
       }
     });
@@ -1679,129 +1895,91 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
     console.warn('Erro ao sincronizar mensagens da fila:', err);
   }
 
-  // 3. Tenta buscar mensagens da Evolution API
+  // 3. Tenta buscar mensagens da Evolution API para todas as variações de JID (com e sem 9º dígito)
   try {
-    const jidPatterns = [
-      `${cleanPhone}@s.whatsapp.net`,
-      `${cleanPhone}@g.us`,
-      `${cleanPhone}@lid`
-    ];
+    const jidPatterns = getPossibleJids(cleanPhone);
 
     for (const jid of jidPatterns) {
-      const res = await fetchEvolution(`/chat/findMessages/${cfg.instanceName}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          where: {
-            key: {
-              remoteJid: jid
-            }
+      try {
+        const res = await fetchEvolution(`/chat/findMessages/${cfg.instanceName}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
           },
-          limit: 100
-        })
-      });
+          body: JSON.stringify({
+            where: {
+              key: {
+                remoteJid: jid
+              }
+            },
+            limit: 100
+          })
+        });
 
-      if (res.ok) {
-        const evoData = await res.json();
-        const records = Array.isArray(evoData) ? evoData : (evoData?.messages?.records || evoData?.messages || []);
-        if (Array.isArray(records) && records.length > 0) {
-          records.forEach((msg: any) => {
-            const msgId = msg.key?.id || msg.id || `evo_${Date.now()}_${Math.random()}`;
-            const isFromMe = !!msg.key?.fromMe;
-            const parsed = extractMessageContent(msg);
-            const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString();
+        if (res.ok) {
+          const evoData = await res.json();
+          const records = Array.isArray(evoData) ? evoData : (evoData?.messages?.records || evoData?.messages || []);
+          if (Array.isArray(records) && records.length > 0) {
+            records.forEach((msg: any) => {
+              const msgId = msg.key?.id || msg.id || `evo_${Date.now()}_${Math.random()}`;
+              const isFromMe = !!msg.key?.fromMe;
+              const parsed = extractMessageContent(msg);
+              const ts = msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString();
 
-            messagesMap.set(msgId, {
-              id: msgId,
-              remote_jid: msg.key?.remoteJid || jid,
-              from_me: isFromMe,
-              text: parsed.text,
-              media_url: parsed.mediaUrl,
-              media_type: parsed.mediaType,
-              media_filename: parsed.mediaFilename,
-              media_duration: parsed.mediaDuration,
-              media_size: parsed.mediaSize,
-              timestamp: ts,
-              status: isFromMe ? 'read' : 'delivered',
-              sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Motorista')
+              messagesMap.set(msgId, {
+                id: msgId,
+                remote_jid: msg.key?.remoteJid || jid,
+                from_me: isFromMe,
+                text: parsed.text,
+                media_url: parsed.mediaUrl,
+                media_type: parsed.mediaType,
+                media_filename: parsed.mediaFilename,
+                media_duration: parsed.mediaDuration,
+                media_size: parsed.mediaSize,
+                timestamp: ts,
+                status: isFromMe ? 'read' : 'delivered',
+                sender_name: isFromMe ? 'Transcunha Logística' : (msg.pushName || 'Motorista')
+              });
             });
-          });
-          break; // Se encontrou registros com esse JID, já obteve o histórico
+          }
         }
-      }
+      } catch { /* ignore specific jid error */ }
     }
   } catch (err) {
     console.warn('Evolution API findMessages offline:', err);
   }
 
-  // 4. Se a conversa estiver vazia para os contatos de exemplo, gera mensagens de demonstração com áudio, imagem e PDF
-  if (messagesMap.size === 0) {
-    if (cleanPhone.includes('993058754')) {
-      const samples: WhatsAppChatMessage[] = [
-        {
-          id: 'sample_m1',
-          remote_jid: `${cleanPhone}@s.whatsapp.net`,
-          from_me: true,
-          text: '🚛 *Transcunha Logística - Oportunidade de Carga*\n\nOlá, *Carlos Silva*! Temos uma nova carga disponível:\n\n📍 *Origem:* Rio Verde - GO\n🎯 *Destino:* Santos - SP\n📦 *Mercadoria:* Soja a Granel\n⚖️ *Peso:* 38.000 kg\n💰 *Valor do Frete:* R$ 9.800,00',
-          timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-          status: 'read',
-          sender_name: 'Transcunha Logística'
-        },
-        {
-          id: 'sample_m2',
-          remote_jid: `${cleanPhone}@s.whatsapp.net`,
-          from_me: false,
-          text: 'Olá! Tenho interesse sim, consigo encostar o caminhão amanhã às 08h.',
-          timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-          status: 'read',
-          sender_name: 'Carlos Silva'
-        },
-        {
-          id: 'sample_m3',
-          remote_jid: `${cleanPhone}@s.whatsapp.net`,
-          from_me: true,
-          text: 'Perfeito, Carlos! Ordem de carregamento gerada com sucesso. Segue anexo em PDF.',
-          media_type: 'document',
-          media_filename: 'Ordem_Carregamento_Transcunha_8921.pdf',
-          media_size: '420 KB',
-          timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-          status: 'read',
-          sender_name: 'Transcunha Logística'
-        },
-        {
-          id: 'sample_m4',
-          remote_jid: `${cleanPhone}@s.whatsapp.net`,
-          from_me: false,
-          text: 'Mensagem de voz recebida do motorista',
-          media_type: 'audio',
-          media_duration: 18,
-          timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-          status: 'read',
-          sender_name: 'Carlos Silva'
-        },
-        {
-          id: 'sample_m5',
-          remote_jid: `${cleanPhone}@s.whatsapp.net`,
-          from_me: false,
-          text: 'Foto da balança e comprovante de pesagem',
-          media_type: 'image',
-          media_url: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=800&q=80',
-          timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-          status: 'read',
-          sender_name: 'Carlos Silva'
-        }
-      ];
-      samples.forEach(s => messagesMap.set(s.id, s));
-    }
-  }
-
-  const result = Array.from(messagesMap.values()).sort((a, b) => {
+  const rawList = Array.from(messagesMap.values()).sort((a, b) => {
     return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
   });
 
-  return result;
+  // Deduplicação inteligente de mensagens enviadas/recebidas
+  const deduped: WhatsAppChatMessage[] = [];
+  for (const msg of rawList) {
+    const isDup = deduped.some((existing, idx) => {
+      if (existing.from_me === msg.from_me) {
+        const sameText = (existing.text || '').trim() === (msg.text || '').trim();
+        const sameMedia = Boolean(existing.media_filename && existing.media_filename === msg.media_filename) || Boolean(existing.media_url && existing.media_url === msg.media_url);
+        if (sameText || sameMedia) {
+          const timeDiff = Math.abs(new Date(existing.timestamp).getTime() - new Date(msg.timestamp).getTime());
+          if (timeDiff < 25000) {
+            // Se o item novo tiver ID oficial da Evolution e o anterior for temporário, atualiza
+            if ((msg.id.startsWith('3EB') || !msg.id.startsWith('wq_')) && existing.id.startsWith('wq_')) {
+              deduped[idx] = msg;
+            }
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
+    if (!isDup) {
+      deduped.push(msg);
+    }
+  }
+
+  return deduped;
 }
 
 /**
@@ -1810,34 +1988,49 @@ export async function getWhatsAppChatMessages(remoteJidOrPhone: string): Promise
 export async function sendDirectChatMessage(params: {
   recipientPhone: string;
   recipientName?: string;
+  senderName?: string;
   text: string;
+  messageType?: WhatsAppMessageType;
   mediaUrl?: string;
   mediaFilename?: string;
+  mediaDuration?: number;
 }): Promise<WhatsAppChatMessage> {
   const cleanPhone = sanitizePhoneNumber(params.recipientPhone);
   const cfg = getGatewayConfig();
+  const effectiveSenderName = params.senderName || 'Transcunha Logística';
+
+  const finalMessageType: WhatsAppMessageType = params.messageType || (
+    params.mediaUrl?.startsWith('data:audio') || params.mediaUrl?.match(/\.(mp3|ogg|wav|m4a|aac)$/i)
+      ? 'audio'
+      : (params.mediaUrl?.startsWith('data:image') || params.mediaFilename?.match(/\.(jpg|jpeg|png|webp|gif)$/i))
+        ? 'image'
+        : params.mediaUrl ? 'document' : 'text'
+  );
 
   // Enfileira e dispara no gateway
   const queueItem = await enqueueWhatsAppMessage({
     recipientPhone: cleanPhone,
     recipientName: params.recipientName,
-    messageType: params.mediaUrl ? 'document' : 'text',
+    messageType: finalMessageType,
     renderedBody: params.text,
     mediaUrl: params.mediaUrl,
     mediaFilename: params.mediaFilename
   });
 
+  const officialId = queueItem.external_message_id || queueItem.id;
+
   const chatMessage: WhatsAppChatMessage = {
-    id: queueItem.id,
+    id: officialId,
     remote_jid: `${cleanPhone}@s.whatsapp.net`,
     from_me: true,
     text: params.text,
     media_url: params.mediaUrl,
-    media_type: params.mediaUrl ? 'document' : 'text',
+    media_type: finalMessageType,
     media_filename: params.mediaFilename,
+    media_duration: params.mediaDuration,
     timestamp: new Date().toISOString(),
     status: queueItem.status || 'sent',
-    sender_name: 'Transcunha Logística'
+    sender_name: effectiveSenderName
   };
 
   // Salva no cache local de mensagens do contato
@@ -1845,8 +2038,11 @@ export async function sendDirectChatMessage(params: {
     const localStoreKey = `${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`;
     const existing = localStorage.getItem(localStoreKey);
     const msgs: WhatsAppChatMessage[] = existing ? JSON.parse(existing) : [];
-    msgs.push(chatMessage);
-    localStorage.setItem(localStoreKey, JSON.stringify(msgs));
+    const isDup = msgs.some(m => m.id === chatMessage.id || (m.from_me && m.text === chatMessage.text && Math.abs(new Date(m.timestamp).getTime() - new Date(chatMessage.timestamp).getTime()) < 15000));
+    if (!isDup) {
+      msgs.push(chatMessage);
+      localStorage.setItem(localStoreKey, JSON.stringify(msgs));
+    }
 
     // Atualiza lista de conversas com a última mensagem
     const chatsStore = localStorage.getItem(STORAGE_CHATS_KEY);
@@ -1875,6 +2071,12 @@ export async function sendDirectChatMessage(params: {
       chats.unshift(updatedChat);
     }
     localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(chats));
+
+    // Transmite a nova mensagem em tempo real para todos os outros usuários
+    broadcastWhatsAppEvent('chat_message_sent', {
+      message: chatMessage,
+      chat: updatedChat
+    });
   } catch (err) {
     console.warn('Erro ao atualizar cache local de mensagens:', err);
   }
@@ -1911,6 +2113,10 @@ export async function createOrGetChat(phoneNumber: string, name?: string): Promi
 
   const updatedChats = [newChat, ...chats];
   localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(updatedChats));
+
+  // Transmite criação do novo chat em tempo real para todos os usuários
+  broadcastWhatsAppEvent('chat_created', { chat: newChat });
+
   return newChat;
 }
 
@@ -1923,5 +2129,9 @@ export async function deleteWhatsAppChat(chatPhoneOrJid: string): Promise<void> 
   const filtered = chats.filter(c => sanitizePhoneNumber(c.phone_number) !== cleanPhone);
   localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(filtered));
   localStorage.removeItem(`${STORAGE_CHAT_MSGS_KEY}_${cleanPhone}`);
+
+  // Transmite exclusão em tempo real para todos os usuários
+  broadcastWhatsAppEvent('chat_deleted', { phoneNumber: cleanPhone });
 }
+
 

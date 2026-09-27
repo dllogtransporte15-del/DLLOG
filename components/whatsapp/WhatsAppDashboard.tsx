@@ -238,6 +238,7 @@ export const WhatsAppDashboard: React.FC<WhatsAppDashboardProps> = ({ currentUse
       {activeTab === 'chats' && (
         <WhatsAppChatPanel 
           mode="embedded" 
+          currentUser={currentUser}
           onOpenFloating={() => window.dispatchEvent(new CustomEvent('transcunha:open_whatsapp_chat'))}
         />
       )}

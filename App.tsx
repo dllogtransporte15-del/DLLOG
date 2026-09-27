@@ -3747,6 +3747,7 @@ const App: React.FC = () => {
           onClose={() => setIsGlobalWhatsAppFloatingOpen(false)}
           initialPhone={globalWhatsAppInitialPhone}
           initialName={globalWhatsAppInitialName}
+          currentUser={currentUser}
         />
       )}
     </div>
