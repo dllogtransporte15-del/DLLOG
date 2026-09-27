@@ -7,7 +7,7 @@ import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2 } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
@@ -48,6 +48,7 @@ interface AttachmentModalProps {
   users?: User[];
   riskQueryOptions?: RiskQueryOption[];
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void> | void;
+  onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
 }
 
 declare const L: any;
@@ -231,6 +232,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   users = [],
   riskQueryOptions: propRiskQueryOptions,
   onUpdateShipmentData,
+  onDeleteAttachment,
 }) => {
   const isDemo = isDemoUser(currentUser);
   const isEmbarcador = currentUser?.profile === UserProfile.Embarcador || (currentUser?.profile as string) === 'Embarcador';
@@ -1217,6 +1219,27 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         <Eye className="w-3 h-3" />
                         <span>Ver Dados</span>
                       </button>
+
+                      {onDeleteAttachment && !isDemo && (
+                        currentUser?.profile === UserProfile.Admin ||
+                        currentUser?.profile === UserProfile.Diretor ||
+                        currentUser?.profile === UserProfile.Supervisor ||
+                        currentUser?.profile === UserProfile.Fiscal ||
+                        currentUser?.profile === UserProfile.Embarcador
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm(`Tem certeza que deseja excluir o anexo "${cleanFileName}" (${docType})?`)) {
+                              await onDeleteAttachment(shipment.id, file);
+                            }
+                          }}
+                          className="inline-flex items-center p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer shrink-0"
+                          title="Excluir Anexo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   );
                 })}

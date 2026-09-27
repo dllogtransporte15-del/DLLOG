@@ -11,7 +11,7 @@ import RecommendedDriversModal from '../components/RecommendedDriversModal';
 import AttachmentModal from '../components/AttachmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
 import { REQUIRED_DOCUMENT_MAP } from '../types';
-import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption } from '../types';
+import type { Cargo, Client, Product, Driver, Shipment, Vehicle, User, ProfilePermissions, VehicleSetType, VehicleBodyType, Branch, RiskQueryOption, Owner } from '../types';
 import { can, isDemoUser } from '../auth';
 import { CopyIcon } from '../components/icons/CopyIcon';
 import { CargoStatus, UserProfile, ShipmentStatus } from '../types';
@@ -26,6 +26,7 @@ interface OperationalLoadsPageProps {
   clients: Client[];
   products: Product[];
   drivers: Driver[];
+  owners?: Owner[];
   vehicles: Vehicle[];
   shipments: Shipment[];
   allShipments: Shipment[];
@@ -88,6 +89,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   clients,
   products,
   drivers,
+  owners = [],
   vehicles,
   shipments,
   allShipments,
@@ -427,6 +429,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
         onSave={handleSaveShipment}
         cargo={selectedCargo}
         drivers={drivers}
+        owners={owners}
         clients={clients}
         vehicles={vehicles}
         currentUser={currentUser}
@@ -517,6 +520,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
           users={users}
           riskQueryOptions={riskQueryOptions}
           onUpdateShipmentData={onUpdateShipmentData}
+          onDeleteAttachment={onDeleteAttachment}
         />
       )}
 

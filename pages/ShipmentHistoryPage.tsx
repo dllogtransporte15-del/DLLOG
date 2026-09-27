@@ -263,6 +263,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
         />
       )}
 

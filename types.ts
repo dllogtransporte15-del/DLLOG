@@ -520,6 +520,7 @@ export interface Shipment {
   commercialCommission?: number;
   cancellationReason?: string;
   driverReferences?: string;
+  ownerName?: string;
   ownerContact?: string;
   balanceToReceiveValue?: number;
   discountValue?: number;

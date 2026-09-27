@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Cargo, Driver, Shipment, Client, Vehicle, User } from '../types';
+import type { Cargo, Driver, Shipment, Client, Vehicle, User, Owner } from '../types';
 import { UserProfile, DailyScheduleType, VehicleSetType, VehicleBodyType, DriverPaymentMethod, ShipmentStatus, AnttModality, EtcTaxRegime, FreightCalculationType } from '../types';
 import { supabase } from '../supabase';
 import { useToast } from '../hooks/useToast';
@@ -20,16 +20,19 @@ interface NewShipmentModalProps {
   currentUser: User | null;
   shipments: Shipment[];
   users: User[];
+  owners?: Owner[];
   offer?: any;
 }
 
-const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users, offer }) => {
+const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, onSave, cargo, drivers, clients, vehicles, currentUser, shipments, users, owners = [], offer }) => {
   const [activeCargo, setActiveCargo] = useState<Cargo | null>(cargo);
   const [isUpdatingCargoPermission, setIsUpdatingCargoPermission] = useState(false);
   const [isSyncingCargo, setIsSyncingCargo] = useState(false);
 
   const [driverName, setDriverName] = useState('');
   const [driverCpf, setDriverCpf] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [ownerAutoFillSource, setOwnerAutoFillSource] = useState('');
   const [ownerContact, setOwnerContact] = useState('');
   const [horsePlate, setHorsePlate] = useState('');
   const [trailer1Plate, setTrailer1Plate] = useState('');
@@ -190,7 +193,27 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
       const initialAntt = (lastShipment?.anttModality as AnttModality) || (lastShipment?.driverFreightType === 'PF' ? AnttModality.TAC : (lastShipment?.driverFreightType === 'PJ' ? AnttModality.ETC : ''));
       setAnttModality(initialAntt || '');
-      setAnttOwnerIdentifier(lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (initialDriverCpf || '') : ''));
+      const initialOwnerId = lastShipment?.anttOwnerIdentifier || (initialAntt === AnttModality.TAC ? (initialDriverCpf || '') : '');
+      setAnttOwnerIdentifier(initialOwnerId);
+
+      let initialOwnerName = lastShipment?.ownerName || '';
+      let initialOwnerSource = '';
+      if (!initialOwnerName && initialOwnerId) {
+        const cleanId = initialOwnerId.replace(/\D/g, '');
+        if (cleanId === cleanTargetCpf && initialDriverName) {
+          initialOwnerName = initialDriverName;
+          initialOwnerSource = 'Motorista do Embarque';
+        } else {
+          const ownerMatch = (owners || []).find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === cleanId);
+          if (ownerMatch) {
+            initialOwnerName = ownerMatch.name;
+            initialOwnerSource = 'Proprietário Cadastrado';
+          }
+        }
+      }
+      setOwnerName(initialOwnerName);
+      setOwnerAutoFillSource(initialOwnerSource);
+
       setCnpjSearchResult(null);
       setEtcTaxRegime((lastShipment?.etcTaxRegime as EtcTaxRegime) || '');
       setDriverFreightType(lastShipment?.driverFreightType || (initialAntt === AnttModality.TAC ? 'PF' : 'PJ'));
@@ -201,7 +224,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setPendingPayload(null);
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles]);
+  }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles, owners]);
 
   // Driver & Plate Suggestions State
   const [showDriverSuggestions, setShowDriverSuggestions] = useState(false);
@@ -223,6 +246,102 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Efficient lookup for owner or driver details across system
+  const lookupOwnerInfo = (identifier: string, modality: AnttModality | '') => {
+    const clean = (identifier || '').replace(/\D/g, '');
+    if (!clean) return null;
+
+    // Check if clean is CPF (11 digits) or modality is TAC (Pessoa Física)
+    if (clean.length === 11 || modality === AnttModality.TAC) {
+      const cleanDriverCpf = driverCpf.replace(/\D/g, '');
+      // 1. Match current driver in modal
+      if (cleanDriverCpf && clean === cleanDriverCpf && driverName.trim()) {
+        return {
+          name: driverName.trim(),
+          phone: driverContact || '',
+          bankDetails: bankDetails || '',
+          pixKey: pixKey || '',
+          paymentMethod: paymentMethod || '',
+          source: 'Motorista do Embarque Atual',
+        };
+      }
+
+      // 2. Match any driver in drivers list
+      const matchingDriver = drivers.find(d => d.cpf && d.cpf.replace(/\D/g, '') === clean);
+      if (matchingDriver) {
+        return {
+          name: matchingDriver.name,
+          phone: matchingDriver.phone || '',
+          bankDetails: '',
+          pixKey: '',
+          paymentMethod: '',
+          source: 'Motorista Cadastrado na Plataforma',
+        };
+      }
+
+      // 3. Match any owner in owners list
+      const matchingOwner = (owners || []).find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === clean);
+      if (matchingOwner) {
+        return {
+          name: matchingOwner.name,
+          phone: matchingOwner.phone || '',
+          bankDetails: matchingOwner.bankDetails || '',
+          pixKey: '',
+          paymentMethod: '',
+          source: 'Proprietário Cadastrado',
+        };
+      }
+
+      // 4. Match past shipments
+      const pastShipment = shipments.find(s => {
+        const sOwnerId = (s.anttOwnerIdentifier || '').replace(/\D/g, '');
+        const sDriverCpf = (s.driverCpf || '').replace(/\D/g, '');
+        return (sOwnerId === clean && (s.ownerName || s.driverName)) || (sDriverCpf === clean && s.driverName);
+      });
+      if (pastShipment) {
+        return {
+          name: pastShipment.ownerName || (pastShipment.driverCpf?.replace(/\D/g, '') === clean ? pastShipment.driverName : ''),
+          phone: pastShipment.ownerContact || pastShipment.driverContact || '',
+          bankDetails: pastShipment.bankDetails || '',
+          pixKey: pastShipment.pixKey || '',
+          paymentMethod: pastShipment.paymentMethod || '',
+          source: 'Histórico de Embarques',
+        };
+      }
+    }
+
+    // Check if clean is CNPJ (14 digits) or modality is ETC (Pessoa Jurídica)
+    if (clean.length === 14 || modality === AnttModality.ETC) {
+      // 1. Match owners list
+      const matchingOwner = (owners || []).find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === clean);
+      if (matchingOwner) {
+        return {
+          name: matchingOwner.name,
+          phone: matchingOwner.phone || '',
+          bankDetails: matchingOwner.bankDetails || '',
+          pixKey: '',
+          paymentMethod: '',
+          source: 'Proprietário PJ Cadastrado',
+        };
+      }
+
+      // 2. Match past shipments
+      const pastShipment = shipments.find(s => (s.anttOwnerIdentifier || '').replace(/\D/g, '') === clean && s.ownerName);
+      if (pastShipment) {
+        return {
+          name: pastShipment.ownerName || '',
+          phone: pastShipment.ownerContact || '',
+          bankDetails: pastShipment.bankDetails || '',
+          pixKey: pastShipment.pixKey || '',
+          paymentMethod: pastShipment.paymentMethod || '',
+          source: 'Histórico de Embarques',
+        };
+      }
+    }
+
+    return null;
+  };
 
   // Efficient single-pass search for driver's latest shipment
   const findLastShipmentForDriver = (targetCpf?: string, targetName?: string, targetPhone?: string) => {
@@ -309,11 +428,20 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       if (lastShipment.vehicleTag) setVehicleTag(lastShipment.vehicleTag);
       if (lastShipment.vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
       if (lastShipment.vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
-      if (lastShipment.anttOwnerIdentifier) {
-        setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
-      } else if (selectedDriver.cpf) {
-        setAnttOwnerIdentifier(selectedDriver.cpf);
+      
+      const targetOwnerId = lastShipment.anttOwnerIdentifier || selectedDriver.cpf || '';
+      if (targetOwnerId) {
+        setAnttOwnerIdentifier(targetOwnerId);
       }
+      
+      if (lastShipment.ownerName) {
+        setOwnerName(lastShipment.ownerName);
+        setOwnerAutoFillSource('Histórico de Embarques');
+      } else if (targetOwnerId && selectedDriver.cpf && targetOwnerId.replace(/\D/g, '') === selectedDriver.cpf.replace(/\D/g, '')) {
+        setOwnerName(selectedDriver.name || '');
+        setOwnerAutoFillSource('Motorista do Embarque');
+      }
+
       if (lastShipment.anttModality) {
         setAnttModality(lastShipment.anttModality as AnttModality);
         setDriverFreightType(lastShipment.anttModality === AnttModality.TAC ? 'PF' : 'PJ');
@@ -329,6 +457,19 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       if (linkedVehicle.setType) setVehicleSetType(linkedVehicle.setType);
       if (linkedVehicle.bodyType) setVehicleBodyType(linkedVehicle.bodyType);
       setSelectedVehicle(linkedVehicle);
+      if (selectedDriver.cpf) {
+        if (!anttModality || anttModality === AnttModality.TAC) {
+          setAnttOwnerIdentifier(selectedDriver.cpf);
+          setOwnerName(selectedDriver.name || '');
+          setOwnerAutoFillSource('Motorista do Embarque');
+        }
+      }
+    } else if (selectedDriver.cpf) {
+      if (!anttModality || anttModality === AnttModality.TAC) {
+        setAnttOwnerIdentifier(selectedDriver.cpf);
+        setOwnerName(selectedDriver.name || '');
+        setOwnerAutoFillSource('Motorista do Embarque');
+      }
     }
   };
 
@@ -342,6 +483,20 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setSelectedVehicle(vehicle);
       if (vehicle.setType) setVehicleSetType(vehicle.setType);
       if (vehicle.bodyType) setVehicleBodyType(vehicle.bodyType);
+      
+      // If vehicle has ownerId, try to find owner
+      if (vehicle.ownerId) {
+        const vehicleOwner = (owners || []).find(o => o.id === vehicle.ownerId);
+        if (vehicleOwner) {
+          if (!anttOwnerIdentifier) {
+            setAnttOwnerIdentifier(vehicleOwner.cpfCnpj);
+            setOwnerName(vehicleOwner.name);
+            setOwnerAutoFillSource('Proprietário do Veículo');
+            if (vehicleOwner.phone && !ownerContact) setOwnerContact(vehicleOwner.phone);
+            if (vehicleOwner.bankDetails && !bankDetails) setBankDetails(vehicleOwner.bankDetails);
+          }
+        }
+      }
     } else {
       setSelectedVehicle(null);
     }
@@ -354,6 +509,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         if (lastShipment.trailer3Plate) setTrailer3Plate(lastShipment.trailer3Plate);
         if (lastShipment.vehicleSetType && !vehicleSetType) setVehicleSetType(lastShipment.vehicleSetType);
         if (lastShipment.vehicleBodyType && !vehicleBodyType) setVehicleBodyType(lastShipment.vehicleBodyType);
+        if (lastShipment.anttOwnerIdentifier && !anttOwnerIdentifier) {
+          setAnttOwnerIdentifier(lastShipment.anttOwnerIdentifier);
+          if (lastShipment.ownerName) setOwnerName(lastShipment.ownerName);
+          if (lastShipment.anttModality) setAnttModality(lastShipment.anttModality as AnttModality);
+        }
       }
     }
   };
@@ -379,6 +539,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       const exactDriver = drivers.find(d => d.cpf && d.cpf.replace(/\D/g, '') === clean);
       if (exactDriver) {
         applyDriverAutofill(exactDriver);
+      } else if (anttModality === AnttModality.TAC && (!anttOwnerIdentifier || anttOwnerIdentifier === driverCpf)) {
+        setAnttOwnerIdentifier(formatted);
+        if (driverName) {
+          setOwnerName(driverName);
+          setOwnerAutoFillSource('Motorista do Embarque');
+        }
       }
     }
   };
@@ -485,6 +651,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         regimeFound: desc
       });
 
+      if (companyName) {
+        setOwnerName(companyName);
+        setOwnerAutoFillSource('Receita Federal / BrasilAPI');
+      }
+
       showToast(`CNPJ Identificado: ${companyName} (${desc})`, 'success');
     } catch (err: any) {
       console.warn('Erro na busca do CNPJ:', err);
@@ -500,12 +671,37 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     if (anttModality === AnttModality.TAC) {
       const formatted = autoFormatInput('cpf', value);
       setAnttOwnerIdentifier(formatted);
+      const clean = formatted.replace(/\D/g, '');
+      if (clean.length === 11) {
+        const found = lookupOwnerInfo(formatted, AnttModality.TAC);
+        if (found && found.name) {
+          setOwnerName(found.name);
+          setOwnerAutoFillSource(found.source);
+          if (found.phone && !ownerContact) setOwnerContact(found.phone);
+          if (found.bankDetails && !bankDetails) setBankDetails(found.bankDetails);
+          if (found.pixKey && !pixKey) setPixKey(found.pixKey);
+          if (found.paymentMethod && !paymentMethod) setPaymentMethod(found.paymentMethod);
+        } else {
+          setOwnerAutoFillSource('');
+        }
+      }
     } else {
       const formatted = autoFormatInput('cnpj', value);
       setAnttOwnerIdentifier(formatted);
       const clean = formatted.replace(/\D/g, '');
-      if (clean.length === 14 && !isSearchingCnpj) {
-        searchCnpjTaxRegime(formatted);
+      if (clean.length === 14) {
+        const found = lookupOwnerInfo(formatted, AnttModality.ETC);
+        if (found && found.name) {
+          setOwnerName(found.name);
+          setOwnerAutoFillSource(found.source);
+          if (found.phone && !ownerContact) setOwnerContact(found.phone);
+          if (found.bankDetails && !bankDetails) setBankDetails(found.bankDetails);
+          if (found.pixKey && !pixKey) setPixKey(found.pixKey);
+          if (found.paymentMethod && !paymentMethod) setPaymentMethod(found.paymentMethod);
+        }
+        if (!isSearchingCnpj) {
+          searchCnpjTaxRegime(formatted);
+        }
       }
     }
   };
@@ -795,6 +991,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       driverName,
       driverCpf,
       driverContact,
+      ownerName: ownerName.trim() || undefined,
       ownerContact: ownerContact || undefined,
       horsePlate,
       trailer1Plate,
@@ -1467,27 +1664,53 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                             </button>
                         </div>
 
-                        {/* When TAC is selected: CPF do Titular */}
+                        {/* When TAC is selected: CPF do Titular & Nome do Proprietário */}
                         {anttModality === AnttModality.TAC && (
-                            <div className="pt-2 space-y-1.5 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
-                                <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                                    CPF do Titular da ANTT (TAC) <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={anttOwnerIdentifier}
-                                    onChange={(e) => handleAnttOwnerIdentifierChange(e.target.value)}
-                                    placeholder="000.000.000-00"
-                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
-                                    required
-                                />
-                                <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                                    CPF do transportador autônomo titular do RNTRC
-                                </p>
+                            <div className="pt-2 space-y-3 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
+                                <div className="space-y-1.5">
+                                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                        CPF do Titular da ANTT (TAC) <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={anttOwnerIdentifier}
+                                        onChange={(e) => handleAnttOwnerIdentifierChange(e.target.value)}
+                                        placeholder="000.000.000-00"
+                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
+                                        required
+                                    />
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                        CPF do transportador autônomo titular do RNTRC
+                                    </p>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            Nome do Proprietário / Titular da ANTT <span className="text-red-500">*</span>
+                                        </label>
+                                        {ownerAutoFillSource && (
+                                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                ✓ {ownerAutoFillSource}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={ownerName}
+                                        onChange={(e) => {
+                                            setOwnerName(e.target.value);
+                                            setOwnerAutoFillSource('');
+                                        }}
+                                        placeholder="Nome completo do proprietário"
+                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-orange-500"
+                                        required
+                                    />
+                                </div>
                             </div>
                         )}
 
-                        {/* When ETC is selected: CNPJ with Lookup and Regime Tributário */}
+                        {/* When ETC is selected: CNPJ with Lookup, Nome da Empresa and Regime Tributário */}
                         {anttModality === AnttModality.ETC && (
                             <div className="pt-2 space-y-3 animate-fade-in border-t border-gray-200 dark:border-gray-700/80">
                                 <div className="space-y-1.5">
@@ -1539,6 +1762,30 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                             </p>
                                         </div>
                                     )}
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            Razão Social / Nome do Proprietário (PJ) <span className="text-red-500">*</span>
+                                        </label>
+                                        {ownerAutoFillSource && (
+                                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                                ✓ {ownerAutoFillSource}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={ownerName}
+                                        onChange={(e) => {
+                                            setOwnerName(e.target.value);
+                                            setOwnerAutoFillSource('');
+                                        }}
+                                        placeholder="Razão Social ou Nome Fantasia da Empresa"
+                                        className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-emerald-600"
+                                        required
+                                    />
                                 </div>
 
                                 {/* Regime Tributário (ETC) - Definido exclusivamente pela consulta */}

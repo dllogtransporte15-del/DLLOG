@@ -271,7 +271,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Enquadramento fiscal alterado de "${oldRegimeLabel}" para "${newRegimeLabel}". Imposto Federal e custos operacionais recalculados.`
       };
@@ -423,7 +423,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       const oldTax = impostoFederalLiquido;
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Imposto Federal editado manualmente: de "${formatBrl(oldTax)}" para "${formatBrl(validNum)}".`
       };
@@ -485,7 +485,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Imposto Federal restaurado para o cálculo automático do sistema.`
       };
@@ -615,7 +615,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       const oldCredit = pisCofinsCredit;
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Crédito Gerado editado manualmente: de "${formatBrl(oldCredit)}" para "${formatBrl(validNum)}".`
       };
@@ -677,7 +677,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Crédito Gerado restaurado para o cálculo automático do sistema.`
       };
@@ -806,7 +806,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Custo Adicional / Prejuízo registrado: ${formatBrl(newCost.value)} (Categoria: ${newCost.category}). Justificativa: "${newCost.description}".`
       };
@@ -876,7 +876,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Custo Adicional / Prejuízo de ${formatBrl(oldVal)} removido da operação.`
       };
@@ -945,7 +945,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Comissão de Agência (${effectiveAgencyPercentage}% sobre Lucro Líquido Real) ${nextState ? `ativada: ${formatBrl(calculatedAgencyVal)} destinado à ${responsibleAgencyName}` : 'desativada'}.`
       };
@@ -1018,7 +1018,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Comissão do Embarcador (${formatBrl(shipperCommRate)}/t) ${nextState ? `ativada: ${formatBrl(calculatedShipperVal)} (${tonnage.toFixed(2)}t) creditado ao embarcador` : 'desativada'}.`
       };
@@ -1092,7 +1092,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
       const historyEntry: HistoryLog = {
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        userId: 'sistema',
+        userId: currentUser?.id || 'system',
         timestamp: new Date().toISOString(),
         description: `Taxa da Comissão do Embarcador alterada para ${formatBrl(validRate)}/ton (Total: ${formatBrl(calculatedShipperVal)}).`
       };

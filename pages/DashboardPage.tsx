@@ -16,7 +16,7 @@ import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
 import { Building2, ChevronRight } from 'lucide-react';
 import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
-import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption } from '../types';
+import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption, Owner } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import AttachmentModal from '../components/AttachmentModal';
 import CadastroAnttModal from '../components/CadastroAnttModal';
@@ -101,6 +101,7 @@ interface DashboardPageProps {
   companyLogo?: string | null;
   vehicles: Vehicle[];
   drivers?: Driver[];
+  owners?: Owner[];
   onDeleteAttachment?: (shipmentId: string, url: string) => Promise<void>;
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => Promise<void>;
@@ -261,6 +262,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   companyLogo, 
   vehicles, 
   drivers = [], 
+  owners = [],
   onDeleteAttachment, 
   onUpdateAttachment,
   onUpdateShipmentData,
@@ -1016,6 +1018,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             }}
             cargo={findCargoById(cargos, offerForNewShipment.cargoId) || null}
             drivers={drivers}
+            owners={owners}
             clients={clients}
             vehicles={vehicles}
             currentUser={currentUser}
@@ -1157,6 +1160,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1235,6 +1239,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1313,6 +1318,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1391,6 +1397,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             users={users}
             riskQueryOptions={riskQueryOptions}
             onUpdateShipmentData={onUpdateShipmentData}
+            onDeleteAttachment={onDeleteAttachment}
           />
         )}
         {selectedShipmentForAntt && (
@@ -1995,6 +2002,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           users={users}
           riskQueryOptions={riskQueryOptions}
           onUpdateShipmentData={onUpdateShipmentData}
+          onDeleteAttachment={onDeleteAttachment}
         />
       )}
 

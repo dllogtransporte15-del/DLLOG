@@ -360,6 +360,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           users={users}
           riskQueryOptions={riskQueryOptions}
           onUpdateShipmentData={onUpdateShipmentData}
+          onDeleteAttachment={!isDemo ? onDeleteAttachment : undefined}
         />
       )}
 

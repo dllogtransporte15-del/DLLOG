@@ -183,10 +183,47 @@ export function useDatabase(currentUser: User | null) {
           fetchBranches(), getAllToolStays(), fetchFreightOffers(), fetchRiskQueryOptions()
         ]);
 
+        // Filtra proprietários dummy/padrão legados
+        const cleanOwners = dbOwners.filter(o => 
+          o && 
+          o.name !== 'PROPRIETÁRIO PADRÃO TERCEIRO' && 
+          o.cpfCnpj !== '00.000.000/0000-00'
+        );
+
+        // Reconciliação inteligente de veículos:
+        // Se o veículo possui ownerId de um registro dummy (OWN-100) ou inexistente:
+        // Tenta encontrar se o veículo pertence a algum proprietário real através dos embarques realizados.
+        // Caso contrário, remove o ownerId (deixa sem proprietário).
+        const cleanVehicles = dbVehicles.map(v => {
+          if (!v.ownerId) return v;
+          const ownerExists = cleanOwners.some(o => o.id === v.ownerId);
+          if (!ownerExists || v.ownerId === 'OWN-100') {
+            const matchingShipment = dbShipments.find(s => 
+              (s.horsePlate === v.plate || s.trailer1Plate === v.plate || s.trailer2Plate === v.plate || s.trailer3Plate === v.plate) &&
+              s.anttOwnerIdentifier && s.anttOwnerIdentifier.replace(/\D/g, '').length >= 11
+            );
+            if (matchingShipment) {
+              const cleanAntt = matchingShipment.anttOwnerIdentifier!.replace(/\D/g, '');
+              const realOwner = cleanOwners.find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === cleanAntt);
+              if (realOwner) {
+                return { ...v, ownerId: realOwner.id };
+              }
+            }
+            return { ...v, ownerId: '' };
+          }
+          return v;
+        });
+
+        // Limpeza assíncrona no Supabase de registros legados dummy
+        if (dbOwners.some(o => o.name === 'PROPRIETÁRIO PADRÃO TERCEIRO' || o.id === 'OWN-100')) {
+          supabase.from('owners').delete().or('name.eq.PROPRIETÁRIO PADRÃO TERCEIRO,id.eq.OWN-100').then(() => {}).catch(() => {});
+          supabase.from('vehicles').update({ owner_id: null }).eq('owner_id', 'OWN-100').then(() => {}).catch(() => {});
+        }
+
         setClients(dbClients);
-        setOwners(dbOwners);
+        setOwners(cleanOwners);
         setDrivers(dbDrivers);
-        setVehicles(dbVehicles);
+        setVehicles(cleanVehicles);
         setProducts(dbProducts);
         setCargos(dbCargos);
         setShipments(dbShipments);
@@ -205,7 +242,7 @@ export function useDatabase(currentUser: User | null) {
         }
 
         setNextIds(calculateNextIds(
-          dbClients, dbOwners, dbDrivers, dbVehicles,
+          dbClients, cleanOwners, dbDrivers, cleanVehicles,
           dbProducts, dbShipments, dbCargos, dbUsers, dbTickets, dbBranches, dbFreightOffers
         ));
 

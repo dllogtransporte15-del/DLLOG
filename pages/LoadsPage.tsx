@@ -8,7 +8,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
 import NewShipmentModal from '../components/NewShipmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
-import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch } from '../types';
+import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch, Owner } from '../types';
 import { CargoStatus, UserProfile } from '../types';
 import { can, isDemoUser } from '../auth';
 import { StayRecord } from '../utils/toolStorage';
@@ -20,6 +20,7 @@ interface LoadsPageProps {
   clients: Client[];
   products: Product[];
   drivers: Driver[];
+  owners?: Owner[];
   shipments: Shipment[];
   allShipments: Shipment[];
   vehicles: Vehicle[];
@@ -44,7 +45,7 @@ interface LoadsPageProps {
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
-const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo }) => {
+const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, owners = [], onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
@@ -271,6 +272,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         onSave={handleSaveShipment}
         cargo={selectedCargoForShipment}
         drivers={drivers}
+        owners={owners}
         clients={clients}
         vehicles={vehicles}
         currentUser={currentUser}

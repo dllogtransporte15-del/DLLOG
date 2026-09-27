@@ -21,6 +21,102 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_27_v2_20_0',
+    version: 'v2.20.0',
+    date: '27/09/2026',
+    title: 'Gravação Automática de Proprietários, Vínculo Multi-veículo e Autopreenchimento Inteligente',
+    summary: 'Ao solicitar um novo embarque, os dados do proprietário (TAC / Pessoa Física ou ETC / Pessoa Jurídica) são salvos ou atualizados automaticamente na base de Proprietários com dados bancários/PIX, vínculos de múltiplos veículos e motoristas, e busca automática por CPF, CNPJ e histórico.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Gravação e Atualização Automática de Proprietários',
+        description: 'Ao criar um embarque, o sistema localiza ou cadastra o Proprietário no banco de dados, salvando nome, documento (CPF/CNPJ), modalidade ANTT, telefone e forma de pagamento / PIX informada.'
+      },
+      {
+        category: 'feature',
+        title: 'Autopreenchimento Inteligente de Nome do Proprietário',
+        description: 'Para TAC (CPF), se for igual ao motorista o nome é preenchido instantaneamente; se for CPF já cadastrado na plataforma, o nome é recuperado automaticamente. Para ETC (CNPJ), busca na base de cadastros e consulta Razão Social na Receita Federal / BrasilAPI caso seja novo proprietário.'
+      },
+      {
+        category: 'feature',
+        title: 'Vínculo Automático de Veículos e Motoristas ao Proprietário',
+        description: 'Quando novos embarques são solicitados com placas e motoristas diferentes para um mesmo proprietário, todos os veículos (cavalo, carretas) e motoristas passam a ficar vinculados e visíveis no perfil do proprietário.'
+      },
+      {
+        category: 'improvement',
+        title: 'Organização de Placas por Conjunto de Embarque e Limpeza de Vínculos',
+        description: 'Os veículos vinculados agora são exibidos organizados por conjunto/composição de embarque (Tipo de Veículo, Carroceria, Motorista, Cavalo e Carretas 1, 2 e 3). Veículos sem titular identificado não herdam proprietário genérico e permanecem avulsos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Janela de Cadastro Completa do Proprietário (Modal Dedicado)',
+        description: 'Os dados detalhados para recebimento de frete (Banco, Agência, Conta, Chave PIX, Favorecido) e as listas de Veículos Vinculados e Motoristas Associados foram organizados dentro da janela modal de cadastro/edição do proprietário, mantendo a listagem principal limpa com foco em ID, Nome / Razão Social e CPF/CNPJ.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_27_v2_19_0',
+    version: 'v2.19.0',
+    date: '27/09/2026',
+    title: 'Identificação de Operador na Edição Manual de Imposto Federal e Custos',
+    summary: 'Garantida a identificação precisa do operador logado em todas as edições manuais de Imposto Federal, Crédito Gerado, Custos Adicionais e Comissões do painel fiscal e DRE.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Vínculo do Operador em Edições Fiscais Manuais',
+        description: 'Corrigido o registro de auditoria nas edições de Imposto Federal e Crédito Gerado para associar o ID e nome do usuário logado em vez de "Usuário Desconhecido".'
+      },
+      {
+        category: 'improvement',
+        title: 'Compatibilidade Retroativa de Logs de Sistema',
+        description: 'Tratamento no visualizador de histórico para que logs automáticos legados do sistema sejam rotulados como "Sistema".'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_27_v2_18_0',
+    version: 'v2.18.0',
+    date: '27/09/2026',
+    title: 'Auditoria Completa de Ações e Modificações no Gerenciar Anexos',
+    summary: 'Todas as ações realizadas em "Gerenciar Anexos", incluindo upload de arquivos por categoria, exclusão de anexos, inserção de dados bancários, peso aferido, rotas, adiantamentos, pedágio e saldos agora são registradas em tempo real com rastreabilidade completa no histórico do embarque.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Registro Detalhado de Documentos e Metadados Operacionais',
+        description: 'O histórico agora detalha a inserção e exclusão de cada anexo por categoria (ex: [CT-e], [MDF-e], [Carta Frete]), dados fiscais extraídos, dados bancários, pesos de carregamento/descarga e liquidação financeira.'
+      },
+      {
+        category: 'feature',
+        title: 'Exclusão Direta de Documentos em Gerenciar Anexos',
+        description: 'Permitida a exclusão autorizada de documentos diretamente no card de anexos do modal, com confirmação e geração imediata de log de auditoria.'
+      },
+      {
+        category: 'improvement',
+        title: 'Rastreamento Preciso de Campos no Histórico',
+        description: 'Atualizado o mapeamento de campos (FIELD_TRANSLATIONS) para formatar valores monetários, percentuais e pesos em padrão legível no histórico.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_27_v2_17_0',
+    version: 'v2.17.0',
+    date: '27/09/2026',
+    title: 'Higienização e Filtragem do Histórico de Auditoria de Cargas e Embarques',
+    summary: 'Ajustada a exibição do histórico de alterações para filtrar metadados técnicos internos e identificar corretamente registros automáticos do sistema.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Filtragem de Metadados Técnicos no Histórico',
+        description: 'Eliminada a exibição indevida de dados brutos e IDs internos (meta_*) como alterações atribuídas a "Usuário Desconhecido".'
+      },
+      {
+        category: 'improvement',
+        title: 'Mapeamento de Usuário do Sistema',
+        description: 'Registros originados por rotinas automáticas do sistema agora são identificados claramente como "Sistema".'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_27_v2_16_0',
     version: 'v2.16.0',
     date: '27/09/2026',

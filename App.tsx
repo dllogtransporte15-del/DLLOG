@@ -105,15 +105,22 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
 
   // Shipment fields
   driverId: 'Motorista',
+  driverName: 'Nome do Motorista',
+  driverContact: 'Contato do Motorista',
   driverCpf: 'CPF do Motorista',
   anttOwnerIdentifier: 'CPF/CNPJ Titular ANTT',
+  anttModality: 'Modalidade ANTT',
+  etcTaxRegime: 'Regime Tributário ETC',
+  driverFreightType: 'Tipo de Frete Motorista',
   bankDetails: 'Dados Bancários',
   embarcadorId: 'Embarcador',
   horsePlate: 'Placa Cavalo',
   trailer1Plate: 'Placa Carreta 1',
   trailer2Plate: 'Placa Carreta 2',
   trailer3Plate: 'Placa Carreta 3',
-  shipmentTonnage: 'Toneladas do Embarque',
+  vehicleTag: 'Tag de Pedágio / Sem Parar',
+  shipmentTonnage: 'Peso Carregado (Ton)',
+  unloadedTonnage: 'Peso Descarregado (Ton)',
   driverFreightValue: 'Valor Frete Motorista',
   driverFreightRateSnapshot: 'Frete Motorista (p/ Ton)',
   vehicleSetType: 'Tipo de Veículo',
@@ -123,12 +130,25 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   nfeNumber: 'Número da NF-e',
   mdfeNumber: 'Número do MDF-e',
   federalTax: 'Imposto Federal',
+  isFederalTaxManual: 'Imposto Federal Manual',
+  generatedCredit: 'Crédito Gerado',
+  isGeneratedCreditManual: 'Crédito Gerado Manual',
   riskQueryType: 'Tipo de Consulta de Risco (Modalidade)',
   riskQueryCost: 'Custo da Consulta de Risco',
   riskReleaseCode: 'Código de Liberação da Seguradora',
   advancePercentage: 'Adiantamento (%)',
+  advanceValue: 'Valor de Adiantamento (Conta)',
+  tollValue: 'Valor do Pedágio (Tag)',
+  balanceToReceiveValue: 'Saldo a Receber',
+  discountValue: 'Desconto por Quebra',
+  netBalanceValue: 'Saldo Líquido',
+  isBreakageWaived: 'Quebra Abonada',
+  route: 'Rota do Motorista',
   paymentMethod: 'Forma de Pagamento',
   pixKey: 'Chave Pix',
+  driverReferences: 'Referências do Motorista',
+  ownerContact: 'Contato do Proprietário',
+  cancellationReason: 'Motivo do Cancelamento',
 };
 
 interface NewShipmentRequestData extends Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'> {
@@ -1345,45 +1365,122 @@ const App: React.FC = () => {
     let addedVehicles: Vehicle[] = [];
     let newOwners = [...owners];
     let addedOwner: Owner | null = null;
-    let defaultOwner = newOwners.find(o => o.name === 'PROPRIETÁRIO PADRÃO TERCEIRO');
-    if (!defaultOwner) {
-        const newOwnerId = formatId(currentNextIds.owner, 'OWN');
-        defaultOwner = {
-            id: newOwnerId,
-            name: 'PROPRIETÁRIO PADRÃO TERCEIRO',
-            cpfCnpj: '00.000.000/0000-00',
-            type: OwnerType.PessoaJuridica,
-            phone: '',
-            bankDetails: ''
-        };
-        newOwners.unshift(defaultOwner);
-        addedOwner = defaultOwner;
-        currentNextIds.owner++;
+
+    // Process Owner registration / lookup
+    const rawAnttId = (data.anttOwnerIdentifier || '').trim();
+    const cleanAnttId = rawAnttId.replace(/\D/g, '');
+
+    let targetOwner: Owner | null = null;
+    if (cleanAnttId) {
+      targetOwner = newOwners.find(o => o.cpfCnpj && o.cpfCnpj.replace(/\D/g, '') === cleanAnttId) || null;
     }
 
-    const processVehicle = (plate: string, isHorse: boolean) => {
-        if (!plate || !plate.trim()) return;
-        let vehicle = newVehicles.find(v => v.plate.trim().toLowerCase() === plate.trim().toLowerCase());
-        if (!vehicle) {
-            const newVehicleId = formatId(currentNextIds.vehicle, 'VEH');
-            const newVehicle: Vehicle = {
-                id: newVehicleId,
-                plate: plate,
-                setType: isHorse ? (data.vehicleSetType || VehicleSetType.LSSimples) : VehicleSetType.LSSimples,
-                bodyType: isHorse ? (data.vehicleBodyType || VehicleBodyType.Graneleiro) : VehicleBodyType.Graneleiro,
-                classification: DriverClassification.Terceiro,
-                ownerId: defaultOwner.id,
-            };
-            newVehicles.unshift(newVehicle);
-            addedVehicles.push(newVehicle);
-            currentNextIds.vehicle++;
+    const ownerType = (data.anttModality === AnttModality.TAC || cleanAnttId.length === 11)
+      ? OwnerType.PessoaFisica
+      : OwnerType.PessoaJuridica;
+
+    // Format payment details string to keep inside the Owner record
+    const paymentParts: string[] = [];
+    if (data.paymentMethod === DriverPaymentMethod.PixEFrete && data.pixKey) {
+      paymentParts.push(`PIX (${data.paymentMethod}): ${data.pixKey}`);
+    } else if (data.paymentMethod === DriverPaymentMethod.DepositoConta && data.bankDetails) {
+      paymentParts.push(`Conta (${data.paymentMethod}): ${data.bankDetails}`);
+    } else if (data.bankDetails) {
+      paymentParts.push(data.bankDetails);
+    } else if (data.pixKey) {
+      paymentParts.push(`PIX: ${data.pixKey}`);
+    }
+    const paymentInfoStr = paymentParts.join(' | ');
+
+    const ownerNameFinal = (data.ownerName || '').trim() || 
+      (cleanAnttId && cleanAnttId === (data.driverCpf || '').replace(/\D/g, '') ? data.driverName : '') || 
+      targetOwner?.name || 
+      (ownerType === OwnerType.PessoaFisica ? data.driverName : 'Proprietário PJ') || 
+      'Proprietário';
+
+    const ownerPhoneFinal = (data.ownerContact || '').trim() || (data.driverContact || '').trim() || targetOwner?.phone || '';
+
+    if (targetOwner) {
+      // Update existing owner with any enriched details
+      const updatedOwner: Owner = {
+        ...targetOwner,
+        name: ownerNameFinal || targetOwner.name,
+        phone: ownerPhoneFinal || targetOwner.phone,
+        type: targetOwner.type || ownerType,
+        bankDetails: paymentInfoStr || targetOwner.bankDetails,
+      };
+      newOwners = newOwners.map(o => o.id === targetOwner!.id ? updatedOwner : o);
+      targetOwner = updatedOwner;
+      addedOwner = updatedOwner;
+    } else if (cleanAnttId) {
+      // Create new Owner
+      const newOwnerId = formatId(currentNextIds.owner, 'OWN');
+      targetOwner = {
+        id: newOwnerId,
+        name: ownerNameFinal,
+        cpfCnpj: rawAnttId,
+        phone: ownerPhoneFinal,
+        type: ownerType,
+        bankDetails: paymentInfoStr,
+      };
+      newOwners.unshift(targetOwner);
+      addedOwner = targetOwner;
+      currentNextIds.owner++;
+    } else {
+      targetOwner = null;
+    }
+
+    // Link driver to targetOwner if explicitly provided
+    if (targetOwner) {
+      driverToUse.ownerId = targetOwner.id;
+      newDrivers = newDrivers.map(d => d.id === driverToUse.id ? { ...d, ownerId: targetOwner!.id } : d);
+      if (!addedDrivers.some(d => d.id === driverToUse.id)) {
+        addedDrivers.push(driverToUse);
+      }
+    }
+
+    const processVehicle = (plate: string, isHorse: boolean, trailerIndex: number = 0) => {
+      if (!plate || !plate.trim()) return;
+      const cleanPlate = plate.trim().toUpperCase();
+      let vehicle = newVehicles.find(v => v.plate.trim().toUpperCase() === cleanPlate);
+      
+      const vehicleSetTypeToUse = isHorse 
+        ? (data.vehicleSetType || VehicleSetType.LSSimples) 
+        : (trailerIndex === 1 ? VehicleSetType.LSSimples : (vehicle?.setType || VehicleSetType.LSSimples));
+
+      if (!vehicle) {
+        const newVehicleId = formatId(currentNextIds.vehicle, 'VEH');
+        const newVehicle: Vehicle = {
+          id: newVehicleId,
+          plate: cleanPlate,
+          setType: vehicleSetTypeToUse,
+          bodyType: data.vehicleBodyType || VehicleBodyType.Graneleiro,
+          classification: DriverClassification.Terceiro,
+          driverId: driverToUse.id,
+          ownerId: targetOwner ? targetOwner.id : '',
+        };
+        newVehicles.unshift(newVehicle);
+        addedVehicles.push(newVehicle);
+        currentNextIds.vehicle++;
+      } else {
+        const updatedVehicle: Vehicle = {
+          ...vehicle,
+          driverId: driverToUse.id,
+          ownerId: targetOwner ? targetOwner.id : (vehicle.ownerId === 'OWN-100' ? '' : vehicle.ownerId),
+          setType: isHorse && data.vehicleSetType ? data.vehicleSetType : vehicle.setType,
+          bodyType: data.vehicleBodyType ? data.vehicleBodyType : vehicle.bodyType,
+        };
+        newVehicles = newVehicles.map(v => v.id === vehicle!.id ? updatedVehicle : v);
+        if (!addedVehicles.some(v => v.id === updatedVehicle.id)) {
+          addedVehicles.push(updatedVehicle);
         }
+      }
     };
 
-    processVehicle(data.horsePlate, true);
-    processVehicle(data.trailer1Plate || '', false);
-    processVehicle(data.trailer2Plate || '', false);
-    processVehicle(data.trailer3Plate || '', false);
+    processVehicle(data.horsePlate, true, 0);
+    processVehicle(data.trailer1Plate || '', false, 1);
+    processVehicle(data.trailer2Plate || '', false, 2);
+    processVehicle(data.trailer3Plate || '', false, 3);
 
     const prefix = currentUser?.name ? currentUser.name.substring(0, 3).toUpperCase() : 'SHP';
     const newShipmentId = formatId(currentNextIds.shipment, prefix);
@@ -1485,7 +1582,8 @@ const App: React.FC = () => {
       createdAt: new Date().toISOString(),
       createdById: currentUser.id,
       driverReferences: data.driverReferences,
-      ownerContact: data.ownerContact,
+      ownerName: data.ownerName || targetOwner?.name,
+      ownerContact: data.ownerContact || targetOwner?.phone,
       anttOwnerIdentifier: data.anttOwnerIdentifier,
       anttModality: data.anttModality,
       etcTaxRegime: data.etcTaxRegime,
@@ -1527,7 +1625,7 @@ const App: React.FC = () => {
     setVehicles(newVehicles);
     setShipments(newShipments);
     setCargos(newCargos);
-    if (addedOwner) setOwners(newOwners);
+    setOwners(newOwners);
     setNextIds(currentNextIds);
 
     // Persist to Supabase
@@ -1970,11 +2068,23 @@ const App: React.FC = () => {
     }
 
     // 2. Prepare Updates
-    const historyLogs = [];
-    if(attachedFileNames.length > 0) historyLogs.push(`anexo(s): ${attachedFileNames.join(', ')}`);
-    if(bankDetails) historyLogs.push(`Dados bancários preenchidos.`);
-    if(fiscalDocLog) historyLogs.push(`Documentos fiscais extraídos: ${fiscalDocLog}.`);
+    const addedFilesLog: string[] = [];
+    for (const [docType, files] of Object.entries(filesToAttach)) {
+      if (!files || files.length === 0) continue;
+      const fNames = files.map(f => f.name);
+      addedFilesLog.push(`[${docType}]: ${fNames.join(', ')}`);
+    }
 
+    const historyLogs = [];
+    if (addedFilesLog.length > 0) {
+      historyLogs.push(`Anexos inseridos: ${addedFilesLog.join('; ')}.`);
+    }
+    if (bankDetails && bankDetails !== originalShipment.bankDetails) {
+      historyLogs.push(`Dados bancários informados: "${bankDetails}".`);
+    }
+    if (fiscalDocLog) {
+      historyLogs.push(`Dados fiscais vinculados: ${fiscalDocLog}.`);
+    }
 
     let updatedTonnage = originalShipment.shipmentTonnage;
     let updatedDriverFreight = originalShipment.driverFreightValue;
@@ -1984,7 +2094,9 @@ const App: React.FC = () => {
         const rateToUse = originalShipment.driverFreightRateSnapshot || cargos.find(c => c.id === originalShipment.cargoId)?.driverFreightValuePerTon || 0;
         updatedDriverFreight = rateToUse * loadedTonnage;
         const formattedVal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(updatedDriverFreight);
-        historyLogs.push(`Tonelagem ajustada para ${loadedTonnage.toLocaleString('pt-BR')} ton. Frete atualizado para ${formattedVal}.`);
+        if (loadedTonnage !== originalShipment.shipmentTonnage) {
+          historyLogs.push(`Peso carregado informado: ${loadedTonnage.toLocaleString('pt-BR')} ton (Frete Motorista atualizado para ${formattedVal}).`);
+        }
     }
     
     let calculatedAdvanceValue = originalShipment.advanceValue;
@@ -2003,16 +2115,20 @@ const App: React.FC = () => {
     if (advanceValue !== undefined) {
         calculatedAdvanceValue = advanceValue;
         finalAdvancePercentage = effectiveAdvancePercentage;
-        historyLogs.push(`Valor pago na conta de R$ ${calculatedAdvanceValue.toLocaleString('pt-BR')} registrado.`);
+        historyLogs.push(`Valor pago na conta de R$ ${Number(calculatedAdvanceValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} registrado.`);
     } else if (extractedAdvanceValue !== undefined) {
         calculatedAdvanceValue = extractedAdvanceValue;
         finalAdvancePercentage = effectiveAdvancePercentage;
-        historyLogs.push(`Valor pago na conta de R$ ${calculatedAdvanceValue.toLocaleString('pt-BR')} extraído do documento.`);
+        historyLogs.push(`Valor pago na conta de R$ ${Number(calculatedAdvanceValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} extraído do documento.`);
     } else if (effectiveAdvancePercentage !== undefined && effectiveAdvancePercentage > 0) {
         finalAdvancePercentage = effectiveAdvancePercentage;
         calculatedAdvanceValue = calcResult.advanceInAccountValue;
         const formattedAdv = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(calculatedAdvanceValue);
         historyLogs.push(`Pagamento de Adiantamento: ${effectiveAdvancePercentage}% registrado (Conta: ${formattedAdv} + Tag: R$ ${(effectiveTollValue || 0).toLocaleString('pt-BR')}).`);
+    }
+
+    if (effectiveTollValue !== undefined && effectiveTollValue !== originalShipment.tollValue && (advanceValue !== undefined || extractedAdvanceValue !== undefined)) {
+      historyLogs.push(`Pedágio no Tag: R$ ${Number(effectiveTollValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`);
     }
 
     let finalBalanceToReceive = balanceToReceiveValue ?? ((originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue > 0 && originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo) ? originalShipment.balanceToReceiveValue : calcResult.balanceToReceiveValue);
@@ -2032,11 +2148,11 @@ const App: React.FC = () => {
     }
 
     let finalUnloadedTonnage = unloadedTonnage ?? originalShipment.unloadedTonnage;
-    if (unloadedTonnage !== undefined && unloadedTonnage > 0) {
-        historyLogs.push(`Peso descarregado: ${unloadedTonnage.toLocaleString('pt-BR')} ton.`);
+    if (unloadedTonnage !== undefined && unloadedTonnage > 0 && unloadedTonnage !== originalShipment.unloadedTonnage) {
+        historyLogs.push(`Peso descarregado conferido: ${unloadedTonnage.toLocaleString('pt-BR')} ton.`);
     }
     
-    if (route) historyLogs.push(`Rota informada: ${route}`);
+    if (route && route !== originalShipment.route) historyLogs.push(`Rota informada: "${route}".`);
     if (riskReleaseCode) historyLogs.push(`Liberação de Seguradora: Cód ${riskReleaseCode} (${riskQueryType} - R$ ${riskQueryCost})`);
 
     let cancellationReason = originalShipment.cancellationReason;
@@ -2051,9 +2167,12 @@ const App: React.FC = () => {
     }
 
     const isStatusSame = nextStatus === originalShipment.status;
-    const logMessage = isStatusSame
-        ? `Comprovante de descarga anexado pelo motorista. ${historyLogs.join(' ')}`
-        : `Status alterado para ${nextStatus}. ${historyLogs.join(' ')}`;
+    let logMessage = '';
+    if (isStatusSame) {
+        logMessage = `Alterações em Gerenciar Anexos: ${historyLogs.join(' ') || 'Dados e anexos salvos com sucesso.'}`;
+    } else {
+        logMessage = `Status alterado para "${nextStatus}". ${historyLogs.join(' ')}`;
+    }
     const statusChangeLog = createHistoryLog(logMessage);
 
     const updatedShipment: Shipment = {
@@ -2261,16 +2380,38 @@ const App: React.FC = () => {
       'driverName', 'driverCpf', 'driverContact', 
       'horsePlate', 'trailer1Plate', 'trailer2Plate', 'trailer3Plate', 
       'vehicleTag', 'vehicleSetType', 'vehicleBodyType',
-      'shipmentTonnage', 'bankDetails', 'driverReferences', 'ownerContact', 'anttOwnerIdentifier',
-      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber', 'federalTax', 'isFederalTaxManual',
+      'shipmentTonnage', 'unloadedTonnage', 'driverFreightValue', 'driverFreightRateSnapshot',
+      'driverFreightType', 'anttModality', 'anttOwnerIdentifier', 'etcTaxRegime',
+      'bankDetails', 'driverReferences', 'ownerContact',
+      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber', 
+      'federalTax', 'isFederalTaxManual', 'generatedCredit', 'isGeneratedCreditManual',
       'riskQueryType', 'riskQueryCost', 'riskReleaseCode',
-      'advancePercentage', 'paymentMethod', 'pixKey'
+      'advancePercentage', 'advanceValue', 'tollValue',
+      'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived',
+      'route', 'paymentMethod', 'pixKey', 'cancellationReason'
     ];
 
     fieldsToTrack.forEach(field => {
       if (data[field] !== undefined && data[field] !== shipmentToUpdate[field]) {
-        const oldVal = shipmentToUpdate[field] || 'Vazio';
-        const newVal = data[field] || 'Vazio';
+        const rawOld = shipmentToUpdate[field];
+        const rawNew = data[field];
+        let oldVal = rawOld !== undefined && rawOld !== null && rawOld !== '' ? String(rawOld) : 'Não informado';
+        let newVal = rawNew !== undefined && rawNew !== null && rawNew !== '' ? String(rawNew) : 'Não informado';
+
+        if (['driverFreightValue', 'advanceValue', 'tollValue', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'federalTax', 'generatedCredit', 'riskQueryCost'].includes(field)) {
+          oldVal = rawOld !== undefined && rawOld !== null ? `R$ ${Number(rawOld).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
+          newVal = rawNew !== undefined && rawNew !== null ? `R$ ${Number(rawNew).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
+        } else if (['shipmentTonnage', 'unloadedTonnage'].includes(field)) {
+          oldVal = rawOld !== undefined && rawOld !== null ? `${rawOld} ton` : '0 ton';
+          newVal = rawNew !== undefined && rawNew !== null ? `${rawNew} ton` : '0 ton';
+        } else if (field === 'advancePercentage') {
+          oldVal = rawOld !== undefined && rawOld !== null ? `${rawOld}%` : '0%';
+          newVal = rawNew !== undefined && rawNew !== null ? `${rawNew}%` : '0%';
+        } else if (['isFederalTaxManual', 'isGeneratedCreditManual', 'isBreakageWaived'].includes(field)) {
+          oldVal = rawOld ? 'Sim' : 'Não';
+          newVal = rawNew ? 'Sim' : 'Não';
+        }
+
         changes.push(`${FIELD_TRANSLATIONS[field] || field} alterado de "${oldVal}" para "${newVal}".`);
       }
     });
@@ -3527,17 +3668,17 @@ const App: React.FC = () => {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
         <Routes>
-          <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
+          <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} onMergeClients={handleMergeClients} currentUser={currentUser} profilePermissions={profilePermissions} />} />
-          <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} />} />
+          <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} vehicles={vehicles} drivers={drivers} shipments={shipments} />} />
           <Route path="/drivers" element={<DriversPage drivers={drivers} setDrivers={setDrivers} onSaveDriver={handleSaveDriver} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
           <Route path="/vehicles" element={<VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
-          <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} onSwapCargo={handleSwapCargo} />} />
+          <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} onSwapCargo={handleSwapCargo} />} />
           <Route path="/products" element={<ProductsPage products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} currentUser={currentUser} profilePermissions={profilePermissions} />} />
           <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
-          <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
-          <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
+          <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
+          <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
           <Route path="/financial" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
           <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
           <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />
@@ -3724,6 +3865,7 @@ const App: React.FC = () => {
           currentUser={currentUser}
           shipments={shipments}
           users={users}
+          owners={owners}
           offer={offerForNewShipment}
         />
       )}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Header from '../components/Header';
 import NewShipmentModal from '../components/NewShipmentModal';
-import type { Cargo, Shipment, Client, Product, User, Driver, Vehicle, VehicleSetType, VehicleBodyType, DriverLocation } from '../types';
+import type { Cargo, Shipment, Client, Product, User, Driver, Vehicle, VehicleSetType, VehicleBodyType, DriverLocation, Owner } from '../types';
 import { CargoStatus } from '../types';
 import { CopyIcon } from '../components/icons/CopyIcon';
 import { supabase } from '../supabase';
@@ -21,6 +21,7 @@ interface OperationalMapPageProps {
   clients: Client[];
   products: Product[];
   drivers: Driver[];
+  owners?: Owner[];
   vehicles: Vehicle[];
   onCreateShipment: (data: Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => void;
   currentUser: User | null;
@@ -56,7 +57,7 @@ const isInBoundingBox = (lat: number, lon: number, centerLat: number, centerLon:
   return Math.abs(lat - centerLat) <= latDegree && Math.abs(lon - centerLon) <= lonDegree;
 };
 
-const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipments, clients, products, drivers, vehicles, onCreateShipment, currentUser, users, onModalStateChange, onDeleteAttachment }) => {
+const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipments, clients, products, drivers, owners = [], vehicles, onCreateShipment, currentUser, users, onModalStateChange, onDeleteAttachment }) => {
   const isDemo = isDemoUser(currentUser);
   const [originQuery, setOriginQuery] = useState('Catalão');
   const [originRadius, setOriginRadius] = useState(200);
@@ -634,6 +635,7 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
         onSave={handleSaveShipment}
         cargo={selectedCargoForShipment}
         drivers={drivers}
+        owners={owners}
         clients={clients}
         vehicles={vehicles}
         currentUser={currentUser}

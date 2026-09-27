@@ -310,7 +310,10 @@ export const toCargo = (row: any): Cargo => ({
   status: row.status,
   createdAt: row.created_at,
   createdById: row.created_by_id,
-  history: safeParseJson(row.history, []),
+  history: (() => {
+    const raw = safeParseJson(row.history, []);
+    return Array.isArray(raw) ? raw.filter((h: any) => !String(h?.id || '').startsWith('meta_')) : [];
+  })(),
   loadingDeadline: row.loading_deadline,
   allowedVehicleTypes: safeParseJson(row.allowed_vehicle_types, undefined),
   freightLegs: safeParseJson(row.freight_legs, undefined),
@@ -588,7 +591,7 @@ export const toShipment = (row: any): Shipment => {
     scheduledTime: row.scheduled_time,
     arrivalTime: row.arrival_time,
     documents: docs,
-    history: row.history || [],
+    history: Array.isArray(row.history) ? row.history.filter((h: any) => !String(h?.id || '').startsWith('meta_')) : [],
     createdAt: row.created_at,
     createdById: row.created_by_id,
     statusHistory: row.status_history || [],
@@ -607,6 +610,7 @@ export const toShipment = (row: any): Shipment => {
     route: row.route,
     cancellationReason: row.cancellation_reason,
     driverReferences: Array.isArray(row.driver_references) ? row.driver_references.join('\n') : (row.driver_references || ''),
+    ownerName: row.owner_name || docs.owner_name || docs.ownerName || undefined,
     ownerContact: row.owner_contact,
     balanceToReceiveValue: row.balance_to_receive_value !== null ? Number(row.balance_to_receive_value) : undefined,
     discountValue: row.discount_value !== null ? Number(row.discount_value) : undefined,
@@ -736,6 +740,8 @@ const fromShipment = (s: Shipment) => {
     shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : (s.documents?.shipper_commission_enabled ?? null),
     shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : (s.documents?.shipper_commission_rate_per_ton ?? null),
     shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : (s.documents?.shipper_commission_value ?? null),
+    owner_name: s.ownerName !== undefined ? s.ownerName : (s.documents?.owner_name ?? null),
+    owner_contact: s.ownerContact !== undefined ? s.ownerContact : (s.documents?.owner_contact ?? null),
   };
 
   return {
@@ -777,6 +783,7 @@ const fromShipment = (s: Shipment) => {
     route: s.route ?? null,
     cancellation_reason: s.cancellationReason ?? null,
     driver_references: s.driverReferences ? (Array.isArray(s.driverReferences) ? s.driverReferences : s.driverReferences.split('\n').filter(Boolean)) : [],
+    owner_name: s.ownerName ?? null,
     owner_contact: s.ownerContact ?? null,
     balance_to_receive_value: s.balanceToReceiveValue ?? null,
     discount_value: s.discountValue ?? null,
