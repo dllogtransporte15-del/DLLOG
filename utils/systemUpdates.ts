@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_27_v2_22_0',
+    version: 'v2.22.0',
+    date: '27/09/2026',
+    title: 'Correção de Causa Raiz: WhatsApp Desconectado em Produção (transcunha.digital)',
+    summary: 'Identificada e corrigida a causa raiz que fazia o número vinculado aparecer como desconectado no transcunha.digital enquanto funcionava corretamente no localhost. O problema era a estratégia incorreta de proxy + timeout insuficiente para o ambiente de produção na Vercel/Railway.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Proxy Vercel como Rota Primária em Produção (HTTPS)',
+        description: 'Em ambiente HTTPS (produção), o sistema agora usa o proxy reverso Vercel (/api/evolution) como rota principal, eliminando problemas de CORS e "cold start" duplo que causavam timeout antes da resposta chegar.'
+      },
+      {
+        category: 'fix',
+        title: 'Timeout Aumentado de 6s para 15s',
+        description: 'O timeout de AbortController foi aumentado de 6 para 15 segundos para acomodar o cold start do servidor Railway em produção, que pode demorar 7–10s para responder após período de inatividade.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização Otimizada: /connectionState como Primeira Consulta',
+        description: 'A função syncWhatsAppInstanceFromGateway agora consulta primeiro o endpoint /connectionState (mais leve) e só busca /fetchInstances quando a instância está conectada, reduzindo latência e carga.'
+      },
+      {
+        category: 'fix',
+        title: 'Preservação do Estado Supabase em Falha de Rede',
+        description: 'Se a Evolution API não responder (timeout ou erro), o sistema agora preserva o estado salvo no Supabase em vez de sobrescrever com "disconnected", garantindo que usuários em produção vejam o status correto mesmo com latência.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_27_v2_21_0',
     version: 'v2.21.0',
     date: '27/09/2026',

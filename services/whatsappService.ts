@@ -282,7 +282,14 @@ export function getPossibleJids(phoneNumber: string): string[] {
 }
 
 /**
- * Executa requisições HTTP para a Evolution API com suporte a fallback automático para proxy Vercel (/api/evolution)
+ * Executa requisições HTTP para a Evolution API.
+ * 
+ * Estratégia por ambiente:
+ * - HTTPS (produção): usa proxy Vercel /api/evolution primeiro (sem CORS, sem cold-start duplo)
+ *   e cai na URL direta como fallback.
+ * - HTTP (localhost): usa URL direta primeiro (proxy Vite) e cai no /api/evolution como fallback.
+ * 
+ * Timeout aumentado para 15s para suportar cold start do Railway em produção.
  */
 async function fetchEvolution(endpoint: string, options: RequestInit = {}): Promise<Response> {
   const cfg = getGatewayConfig();
@@ -293,10 +300,47 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
     ...(options.headers || {})
   };
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
-  // 1. Tenta a URL direta configurada
+  // Em produção (HTTPS), usa o proxy Vercel como rota PRIMÁRIA — elimina CORS e cold start duplo
+  if (isHttps) {
+    const proxyController = new AbortController();
+    const proxyTimeout = setTimeout(() => proxyController.abort(), 15000);
+    try {
+      const proxyRes = await fetch(`/api/evolution${endpoint}`, {
+        ...options,
+        headers,
+        signal: options.signal || proxyController.signal
+      });
+      clearTimeout(proxyTimeout);
+      if (proxyRes.ok || proxyRes.status === 401 || proxyRes.status === 404) {
+        return proxyRes;
+      }
+    } catch (err) {
+      clearTimeout(proxyTimeout);
+      console.warn(`[Evolution Proxy Failed] Tentando URL direta ${cleanUrl}${endpoint}...`, err);
+    }
+
+    // Fallback: URL direta (caso o proxy Vercel esteja com problema)
+    const directController = new AbortController();
+    const directTimeout = setTimeout(() => directController.abort(), 15000);
+    try {
+      const directRes = await fetch(`${cleanUrl}${endpoint}`, {
+        ...options,
+        headers,
+        signal: options.signal || directController.signal
+      });
+      clearTimeout(directTimeout);
+      return directRes;
+    } catch (err) {
+      clearTimeout(directTimeout);
+      throw err;
+    }
+  }
+
+  // Em HTTP (localhost / dev): URL direta primeiro (proxy Vite cuida do CORS)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
   try {
     const res = await fetch(`${cleanUrl}${endpoint}`, {
       ...options,
@@ -309,15 +353,14 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
     }
   } catch (err) {
     clearTimeout(timeoutId);
-    console.warn(`[Evolution Direct Fetch Failed] Tentando via Proxy Vercel /api/evolution${endpoint}...`, err);
+    console.warn(`[Evolution Direct Fetch Failed] Tentando via Proxy /api/evolution${endpoint}...`, err);
   }
 
-  // 2. Fallback resiliente via Proxy reverso do Vercel (/api/evolution/...)
+  // Fallback: proxy local
   const proxyController = new AbortController();
-  const proxyTimeout = setTimeout(() => proxyController.abort(), 6000);
+  const proxyTimeout = setTimeout(() => proxyController.abort(), 15000);
   try {
-    const proxyUrl = `/api/evolution${endpoint}`;
-    const proxyRes = await fetch(proxyUrl, {
+    const proxyRes = await fetch(`/api/evolution${endpoint}`, {
       ...options,
       headers,
       signal: options.signal || proxyController.signal
@@ -626,25 +669,19 @@ export async function checkGatewayConnectionStatus(): Promise<{ status: 'connect
 }
 
 /**
- * Sincroniza o estado local e do Supabase diretamente com o servidor da Evolution API
+ * Sincroniza o estado local e do Supabase diretamente com o servidor da Evolution API.
+ * 
+ * Estratégia otimizada:
+ * 1. Consulta /connectionState primeiro (endpoint mais leve e rápido)
+ * 2. Se state = open → consulta /fetchInstances para obter ownerJid/phone
+ * 3. Evita dupla chamada pesada em toda sincronização
  */
 export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstance> {
   const cfg = getGatewayConfig();
   const current = await getWhatsAppInstance();
 
   try {
-    const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
-      method: 'GET'
-    }).catch(() => null);
-
-    let target: any = null;
-    if (infoRes && infoRes.ok) {
-      const infoData = await infoRes.json().catch(() => null);
-      if (infoData) {
-        target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
-      }
-    }
-
+    // 1. Consulta estado da conexão (endpoint mais leve)
     const stateRes = await fetchEvolution(`/instance/connectionState/${cfg.instanceName}`, {
       method: 'GET'
     }).catch(() => null);
@@ -653,29 +690,42 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
     if (stateRes && stateRes.ok) {
       const stateData = await stateRes.json().catch(() => ({}));
       state = stateData?.instance?.state || stateData?.state || 'disconnected';
-    } else if (target?.connectionStatus) {
-      state = target.connectionStatus;
     }
 
     let phone: string | undefined;
     let profileName = current.name || 'Transcunha Transporte';
 
-    if (target) {
-      if (target.ownerJid) {
-        phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
-      } else if (target.number) {
-        phone = sanitizePhoneNumber(target.number);
-      }
-      if (target.profileName) {
-        profileName = target.profileName;
-      }
-    }
-
+    // 2. Se estiver conectado, busca os dados detalhados (ownerJid, profileName)
     if (state === 'open' || state === 'connected') {
+      const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
+        method: 'GET'
+      }).catch(() => null);
+
+      if (infoRes && infoRes.ok) {
+        const infoData = await infoRes.json().catch(() => null);
+        if (infoData) {
+          const target = Array.isArray(infoData)
+            ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0])
+            : infoData;
+
+          if (target?.ownerJid) {
+            phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
+          } else if (target?.number) {
+            phone = sanitizePhoneNumber(target.number);
+          }
+          if (target?.profileName) {
+            profileName = target.profileName;
+          }
+        }
+      }
+
+      // Se não obteve o phone da API, usa o que está salvo no Supabase/localStorage
+      phone = phone || current.phone_number;
+
       const updated: WhatsAppInstance = {
         ...current,
         name: profileName || 'Transcunha Transporte',
-        phone_number: phone || current.phone_number,
+        phone_number: phone,
         instance_key: cfg.instanceName,
         status: 'connected',
         qr_code_base64: undefined,
@@ -695,18 +745,24 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
       };
       return await saveWhatsAppInstance(updated);
     } else {
-      const updated: WhatsAppInstance = {
-        ...current,
-        instance_key: cfg.instanceName,
-        status: 'disconnected',
-        phone_number: undefined,
-        qr_code_base64: undefined,
-        updated_at: new Date().toISOString()
-      };
-      return await saveWhatsAppInstance(updated);
+      // state = disconnected: se API retornou mas diz desconectado, atualiza
+      // Porém se a chamada falhou (stateRes nulo), mantém o estado atual do Supabase
+      if (stateRes) {
+        const updated: WhatsAppInstance = {
+          ...current,
+          instance_key: cfg.instanceName,
+          status: 'disconnected',
+          phone_number: undefined,
+          qr_code_base64: undefined,
+          updated_at: new Date().toISOString()
+        };
+        return await saveWhatsAppInstance(updated);
+      }
+      // API não respondeu → preserva estado atual (não sobrescreve com 'disconnected')
+      return current;
     }
   } catch (err) {
-    console.warn('[Evolution API] Sincronização offline, mantendo estado atual:', err);
+    console.warn('[Evolution API] Sincronização offline, mantendo estado atual do Supabase:', err);
     return current;
   }
 }
