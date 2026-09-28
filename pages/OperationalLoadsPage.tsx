@@ -240,14 +240,14 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
     handleCloseLoadFormModal();
   };
 
-  const handleSaveShipment = (shipmentData: any) => {
-    if (selectedCargo) {
-      onCreateShipment({
-        cargoId: selectedCargo.id,
+  const handleSaveShipment = async (shipmentData: any) => {
+    const cargoId = selectedCargo?.id || shipmentData.cargoId;
+    if (cargoId && onCreateShipment) {
+      await onCreateShipment({
         ...shipmentData,
+        cargoId,
       });
     }
-    handleCloseShipmentModal();
   };
   
   const handleShareLoads = () => {

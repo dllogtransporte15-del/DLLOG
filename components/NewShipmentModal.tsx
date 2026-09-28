@@ -28,6 +28,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [activeCargo, setActiveCargo] = useState<Cargo | null>(cargo);
   const [isUpdatingCargoPermission, setIsUpdatingCargoPermission] = useState(false);
   const [isSyncingCargo, setIsSyncingCargo] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [driverName, setDriverName] = useState('');
   const [driverCpf, setDriverCpf] = useState('');
@@ -222,6 +223,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setShowConfirmModal(false);
       setActiveShipmentsFound([]);
       setPendingPayload(null);
+      setIsSubmitting(false);
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, currentUser, offer, cargo, drivers, shipments, users, vehicles, owners]);
@@ -842,8 +844,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!currentCargo) {
       showToast('Esta carga não existe mais no sistema ou foi removida. Não é possível criar o embarque.', 'error');
       return;
@@ -1047,15 +1050,35 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       return;
     }
 
-    onSave(shipmentData);
+    try {
+      setIsSubmitting(true);
+      await onSave(shipmentData);
+      onClose();
+    } catch (err: any) {
+      console.error('Falha ao salvar embarque:', err);
+      const msg = err?.message || 'Erro ao processar solicitação de embarque.';
+      showToast(msg, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     if (pendingPayload) {
-      onSave(pendingPayload);
-      setPendingPayload(null);
-      setShowConfirmModal(false);
-      setActiveShipmentsFound([]);
+      try {
+        setIsSubmitting(true);
+        await onSave(pendingPayload);
+        setPendingPayload(null);
+        setShowConfirmModal(false);
+        setActiveShipmentsFound([]);
+        onClose();
+      } catch (err: any) {
+        console.error('Falha ao confirmar embarque:', err);
+        const msg = err?.message || 'Erro ao processar solicitação de embarque.';
+        showToast(msg, 'error');
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -1836,15 +1859,24 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               <button 
                 type="button" 
                 onClick={onClose} 
-                className="py-2.5 px-6 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold rounded-xl transition-all"
+                disabled={isSubmitting}
+                className="py-2.5 px-6 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-800 dark:text-gray-200 font-semibold rounded-xl transition-all"
               >
                 Cancelar
               </button>
               <button 
                 type="submit" 
-                className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95"
+                disabled={isSubmitting}
+                className="py-2.5 px-6 bg-[#0F5132] hover:bg-[#0B3C21] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 flex items-center gap-2"
               >
-                Solicitar Embarque
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Solicitando Embarque...</span>
+                  </>
+                ) : (
+                  <span>Solicitar Embarque</span>
+                )}
               </button>
             </div>
         </form>
@@ -1918,17 +1950,28 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                disabled={isSubmitting}
+                className="px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 disabled:opacity-50 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleConfirmSave}
-                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2 active:scale-95"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2 active:scale-95"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                Sim, Criar Embarque
+                {isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Criando Embarque...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Sim, Criar Embarque</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

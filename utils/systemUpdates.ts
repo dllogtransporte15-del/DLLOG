@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_28_v2_25_0',
+    version: 'v2.25.0',
+    date: '28/09/2026',
+    title: 'Correção na Solicitação de Embarque e Persistência no Banco de Dados',
+    summary: 'Correção da falha que fechava o modal de "Solicitação de Embarque" prematuramente ao clicar em "Solicitar Embarque" sem persistir o registro no banco de dados. Agora o modal aguarda a confirmação de persistência no Supabase com indicador de carregamento, mantém os dados preenchidos caso ocorra alguma falha na rede e removeu as incompatibilidades de colunas no schema.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Fechamento Prematuro do Modal de Embarque Resolvido',
+        description: 'O modal não fecha mais instantaneamente sem aguardar a conclusão do salvamento. Foi adicionado estado de processamento (loading spinner) e bloqueio de cliques múltiplos no botão "Solicitar Embarque".'
+      },
+      {
+        category: 'fix',
+        title: 'Preservação de Dados em Falha de Submissão',
+        description: 'Se houver intermitência de conexão ou erro no banco, o modal permanece aberto com todos os campos preenchidos, permitindo ao usuário tentar novamente sem perder as informações digitadas.'
+      },
+      {
+        category: 'fix',
+        title: 'Sanitização do Payload de Embarque no Supabase',
+        description: 'Removidas colunas não físicas na raiz do payload (antt_modality, etc_tax_regime e owner_name, mantidas com segurança no JSON documents), eliminando erros sequenciais de schema cache e agilizando a inserção em primeira tentativa.'
+      },
+      {
+        category: 'improvement',
+        title: 'Tratamento e Rollback Seguro de Estado',
+        description: 'Ajustada a propagação de exceções na criação de embarques com rollback de estado em caso de falha de persistência, evitando que registros não salvos fossem exibidos temporariamente.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_27_v2_24_0',
     version: 'v2.24.0',
     date: '27/09/2026',

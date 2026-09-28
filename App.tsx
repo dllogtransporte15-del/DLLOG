@@ -4,7 +4,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { supabase } from './supabase';
 import { useDatabase } from './hooks/useDatabase';
 import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Page, ProfilePermissions, HistoryLog, Ticket, TicketHistory, ShipmentLock, Branch, FreightOffer, RiskQueryOption, RealProfitData } from './types';
-import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus, DEFAULT_RISK_QUERY_OPTIONS } from './types';
+import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus, DEFAULT_RISK_QUERY_OPTIONS, AnttModality, DriverPaymentMethod } from './types';
 import { formatId, isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, findCargoById, findProductForCargo, checkRequiresRiskManagement } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
@@ -1611,7 +1611,7 @@ const App: React.FC = () => {
         return {
           ...cargo,
           scheduledVolume: newScheduledVolume,
-          history: [...cargo.history, createHistoryLogLocal(`Volume agendado atualizado para ${newScheduledVolume.toFixed(2)} ton devido ao novo embarque ${newShipmentId}`)],
+          history: [...(cargo.history || []), createHistoryLogLocal(`Volume agendado atualizado para ${newScheduledVolume.toFixed(2)} ton devido ao novo embarque ${newShipmentId}`)],
         };
       }
       return cargo;
@@ -1638,8 +1638,16 @@ const App: React.FC = () => {
       if (updatedCargo) await upsertCargo(updatedCargo);
     } catch (err: any) {
       console.error('Erro ao salvar embarque no Supabase:', err);
+      // Rollback optimistic state
+      setDrivers(drivers);
+      setVehicles(vehicles);
+      setShipments(shipments);
+      setCargos(cargos);
+      setOwners(owners);
+      setNextIds(nextIds);
       const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
       showToast(`[ERRO CRÍTICO] O embarque não pôde ser salvo no banco de dados: ${errorMessage}. Verifique sua conexão ou contate o suporte.`, 'error');
+      throw err;
     }
 
     setCurrentPage('shipments');
@@ -3858,7 +3866,7 @@ const App: React.FC = () => {
             });
             setOfferForNewShipment(null);
           }}
-          cargo={cargos.find(c => c.id === offerForNewShipment.cargoId) || null}
+          cargo={findCargoById(cargos, offerForNewShipment.cargoId) || null}
           drivers={drivers}
           clients={clients}
           vehicles={vehicles}

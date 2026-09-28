@@ -89,14 +89,14 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
     if (setOfferToConvert) setOfferToConvert(null);
   };
 
-  const handleSaveShipment = (shipmentData: any) => {
-    if (selectedCargoForShipment && onCreateShipment) {
-      onCreateShipment({
-        cargoId: selectedCargoForShipment.id,
+  const handleSaveShipment = async (shipmentData: any) => {
+    const cargoId = selectedCargoForShipment?.id || shipmentData.cargoId;
+    if (cargoId && onCreateShipment) {
+      await onCreateShipment({
         ...shipmentData,
+        cargoId,
       });
     }
-    handleCloseNewShipmentModal();
   };
 
   const handleShowDetails = (cargo: Cargo) => {

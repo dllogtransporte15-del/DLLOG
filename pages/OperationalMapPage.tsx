@@ -100,15 +100,15 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
     setSelectedCargoForShipment(null);
   };
 
-  const handleSaveShipment = (shipmentData: Omit<Shipment, 'id' | 'orderId' | 'cargoId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => {
+  const handleSaveShipment = async (shipmentData: Omit<Shipment, 'id' | 'orderId' | 'cargoId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'>) => {
     if (isDemo) return;
-    if (selectedCargoForShipment) {
-      onCreateShipment({
-        cargoId: selectedCargoForShipment.id,
+    const cargoId = selectedCargoForShipment?.id || (shipmentData as any).cargoId;
+    if (cargoId && onCreateShipment) {
+      await onCreateShipment({
         ...shipmentData,
+        cargoId,
       });
     }
-    handleCloseShipmentModal();
   };
 
   const loadsWithCoords = useMemo(() => {
