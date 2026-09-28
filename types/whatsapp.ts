@@ -49,9 +49,12 @@ export interface WhatsAppInstance {
   webhook_url?: string;
   last_connected_at?: string;
   last_disconnected_at?: string;
+  /** Quando true, o sistema nunca sobrescreve o status com 'disconnected' durante sync automático */
+  always_online_mode?: boolean;
   created_at: string;
   updated_at: string;
 }
+
 
 export interface WhatsAppTemplateTag {
   tag: string;

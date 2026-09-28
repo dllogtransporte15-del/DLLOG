@@ -83,7 +83,11 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   const pollingRef = useRef<any>(null);
 
   // Sincronização automática na montagem do componente
+  // Se já estiver conectado, pula o sync para evitar race condition e manter estabilidade
   useEffect(() => {
+    if (instance.status === 'connected') {
+      return; // já está conectado e protegido — não sincroniza automaticamente
+    }
     syncWhatsAppInstanceFromGateway().then(updated => {
       onInstanceUpdated(updated);
     }).catch(() => null);

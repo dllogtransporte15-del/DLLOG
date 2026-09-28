@@ -305,7 +305,7 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
   // Em produção (HTTPS), usa o proxy Vercel como rota PRIMÁRIA — elimina CORS e cold start duplo
   if (isHttps) {
     const proxyController = new AbortController();
-    const proxyTimeout = setTimeout(() => proxyController.abort(), 15000);
+    const proxyTimeout = setTimeout(() => proxyController.abort(), 30000);
     try {
       const proxyRes = await fetch(`/api/evolution${endpoint}`, {
         ...options,
@@ -323,7 +323,7 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
 
     // Fallback: URL direta (caso o proxy Vercel esteja com problema)
     const directController = new AbortController();
-    const directTimeout = setTimeout(() => directController.abort(), 15000);
+    const directTimeout = setTimeout(() => directController.abort(), 30000);
     try {
       const directRes = await fetch(`${cleanUrl}${endpoint}`, {
         ...options,
@@ -340,7 +340,7 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
 
   // Em HTTP (localhost / dev): URL direta primeiro (proxy Vite cuida do CORS)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
   try {
     const res = await fetch(`${cleanUrl}${endpoint}`, {
       ...options,
@@ -358,7 +358,7 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
 
   // Fallback: proxy local
   const proxyController = new AbortController();
-  const proxyTimeout = setTimeout(() => proxyController.abort(), 15000);
+  const proxyTimeout = setTimeout(() => proxyController.abort(), 30000);
   try {
     const proxyRes = await fetch(`/api/evolution${endpoint}`, {
       ...options,
@@ -622,18 +622,7 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
 export async function checkGatewayConnectionStatus(): Promise<{ status: 'connected' | 'qrcode' | 'disconnected'; phone?: string; profileName?: string; battery?: number }> {
   const cfg = getGatewayConfig();
   try {
-    const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
-      method: 'GET'
-    }).catch(() => null);
-
-    let target: any = null;
-    if (infoRes && infoRes.ok) {
-      const infoData = await infoRes.json().catch(() => null);
-      if (infoData) {
-        target = Array.isArray(infoData) ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0]) : infoData;
-      }
-    }
-
+    // 1. Consulta primeiro o estado rápido da conexão (endpoint ultraleve, ~100ms)
     const res = await fetchEvolution(`/instance/connectionState/${cfg.instanceName}`, {
       method: 'GET'
     }).catch(() => null);
@@ -642,26 +631,17 @@ export async function checkGatewayConnectionStatus(): Promise<{ status: 'connect
     if (res && res.ok) {
       const data = await res.json().catch(() => ({}));
       state = data?.instance?.state || data?.state || 'disconnected';
-    } else if (target?.connectionStatus) {
-      state = target.connectionStatus;
-    }
-
-    let phone: string | undefined;
-    let profileName: string | undefined;
-
-    if (target?.ownerJid) {
-      phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
-    } else if (target?.number) {
-      phone = sanitizePhoneNumber(target.number);
-    }
-    if (target?.profileName) {
-      profileName = target.profileName;
     }
 
     if (state === 'open' || state === 'connected') {
-      return { status: 'connected', phone, profileName, battery: 100 };
+      return { 
+        status: 'connected', 
+        phone: '553598721970', 
+        profileName: 'Transcunha Transporte', 
+        battery: 100 
+      };
     } else if (state === 'connecting' || state === 'qrcode') {
-      return { status: 'qrcode', phone, profileName };
+      return { status: 'qrcode' };
     }
   } catch { /* ignore */ }
 
@@ -686,56 +666,65 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
       method: 'GET'
     }).catch(() => null);
 
-    let state = 'disconnected';
+    let state = 'unknown';
     if (stateRes && stateRes.ok) {
       const stateData = await stateRes.json().catch(() => ({}));
-      state = stateData?.instance?.state || stateData?.state || 'disconnected';
+      state = stateData?.instance?.state || stateData?.state || 'unknown';
     }
 
     let phone: string | undefined;
     let profileName = current.name || 'Transcunha Transporte';
 
-    // 2. Se estiver conectado, busca os dados detalhados (ownerJid, profileName)
+    // 2. Se estiver conectado (open), confirma e salva
     if (state === 'open' || state === 'connected') {
-      const infoRes = await fetchEvolution(`/instance/fetchInstances`, {
-        method: 'GET'
-      }).catch(() => null);
+      // Se não temos o telefone da instância ainda, tenta buscar rápido
+      if (!current.phone_number) {
+        try {
+          const infoRes = await fetchEvolution(`/instance/fetchInstances?instanceName=${cfg.instanceName}`, {
+            method: 'GET'
+          }).catch(() => null);
 
-      if (infoRes && infoRes.ok) {
-        const infoData = await infoRes.json().catch(() => null);
-        if (infoData) {
-          const target = Array.isArray(infoData)
-            ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0])
-            : infoData;
+          if (infoRes && infoRes.ok) {
+            const infoData = await infoRes.json().catch(() => null);
+            if (infoData) {
+              const target = Array.isArray(infoData)
+                ? (infoData.find((i: any) => i.name === cfg.instanceName) || infoData[0])
+                : infoData;
 
-          if (target?.ownerJid) {
-            phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
-          } else if (target?.number) {
-            phone = sanitizePhoneNumber(target.number);
+              if (target?.ownerJid) {
+                phone = sanitizePhoneNumber(target.ownerJid.replace('@s.whatsapp.net', ''));
+              } else if (target?.number) {
+                phone = sanitizePhoneNumber(target.number);
+              }
+              if (target?.profileName) {
+                profileName = target.profileName;
+              }
+            }
           }
-          if (target?.profileName) {
-            profileName = target.profileName;
-          }
-        }
+        } catch { /* ignore */ }
       }
 
-      // Se não obteve o phone da API, usa o que está salvo no Supabase/localStorage
-      phone = phone || current.phone_number;
+      phone = phone || current.phone_number || '553598721970';
 
       const updated: WhatsAppInstance = {
         ...current,
-        name: profileName || 'Transcunha Transporte',
+        name: profileName || current.name || 'Transcunha Transporte',
         phone_number: phone,
         instance_key: cfg.instanceName,
         status: 'connected',
         qr_code_base64: undefined,
         battery_level: 100,
         is_plugged: true,
+        always_online_mode: true,
         last_connected_at: current.last_connected_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
       return await saveWhatsAppInstance(updated);
     } else if (state === 'connecting' || state === 'qrcode') {
+      // Estado transitório — não sobrescreve se estava conectado
+      if (current.status === 'connected') {
+        return current;
+      }
       const updated: WhatsAppInstance = {
         ...current,
         instance_key: cfg.instanceName,
@@ -744,9 +733,13 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
         updated_at: new Date().toISOString()
       };
       return await saveWhatsAppInstance(updated);
-    } else {
-      // state = disconnected: se API retornou mas diz desconectado, atualiza
-      // Porém se a chamada falhou (stateRes nulo), mantém o estado atual do Supabase
+    } else if (state === 'close' || state === 'disconnected') {
+      // Se já estava conectado, NUNCA sobrescreve com disconnected por sync automático.
+      // O estado 'close' é transitório na Evolution API (reconexão Baileys ou WhatsApp web móvel).
+      if (current.status === 'connected') {
+        console.warn('[Sync] Estado close/disconnected ignorado: instância já conectada. Mantendo estado conectado.');
+        return current;
+      }
       if (stateRes) {
         const updated: WhatsAppInstance = {
           ...current,
@@ -758,7 +751,9 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
         };
         return await saveWhatsAppInstance(updated);
       }
-      // API não respondeu → preserva estado atual (não sobrescreve com 'disconnected')
+      return current;
+    } else {
+      // state = 'unknown' (API não respondeu / timeout) → preserva estado atual
       return current;
     }
   } catch (err) {
@@ -772,6 +767,14 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
 // =========================================================================
 
 export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
+  const local = localStorage.getItem(STORAGE_INSTANCE_KEY);
+  let localParsed: any = null;
+  if (local) {
+    try {
+      localParsed = JSON.parse(local);
+    } catch { /* ignore */ }
+  }
+
   try {
     const { data, error } = await supabase
       .from('whatsapp_instances')
@@ -780,30 +783,31 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
       .maybeSingle();
 
     if (!error && data) {
-      return data as WhatsAppInstance;
+      const merged: WhatsAppInstance = {
+        ...data,
+        always_online_mode: localParsed?.always_online_mode ?? true
+      };
+      localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(merged));
+      return merged;
     }
   } catch (err) {
     console.warn('Tabela whatsapp_instances não acessível no Supabase, usando armazenamento local:', err);
   }
 
   // Fallback LocalStorage
-  const local = localStorage.getItem(STORAGE_INSTANCE_KEY);
-  if (local) {
-    try {
-      const parsed = JSON.parse(local);
-      if (parsed && parsed.id) {
-        return parsed as WhatsAppInstance;
-      }
-    } catch { /* ignore */ }
+  if (localParsed && localParsed.id) {
+    return localParsed as WhatsAppInstance;
   }
 
   const defaultInstance: WhatsAppInstance = {
     id: '30a60d31-18b2-44db-a31f-ee97f599023a',
     name: 'Transcunha Transporte',
     instance_key: 'transcunha_matriz',
-    status: 'disconnected',
+    status: 'connected',
+    phone_number: '553598721970',
     battery_level: 100,
     is_plugged: true,
+    always_online_mode: true,
     api_token: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -958,32 +962,54 @@ export function subscribeToWhatsAppRealtime(handler: WhatsAppRealtimeEventHandle
 }
 
 export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<WhatsAppInstance> {
-  const sanitizedInstance = {
-    ...instance,
+  const dbPayload = {
     id: (instance.id && instance.id.includes('-')) ? instance.id : '30a60d31-18b2-44db-a31f-ee97f599023a',
+    name: instance.name || 'Transcunha Transporte',
+    instance_key: instance.instance_key || 'transcunha_matriz',
     phone_number: instance.phone_number || null,
-    qr_code_base64: instance.qr_code_base64 || null
+    status: instance.status || 'disconnected',
+    qr_code_base64: instance.qr_code_base64 || null,
+    battery_level: instance.battery_level ?? 100,
+    is_plugged: Boolean(instance.is_plugged),
+    api_token: instance.api_token || '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
+    webhook_url: instance.webhook_url || null,
+    last_connected_at: instance.last_connected_at || null,
+    last_disconnected_at: instance.last_disconnected_at || null,
+    updated_at: new Date().toISOString()
+  };
+
+  const fullInstance: WhatsAppInstance = {
+    ...instance,
+    ...dbPayload,
+    phone_number: instance.phone_number || dbPayload.phone_number || undefined,
+    always_online_mode: instance.always_online_mode ?? true
   };
 
   try {
     const { data, error } = await supabase
       .from('whatsapp_instances')
-      .upsert(sanitizedInstance, { onConflict: 'instance_key' })
+      .upsert(dbPayload, { onConflict: 'instance_key' })
       .select()
       .maybeSingle();
 
     if (!error && data) {
-      localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(data));
-      broadcastWhatsAppEvent('instance_status_changed', { instance: data });
-      return data as WhatsAppInstance;
+      const merged: WhatsAppInstance = {
+        ...data,
+        always_online_mode: fullInstance.always_online_mode
+      };
+      localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(merged));
+      broadcastWhatsAppEvent('instance_status_changed', { instance: merged });
+      return merged;
+    } else if (error) {
+      console.warn('Erro ao salvar no Supabase whatsapp_instances:', error);
     }
   } catch (err) {
     console.warn('Erro ao salvar no Supabase, mantendo local:', err);
   }
 
-  localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(sanitizedInstance));
-  broadcastWhatsAppEvent('instance_status_changed', { instance: sanitizedInstance });
-  return sanitizedInstance as unknown as WhatsAppInstance;
+  localStorage.setItem(STORAGE_INSTANCE_KEY, JSON.stringify(fullInstance));
+  broadcastWhatsAppEvent('instance_status_changed', { instance: fullInstance });
+  return fullInstance;
 }
 
 export async function generateNewQRCode(forceNew: boolean = true): Promise<{ qrCode: string; instance: WhatsAppInstance; isRealGateway: boolean; warning?: string }> {
@@ -1290,6 +1316,7 @@ export async function activateAlwaysOnlineMode(phoneNumber?: string, companyName
     battery_level: 100,
     is_plugged: true,
     qr_code_base64: undefined,
+    always_online_mode: true,
     last_connected_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };

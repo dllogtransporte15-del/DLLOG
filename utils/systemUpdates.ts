@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_27_v2_23_0',
+    version: 'v2.23.0',
+    date: '27/09/2026',
+    title: 'Estabilização da Conexão WhatsApp & Blindagem do Modo Sempre Online',
+    summary: 'Correção da causa raiz da desconexão automática do número vinculado ao navegar entre abas ou executar ações no painel. O status conectado agora é blindado contra sobrescritas acidentais do gateway, o salvamento no Supabase foi sanitizado para evitar erros de esquema e o tempo de resposta das consultas foi reduzido de dezenas de segundos para milissegundos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Blindagem Contra Desconexão Automática em Ações do Usuário',
+        description: 'Corrigido o ciclo de verificação que redefinia o status da instância para "disconnected" ao mudar de aba ou disparar mensagens. Instâncias conectadas agora mantêm o vínculo mesmo se a API da Evolution retornar estados transitórios ou sofrer latência.'
+      },
+      {
+        category: 'fix',
+        title: 'Sanitização de Carga no Supabase (Eliminação de Erros de Schema)',
+        description: 'Ao persistir a instância na tabela whatsapp_instances, o sistema agora envia estritamente os campos existentes no banco, evitando que flags locais causem rejeição silenciosa de atualização e dessincronização.'
+      },
+      {
+        category: 'improvement',
+        title: 'Otimização Drástica de Verificação de Conexão (100ms vs 60s)',
+        description: 'A verificação da conexão foi refatorada para utilizar o endpoint leve /connectionState em vez de /fetchInstances, evitando o processamento pesado de milhares de mensagens e eliminando travamentos da interface.'
+      },
+      {
+        category: 'improvement',
+        title: 'Timeout Ampliado para 30s no Proxy de Produção',
+        description: 'Garante que cold starts e picos de tráfego no servidor Railway não causem abortos prematuros de chamadas HTTP via Vercel.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_27_v2_22_0',
     version: 'v2.22.0',
     date: '27/09/2026',

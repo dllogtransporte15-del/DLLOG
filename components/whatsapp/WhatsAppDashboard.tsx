@@ -47,13 +47,18 @@ export const WhatsAppDashboard: React.FC<WhatsAppDashboardProps> = ({ currentUse
     setLoading(true);
     try {
       const [instData, tplData, queueData] = await Promise.all([
-        syncWhatsAppInstanceFromGateway().catch(() => getWhatsAppInstance()),
+        getWhatsAppInstance(),
         getWhatsAppTemplates(),
         getWhatsAppQueue()
       ]);
       setInstance(instData);
       setTemplates(tplData);
       setQueue(queueData);
+
+      // Sincroniza em segundo plano sem travar a interface
+      syncWhatsAppInstanceFromGateway().then(updated => {
+        if (updated) setInstance(updated);
+      }).catch(() => null);
     } catch (err) {
       console.error('Erro ao carregar dados do WhatsApp:', err);
     } finally {
