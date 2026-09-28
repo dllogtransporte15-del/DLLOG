@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_27_v2_24_0',
+    version: 'v2.24.0',
+    date: '27/09/2026',
+    title: 'Migração para Instância Limpa Oficial & Validação Real de Entrega WhatsApp',
+    summary: 'Solução definitiva para a questão dos disparos de homologação não chegarem ao celular de destino. Foi identificada a causa raiz: a sessão antiga no servidor estava em conflito (Connection Closed), fazendo com que a API rejeitasse o envio enquanto o sistema simulava sucesso. O sistema foi migrado para a nova instância transcunha_oficial, com QR Code limpo e validação rigorosa de retorno físico do WhatsApp.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Migração para Instância Limpa Oficial (transcunha_oficial)',
+        description: 'Substituição da instância anterior, que acumulava mais de 300.000 mensagens e estava travada pelo Baileys após desconexão no celular. A nova instância responde em menos de 1 segundo e gera QR Codes renovados instantaneamente.'
+      },
+      {
+        category: 'fix',
+        title: 'Validação Fidedigna de Disparo Físico',
+        description: 'Eliminada a confirmação falsa ("falso positivo") de envio. Se a conexão com o WhatsApp estiver inativa ou rejeitada pelo gateway, o modal de Homologação exibe o motivo real do erro para o usuário escanear o QR Code.'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção de Estado Close como Solicitação de QR Code',
+        description: 'Sempre que o servidor reportar que o socket do WhatsApp não está autenticado, a interface agora exibe de imediato o QR Code para leitura rápida pelo celular da empresa.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_27_v2_23_0',
     version: 'v2.23.0',
     date: '27/09/2026',

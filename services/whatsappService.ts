@@ -26,7 +26,7 @@ export interface WhatsAppGatewayConfig {
 export const CLOUD_GATEWAY_DEFAULT: WhatsAppGatewayConfig = {
   url: 'https://evolution-api-production-e3eb.up.railway.app',
   apiKey: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
-  instanceName: 'transcunha_matriz'
+  instanceName: 'transcunha_oficial'
 };
 
 /**
@@ -45,6 +45,11 @@ export function getGatewayConfig(): WhatsAppGatewayConfig {
       const isLocalhost = parsed.url && (parsed.url.includes('localhost') || parsed.url.includes('127.0.0.1'));
       const isHttpOnHttps = isHttps && parsed.url && parsed.url.startsWith('http:');
       const isOldKey = parsed.apiKey === 'c1f7333c96962458559ec3b861d0046b4a479d23a51e897c6f4d9129475509bc';
+
+      if (parsed.instanceName === 'transcunha_matriz') {
+        parsed.instanceName = 'transcunha_oficial';
+        localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify(parsed));
+      }
 
       // Se for configuração válida e com chave atualizada, usa ela
       if (!isLocalhost && !isHttpOnHttps && !isOldKey && parsed.url && parsed.apiKey) {
@@ -640,7 +645,7 @@ export async function checkGatewayConnectionStatus(): Promise<{ status: 'connect
         profileName: 'Transcunha Transporte', 
         battery: 100 
       };
-    } else if (state === 'connecting' || state === 'qrcode') {
+    } else if (state === 'connecting' || state === 'qrcode' || state === 'close') {
       return { status: 'qrcode' };
     }
   } catch { /* ignore */ }
@@ -1264,22 +1269,27 @@ export async function enqueueWhatsAppMessage(params: {
     });
 
     if (gatewayRes.ok) {
-      const resData = await gatewayRes.json();
+      const resData = await gatewayRes.json().catch(() => ({}));
       newItem.status = 'sent';
       newItem.sent_at = new Date().toISOString();
       newItem.external_message_id = resData?.key?.id || resData?.messageId || `wamid.${Date.now()}`;
       dispatchedSuccessfully = true;
+    } else {
+      const errData = await gatewayRes.json().catch(() => ({}));
+      const rawMsg = errData?.response?.message || errData?.message || errData?.error;
+      const errMsg = Array.isArray(rawMsg) ? rawMsg.join(', ') : (typeof rawMsg === 'string' ? rawMsg : 'Erro ao processar envio no WhatsApp');
+      
+      newItem.status = 'failed';
+      newItem.error_message = errMsg;
+      console.warn('[Evolution API] Falha no disparo físico:', errMsg);
+      throw new Error(`Falha no envio do WhatsApp: ${errMsg}`);
     }
-  } catch (err) {
-    console.warn('[Evolution API] Gateway não respondeu, usando modo ativo integrado:', err);
-  }
-
-  // Se o gateway físico não estiver respondendo, mas a instância estiver conectada no Transcunha,
-  // processamos o envio com sucesso operacional para não travar fluxos e registrar no Supabase
-  if (!dispatchedSuccessfully && inst.status === 'connected') {
-    newItem.status = 'sent';
-    newItem.sent_at = new Date().toISOString();
-    newItem.external_message_id = `msg_${Date.now()}_tc_${Math.random().toString(36).substring(2, 8)}`;
+  } catch (err: any) {
+    if (err.message && err.message.startsWith('Falha no envio')) {
+      throw err;
+    }
+    console.warn('[Evolution API] Erro ao disparar mensagem:', err);
+    throw new Error(`Erro na conexão com o gateway do WhatsApp: ${err.message || 'Servidor indisponível'}`);
   }
 
   try {

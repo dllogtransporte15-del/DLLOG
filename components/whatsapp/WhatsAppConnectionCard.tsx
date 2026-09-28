@@ -181,7 +181,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
       ...gatewayConfig,
       url: (gatewayConfig.url || '').trim().replace(/\/+$/, ''),
       apiKey: (gatewayConfig.apiKey || '').trim(),
-      instanceName: (gatewayConfig.instanceName || '').trim() || 'transcunha_matriz'
+      instanceName: (gatewayConfig.instanceName || '').trim() || 'transcunha_oficial'
     };
     setGatewayConfigState(sanitized);
     try {
@@ -197,7 +197,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
       ...gatewayConfig,
       url: (gatewayConfig.url || '').trim().replace(/\/+$/, ''),
       apiKey: (gatewayConfig.apiKey || '').trim(),
-      instanceName: (gatewayConfig.instanceName || '').trim() || 'transcunha_matriz'
+      instanceName: (gatewayConfig.instanceName || '').trim() || 'transcunha_oficial'
     };
     saveGatewayConfig(sanitized);
     setGatewayConfigState(sanitized);
@@ -697,7 +697,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                       type="text"
                       value={gatewayConfig.instanceName}
                       onChange={(e) => setGatewayConfigState({ ...gatewayConfig, instanceName: e.target.value })}
-                      placeholder="Ex: transcunha_matriz"
+                      placeholder="Ex: transcunha_oficial"
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -710,7 +710,7 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
                       const cloudDefault = {
                         url: 'https://evolution-api-production-e3eb.up.railway.app',
                         apiKey: '5a3deafd8aedc279c2aff7ff40c17b508d36fb18d108c6c332d7ff224ec205cd',
-                        instanceName: 'transcunha_matriz'
+                        instanceName: 'transcunha_oficial'
                       };
                       setGatewayConfigState(cloudDefault);
                       saveGatewayConfig(cloudDefault);
