@@ -902,6 +902,16 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         }
     }
 
+    // 1. TETO SOBERANO: Verificação do Saldo Total do Lote
+    // Independentemente de quanto esteja configurado na cadência diária (Fixo, Limite Diário ou Demanda Livre),
+    // o volume do embarque NUNCA pode ultrapassar o saldo total disponível do lote.
+    const cargoBalance = calculateCargoBalance(currentCargo, shipments);
+    const availableBalance = cargoBalance.availableVolume;
+    if (shipmentTonnage > (availableBalance + 0.001)) {
+        showToast(`SALDO TOTAL INSUFICIENTE: O lote possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis no saldo total. Não é permitido criar embarques acima desse saldo (tentativa: ${shipmentTonnage.toLocaleString('pt-BR')} ton), independente da cadência diária.`, 'error');
+        return;
+    }
+
     if (currentCargo?.dailySchedule) {
         const scheduleRule = currentCargo.dailySchedule.find(rule => rule.date === scheduledDate);
         if (!scheduleRule) {
@@ -913,11 +923,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             showToast('Atenção: A programação para este dia exige verificação com o comercial antes de marcar.', 'warning');
         } else if (scheduleRule.type === DailyScheduleType.Fixo && scheduleRule.tonnage) {
             const alreadyScheduledTonnage = shipments
-                .filter(s => s.cargoId === currentCargo.id && s.scheduledDate === scheduledDate)
+                .filter(s => (s.cargoId === currentCargo.id || (currentCargo.sequenceId && s.cargoId === String(currentCargo.sequenceId)) || (currentCargo.sequenceId && s.cargoId === `CRG-${currentCargo.sequenceId}`)) && s.scheduledDate === scheduledDate && s.status !== ShipmentStatus.Cancelado)
                 .reduce((sum, s) => sum + s.shipmentTonnage, 0);
             
-            if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage) {
-                showToast(`Erro: A tonelagem para este dia excede o limite programado de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage} ton programadas.`, 'error');
+            if (alreadyScheduledTonnage + shipmentTonnage > scheduleRule.tonnage + 0.001) {
+                showToast(`LIMITE DIÁRIO EXCEDIDO: A tonelagem para este dia excede o limite programado na cadência diária de ${scheduleRule.tonnage} ton. Já existem ${alreadyScheduledTonnage.toLocaleString('pt-BR')} ton programadas.`, 'error');
                 return;
             }
         }
@@ -928,14 +938,6 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     const inputDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
     if (inputDateTime <= now) {
         showToast('Data/Hora Inválida: A data e hora programada deve ser posterior ao momento atual.', 'warning');
-        return;
-    }
-
-    // Hard Validation: Balance Check
-    const cargoBalance = calculateCargoBalance(currentCargo, shipments);
-    const availableBalance = cargoBalance.availableVolume;
-    if (shipmentTonnage > (availableBalance + 0.001)) {
-        showToast(`SALDO INSUFICIENTE: Esta carga possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis. Você está tentando solicitar ${shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
         return;
     }
 

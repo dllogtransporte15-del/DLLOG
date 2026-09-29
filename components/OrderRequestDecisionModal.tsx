@@ -15,6 +15,7 @@ import {
   MessageSquare,
   AlertTriangle
 } from 'lucide-react';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 interface OrderRequestDecisionModalProps {
   isOpen: boolean;
@@ -56,7 +57,8 @@ const OrderRequestDecisionModal: React.FC<OrderRequestDecisionModalProps> = ({
   const cargoSequence = cargo?.sequenceId ? `#${cargo.sequenceId}` : (offer.cargoId ? `#${offer.cargoId.slice(0, 8)}` : 'N/A');
 
   const ratePerTon = offer.freightValuePerTon || cargo?.driverFreightValuePerTon || 0;
-  const tonnage = offer.totalTonnage || (cargo ? Math.max(0, cargo.scheduledVolume - cargo.loadedVolume) : 0);
+  const cargoBal = cargo ? calculateCargoBalance(cargo) : null;
+  const tonnage = offer.totalTonnage || cargoBal?.availableVolume || 0;
   const estimatedTotal = ratePerTon * tonnage;
 
   const formatDateTime = (dateStr?: string) => {

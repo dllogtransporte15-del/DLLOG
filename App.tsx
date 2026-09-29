@@ -52,7 +52,7 @@ import SystemUpdateModal from './components/SystemUpdateModal';
 import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
 import { shouldShowUpdateModal } from './utils/systemUpdates';
 import { dispatchShipmentWhatsAppTrigger, ShipmentWhatsAppTriggerType } from './services/shipmentWhatsAppAutomation';
-import { reconcileCargoWithShipments } from './utils/cargoBalance';
+import { reconcileCargoWithShipments, calculateCargoBalance } from './utils/cargoBalance';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
@@ -1325,6 +1325,13 @@ const App: React.FC = () => {
     });
 
     const relatedCargo = findCargoById(cargos, data.cargoId);
+    if (relatedCargo) {
+      const cargoBalance = calculateCargoBalance(relatedCargo, shipments);
+      if (data.shipmentTonnage > cargoBalance.availableVolume + 0.001) {
+        showToast(`SALDO TOTAL INSUFICIENTE: O lote possui apenas ${cargoBalance.availableVolume.toLocaleString('pt-BR')} ton disponíveis no saldo total. Não é permitido criar embarques de ${data.shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
+        return;
+      }
+    }
     const relatedProduct = findProductForCargo(products, relatedCargo);
     const productRequiresRisk = checkRequiresRiskManagement(relatedCargo, relatedProduct);
 
@@ -2532,9 +2539,18 @@ const App: React.FC = () => {
     const targetTonnage = data.shipmentTonnage !== undefined ? data.shipmentTonnage : shipmentToUpdate.shipmentTonnage;
 
     if (data.shipmentTonnage !== undefined && data.shipmentTonnage !== shipmentToUpdate.shipmentTonnage) {
+        const cargo = cargos.find(c => c.id === shipmentToUpdate.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToUpdate.cargoId));
+        if (cargo && data.shipmentTonnage > shipmentToUpdate.shipmentTonnage) {
+            const currentBal = calculateCargoBalance(cargo, shipments);
+            const deltaTon = data.shipmentTonnage - shipmentToUpdate.shipmentTonnage;
+            if (deltaTon > currentBal.availableVolume + 0.001) {
+                showToast(`SALDO TOTAL INSUFICIENTE: Não é possível aumentar a tonelagem em ${deltaTon.toLocaleString('pt-BR')} ton. O lote possui apenas ${currentBal.availableVolume.toLocaleString('pt-BR')} ton disponíveis no saldo total.`, 'error');
+                return;
+            }
+        }
+
         updatedDriverFreight = rateToUse * targetTonnage;
         
-        const cargo = cargos.find(c => c.id === shipmentToUpdate.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToUpdate.cargoId));
         if (cargo) {
             const updatedShipments = shipments.map(s => s.id === shipmentId ? { ...s, shipmentTonnage: targetTonnage } : s);
             const reconciled = reconcileCargoWithShipments(cargo, updatedShipments);

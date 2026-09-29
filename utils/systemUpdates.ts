@@ -46,6 +46,11 @@ export const SYSTEM_RELEASES: SystemRelease[] = [
         category: 'improvement',
         title: 'Consistência em Criação, Edição, Reversão e Cancelamento',
         description: 'Todos os fluxos operacionais (criação de embarque, edição de tonelagem, cancelamento, exclusão e reversão de status) agora recalculam automaticamente os saldos do lote com base na lista real de embarques.'
+      },
+      {
+        category: 'security',
+        title: 'Teto Soberano do Saldo Total sobre a Cadência Diária',
+        description: 'O saldo total disponível do lote tem prioridade absoluta: nenhuma cadência diária (seja Limite Diário, Fixo ou Demanda Livre) pode permitir embarques que excedam o saldo total restante do lote.'
       }
     ]
   },
