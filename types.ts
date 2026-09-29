@@ -1,6 +1,6 @@
 // FIX: Moved Page type definition from App.tsx to here so it can be shared across modules.
 // FIX: Added 'embarcadores' and 'operational-map' to the page list to resolve type errors.
-export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types' | 'whatsapp';
+export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types' | 'whatsapp' | 'messenger';
 
 export enum UserProfile {
   Embarcador = "Embarcador",
@@ -683,4 +683,111 @@ export enum EtcTaxRegime {
   SimplesNacional = 'Simples Nacional',
   LucroPresumido = 'Lucro Presumido',
   LucroReal = 'Lucro Real',
+}
+
+// ==========================================
+// MÓDULO FINANCEIRO
+// ==========================================
+
+export type FinancialTab = 
+  | 'payables' 
+  | 'receivables' 
+  | 'ofx' 
+  | 'result-1' 
+  | 'result-2' 
+  | 'result-3' 
+  | 'control-shipments' 
+  | 'control-banking';
+
+export type FinancialTransactionType = 'payable' | 'receivable';
+
+export enum FinancialTransactionStatus {
+  Pendente = 'Pendente',
+  Pago = 'Pago',
+  Recebido = 'Recebido',
+  Atrasado = 'Atrasado',
+  Conciliado = 'Conciliado',
+  Cancelado = 'Cancelado',
+}
+
+export enum FinancialCategoryType {
+  ReceitaFrete = 'Receita de Fretes',
+  CustoMotorista = 'Custos com Motoristas / Terceiros',
+  CustoPedagio = 'Pedágios',
+  CustoImposto = 'Impostos e Tributos',
+  CustoOperacional = 'Despesas Operacionais',
+  CustoPessoal = 'Pessoal e Encargos',
+  CustoAdministrativo = 'Despesas Administrativas',
+  CustoFinanceiro = 'Despesas Financeiras / Tarifas',
+  OutrasReceitas = 'Outras Receitas',
+}
+
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  bankCode?: string;
+  agency: string;
+  accountNumber: string;
+  accountType: 'corrente' | 'poupanca' | 'aplicacao';
+  initialBalance: number;
+  currentBalance: number;
+  active: boolean;
+  pixKey?: string;
+  createdAt: string;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  type: FinancialTransactionType;
+  description: string;
+  amount: number;
+  dueDate: string;
+  paymentDate?: string;
+  status: FinancialTransactionStatus;
+  category: string;
+  costCenter?: string;
+  bankAccountId?: string;
+  documentNumber?: string;
+  supplierOrClientName?: string;
+  supplierOrClientCpfCnpj?: string;
+  
+  // Vínculos operacionais com Transcunha
+  shipmentId?: string;
+  cargoId?: string;
+  driverId?: string;
+  clientId?: string;
+  ownerId?: string;
+  
+  notes?: string;
+  isReconciled?: boolean;
+  reconciledAt?: string;
+  ofxCheckNum?: string;
+  
+  createdAt: string;
+  createdById?: string;
+}
+
+export interface OfxTransaction {
+  id: string;
+  checkNum?: string;
+  date: string;
+  amount: number;
+  description: string;
+  type: 'CREDIT' | 'DEBIT' | 'OTHER';
+  memo?: string;
+  reconciled: boolean;
+  matchedTransactionId?: string;
+}
+
+export interface OfxImportLog {
+  id: string;
+  filename: string;
+  importDate: string;
+  bankAccountId: string;
+  accountNumber?: string;
+  startDate?: string;
+  endDate?: string;
+  totalTransactions: number;
+  reconciledCount: number;
+  transactions: OfxTransaction[];
 }

@@ -27,12 +27,16 @@ export type WhatsAppAttachmentType =
 export type WhatsAppTriggerEvent = 
   | 'shipment.created'          // Nova Carga / Embarque Criado
   | 'shipment.assigned'         // Motorista Atribuído à Carga
+  | 'shipment.risk_pending'     // Gatilho 1: Aguardando Cadastro e Seguradora (Homologação)
+  | 'shipment.risk_approved'    // Gatilho 2: Aguardando Carregamento (Cadastro e Risco Liberados)
+  | 'shipment.fiscal_emitted'   // Gatilho 3: Saída de Aguardando Fiscal para Aguardando Adiantamento
   | 'shipment.loading_order'    // Ordem de Carregamento Emitida
-  | 'shipment.advance_paid'     // Comprovante de Adiantamento Pago
-  | 'shipment.in_transit'       // Carga em Trânsito / Rastreamento
+  | 'shipment.advance_paid'     // Gatilho 4: Avanço do Aguardando Adiantamento (Comprovante)
+  | 'shipment.in_transit'       // Gatilho 5A: Aguardando Agendamento / Troca de NF-e
+  | 'shipment.awaiting_discharge' // Gatilho 5B: Aguardando Descarga
   | 'shipment.cte_emitted'      // CT-e Autorizado pela SEFAZ
   | 'shipment.delivered'        // Carga Descarregada / Comprovante Entregue
-  | 'shipment.balance_paid'     // Saldo de Frete Quitado
+  | 'shipment.balance_paid'     // Gatilho 6: Aguardando Saldo -> Finalizado (Saldo e Agradecimento)
   | 'risk.reproved'             // Aviso de Reprovação no Gerenciamento de Risco
   | 'custom.manual';            // Disparo Manual / Avulso
 

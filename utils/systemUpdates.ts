@@ -21,6 +21,98 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_28_v2_28_0',
+    version: 'v2.28.0',
+    date: '28/09/2026',
+    title: 'Automação Operacional de WhatsApp para Motoristas em Todas as Etapas do Embarque',
+    summary: 'Implementação e padronização completa dos 6 gatilhos operacionais de WhatsApp com disparo automático para o motorista vinculado ao embarque. As mensagens são formatadas com interpolação dinâmica (nome do motorista, dados da rota, agendamento e locais de coleta/descarga), acompanhadas de múltiplos anexos em PDF/imagens (CT-e, MDF-e, NF-e, Carta Frete, Comprovante de Agendamento, Comprovante de Adiantamento e Comprovante de Saldo final) com fallback inteligente anti-falhas e opção de reenvio manual na linha do tempo.',
+    items: [
+      {
+        category: 'feature',
+        title: '6 Gatilhos Oficiais de Mudança de Etapa',
+        description: 'Disparos automáticos e padronizados para Aguardando Cadastro e Seguradora (Homologação), Aguardando Carregamento (Liberado), Saída do Fiscal (Envio de Documentação de Viagem), Adiantamento Pago, Em Trânsito / Aguardando Descarga e Conclusão com Quitação do Saldo.'
+      },
+      {
+        category: 'feature',
+        title: 'Envio Sequencial de Múltiplos Documentos Fiscais',
+        description: 'No avanço fiscal, o sistema localiza e despacha individualmente todos os PDFs anexados à carga (CT-e, MDF-e, NF-e, Carta Frete e Agendamento) com delay inteligente para garantir entrega ordenada sem travar o gateway.'
+      },
+      {
+        category: 'improvement',
+        title: 'Painel e Reenvio Manual na Linha do Tempo',
+        description: 'Cada etapa na Linha do Tempo do Embarque exibe a identificação do modelo de WhatsApp vinculado e um botão para reenvio manual caso o motorista solicite nova via dos dados.'
+      },
+      {
+        category: 'security',
+        title: 'Resolução Segura e Fallback de Contatos',
+        description: 'Validação e higienização automática do número do motorista via cadastro unificado, prevenindo falhas de envio e mantendo o fluxo operacional 100% resiliente mesmo em caso de instabilidade temporária no gateway.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_28_v2_27_0',
+    version: 'v2.27.0',
+    date: '28/09/2026',
+    title: 'Lançamento do Novo Mensageiro Transcunha Oficial (35 9872-1970)',
+    summary: 'Substituição completa do chat anterior pelo novo módulo Mensageiro Transcunha, dedicado a automações, notificações operacionais e disparos com a linha corporativa oficial (35) 9872-1970. Inclui suporte a pareamento numérico por código de telefone (Pairing Code) e QR Code, disparo rápido para motoristas e clientes, prévia fiel no formato WhatsApp e fila anti-bloqueio com histórico completo de entrega.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Mensageiro Oficial Integrado',
+        description: 'Módulo acessível pelo menu de Ferramentas e rota /messenger, com disparo direto para motoristas e clientes cadastrados ou números manuais.'
+      },
+      {
+        category: 'feature',
+        title: 'Pareamento por Código de Telefone (Pairing Code)',
+        description: 'Permite conectar a linha (35) 9872-1970 gerando um código numérico de 8 dígitos para digitar diretamente no aplicativo WhatsApp do celular, sem depender de câmera.'
+      },
+      {
+        category: 'feature',
+        title: 'Fila & Histórico de Disparos em Tempo Real',
+        description: 'Relatório completo de mensagens enviadas com status visual (Enviado, Entregue, Lido e Falha), busca rápida e delay inteligente anti-bloqueio.'
+      },
+      {
+        category: 'improvement',
+        title: 'Limpeza de Chat Flutuante',
+        description: 'Removido o antigo chat do menu operacional e desativada a janela flutuante sobreposta, proporcionando uma interface limpa e focada na produtividade da equipe.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_28_v2_26_0',
+    version: 'v2.26.0',
+    date: '28/09/2026',
+    title: 'Lançamento do Novo Módulo Financeiro & Controladoria Transcunha',
+    summary: 'Implementação completa do ecossistema financeiro e controladoria da Transcunha Logística. O módulo traz gestão completa de Contas a Pagar e Contas a Receber, importador e conciliação bancária de arquivos OFX, DREs em 3 níveis (Operacional, Gerencial e Estratégico/EBITDA), Planilha de Controladoria de Embarques com margens de frete em tempo real e Controladoria de Saldos Bancários.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Módulo de Contas a Pagar e Receber',
+        description: 'Tabelas analíticas com filtros por status, pesquisa por fornecedor/cliente e documento, KPIs de totais pendentes e realizados, além de formulários modais para novos lançamentos e baixa imediata.'
+      },
+      {
+        category: 'feature',
+        title: 'Conciliação Bancária OFX',
+        description: 'Leitor e parser nativo de extratos bancários em formato .OFX (SGML/XML), com importação drag-and-drop, reconciliação de transações e conferência de créditos e débitos.'
+      },
+      {
+        category: 'feature',
+        title: '1º, 2º e 3º Resultados Financeiros (DREs)',
+        description: 'Demonstrativos em cascata: 1º Nível com Margem de Contribuição Operacional; 2º Nível com rateio por Centros de Custo (Pessoal, Operacional e Administrativo); e 3º Nível com EBITDA, Margem Líquida e projeções de fluxo de caixa futuro para 30 dias.'
+      },
+      {
+        category: 'feature',
+        title: 'Planilha de Controladoria de Embarques',
+        description: 'Cruzamento detalhado de frete empresa faturado versus frete motorista, pedágios, adiantamentos e saldo líquido, com cálculo da margem bruta retida e exportação instantânea para CSV/Excel.'
+      },
+      {
+        category: 'feature',
+        title: 'Controladoria e Saldos Bancários',
+        description: 'Gestão visual de contas correntes e aplicações com saldos em tempo real, adição de novas contas e ajuste de conciliação de saldo.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_28_v2_25_0',
     version: 'v2.25.0',
     date: '28/09/2026',

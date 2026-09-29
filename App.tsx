@@ -24,6 +24,7 @@ const ShipmentsPage = React.lazy(() => import('./pages/ShipmentsPage'));
 const OperationalLoadsPage = React.lazy(() => import('./pages/OperationalLoadsPage'));
 const OperationalMapPage = React.lazy(() => import('./pages/OperationalMapPage'));
 const CommissionsPage = React.lazy(() => import('./pages/CommissionsPage'));
+const FinancialPage = React.lazy(() => import('./pages/FinancialPage'));
 const ReportsPage = React.lazy(() => import('./pages/ReportsPage'));
 const UsersPage = React.lazy(() => import('./pages/UsersPage'));
 const AppearancePage = React.lazy(() => import('./pages/AppearancePage'));
@@ -39,6 +40,7 @@ const DownloadAppPage = React.lazy(() => import('./pages/DownloadAppPage'));
 const RiskManagementPage = React.lazy(() => import('./pages/RiskManagementPage'));
 const RiskQueryTypesPage = React.lazy(() => import('./pages/RiskQueryTypesPage'));
 const WhatsAppManagementPage = React.lazy(() => import('./pages/WhatsAppManagementPage'));
+const MessengerPage = React.lazy(() => import('./pages/MessengerPage'));
 
 // Component Imports
 import TopNavBar from './components/TopNavBar';
@@ -48,8 +50,8 @@ import DriverPortal from './components/DriverPortal';
 import NewShipmentModal from './components/NewShipmentModal';
 import SystemUpdateModal from './components/SystemUpdateModal';
 import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
-import { WhatsAppChatPanel } from './components/whatsapp/WhatsAppChatPanel';
 import { shouldShowUpdateModal } from './utils/systemUpdates';
+import { dispatchShipmentWhatsAppTrigger, ShipmentWhatsAppTriggerType } from './services/shipmentWhatsAppAutomation';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
@@ -1666,6 +1668,33 @@ const App: React.FC = () => {
       }
     }
     showToast(toastMessage, 'success');
+
+    // Disparo automático WhatsApp ao vincular motorista ao novo embarque
+    try {
+      const relatedCargoForTrigger = findCargoById(newCargos, data.cargoId);
+      const relatedClientForTrigger = clients.find(c => c.id === relatedCargoForTrigger?.clientId);
+      const createTriggerType: ShipmentWhatsAppTriggerType = (newShipment.status === ShipmentStatus.AguardandoCarregamento) 
+        ? 'risk_approved' 
+        : 'risk_pending';
+
+      dispatchShipmentWhatsAppTrigger(createTriggerType, {
+        shipment: newShipment,
+        cargo: relatedCargoForTrigger,
+        client: relatedClientForTrigger,
+        driver: driverToUse,
+        drivers: newDrivers,
+        user: currentUser,
+        targetStatus: newShipment.status
+      }).then(res => {
+        if (res.success) {
+          console.log(`[WhatsApp Automation] ${res.message}`);
+        }
+      }).catch(err => {
+        console.warn('[WhatsApp Automation] Erro no disparo inicial:', err);
+      });
+    } catch (e) {
+      console.warn('[WhatsApp Automation] Falha ao preparar disparo inicial:', e);
+    }
   };
 
   const handleMarkArrival = async (shipmentId: string) => {
@@ -2336,6 +2365,80 @@ const App: React.FC = () => {
         successMsg = 'Comprovante enviado! Aguardando confirmação do peso pelo embarcador.';
       }
       showToast(successMsg, 'success');
+
+      // Automação de WhatsApp por Mudança de Etapa / Status
+      try {
+        const resolvedCargo = cargos.find(c => c.id === updatedShipment.cargoId);
+        const resolvedClient = clients.find(c => c.id === resolvedCargo?.clientId);
+        const matchedDriver = drivers.find(d => (d.cpf && d.cpf === updatedShipment.driverCpf) || d.name === updatedShipment.driverName);
+
+        let autoTrigger: ShipmentWhatsAppTriggerType | null = null;
+
+        if (originalShipment.status === ShipmentStatus.PreCadastro && nextStatus === ShipmentStatus.AguardandoSeguradora) {
+          // GATILHO 1: Status "Aguardando Cadastro e Seguradora" (Homologação)
+          autoTrigger = 'risk_pending';
+        } else if (
+          (originalShipment.status === ShipmentStatus.PreCadastro || originalShipment.status === ShipmentStatus.AguardandoSeguradora) && 
+          nextStatus === ShipmentStatus.AguardandoCarregamento
+        ) {
+          // GATILHO 2: Status "Aguardando Carregamento" (Cadastro e Risco Liberados)
+          autoTrigger = 'risk_approved';
+        } else if (
+          originalShipment.status === ShipmentStatus.AguardandoFiscal && 
+          (nextStatus === ShipmentStatus.AguardandoAdiantamento || nextStatus === ShipmentStatus.AguardandoAgendamento)
+        ) {
+          // GATILHO 3: Saída de "Aguardando Fiscal" para "Aguardando Adiantamento" (Envio de Documentação + PDFs)
+          autoTrigger = 'fiscal_emitted';
+        } else if (
+          originalShipment.status === ShipmentStatus.AguardandoAdiantamento && 
+          nextStatus !== ShipmentStatus.AguardandoAdiantamento
+        ) {
+          // GATILHO 4: Avanço do "Aguardando Adiantamento" (Comprovante de Adiantamento)
+          autoTrigger = 'advance_paid';
+        } else if (
+          originalShipment.status !== ShipmentStatus.AguardandoAdiantamento && 
+          nextStatus === ShipmentStatus.AguardandoAgendamento && 
+          originalShipment.status !== ShipmentStatus.AguardandoAgendamento
+        ) {
+          // GATILHO 5A: Status "Aguardando Agendamento" / "Troca de NF-e"
+          autoTrigger = 'in_transit';
+        } else if (
+          nextStatus === ShipmentStatus.AguardandoDescarga && 
+          originalShipment.status !== ShipmentStatus.AguardandoDescarga
+        ) {
+          // GATILHO 5B: Status "Aguardando Descarga"
+          autoTrigger = 'awaiting_discharge';
+        } else if (
+          (originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo || originalShipment.status === ShipmentStatus.ValidacaoTicket) && 
+          nextStatus === ShipmentStatus.Finalizado
+        ) {
+          // GATILHO 6: Status "Aguardando Saldo" -> "Finalizado" (Comprovante de Saldo e Agradecimento)
+          autoTrigger = 'balance_paid';
+        }
+
+        if (autoTrigger) {
+          dispatchShipmentWhatsAppTrigger(autoTrigger, {
+            shipment: updatedShipment,
+            cargo: resolvedCargo,
+            client: resolvedClient,
+            driver: matchedDriver,
+            drivers: drivers,
+            user: currentUser,
+            previousStatus: originalShipment.status,
+            targetStatus: nextStatus
+          }).then(res => {
+            if (res.success) {
+              console.log(`[WhatsApp Automation] Gatilho ${autoTrigger} disparado: ${res.message}`);
+            } else if (res.error) {
+              console.warn(`[WhatsApp Automation] Aviso no gatilho ${autoTrigger}: ${res.error}`);
+            }
+          }).catch(triggerErr => {
+            console.warn(`[WhatsApp Automation] Falha ao disparar ${autoTrigger}:`, triggerErr);
+          });
+        }
+      } catch (triggerSetupErr) {
+        console.warn('[WhatsApp Automation] Erro ao preparar gatilho operacional:', triggerSetupErr);
+      }
     } catch(err: any) { 
       console.error('Erro ao salvar no Supabase:', err);
       const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
@@ -3687,7 +3790,8 @@ const App: React.FC = () => {
           <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
           <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
           <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
-          <Route path="/financial" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
+          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} />} />
+          <Route path="/commissions" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
           <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
           <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />
           <Route path="/appearance" element={<AppearancePage currentLogo={companyLogo} onSaveLogo={handleSaveLogo} currentTheme={themeImage} onSaveTheme={handleSaveThemeImage} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />} />
@@ -3701,7 +3805,8 @@ const App: React.FC = () => {
           <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} onSwapCargo={handleSwapCargo} />} />
           <Route path="/risk-query-types" element={!can('read', currentUser, 'risk-query-types', profilePermissions) ? <Navigate to="/" replace /> : <RiskQueryTypesPage riskQueryOptions={riskQueryOptions} onSaveOption={handleSaveRiskQueryOption} onDeleteOption={handleDeleteRiskQueryOption} onRestoreDefaults={handleRestoreRiskQueryDefaults} currentUser={currentUser} profilePermissions={profilePermissions} />} />
           <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
-          <Route path="/whatsapp" element={!can('read', currentUser, 'whatsapp', profilePermissions) ? <Navigate to="/" replace /> : <WhatsAppManagementPage currentUser={currentUser} />} />
+          <Route path="/whatsapp" element={<Navigate to="/messenger" replace />} />
+          <Route path="/messenger" element={!can('read', currentUser, 'messenger', profilePermissions) ? <Navigate to="/" replace /> : <MessengerPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} users={users} currentUser={currentUser} />} />
           <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
         </Routes>
       </React.Suspense>
@@ -3890,16 +3995,7 @@ const App: React.FC = () => {
         currentUser={currentUser} 
       />
 
-      {/* JANELA FLUTUANTE GLOBAL DE WHATSAPP (SOBREPOSTA A TODAS AS TELAS E CABEÇALHO) */}
-      {isGlobalWhatsAppFloatingOpen && (
-        <WhatsAppChatPanel
-          mode="floating"
-          onClose={() => setIsGlobalWhatsAppFloatingOpen(false)}
-          initialPhone={globalWhatsAppInitialPhone}
-          initialName={globalWhatsAppInitialName}
-          currentUser={currentUser}
-        />
-      )}
+
     </div>
   );
 };

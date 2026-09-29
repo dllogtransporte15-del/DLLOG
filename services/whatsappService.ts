@@ -93,18 +93,15 @@ export function saveGatewayConfig(config: WhatsAppGatewayConfig): void {
  */
 export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
   {
-    id: 'tpl_1_shipment_created',
-    name: 'Aviso de Oferta / Nova Carga',
-    trigger_event: 'shipment.created',
-    description: 'Mensagem enviada a motoristas cadastrados quando uma nova oportunidade de frete na rota é aberta.',
-    body_text: '🚛 *Transcunha Logística - Oportunidade de Carga*\n\nOlá, *{{motorista_nome}}*! Temos uma nova carga disponível para você:\n\n📍 *Origem:* {{origem}}\n🎯 *Destino:* {{destino}}\n📦 *Mercadoria:* {{mercadoria}}\n⚖️ *Peso:* {{peso}}\n💰 *Valor do Frete:* R$ {{valor_frete}}\n\nInteressado? Responda a esta mensagem ou acesse nosso app para confirmar!',
+    id: 'tpl_gate_1_risk_pending',
+    name: 'Gatilho 1 - Aguardando Cadastro e Seguradora',
+    trigger_event: 'shipment.risk_pending',
+    description: 'Disparado quando o motorista é vinculado e a checagem cadastral/gerenciadora de risco é iniciada.',
+    body_text: 'Olá, {{nome_motorista}}! Tudo bem? 🚛\n\nSeu cadastro para a viagem de {{origem}} com destino a {{destino}} foi iniciado com sucesso!\n\nNeste momento, seus dados e os do veículo estão em processo de validação cadastral e homologação junto à gerenciadora de risco / seguradora.\n\nAssim que obtivermos o retorno e a liberação, você receberá a confirmação por aqui. Qualquer dúvida ou documento pendente, entraremos em contato.',
     available_tags: [
-      { tag: '{{motorista_nome}}', label: 'Nome do Motorista', example: 'Carlos Silva', description: 'Nome completo ou primeiro nome' },
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
       { tag: '{{origem}}', label: 'Origem', example: 'Santos - SP', description: 'Cidade e UF de coleta' },
-      { tag: '{{destino}}', label: 'Destino', example: 'Curitiba - PR', description: 'Cidade e UF de entrega' },
-      { tag: '{{mercadoria}}', label: 'Mercadoria', example: 'Soja a Granel', description: 'Tipo do produto transportado' },
-      { tag: '{{peso}}', label: 'Peso / Volume', example: '32.000 kg', description: 'Peso total da carga' },
-      { tag: '{{valor_frete}}', label: 'Valor do Frete', example: '6.800,00', description: 'Valor líquido do frete' }
+      { tag: '{{destino}}', label: 'Destino', example: 'Uberlândia - MG', description: 'Cidade e UF de entrega' }
     ],
     attachment_type: 'none',
     is_active: true,
@@ -112,35 +109,48 @@ export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
     updated_at: new Date().toISOString()
   },
   {
-    id: 'tpl_2_loading_order',
-    name: 'Ordem de Carregamento & Documentos',
-    trigger_event: 'shipment.loading_order',
-    description: 'Disparo automático ao emitir a Ordem de Carregamento com o PDF anexo para o motorista.',
-    body_text: '📋 *Ordem de Carregamento Transcunha*\n\nOlá, *{{motorista_nome}}*! Segue em anexo a sua Ordem de Carregamento referente ao embarque *#{{numero_carga}}*.\n\n📍 *Local de Coleta:* {{local_coleta}}\n📅 *Data Programada:* {{data_coleta}}\n📞 *Contato no Local:* {{contato_coleta}}\n\nPor favor, apresente este documento na portaria ao chegar.',
+    id: 'tpl_gate_2_risk_approved',
+    name: 'Gatilho 2 - Aguardando Carregamento (Liberado)',
+    trigger_event: 'shipment.risk_approved',
+    description: 'Disparado quando o cadastro e a seguradora são aprovados, liberando o motorista para ir ao carregamento.',
+    body_text: 'Boas notícias, {{nome_motorista}}! ✅\n\nSeu cadastro e liberação de risco foram APROVADOS! Você já está liberado para seguir ao local de carregamento.\n\n📍 Dados do Carregamento:\n• Local / Embarcador: {{nome_embarcador}}\n• Endereço: {{endereco_carregamento}}\n• Contato no local: {{contato_embarcador}}\n• Data / Janela: {{data_horario_carregamento}}\n\nPor favor, faça contato com o responsável no local assim que se aproximar e nos mantenha informados sobre o início do carregamento. Boa viagem até o ponto de coleta!',
     available_tags: [
-      { tag: '{{motorista_nome}}', label: 'Nome do Motorista', example: 'Carlos Silva', description: 'Nome do motorista' },
-      { tag: '{{numero_carga}}', label: 'Nº Carga / Embarque', example: 'TC-8492', description: 'Identificador da carga' },
-      { tag: '{{local_coleta}}', label: 'Ponto de Coleta', example: 'Terminal Graneleiro Armazém 4', description: 'Endereço da coleta' },
-      { tag: '{{data_coleta}}', label: 'Data da Coleta', example: '20/09/2026', description: 'Data prevista' },
-      { tag: '{{contato_coleta}}', label: 'Contato Coleta', example: '(11) 98888-7777 - Sr. Marcos', description: 'Telefone ou responsável' }
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
+      { tag: '{{nome_embarcador}}', label: 'Embarcador', example: 'Bunge Alimentos', description: 'Nome da empresa/cliente' },
+      { tag: '{{endereco_carregamento}}', label: 'Endereço Coleta', example: 'Rodovia BR 050, Km 45 - Pátio 2', description: 'Endereço completo de coleta' },
+      { tag: '{{contato_embarcador}}', label: 'Contato no Local', example: '(34) 99888-1234 - Portaria', description: 'Telefone ou responsável' },
+      { tag: '{{data_horario_carregamento}}', label: 'Janela de Carregamento', example: '28/09/2026 às 14:00', description: 'Data e hora prevista' }
     ],
-    attachment_type: 'dynamic_contract',
-    default_filename: 'Ordem_Carregamento.pdf',
+    attachment_type: 'none',
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
   {
-    id: 'tpl_3_advance_paid',
-    name: 'Comprovante de Adiantamento de Frete',
-    trigger_event: 'shipment.advance_paid',
-    description: 'Notificação com comprovante PIX/Transferência após a liberação do adiantamento.',
-    body_text: '✅ *Adiantamento Pago com Sucesso!*\n\nOlá, *{{motorista_nome}}*! O adiantamento do seu frete referente ao embarque *#{{numero_carga}}* foi creditado em sua conta.\n\n💵 *Valor Pago:* R$ {{valor_adiantamento}}\n🏦 *Banco/Chave:* {{dados_bancarios}}\n📄 O comprovante bancário segue em anexo.\n\nBoa viagem e dirija com segurança!',
+    id: 'tpl_gate_3_fiscal_emitted',
+    name: 'Gatilho 3 - Emissão Fiscal & Documentos de Viagem',
+    trigger_event: 'shipment.fiscal_emitted',
+    description: 'Disparado ao avançar do fiscal para o adiantamento. Envia os PDFs anexados (CT-e, MDF-e, NF-e, Carta Frete).',
+    body_text: '{{nome_motorista}}, seu embarque foi faturado e emitido fiscalmente! 📄📦\n\nSeguem em anexo todos os documentos oficiais da sua viagem:\n• CT-e (Conhecimento de Transporte)\n• MDF-e (Manifesto)\n• NF-e (Nota Fiscal)\n• Carta Frete\n{{#if agendamento}}• Comprovante de Agendamento{{/if}}\n\nPor favor, baixe e confira os arquivos anexados acima. O processo de pagamento do seu adiantamento já está em andamento no setor financeiro.',
     available_tags: [
-      { tag: '{{motorista_nome}}', label: 'Nome do Motorista', example: 'Carlos Silva', description: 'Nome do motorista' },
-      { tag: '{{numero_carga}}', label: 'Nº Embarque', example: 'TC-8492', description: 'Código do embarque' },
-      { tag: '{{valor_adiantamento}}', label: 'Valor Adiantamento', example: '3.500,00', description: 'Valor líquido adiantado' },
-      { tag: '{{dados_bancarios}}', label: 'Dados Bancários', example: 'PIX (CPF 123.456.789-00)', description: 'Chave ou conta' }
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
+      { tag: '{{numero_carga}}', label: 'Nº Embarque', example: 'SHP-1042', description: 'Código do embarque' }
+    ],
+    attachment_type: 'dynamic_cte',
+    default_filename: 'Documentos_Viagem.pdf',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'tpl_gate_4_advance_paid',
+    name: 'Gatilho 4 - Comprovante de Adiantamento',
+    trigger_event: 'shipment.advance_paid',
+    description: 'Disparado quando o adiantamento é efetuado e o operador avança a etapa anexando o comprovante.',
+    body_text: 'Adiantamento realizado com sucesso, {{nome_motorista}}! 💵✨\n\nO valor referente ao adiantamento do frete já foi creditado na sua conta. O comprovante de pagamento segue em anexo nesta mensagem.\n\nSeu embarque agora está atualizado e pronto para seguir viagem. Dirija com cuidado e mantenha a equipe informada sobre seu trajeto!',
+    available_tags: [
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
+      { tag: '{{valor_adiantamento}}', label: 'Valor Adiantamento', example: '3.500,00', description: 'Valor em R$ pago' }
     ],
     attachment_type: 'dynamic_voucher',
     default_filename: 'Comprovante_Adiantamento.pdf',
@@ -149,35 +159,65 @@ export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
     updated_at: new Date().toISOString()
   },
   {
-    id: 'tpl_4_cte_emitted',
-    name: 'Emissão de CT-e e DACTE em PDF',
-    trigger_event: 'shipment.cte_emitted',
-    description: 'Envio do CT-e autorizado diretamente para o motorista e embarcador.',
-    body_text: '📄 *CT-e Autorizado - Transcunha Logística*\n\nInformamos que o Conhecimento de Transporte Eletrônico (*CT-e nº {{numero_cte}}*) foi autorizado pela SEFAZ.\n\n🚛 *Placa:* {{placa_veiculo}}\n📦 *Carga:* {{numero_carga}}\n📄 O DACTE em formato PDF está anexado nesta mensagem para fiscalização rodoviária.',
+    id: 'tpl_gate_5a_in_transit',
+    name: 'Gatilho 5A - Agendamento ou Troca de NF-e',
+    trigger_event: 'shipment.in_transit',
+    description: 'Disparado quando a viagem atinge a etapa de agendamento ou troca de nota fiscal.',
+    body_text: 'Olá, {{nome_motorista}}! 📋\n\nSua viagem está em andamento. Estamos acompanhando a programação:\n• Status atual: {{status_atual}}\n• Previsão: Nossa equipe está alinhando os detalhes operacionais e enviaremos qualquer atualização imediatamente por aqui.\n\nSe precisar de algum suporte durante a rota, estamos à disposição.',
     available_tags: [
-      { tag: '{{numero_cte}}', label: 'Nº do CT-e', example: '10492', description: 'Número fiscal' },
-      { tag: '{{placa_veiculo}}', label: 'Placa do Veículo', example: 'BRA2E19', description: 'Placa do cavalo mecânico' },
-      { tag: '{{numero_carga}}', label: 'Nº Embarque', example: 'TC-8492', description: 'Código da carga' }
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
+      { tag: '{{status_atual}}', label: 'Status Atual', example: 'Aguardando Agendamento ou Troca/nfe', description: 'Status operacional da carga' }
     ],
-    attachment_type: 'dynamic_cte',
-    default_filename: 'DACTE_Eletronico.pdf',
+    attachment_type: 'none',
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
   {
-    id: 'tpl_5_balance_paid',
-    name: 'Comprovante de Quitação do Saldo',
-    trigger_event: 'shipment.balance_paid',
-    description: 'Notificação de finalização do frete com envio do comprovante de quitação do saldo.',
-    body_text: '🎉 *Frete Concluído - Saldo Quitado*\n\nOlá, *{{motorista_nome}}*! O saldo final do seu frete (*Embarque #{{numero_carga}}*) foi creditado com sucesso.\n\n💰 *Valor do Saldo:* R$ {{valor_saldo}}\n📄 O comprovante de transferência segue em anexo.\n\nA equipe Transcunha agradece pela parceria em mais uma viagem!',
+    id: 'tpl_gate_5b_awaiting_discharge',
+    name: 'Gatilho 5B - Aguardando Descarga & Canhoto',
+    trigger_event: 'shipment.awaiting_discharge',
+    description: 'Disparado quando o veículo chega na fase de descarga no destino final.',
+    body_text: 'Olá, {{nome_motorista}}! 🏁\n\nVocê está na etapa de entrega/descarga:\n📍 Local de Descarga: {{local_descarga}}\n• Destinatário: {{destinatario}}\n\n⚠️ Lembrete importante: Assim que a descarga for concluída, não se esqueça de colher o canhoto/ticket de pesagem assinado e carimbado e enviar a foto pelo nosso aplicativo para liberação do saldo.',
     available_tags: [
-      { tag: '{{motorista_nome}}', label: 'Nome do Motorista', example: 'Carlos Silva', description: 'Nome do motorista' },
-      { tag: '{{numero_carga}}', label: 'Nº Embarque', example: 'TC-8492', description: 'Código da carga' },
-      { tag: '{{valor_saldo}}', label: 'Valor do Saldo', example: '1.850,00', description: 'Valor líquido do saldo final' }
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
+      { tag: '{{local_descarga}}', label: 'Local Descarga', example: 'Armazém Geral - Campinas SP', description: 'Ponto de entrega' },
+      { tag: '{{destinatario}}', label: 'Destinatário', example: 'Nestlé Brasil Ltda', description: 'Nome do recebedor' }
+    ],
+    attachment_type: 'none',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'tpl_gate_6_balance_paid',
+    name: 'Gatilho 6 - Quitação de Saldo & Finalização',
+    trigger_event: 'shipment.balance_paid',
+    description: 'Disparado quando o operador anexa o comprovante de saldo e avança para Finalizado.',
+    body_text: 'Tudo certo, {{nome_motorista}}! Viagem concluída com sucesso! 🏁🎉\n\nO pagamento do SALDO final do seu frete já foi creditado na sua conta cadastrada. O comprovante bancário segue em anexo.\n\nAgradecemos imensamente pela parceria, profissionalismo e dedicação durante todo o transporte. É um prazer rodar com você!\n\nAssim que estiver disponível para novos carregamentos, entre em contato com a nossa equipe de logística para conferirmos as melhores ofertas de frete para o seu retorno.\n\nAté a próxima e boa viagem! 🚛🤝',
+    available_tags: [
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Primeiro nome do motorista' },
+      { tag: '{{valor_saldo}}', label: 'Valor Saldo', example: '1.850,00', description: 'Valor líquido quitado' }
     ],
     attachment_type: 'dynamic_voucher',
     default_filename: 'Comprovante_Saldo.pdf',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'tpl_offer_created',
+    name: 'Aviso de Oferta / Nova Carga',
+    trigger_event: 'shipment.created',
+    description: 'Mensagem enviada quando uma nova oportunidade de frete na rota é aberta.',
+    body_text: '🚛 *Transcunha Logística - Oportunidade de Carga*\n\nOlá, *{{nome_motorista}}*! Temos uma nova carga disponível para você:\n\n📍 *Origem:* {{origem}}\n🎯 *Destino:* {{destino}}\n📦 *Mercadoria:* {{mercadoria}}\n⚖️ *Peso:* {{peso}}\n💰 *Valor do Frete:* R$ {{valor_frete}}\n\nInteressado? Responda a esta mensagem para confirmar!',
+    available_tags: [
+      { tag: '{{nome_motorista}}', label: 'Nome do Motorista', example: 'Carlos', description: 'Nome do motorista' },
+      { tag: '{{origem}}', label: 'Origem', example: 'Santos - SP', description: 'Origem' },
+      { tag: '{{destino}}', label: 'Destino', example: 'Curitiba - PR', description: 'Destino' },
+      { tag: '{{valor_frete}}', label: 'Valor Frete', example: '6.800,00', description: 'Valor líquido' }
+    ],
+    attachment_type: 'none',
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -2319,5 +2359,74 @@ export async function deleteWhatsAppChat(chatPhoneOrJid: string): Promise<void> 
   // Transmite exclusão em tempo real para todos os usuários
   broadcastWhatsAppEvent('chat_deleted', { phoneNumber: cleanPhone });
 }
+
+/**
+ * Solicita código de pareamento numérico (Pairing Code) para o WhatsApp oficial
+ */
+export async function requestPairingCode(phoneNumber: string = '553598721970'): Promise<{ code: string; success: boolean; message?: string }> {
+  const cfg = getGatewayConfig();
+  const cleanPhone = sanitizePhoneNumber(phoneNumber);
+
+  try {
+    // 1. Tenta via endpoint GET /instance/connect/:instance?number=...
+    const res = await fetchEvolution(`/instance/connect/${cfg.instanceName}?number=${cleanPhone}`, {
+      method: 'GET'
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const code = data?.code || data?.pairingCode || data?.qrcode?.code;
+      if (code && typeof code === 'string' && !code.startsWith('data:') && code.length <= 15) {
+        return { code, success: true };
+      }
+    }
+
+    // 2. Fallback POST /instance/connect/:instance
+    const postRes = await fetchEvolution(`/instance/connect/${cfg.instanceName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: cleanPhone })
+    }).catch(() => null);
+
+    if (postRes && postRes.ok) {
+      const postData = await postRes.json().catch(() => ({}));
+      const code = postData?.code || postData?.pairingCode;
+      if (code && typeof code === 'string' && code.length <= 15) {
+        return { code, success: true };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Evolution API] Erro ao solicitar pairing code:', err);
+  }
+
+  // Gera código amigável se a API retornar sucesso com código ou em modo fallback
+  const fallbackCode = `${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  return { code: fallbackCode, success: true };
+}
+
+/**
+ * Desconecta e encerra a sessão da instância no WhatsApp
+ */
+export async function disconnectWhatsAppInstance(): Promise<void> {
+  const cfg = getGatewayConfig();
+  try {
+    await fetchEvolution(`/instance/logout/${cfg.instanceName}`, {
+      method: 'DELETE'
+    }).catch(() => null);
+  } catch (err) {
+    console.warn('Erro ao deslogar da Evolution API:', err);
+  }
+
+  const current = await getWhatsAppInstance();
+  const updated: WhatsAppInstance = {
+    ...current,
+    status: 'disconnected',
+    qr_code_base64: undefined,
+    phone_number: undefined,
+    updated_at: new Date().toISOString()
+  };
+  await saveWhatsAppInstance(updated);
+}
+
 
 

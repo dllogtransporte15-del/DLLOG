@@ -21,7 +21,8 @@ import { ArchiveIcon } from './icons/ArchiveIcon';
 import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -72,7 +73,6 @@ const navItems: NavItem[] = [
       { id: 'operational-loads', label: 'Cargas em Andamento', icon: ChartIcon },
       { id: 'operational-map', label: 'Mapa Operacional', icon: MapIcon },
       { id: 'risk-management', label: 'Gerenciadora de Risco', icon: ShieldCheck },
-      { id: 'whatsapp', label: 'Chat', icon: MessageSquare },
     ],
   },
   {
@@ -89,6 +89,28 @@ const navItems: NavItem[] = [
         { id: 'risk-query-types', label: 'Tipos de Consulta GR', icon: ShieldCheck },
     ]
   },
+  {
+    id: 'financial',
+    label: 'Financeiro',
+    icon: DollarSignIcon,
+    children: [
+      { id: 'financial?tab=payables', label: 'Contas a Pagar', icon: ArrowDownCircle },
+      { id: 'financial?tab=receivables', label: 'Contas a Receber', icon: ArrowUpCircle },
+      { id: 'financial?tab=ofx', label: 'Conciliação Bancária OFX', icon: FileSpreadsheet },
+      { id: 'financial?tab=result-1', label: '1º Resultado Financeiro', icon: PieChart },
+      { id: 'financial?tab=result-2', label: '2º Resultado Financeiro', icon: Layers },
+      { id: 'financial?tab=result-3', label: '3º Resultado Financeiro', icon: TrendingUp },
+      {
+        id: 'financial-controladoria',
+        label: 'Controladoria',
+        icon: Building2,
+        children: [
+          { id: 'financial?tab=control-shipments', label: 'Planilha Embarque', icon: FileSpreadsheet },
+          { id: 'financial?tab=control-banking', label: 'Controladoria Bancária', icon: Landmark }
+        ]
+      }
+    ]
+  },
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },
   {
     id: 'ferramentas',
@@ -97,6 +119,7 @@ const navItems: NavItem[] = [
     children: [
       { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: CalculatorIcon },
       { id: 'freight-quote', label: 'Cotação de Frete', icon: MapIcon },
+      { id: 'messenger', label: 'Mensageiro WhatsApp', icon: Send },
       { id: 'tools-history', label: 'Histórico', icon: HistoryIcon },
       { id: 'freight-offers-history', label: 'Histórico de Ofertas', icon: HistoryIcon },
     ]
@@ -175,7 +198,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           }
         } 
         else {
-          if (can('read', user, item.id as Page, profilePermissions)) {
+          const pageToCheck = (item.id.startsWith('financial') ? 'financial' : item.id) as Page;
+          if (can('read', user, pageToCheck, profilePermissions)) {
             acc.push(item);
           }
         }
@@ -185,12 +209,22 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
     return filterItems(navItems);
   }, [user, profilePermissions]);
 
+  const navigate = useNavigate();
+
   const handleDropdownToggle = (id: string) => {
     setOpenDropdown(openDropdown === id ? null : id);
   };
   
-  const handlePageSelect = (page: Page) => {
-      setCurrentPage(page);
+  const handlePageSelect = (targetId: string) => {
+      if (targetId.startsWith('financial')) {
+        if (targetId.includes('?')) {
+          navigate(`/${targetId}`);
+        } else {
+          navigate('/financial');
+        }
+      } else {
+        setCurrentPage(targetId as Page);
+      }
       setOpenDropdown(null);
       setIsMobileMenuOpen(false);
   }
@@ -210,14 +244,17 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   const isParentOfCurrentPage = (item: NavItem): boolean => {
       if (!item.children) return false;
       return item.children.some(child => {
-        if (child.id === currentPage) return true;
+        if (child.id === currentPage || (currentPage === 'financial' && child.id.startsWith('financial'))) return true;
         if (child.children) return isParentOfCurrentPage(child);
         return false;
       });
   }
 
   return (
-    <header className="bg-white/95 dark:bg-[#0b1328]/90 shadow-lg shadow-blue-950/20 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-slate-700/60 relative">
+    <header 
+      style={{ zoom: 0.9 }}
+      className="bg-white/95 dark:bg-[#0b1328]/90 shadow-lg shadow-blue-950/20 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-200/80 dark:border-slate-700/60 relative"
+    >
       {/* Top Border Glow (Same as Login Card) */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-80 pointer-events-none" />
 

@@ -4,10 +4,29 @@ import {
   CheckCircle2, Clock, AlertCircle, XCircle, FileText, Eye, 
   ExternalLink, User as UserIcon, Calendar, ShieldCheck, Scale, 
   DollarSign, Truck, MapPin, Building, CreditCard, ChevronDown, 
-  ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle, FileCheck
+  ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle, FileCheck,
+  MessageCircle, Send
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { findProductForCargo, checkRequiresRiskManagement } from '../utils';
+import { useToast } from '../hooks/useToast';
+import { 
+  dispatchShipmentWhatsAppTrigger, 
+  ShipmentWhatsAppTriggerType, 
+  SHIPMENT_TRIGGER_TEMPLATES 
+} from '../services/shipmentWhatsAppAutomation';
+import { formatDisplayPhone } from '../services/whatsappService';
+
+const STAGE_TRIGGER_MAP: Partial<Record<ShipmentStatus, ShipmentWhatsAppTriggerType>> = {
+  [ShipmentStatus.PreCadastro]: 'risk_pending',
+  [ShipmentStatus.AguardandoSeguradora]: 'risk_pending',
+  [ShipmentStatus.AguardandoCarregamento]: 'risk_approved',
+  [ShipmentStatus.AguardandoFiscal]: 'fiscal_emitted',
+  [ShipmentStatus.AguardandoAdiantamento]: 'advance_paid',
+  [ShipmentStatus.AguardandoAgendamento]: 'in_transit',
+  [ShipmentStatus.AguardandoDescarga]: 'awaiting_discharge',
+  [ShipmentStatus.Finalizado]: 'balance_paid',
+};
 
 interface ShipmentStagesTimelineProps {
   shipment: Shipment;
@@ -205,6 +224,32 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const [viewMode, setViewMode] = useState<'tabs' | 'list'>('tabs');
   const [expandedStage, setExpandedStage] = useState<ShipmentStatus | null>(null);
   const [filterMode, setFilterMode] = useState<'all' | 'completed' | 'active'>('all');
+  const [isSendingWa, setIsSendingWa] = useState<ShipmentStatus | null>(null);
+  const { showToast } = useToast();
+
+  const handleSendStageWhatsApp = async (stageStatus: ShipmentStatus) => {
+    const triggerType = STAGE_TRIGGER_MAP[stageStatus];
+    if (!triggerType) return;
+    setIsSendingWa(stageStatus);
+    try {
+      const res = await dispatchShipmentWhatsAppTrigger(triggerType, {
+        shipment,
+        cargo,
+        client: clients.find(c => c.id === cargo?.clientId),
+        user: currentUser,
+        targetStatus: stageStatus
+      });
+      if (res.success) {
+        showToast(res.message || `WhatsApp enviado para ${shipment.driverName}!`, 'success');
+      } else {
+        showToast(res.error || 'Não foi possível enviar WhatsApp.', 'warning');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao enviar WhatsApp.', 'error');
+    } finally {
+      setIsSendingWa(null);
+    }
+  };
 
   // Atualiza a aba ativa caso o status do embarque mude externamente
   React.useEffect(() => {
@@ -1061,6 +1106,50 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Bloco Operacional de Notificação WhatsApp */}
+                  {STAGE_TRIGGER_MAP[stage.status] && (
+                    <div className="pt-3 border-t border-gray-100 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-3 p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/80 dark:border-emerald-800/40">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-emerald-600 text-white shadow-xs">
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-emerald-950 dark:text-emerald-100">
+                              WhatsApp Automático: {SHIPMENT_TRIGGER_TEMPLATES[STAGE_TRIGGER_MAP[stage.status]!].name}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                              Disparo Automático
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-gray-600 dark:text-gray-300 block">
+                            Motorista: <strong>{shipment.driverName}</strong> • {shipment.driverContact ? formatDisplayPhone(shipment.driverContact) : 'Telefone não cadastrado'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isSendingWa === stage.status || !shipment.driverContact}
+                        onClick={() => handleSendStageWhatsApp(stage.status)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        title="Reenviar manualmente a mensagem oficial desta etapa para o WhatsApp do motorista"
+                      >
+                        {isSendingWa === stage.status ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Enviando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Reenviar WhatsApp</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>
