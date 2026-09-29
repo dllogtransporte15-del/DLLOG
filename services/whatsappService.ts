@@ -83,7 +83,7 @@ export function saveGatewayConfig(config: WhatsAppGatewayConfig): void {
   const sanitized: WhatsAppGatewayConfig = {
     url: (config.url || '').trim().replace(/\/+$/, ''),
     apiKey: (config.apiKey || '').trim(),
-    instanceName: (config.instanceName || '').trim() || 'transcunha_matriz'
+    instanceName: (config.instanceName || '').trim() || 'transcunha_oficial'
   };
   localStorage.setItem(STORAGE_GATEWAY_CONFIG_KEY, JSON.stringify(sanitized));
 }
@@ -358,7 +358,9 @@ async function fetchEvolution(endpoint: string, options: RequestInit = {}): Prom
         signal: options.signal || proxyController.signal
       });
       clearTimeout(proxyTimeout);
-      if (proxyRes.ok || proxyRes.status === 401 || proxyRes.status === 404) {
+      // Qualquer resposta HTTP válida do gateway retornada via proxy (200, 201, 400, 401, 404, 409 etc.)
+      // deve ser entregue diretamente sem tentar fetch cross-origin direto no browser (que causa bloqueio de CORS).
+      if (proxyRes.status !== 502 && proxyRes.status !== 504) {
         return proxyRes;
       }
     } catch (err) {
@@ -495,9 +497,13 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
         return { qrCode: '', instance: updated, isRealGateway: true };
       }
     } else {
-      // Se for forçado novo QR Code, faz logout prévio de forma segura
-      await fetchEvolution(`/instance/logout/${cfg.instanceName}`, { method: 'DELETE' }).catch(() => null);
-      await new Promise(r => setTimeout(r, 600));
+      // Se for forçado novo QR Code, só tenta logout se a sessão estava conectada
+      if (current.status === 'connected') {
+        try {
+          await fetchEvolution(`/instance/logout/${cfg.instanceName}`, { method: 'DELETE' });
+        } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 600));
+      }
     }
 
     // 2. Loop de tentativas (até 4 tentativas com intervalo) para obter o QR Code gerado pelo Baileys
@@ -643,7 +649,7 @@ export async function fetchRealGatewayQRCode(forceNew: boolean = false): Promise
 
   const updated: WhatsAppInstance = {
     ...current,
-    instance_key: cfg.instanceName || 'transcunha_matriz',
+    instance_key: cfg.instanceName || 'transcunha_oficial',
     status: 'disconnected',
     phone_number: undefined,
     qr_code_base64: undefined,
@@ -766,14 +772,10 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
       };
       return await saveWhatsAppInstance(updated);
     } else if (state === 'connecting' || state === 'qrcode') {
-      // Estado transitório — não sobrescreve se estava conectado
-      if (current.status === 'connected') {
-        return current;
-      }
       const updated: WhatsAppInstance = {
         ...current,
         instance_key: cfg.instanceName,
-        status: current.qr_code_base64 ? 'qrcode' : 'disconnected',
+        status: 'qrcode',
         phone_number: undefined,
         updated_at: new Date().toISOString()
       };
@@ -812,11 +814,17 @@ export async function syncWhatsAppInstanceFromGateway(): Promise<WhatsAppInstanc
 // =========================================================================
 
 export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
+  const cfg = getGatewayConfig();
   const local = localStorage.getItem(STORAGE_INSTANCE_KEY);
   let localParsed: any = null;
   if (local) {
     try {
       localParsed = JSON.parse(local);
+      // Se o cache for de uma instância diferente (ex: legado transcunha_matriz), invalida
+      if (localParsed?.instance_key && localParsed.instance_key !== cfg.instanceName) {
+        localParsed = null;
+        localStorage.removeItem(STORAGE_INSTANCE_KEY);
+      }
     } catch { /* ignore */ }
   }
 
@@ -824,6 +832,7 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
     const { data, error } = await supabase
       .from('whatsapp_instances')
       .select('*')
+      .eq('instance_key', cfg.instanceName)
       .limit(1)
       .maybeSingle();
 
@@ -839,17 +848,18 @@ export async function getWhatsAppInstance(): Promise<WhatsAppInstance> {
     console.warn('Tabela whatsapp_instances não acessível no Supabase, usando armazenamento local:', err);
   }
 
-  // Fallback LocalStorage
-  if (localParsed && localParsed.id) {
+  // Fallback LocalStorage (somente se for da instância configurada)
+  if (localParsed && localParsed.id && localParsed.instance_key === cfg.instanceName) {
     return localParsed as WhatsAppInstance;
   }
 
   const defaultInstance: WhatsAppInstance = {
     id: '30a60d31-18b2-44db-a31f-ee97f599023a',
     name: 'Transcunha Transporte',
-    instance_key: 'transcunha_matriz',
-    status: 'connected',
-    phone_number: '553598721970',
+    instance_key: cfg.instanceName,
+    status: 'disconnected',
+    phone_number: undefined,
+    qr_code_base64: undefined,
     battery_level: 100,
     is_plugged: true,
     always_online_mode: true,
@@ -1010,7 +1020,7 @@ export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<
   const dbPayload = {
     id: (instance.id && instance.id.includes('-')) ? instance.id : '30a60d31-18b2-44db-a31f-ee97f599023a',
     name: instance.name || 'Transcunha Transporte',
-    instance_key: instance.instance_key || 'transcunha_matriz',
+    instance_key: instance.instance_key || 'transcunha_oficial',
     phone_number: instance.phone_number || null,
     status: instance.status || 'disconnected',
     qr_code_base64: instance.qr_code_base64 || null,
@@ -1027,6 +1037,10 @@ export async function saveWhatsAppInstance(instance: WhatsAppInstance): Promise<
     ...instance,
     ...dbPayload,
     phone_number: instance.phone_number || dbPayload.phone_number || undefined,
+    qr_code_base64: instance.qr_code_base64 || dbPayload.qr_code_base64 || undefined,
+    webhook_url: instance.webhook_url || dbPayload.webhook_url || undefined,
+    last_connected_at: instance.last_connected_at || dbPayload.last_connected_at || undefined,
+    last_disconnected_at: instance.last_disconnected_at || dbPayload.last_disconnected_at || undefined,
     always_online_mode: instance.always_online_mode ?? true
   };
 

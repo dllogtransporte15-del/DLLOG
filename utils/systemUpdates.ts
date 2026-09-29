@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_29_v2_29_0',
+    version: 'v2.29.0',
+    date: '29/09/2026',
+    title: 'Correção e Sincronização do Gerador de QR Code do WhatsApp Oficial',
+    summary: 'Correção definitiva na geração e exibição do QR Code da linha oficial (35 9872-1970). Foi eliminada a retenção de dados da instância legada no banco e cache local, corrigida a rota de proxy contra erros de CORS no navegador e implementada a sincronização automática imediata ao acessar a aba Conexão da Linha.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Exibição Imediata do QR Code Oficial',
+        description: 'Ajustada a leitura do Supabase para filtrar estritamente pela chave oficial transcunha_oficial e carregar a imagem do QR Code criptografado automaticamente ao abrir o Mensageiro.'
+      },
+      {
+        category: 'fix',
+        title: 'Prevenção de Erros de CORS no Gateway',
+        description: 'Tratamento de respostas HTTP via proxy Vercel impedindo tentativas diretas de conexão cruzada no navegador e garantindo que o status real de pareamento seja refletido instantaneamente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Feedback Visual e Atualização com 1 Clique',
+        description: 'Adicionado indicador de carregamento animado e atualização ágil do QR Code ao clicar em Atualizar QR Code ou Reconectar.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_28_v2_28_0',
     version: 'v2.28.0',
     date: '28/09/2026',

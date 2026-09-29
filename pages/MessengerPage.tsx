@@ -95,8 +95,20 @@ export const MessengerPage: React.FC<MessengerPageProps> = ({
       setQueue(q);
       setTemplates(tpls);
 
-      if (inst.qr_code_base64 && inst.status === 'qrcode') {
+      if (inst.qr_code_base64) {
         setQrCodeData(inst.qr_code_base64);
+      }
+
+      // Se a linha não estiver conectada, busca imediatamente o QR Code mais recente da Evolution API
+      if (inst.status !== 'connected') {
+        generateNewQRCode(false).then(res => {
+          if (res.qrCode) {
+            setQrCodeData(res.qrCode);
+            setInstance(res.instance);
+          }
+        }).catch(err => {
+          console.warn('[MessengerPage] Erro ao sincronizar QR Code inicial:', err);
+        });
       }
     } catch (err) {
       console.warn('Erro ao carregar dados do WhatsApp:', err);
@@ -143,7 +155,12 @@ export const MessengerPage: React.FC<MessengerPageProps> = ({
       if (res.qrCode) {
         setQrCodeData(res.qrCode);
         setInstance(res.instance);
-        showToast('Novo QR Code gerado.', 'info');
+        showToast('QR Code atualizado com sucesso! Aponte o WhatsApp.', 'success');
+      } else if (res.instance?.status === 'connected') {
+        setInstance(res.instance);
+        showToast('A linha já está conectada e operante!', 'success');
+      } else {
+        showToast(res.warning || 'Não foi possível gerar o QR Code. Tente novamente.', 'warning');
       }
     } catch (err) {
       showToast('Erro ao gerar QR Code.', 'error');
@@ -674,19 +691,27 @@ export const MessengerPage: React.FC<MessengerPageProps> = ({
             </div>
 
             <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 min-h-[220px]">
-              {qrCodeData ? (
-                <div className="space-y-3 flex flex-col items-center">
-                  <img
-                    src={qrCodeData}
-                    alt="QR Code WhatsApp Oficial"
-                    className="w-44 h-44 rounded-xl border-4 border-white shadow-md bg-white p-2"
-                  />
+              {isRefreshing && !qrCodeData ? (
+                <div className="flex flex-col items-center justify-center space-y-3 py-6">
+                  <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
+                  <p className="text-xs font-semibold text-slate-500 animate-pulse">Obtendo QR Code oficial da linha...</p>
+                </div>
+              ) : qrCodeData ? (
+                <div className="space-y-4 flex flex-col items-center">
+                  <div className="p-2 bg-white rounded-2xl shadow-md border-2 border-emerald-500/30">
+                    <img
+                      src={qrCodeData}
+                      alt="QR Code WhatsApp Oficial"
+                      className="w-48 h-48 rounded-xl object-contain bg-white"
+                    />
+                  </div>
                   <button
                     onClick={handleGenerateQr}
-                    className="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-300 transition flex items-center gap-1.5"
+                    disabled={isRefreshing}
+                    className="px-3.5 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Atualizar QR Code</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span>{isRefreshing ? 'Atualizando...' : 'Atualizar QR Code'}</span>
                   </button>
                 </div>
               ) : (
@@ -696,10 +721,11 @@ export const MessengerPage: React.FC<MessengerPageProps> = ({
                   </p>
                   <button
                     onClick={handleGenerateQr}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition flex items-center gap-2 mx-auto cursor-pointer"
+                    disabled={isRefreshing}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition flex items-center gap-2 mx-auto cursor-pointer disabled:opacity-50"
                   >
                     <QrCode className="w-4 h-4" />
-                    <span>{isConnected ? 'Reconectar via QR Code' : 'Gerar QR Code'}</span>
+                    <span>{isRefreshing ? 'Gerando QR Code...' : isConnected ? 'Reconectar via QR Code' : 'Gerar QR Code'}</span>
                   </button>
                 </div>
               )}

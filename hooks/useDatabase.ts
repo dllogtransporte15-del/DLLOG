@@ -216,8 +216,8 @@ export function useDatabase(currentUser: User | null) {
 
         // Limpeza assíncrona no Supabase de registros legados dummy
         if (dbOwners.some(o => o.name === 'PROPRIETÁRIO PADRÃO TERCEIRO' || o.id === 'OWN-100')) {
-          supabase.from('owners').delete().or('name.eq.PROPRIETÁRIO PADRÃO TERCEIRO,id.eq.OWN-100').then(() => {}).catch(() => {});
-          supabase.from('vehicles').update({ owner_id: null }).eq('owner_id', 'OWN-100').then(() => {}).catch(() => {});
+          Promise.resolve(supabase.from('owners').delete().or('name.eq.PROPRIETÁRIO PADRÃO TERCEIRO,id.eq.OWN-100')).catch(() => {});
+          Promise.resolve(supabase.from('vehicles').update({ owner_id: null }).eq('owner_id', 'OWN-100')).catch(() => {});
         }
 
         setClients(dbClients);

@@ -25,16 +25,20 @@ interface WhatsAppTemplateEditorProps {
 }
 
 const TRIGGER_LABELS: Record<WhatsAppTriggerEvent, string> = {
-  'shipment.created': '1. Oportunidade / Nova Carga Criada',
-  'shipment.assigned': '2. Motorista Vinculado à Carga',
-  'shipment.loading_order': '3. Emissão da Ordem de Carregamento',
-  'shipment.advance_paid': '4. Pagamento do Adiantamento de Frete',
-  'shipment.in_transit': '5. Carga em Trânsito / Rastreamento',
-  'shipment.cte_emitted': '6. Emissão do CT-e & DACTE Autorizado',
-  'shipment.delivered': '7. Carga Descarregada / Comprovante Entregue',
-  'shipment.balance_paid': '8. Quitação do Saldo do Frete',
-  'risk.reproved': '9. Aviso de Reprovação no GR',
-  'custom.manual': '10. Mensagem Avulsa / Personalizada'
+  'shipment.created': 'Aviso de Oferta / Nova Carga',
+  'shipment.assigned': 'Motorista Vinculado à Carga',
+  'shipment.risk_pending': 'Gatilho 1 - Aguardando Cadastro e Seguradora',
+  'shipment.risk_approved': 'Gatilho 2 - Aguardando Carregamento (Liberado)',
+  'shipment.fiscal_emitted': 'Gatilho 3 - Saída do Fiscal & Docs de Viagem',
+  'shipment.loading_order': 'Emissão da Ordem de Carregamento',
+  'shipment.advance_paid': 'Gatilho 4 - Pagamento de Adiantamento',
+  'shipment.in_transit': 'Gatilho 5A - Agendamento / Troca de NF-e',
+  'shipment.awaiting_discharge': 'Gatilho 5B - Aguardando Descarga & Canhoto',
+  'shipment.cte_emitted': 'Emissão do CT-e & DACTE Autorizado',
+  'shipment.delivered': 'Carga Descarregada / Comprovante Entregue',
+  'shipment.balance_paid': 'Gatilho 6 - Quitação de Saldo & Finalização',
+  'risk.reproved': 'Aviso de Reprovação no GR',
+  'custom.manual': 'Mensagem Avulsa / Personalizada'
 };
 
 const ATTACHMENT_LABELS: Record<WhatsAppAttachmentType, string> = {

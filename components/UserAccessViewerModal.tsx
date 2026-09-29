@@ -105,6 +105,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'risk-management': 'Gerenciadora de Risco',
   'risk-query-types': 'Tipos de Consulta GR',
   'whatsapp': 'WhatsApp',
+  'messenger': 'Mensageiro',
 };
 
 const CATEGORIES = [
@@ -114,7 +115,7 @@ const CATEGORIES = [
   { name: 'Relatórios', pages: ['reports'] as Page[] },
   { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
   { name: 'Configurações', pages: ['appearance'] as Page[] },
-  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor'] as Page[] }
+  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor', 'messenger'] as Page[] }
 ];
 
 const READ_ONLY_PAGES = [
