@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_29_v2_30_0',
+    version: 'v2.30.0',
+    date: '29/09/2026',
+    title: 'Refinamento do Controle de Saldo e Sincronização em Tempo Real de Lotes e Cargas',
+    summary: 'Reformulação e aprimoramento completo do motor de cálculo de saldos e volumes das cargas (Lotes). A verdade matemática passa a ser derivada diretamente dos embarques reais ativos (Single Source of Truth), eliminando divergências cumulativas, agendamentos fantasmas e bloqueios indevidos por saldo insuficiente.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Eliminação de Volumes Agendados Fantasmas',
+        description: 'Corrigido o cálculo de volume agendado na barra de progresso (VolumeBar) e na listagem de cargas. Embarques já carregados, em trânsito ou finalizados não deixam resíduo na barra laranja de agendados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Cálculo Dinâmico e Preciso de Saldo Disponível',
+        description: 'Criado o utilitário unificado calculateCargoBalance que calcula com precisão matemática o volume carregado, volume pendente de carga e saldo disponível real (794 - carregado - agendado), garantindo coerência exata com o balanço físico.'
+      },
+      {
+        category: 'fix',
+        title: 'Reconciliação e Correção de Lotes no Banco de Dados',
+        description: 'Sincronizados e corrigidos os volumes de todos os lotes no Supabase (incluindo o lote #160 com 719,86 ton efetivadas e 74,14 ton disponíveis reais).'
+      },
+      {
+        category: 'improvement',
+        title: 'Consistência em Criação, Edição, Reversão e Cancelamento',
+        description: 'Todos os fluxos operacionais (criação de embarque, edição de tonelagem, cancelamento, exclusão e reversão de status) agora recalculam automaticamente os saldos do lote com base na lista real de embarques.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_29_v2_29_0',
     version: 'v2.29.0',
     date: '29/09/2026',

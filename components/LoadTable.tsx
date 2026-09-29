@@ -13,6 +13,7 @@ import type { Ticket } from '../types';
 import { TicketStatus } from '../types';
 import { isDemoUser } from '../auth';
 import { getCargoMapUrl } from '../utils';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 interface LoadTableProps {
   loads: Cargo[];
@@ -287,9 +288,10 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
 
       <div className="space-y-3">
         {paginatedLoads.map((load) => {
-          const scheduledButNotLoaded = Math.max(0, load.scheduledVolume - load.loadedVolume);
+          const cargoBalance = calculateCargoBalance(load, shipments);
+          const scheduledButNotLoaded = cargoBalance.scheduledPendingVolume;
           const dailyScheduledTonnage = shipments
-            .filter(s => s.cargoId === load.id && s.scheduledDate === dailyBalanceDate)
+            .filter(s => (s.cargoId === load.id || (load.sequenceId && s.cargoId === String(load.sequenceId)) || (load.sequenceId && s.cargoId === `CRG-${load.sequenceId}`)) && s.scheduledDate === dailyBalanceDate && s.status !== ShipmentStatus.Cancelado)
             .reduce((sum, s) => sum + s.shipmentTonnage, 0);
           const dailyScheduleInfo = load.dailySchedule?.find(ds => ds.date === dailyBalanceDate);
 
@@ -609,13 +611,13 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                   <div className="flex justify-between items-start text-[10px] font-bold text-gray-500 uppercase">
                     <span>Geral</span>
                     <div className="text-right">
-                      <div className="text-gray-700 dark:text-gray-300">{formatNumber(load.loadedVolume)} / {formatNumber(load.totalVolume)}</div>
-                      <div className="text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">Disp: {formatNumber(Math.max(0, load.totalVolume - load.scheduledVolume))} ton</div>
+                      <div className="text-gray-700 dark:text-gray-300">{formatNumber(cargoBalance.loadedVolume)} / {formatNumber(load.totalVolume)}</div>
+                      <div className="text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">Disp: {formatNumber(cargoBalance.availableVolume)} ton</div>
                     </div>
                   </div>
                   <VolumeBar
-                    loaded={load.loadedVolume}
-                    scheduled={scheduledButNotLoaded}
+                    loaded={cargoBalance.loadedVolume}
+                    scheduled={cargoBalance.scheduledPendingVolume}
                     total={load.totalVolume}
                     onClick={onShowShipments ? () => onShowShipments(load) : undefined}
                   />

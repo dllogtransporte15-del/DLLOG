@@ -450,6 +450,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
           cargos={cargos}
           clients={clients}
           products={products}
+          shipments={shipments}
         />
       )}
 

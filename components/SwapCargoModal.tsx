@@ -4,6 +4,7 @@ import type { Shipment, Cargo, Client, Product } from '../types';
 import { CargoStatus } from '../types';
 import { useToast } from '../hooks/useToast';
 import { Search, Info, Package, MapPin, DollarSign, Weight } from 'lucide-react';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 interface SwapCargoModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface SwapCargoModalProps {
   cargos: Cargo[];
   clients: Client[];
   products: Product[];
+  shipments?: Shipment[];
 }
 
 const SwapCargoModal: React.FC<SwapCargoModalProps> = ({ 
@@ -22,7 +24,8 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
   shipment, 
   cargos, 
   clients, 
-  products 
+  products,
+  shipments = []
 }) => {
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,7 +117,8 @@ const SwapCargoModal: React.FC<SwapCargoModalProps> = ({
                 const client = clients.find(cl => cl.id === cargo.clientId);
                 const product = products.find(p => p.id === cargo.productId);
                 const isSelected = selectedCargoId === cargo.id;
-                const remainingVol = cargo.totalVolume - cargo.scheduledVolume;
+                const balance = calculateCargoBalance(cargo, shipments);
+                const remainingVol = balance.availableVolume;
 
                 return (
                   <div 

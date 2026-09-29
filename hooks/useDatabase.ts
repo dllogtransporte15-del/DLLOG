@@ -18,6 +18,7 @@ import {
   backfillAdvanceAndBalanceCalculations
 } from '../lib/db';
 import { getAllToolStays, StayRecord } from '../utils/toolStorage';
+import { reconcileAllCargos } from '../utils/cargoBalance';
 
 // ─── Module-level helpers (accessible from both loadAllData and realtime handler) ───
 
@@ -157,7 +158,8 @@ export function useDatabase(currentUser: User | null) {
           fetchProducts(), fetchClients(), fetchFreightOffers(), fetchUsers(), fetchRiskQueryOptions()
         ]);
 
-        setCargos(dbCargos);
+        const { reconciledCargos } = reconcileAllCargos(dbCargos, dbShipments);
+        setCargos(reconciledCargos);
         setShipments(dbShipments);
         setProducts(dbProducts);
         setClients(dbClients);
@@ -225,8 +227,19 @@ export function useDatabase(currentUser: User | null) {
         setDrivers(dbDrivers);
         setVehicles(cleanVehicles);
         setProducts(dbProducts);
-        setCargos(dbCargos);
+        const { reconciledCargos, updatedCargoIds } = reconcileAllCargos(dbCargos, dbShipments);
+        setCargos(reconciledCargos);
         setShipments(dbShipments);
+        if (updatedCargoIds.length > 0) {
+          reconciledCargos
+            .filter(c => updatedCargoIds.includes(c.id))
+            .forEach(c => {
+              supabase.from('cargos').update({
+                scheduled_volume: c.scheduledVolume,
+                loaded_volume: c.loadedVolume,
+              }).eq('id', c.id).then(() => {});
+            });
+        }
         setUsers(dbUsers);
         setTickets(dbTickets);
         setFreightOffers(dbFreightOffers);

@@ -7,6 +7,7 @@ import { toCargo } from '../lib/db';
 import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
 import { autoFormatInput } from '../utils/formatters';
 import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap, Building2, User as UserIcon, Search, Loader2 } from 'lucide-react';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 
 interface NewShipmentModalProps {
@@ -931,7 +932,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     // Hard Validation: Balance Check
-    const availableBalance = currentCargo.totalVolume - currentCargo.scheduledVolume;
+    const cargoBalance = calculateCargoBalance(currentCargo, shipments);
+    const availableBalance = cargoBalance.availableVolume;
     if (shipmentTonnage > (availableBalance + 0.001)) {
         showToast(`SALDO INSUFICIENTE: Esta carga possui apenas ${availableBalance.toLocaleString('pt-BR')} ton disponíveis. Você está tentando solicitar ${shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
         return;
@@ -1136,7 +1138,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <p className="text-gray-600 dark:text-gray-400">Cliente: <span className="font-bold text-gray-900 dark:text-gray-100">{clientName}</span></p>
             <p className="text-gray-600 dark:text-gray-400">Rota: <span className="font-bold text-gray-900 dark:text-gray-100">{currentCargo.origin} → {currentCargo.destination}</span></p>
-            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{(currentCargo.totalVolume - currentCargo.scheduledVolume).toLocaleString('pt-BR')} ton</span></p>
+            <p className="text-gray-600 dark:text-gray-400">Saldo Disponível: <span className="font-bold text-emerald-600 dark:text-emerald-400">{calculateCargoBalance(currentCargo, shipments).availableVolume.toLocaleString('pt-BR')} ton</span></p>
           </div>
           {currentCargo.allowedVehicleTypes && currentCargo.allowedVehicleTypes.length > 0 ? (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">

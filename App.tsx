@@ -52,6 +52,7 @@ import SystemUpdateModal from './components/SystemUpdateModal';
 import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
 import { shouldShowUpdateModal } from './utils/systemUpdates';
 import { dispatchShipmentWhatsAppTrigger, ShipmentWhatsAppTriggerType } from './services/shipmentWhatsAppAutomation';
+import { reconcileCargoWithShipments } from './utils/cargoBalance';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
@@ -1609,11 +1610,10 @@ const App: React.FC = () => {
     const newCargos = cargos.map(cargo => {
       const isTarget = cargo.id === data.cargoId || String(cargo.id) === String(data.cargoId) || (cargo.sequenceId && String(cargo.sequenceId) === String(data.cargoId).replace(/\D/g, ''));
       if (isTarget) {
-        const newScheduledVolume = cargo.scheduledVolume + data.shipmentTonnage;
+        const reconciled = reconcileCargoWithShipments(cargo, newShipments);
         return {
-          ...cargo,
-          scheduledVolume: newScheduledVolume,
-          history: [...(cargo.history || []), createHistoryLogLocal(`Volume agendado atualizado para ${newScheduledVolume.toFixed(2)} ton devido ao novo embarque ${newShipmentId}`)],
+          ...reconciled,
+          history: [...(cargo.history || []), createHistoryLogLocal(`Volume agendado atualizado para ${reconciled.scheduledVolume.toFixed(2)} ton devido ao novo embarque ${newShipmentId}`)],
         };
       }
       return cargo;
@@ -2259,30 +2259,23 @@ const App: React.FC = () => {
         ShipmentStatus.Finalizado
     ];
 
-    const isAdvancingToLoaded = nextStatus === ShipmentStatus.AguardandoDescarga && 
-                               statusOrder.indexOf(originalShipment.status) < statusOrder.indexOf(ShipmentStatus.AguardandoDescarga);
-
+    const updatedShipments = shipments.map(s => s.id === shipmentId ? updatedShipment : s);
     let updatedCargo: Cargo | undefined;
-    if (nextStatus === ShipmentStatus.Cancelado && originalShipment.status !== ShipmentStatus.Cancelado) {
-        const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId);
-        if (relatedCargo) {
-            const newScheduledVolume = Math.max(0, relatedCargo.scheduledVolume - originalShipment.shipmentTonnage);
-            updatedCargo = { 
-                ...relatedCargo, 
-                scheduledVolume: newScheduledVolume, 
-                history: [...relatedCargo.history, createHistoryLog(`Volume agendado ajustado devido ao cancelamento do embarque ${shipmentId} (Reprovação no GR).`)] 
-            };
+    const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === originalShipment.cargoId));
+    if (relatedCargo) {
+        const reconciled = reconcileCargoWithShipments(relatedCargo, updatedShipments);
+        let logDesc = '';
+        if (nextStatus === ShipmentStatus.Cancelado && originalShipment.status !== ShipmentStatus.Cancelado) {
+            logDesc = `Volume agendado ajustado devido ao cancelamento do embarque ${shipmentId} (Reprovação no GR).`;
+        } else if (Math.abs(reconciled.loadedVolume - (relatedCargo.loadedVolume || 0)) >= 0.01) {
+            logDesc = `Volume carregado atualizado para ${reconciled.loadedVolume.toFixed(2)} ton via embarque ${shipmentId}.`;
+        } else if (Math.abs(reconciled.scheduledVolume - (relatedCargo.scheduledVolume || 0)) >= 0.01) {
+            logDesc = `Volume agendado atualizado para ${reconciled.scheduledVolume.toFixed(2)} ton via embarque ${shipmentId}.`;
         }
-    } else if (isAdvancingToLoaded) {
-        const cargo = cargos.find(c => c.id === originalShipment.cargoId);
-        if (cargo) {
-            const newLoadedVolume = (cargo.loadedVolume || 0) + updatedShipment.shipmentTonnage;
-            updatedCargo = { 
-                ...cargo, 
-                loadedVolume: newLoadedVolume, 
-                history: [...cargo.history, createHistoryLog(`Volume carregado atualizado para ${newLoadedVolume.toFixed(2)} ton via embarque ${shipmentId}.`)] 
-            };
-        }
+        updatedCargo = {
+            ...reconciled,
+            history: logDesc ? [...relatedCargo.history, createHistoryLog(logDesc)] : relatedCargo.history
+        };
     }
 
     let updatedDriverToRestrict: Driver | undefined;
@@ -2539,16 +2532,14 @@ const App: React.FC = () => {
     const targetTonnage = data.shipmentTonnage !== undefined ? data.shipmentTonnage : shipmentToUpdate.shipmentTonnage;
 
     if (data.shipmentTonnage !== undefined && data.shipmentTonnage !== shipmentToUpdate.shipmentTonnage) {
-        const diff = data.shipmentTonnage - shipmentToUpdate.shipmentTonnage;
         updatedDriverFreight = rateToUse * targetTonnage;
         
-        const cargo = cargos.find(c => c.id === shipmentToUpdate.cargoId);
+        const cargo = cargos.find(c => c.id === shipmentToUpdate.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToUpdate.cargoId));
         if (cargo) {
-            const isLoaded = Object.values(ShipmentStatus).indexOf(shipmentToUpdate.status) >= Object.values(ShipmentStatus).indexOf(ShipmentStatus.AguardandoDescarga);
+            const updatedShipments = shipments.map(s => s.id === shipmentId ? { ...s, shipmentTonnage: targetTonnage } : s);
+            const reconciled = reconcileCargoWithShipments(cargo, updatedShipments);
             updatedCargo = {
-                ...cargo,
-                scheduledVolume: Math.max(0, cargo.scheduledVolume + diff),
-                loadedVolume: isLoaded ? Math.max(0, cargo.loadedVolume + diff) : cargo.loadedVolume,
+                ...reconciled,
                 history: [...cargo.history, createHistoryLog(`Volume ajustado devido à correção de tonelagem no embarque ${shipmentId} (${shipmentToUpdate.shipmentTonnage} -> ${data.shipmentTonnage}).`)]
             };
         }
@@ -2772,23 +2763,18 @@ const App: React.FC = () => {
       statusHistory: [...(shipmentToCancel.statusHistory || []), { status: ShipmentStatus.Cancelado, timestamp: new Date().toISOString(), userId: currentUser.id }] 
     };
 
-    setShipments((prev: Shipment[]) => prev.map(s => s.id === shipmentId ? cancelledShipment : s));
+    const updatedShipments = shipments.map(s => s.id === shipmentId ? cancelledShipment : s);
+    setShipments(updatedShipments);
 
-    const wasLoaded = Object.values(ShipmentStatus).indexOf(shipmentToCancel.status) >= Object.values(ShipmentStatus).indexOf(ShipmentStatus.AguardandoDescarga);
-    const relatedCargo = cargos.find(c => c.id === shipmentToCancel.cargoId);
+    const relatedCargo = cargos.find(c => c.id === shipmentToCancel.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToCancel.cargoId));
     
     let updatedCargo: Cargo | undefined;
     if (relatedCargo) {
-        const newScheduledVolume = relatedCargo.scheduledVolume - shipmentToCancel.shipmentTonnage;
-        const newLoadedVolume = wasLoaded ? relatedCargo.loadedVolume - shipmentToCancel.shipmentTonnage : relatedCargo.loadedVolume;
-        const historyDescription = wasLoaded
-            ? `Volumes agendado e carregado ajustados devido ao cancelamento do embarque ${shipmentId}`
-            : `Volume agendado ajustado devido ao cancelamento do embarque ${shipmentId}`;
+        const reconciled = reconcileCargoWithShipments(relatedCargo, updatedShipments);
+        const historyDescription = `Volumes ajustados devido ao cancelamento do embarque ${shipmentId}`;
         
         updatedCargo = { 
-            ...relatedCargo, 
-            scheduledVolume: Math.max(0, newScheduledVolume), 
-            loadedVolume: Math.max(0, newLoadedVolume), 
+            ...reconciled, 
             history: [...relatedCargo.history, createHistoryLog(historyDescription)] 
         };
         
@@ -2927,13 +2913,14 @@ const App: React.FC = () => {
       ]
     };
 
+    const updatedShipments = shipments.map(s => s.id === shipmentId ? updatedShipment : s);
+
     // 2. Prepare updated Old Cargo (if exists)
     let updatedOldCargo: Cargo | undefined;
     if (oldCargo) {
+      const reconciledOld = reconcileCargoWithShipments(oldCargo, updatedShipments);
       updatedOldCargo = {
-        ...oldCargo,
-        scheduledVolume: Math.max(0, Number((oldCargo.scheduledVolume - tonnage).toFixed(2))),
-        loadedVolume: isLoaded ? Math.max(0, Number(((oldCargo.loadedVolume || 0) - loadedTon).toFixed(2))) : oldCargo.loadedVolume,
+        ...reconciledOld,
         history: [
           ...oldCargo.history,
           createHistoryLog(`Volume reduzido devido à troca de carga do embarque ${shipmentId} para a carga #${newCargo.sequenceId}.`)
@@ -2942,10 +2929,9 @@ const App: React.FC = () => {
     }
 
     // 3. Prepare updated New Cargo
+    const reconciledNew = reconcileCargoWithShipments(newCargo, updatedShipments);
     const updatedNewCargo: Cargo = {
-      ...newCargo,
-      scheduledVolume: Number(((newCargo.scheduledVolume || 0) + tonnage).toFixed(2)),
-      loadedVolume: isLoaded ? Number(((newCargo.loadedVolume || 0) + loadedTon).toFixed(2)) : newCargo.loadedVolume,
+      ...reconciledNew,
       history: [
         ...newCargo.history,
         createHistoryLog(`Volume aumentado devido à troca de carga do embarque ${shipmentId} da carga #${oldCargo?.sequenceId || oldCargoId}.`)
@@ -3078,20 +3064,17 @@ const App: React.FC = () => {
     if (confirm(`Tem certeza que deseja excluir permanentemente o embarque ${shipmentId}?`)) {
         try {
             await deleteShipment(shipmentId);
-            setShipments(prev => prev.filter(s => s.id !== shipmentId));
+            const remainingShipments = shipments.filter(s => s.id !== shipmentId);
+            setShipments(remainingShipments);
 
             // Atualizar volumes da carga
-            const wasLoaded = Object.values(ShipmentStatus).indexOf(shipmentToDelete.status) >= Object.values(ShipmentStatus).indexOf(ShipmentStatus.AguardandoDescarga);
-            const relatedCargo = cargos.find(c => c.id === shipmentToDelete.cargoId);
+            const relatedCargo = cargos.find(c => c.id === shipmentToDelete.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToDelete.cargoId));
             
             if (relatedCargo) {
-                const newScheduledVolume = Math.max(0, relatedCargo.scheduledVolume - shipmentToDelete.shipmentTonnage);
-                const newLoadedVolume = wasLoaded ? Math.max(0, relatedCargo.loadedVolume - shipmentToDelete.shipmentTonnage) : relatedCargo.loadedVolume;
+                const reconciled = reconcileCargoWithShipments(relatedCargo, remainingShipments);
                 const updatedCargo: Cargo = { 
-                    ...relatedCargo, 
-                    scheduledVolume: newScheduledVolume, 
-                    loadedVolume: newLoadedVolume,
-                    history: [...relatedCargo.history, createHistoryLog(`Embarque ${shipmentId} EXCLUÍDO pelo Administrador. Volumes ajustados.`)]
+                    ...reconciled, 
+                    history: [...relatedCargo.history, createHistoryLog(`Embarque ${shipmentId} EXCLUÍDO pelo Administrador. Volumes recalculados.`)]
                 };
                 
                 setCargos(prevCargos => prevCargos.map(cargo => cargo.id === relatedCargo.id ? updatedCargo : cargo));
@@ -3645,32 +3628,6 @@ const App: React.FC = () => {
       }
     });
 
-    let updatedCargo: Cargo | undefined;
-    if (currentStatus === ShipmentStatus.AguardandoDescarga) {
-        const cargo = cargos.find(c => c.id === shipment.cargoId);
-        if (cargo) {
-            const newLoadedVolume = Math.max(0, cargo.loadedVolume - shipment.shipmentTonnage);
-            updatedCargo = {
-                ...cargo,
-                loadedVolume: newLoadedVolume,
-                history: [...cargo.history, createHistoryLog(`Volume carregado estornado devido à reversão do embarque ${shipmentId} (Status revertido para ${previousStatus}).`)]
-            };
-        }
-    } else if (currentStatus === ShipmentStatus.Cancelado) {
-        const cargo = cargos.find(c => c.id === shipment.cargoId);
-        if (cargo) {
-            const wasLoaded = Object.values(ShipmentStatus).indexOf(previousStatus) >= Object.values(ShipmentStatus).indexOf(ShipmentStatus.AguardandoDescarga);
-            const newScheduledVolume = cargo.scheduledVolume + shipment.shipmentTonnage;
-            const newLoadedVolume = wasLoaded ? cargo.loadedVolume + shipment.shipmentTonnage : cargo.loadedVolume;
-            updatedCargo = {
-                ...cargo,
-                scheduledVolume: newScheduledVolume,
-                loadedVolume: newLoadedVolume,
-                history: [...cargo.history, createHistoryLog(`Volumes restaurados devido à reversão do cancelamento do embarque ${shipmentId} (Status restaurado para "${previousStatus}").`)]
-            };
-        }
-    }
-
     const updatedShipment: Shipment = {
         ...shipment,
         status: previousStatus,
@@ -3695,12 +3652,23 @@ const App: React.FC = () => {
         history: [...shipment.history, createHistoryLog(`Status revertido de "${currentStatus}" para "${previousStatus}" por ${currentUser.name}. Anexos e dados da etapa removidos para reanexação.`)]
     };
 
+    const updatedShipments = shipments.map(s => s.id === shipmentId ? updatedShipment : s);
+    const cargo = cargos.find(c => c.id === shipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipment.cargoId));
+    let updatedCargo: Cargo | undefined;
+    if (cargo) {
+        const reconciled = reconcileCargoWithShipments(cargo, updatedShipments);
+        updatedCargo = {
+            ...reconciled,
+            history: [...cargo.history, createHistoryLog(`Volumes recalculados devido à reversão de status do embarque ${shipmentId} para "${previousStatus}".`)]
+        };
+    }
+
     const prevShipmentsState = shipments;
     const prevCargosState = cargos;
 
-    setShipments((prev: Shipment[]) => prev.map(s => s.id === shipmentId ? updatedShipment : s));
+    setShipments(updatedShipments);
     if (updatedCargo) {
-        setCargos(prev => prev.map(c => c.id === updatedShipment.cargoId ? updatedCargo! : c));
+        setCargos(prev => prev.map(c => (c.id === updatedShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === updatedShipment.cargoId)) ? updatedCargo! : c));
     }
 
     try {

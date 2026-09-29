@@ -8,6 +8,7 @@ import { StayRecord } from '../utils/toolStorage';
 import { DocumentAttachmentCard } from './ImageLightboxModal';
 import FormattedObservations from './FormattedObservations';
 import { Globe2 } from 'lucide-react';
+import { calculateCargoBalance } from '../utils/cargoBalance';
 
 interface CargoDetailsModalProps {
   isOpen: boolean;
@@ -85,10 +86,11 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
   if (!isOpen || !cargo) return null;
   const isClient = currentUser?.profile === 'Cliente';
 
-  const loadedVol = Number(cargo.loadedVolume) || 0;
+  const balance = calculateCargoBalance(cargo, shipments);
+  const loadedVol = balance.loadedVolume;
   const totalVol = Number(cargo.totalVolume) || 0;
-  const scheduledVol = Number(cargo.scheduledVolume) || 0;
-  const scheduledButNotLoaded = Math.max(0, scheduledVol - loadedVol);
+  const scheduledButNotLoaded = balance.scheduledPendingVolume;
+  const availableVol = balance.availableVolume;
   
   const formatCurrency = (value?: number | null) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
   const formatDate = (dateString?: string | null) => {
@@ -246,18 +248,22 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     scheduled={scheduledButNotLoaded}
                     total={totalVol}
                 />
-                <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-center">
                     <div className="p-2 bg-green-100/50 dark:bg-green-900/20 rounded">
                         <p className="text-xs text-green-700 dark:text-green-300">Carregado</p>
-                        <p className="font-bold text-green-800 dark:text-green-200">{loadedVol.toLocaleString('pt-BR')}</p>
+                        <p className="font-bold text-green-800 dark:text-green-200">{loadedVol.toLocaleString('pt-BR')} t</p>
                     </div>
                      <div className="p-2 bg-orange-100/50 dark:bg-orange-900/20 rounded">
                         <p className="text-xs text-orange-700 dark:text-orange-300">Agendado</p>
-                        <p className="font-bold text-orange-800 dark:text-orange-200">{scheduledButNotLoaded.toLocaleString('pt-BR')}</p>
+                        <p className="font-bold text-orange-800 dark:text-orange-200">{scheduledButNotLoaded.toLocaleString('pt-BR')} t</p>
+                    </div>
+                     <div className="p-2 bg-emerald-100/50 dark:bg-emerald-900/20 rounded">
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300">Disponível</p>
+                        <p className="font-bold text-emerald-800 dark:text-emerald-200">{availableVol.toLocaleString('pt-BR')} t</p>
                     </div>
                      <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded">
-                        <p className="text-xs text-gray-500">Total</p>
-                        <p className="font-bold text-gray-800 dark:text-gray-200">{totalVol.toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-gray-500">Total Lote</p>
+                        <p className="font-bold text-gray-800 dark:text-gray-200">{totalVol.toLocaleString('pt-BR')} t</p>
                     </div>
                 </div>
             </div>
