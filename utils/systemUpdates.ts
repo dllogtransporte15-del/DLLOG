@@ -21,6 +21,74 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_30_v2_32_0',
+    version: 'v2.32.0',
+    date: '30/09/2026',
+    title: 'Configuração de Resultados por Agenciadores (Ag GO e Ag SP)',
+    summary: 'Atribuição direta e precisa dos resultados das agências no 1º Resultado Financeiro: Ag GO vinculada aos embarques do agenciador Maurício e Ag SP vinculada à soma dos agenciadores RAFAEL PINHEIRO e RAFAEL TARANTELLI.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Atribuição Direta de Ag GO ao Agenciador Maurício',
+        description: 'Faturamento, veículos carregados e comissões da Ag GO agora contabilizam estritamente os embarques agenciados e operados por Maurício (USR-294).'
+      },
+      {
+        category: 'improvement',
+        title: 'Atribuição Direta de Ag SP a Rafael Pinheiro + Rafael Tarantelli',
+        description: 'Consolidação de todos os embarques agenciados por Rafael Pinheiro (USR-107) e Rafael Tarantelli (USR-106) sob a Ag. SP, incluindo códigos de prefixo RAF e vínculos diretos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Transparência Visual nos Cards Executivos',
+        description: 'Exibição dos nomes dos agenciadores responsáveis abaixo das colunas de faturamento e comissões para Ag. SP e Ag GO.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_29_v2_31_0',
+    version: 'v2.31.0',
+    date: '29/09/2026',
+    title: 'Novo Dashboard Executivo de "1º Resultado Financeiro"',
+    summary: 'Implementação do layout visual completo e de alta fidelidade para o 1º Resultado Financeiro no módulo Financeiro, com visualização segmentada de Faturamento por Filiais, Demonstrativo de NF, Margem Bruta, Detalhamento de 11 Impostos e Custos Operacionais, Comissões e Resultados Rodoviários.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Faturamento Segmentado por Filiais e Contagem de Veículos Carregados',
+        description: 'Visualização horizontal do faturamento por agência (Matriz, Ag. SP, Ag GO, Ag PR e Total) informando abaixo dos valores a quantidade exata de veículos efetivamente carregados em cada agência.'
+      },
+      {
+        category: 'feature',
+        title: 'Demonstrativo de NF e Margem Bruta',
+        description: 'Cards dedicados para % Margem Bruta operacional, valor total de Notas Fiscais (NF Valor) e valor com margem de segurança de 18% (NF Valor + 18%).'
+      },
+      {
+        category: 'feature',
+        title: 'Painel de 11 Impostos, Custos e Descontos',
+        description: 'Cards individuais para ICMS, PIS/COFINS, Pedágio, INSS, IR, Seguro RCF, Seguro Acidente/Roubo, CUSTI (GR/CIOT), FUNRURAL, IN 2277 e Outros custos adicionais com filtros temporais.'
+      },
+      {
+        category: 'feature',
+        title: 'Matriz de Comissões e Memória de Cálculo',
+        description: 'Acompanhamento de 8 canais de comissão (Ag. SP, Ag GO, Ag PR, Comercial, Unidade, Embarcador, Cliente e Vendedor), cálculo de % sobre faturamento e memória de cálculo analítica (veículos × valor unitário).'
+      },
+      {
+        category: 'feature',
+        title: 'Fechamento de Fretes a Motoristas: Adiantamento e Saldo',
+        description: 'Cards de resultado atualizados para Total pg Adiantamento, Total pg Saldo e Total Adiantamento e Saldo com percentuais e valores consolidados dos pagamentos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Controles de Período e Auditoria DRE Expansível',
+        description: 'Filtro por períodos (Diário, Mensal, Anual), seleção de data por calendário, subfiltros rápidos (Dia, Semana, Mês, Ano) e seção expansível com a DRE analítica vertical detalhada.'
+      },
+      {
+        category: 'fix',
+        title: 'Resolução de Conflito de Tipagem e Problems da IDE',
+        description: 'Corrigido o conflito entre o tipo User e o ícone User de lucide-react no FirstResultTab, zerando os diagnósticos e garantindo 100% de conformidade estrita no TypeScript.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_29_v2_30_0',
     version: 'v2.30.0',
     date: '29/09/2026',
