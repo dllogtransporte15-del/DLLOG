@@ -470,6 +470,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             shipments={shipments}
             cargos={cargos}
             clients={clients}
+            currentUser={_currentUser}
           />
         )}
 

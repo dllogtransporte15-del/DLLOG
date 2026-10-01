@@ -21,6 +21,54 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_30_v2_40_0',
+    version: 'v2.40.0',
+    date: '30/09/2026',
+    title: 'Opção de Excluir Planilha Restrita ao Usuário Suporte',
+    summary: 'Implementação de recurso de segurança para exclusão e limpeza completa da planilha de controle e controladoria de embarques, com acesso estritamente restrito e validado para o usuário "Suporte". A ação conta com confirmação em modal de segurança e limpeza total do armazenamento local persistido.',
+    items: [
+      {
+        category: 'security',
+        title: 'Controle de Acesso Estrito ao Usuário Suporte',
+        description: 'O botão e o comando de exclusão só ficam visíveis e executáveis se o operador logado for o usuário "Suporte" (validado via autenticação, perfil e dados de sessão).'
+      },
+      {
+        category: 'feature',
+        title: 'Modal de Confirmação e Segurança',
+        description: 'Janela de diálogo com aviso claro sobre a ação irreversível antes da efetivação da limpeza da planilha.'
+      },
+      {
+        category: 'improvement',
+        title: 'Limpeza Completa e Estado Vazio Organizado',
+        description: 'Apagamento seguro de linhas, abas, filtros e cache local, com opções imediatas para adicionar linhas, importar novo arquivo XLSX ou restaurar base de dados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_30_v2_39_0',
+    version: 'v2.39.0',
+    date: '30/09/2026',
+    title: 'Painel de Controle Unificado e Ultra-Otimizado da Controladoria',
+    summary: 'Unificação e consolidação dos blocos superiores (banner, seletor de origem, cards de KPIs e barra de filtros) em um único centro de comando executivo de alta densidade visual. Economiza mais de 300px de altura na tela, maximizando o espaço útil para a visualização da planilha sem perder qualquer recurso ou métrica.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Consolidação e Economia de Espaço Vertical',
+        description: 'Integração de 4 seções antes dispersas em um painel unificado e compacto, liberando espaço visual imediato para a planilha de embarques.'
+      },
+      {
+        category: 'feature',
+        title: 'Faixa Executiva de KPIs em Formato Ribbon',
+        description: 'Métricas financeiras essenciais organizadas horizontalmente em uma barra compacta com receitas brutas, custos de motorista, margens e acertos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Toolbar e Filtros Integrados',
+        description: 'Ações de maximizar, janela flutuante, sincronização, pesquisa global e filtros rápidos unificados em um único cabeçalho coeso.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_30_v2_38_0',
     version: 'v2.38.0',
     date: '30/09/2026',

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
-import { Shipment, Cargo, Client, ShipmentStatus } from '../../types';
+import { Shipment, Cargo, Client, ShipmentStatus, User } from '../../types';
 import type { ShipmentControlItem } from '../../utils/financialCalculations';
 import { 
   TranscunhaSpreadsheetRow, 
@@ -56,6 +56,7 @@ interface ControlShipmentsTabProps {
   shipments?: Shipment[];
   cargos?: Cargo[];
   clients?: Client[];
+  currentUser?: User | null;
 }
 
 export interface SpreadsheetColDef {
@@ -211,7 +212,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   items, 
   shipments = [], 
   cargos = [], 
-  clients = [] 
+  clients = [],
+  currentUser
 }) => {
   // Inicialização com persistência permanente no LocalStorage
   const [spreadsheetRows, setSpreadsheetRows] = useState<TranscunhaSpreadsheetRow[]>(() => {
@@ -294,10 +296,54 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
   // Feedback de importação / sincronização
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formulaInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Identificação do Usuário Suporte
+  const isSupportUser = useMemo(() => {
+    // 1. Verificar prop currentUser
+    if (currentUser) {
+      const name = (currentUser.name || '').trim().toLowerCase();
+      const email = (currentUser.email || '').trim().toLowerCase();
+      const role = String((currentUser as any).role || (currentUser as any).profile || '').trim().toLowerCase();
+      if (name.includes('suporte') || email.includes('suporte') || role.includes('suporte')) return true;
+    }
+    // 2. Verificar sessionStorage trancunha_currentUser e trancunha_user_email
+    try {
+      const stored = sessionStorage.getItem('trancunha_currentUser');
+      if (stored) {
+        const u = JSON.parse(stored);
+        const name = (u.name || '').trim().toLowerCase();
+        const email = (u.email || '').trim().toLowerCase();
+        const role = String(u.role || u.profile || '').trim().toLowerCase();
+        if (name.includes('suporte') || email.includes('suporte') || role.includes('suporte')) return true;
+      }
+      const sessionEmail = (sessionStorage.getItem('trancunha_user_email') || '').trim().toLowerCase();
+      if (sessionEmail.includes('suporte')) return true;
+    } catch {}
+    // 3. Verificar localStorage dllog_logged_in_user e trancunha_user_email
+    try {
+      const stored = localStorage.getItem('dllog_logged_in_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        const name = (u.name || '').trim().toLowerCase();
+        const email = (u.email || '').trim().toLowerCase();
+        const role = String(u.role || u.profile || '').trim().toLowerCase();
+        if (name.includes('suporte') || email.includes('suporte') || role.includes('suporte')) return true;
+      }
+      const email = (localStorage.getItem('trancunha_user_email') || '').trim().toLowerCase();
+      if (email.includes('suporte')) return true;
+    } catch {}
+    // 4. Fallback: verificar se o elemento do cabeçalho ou documento contém Suporte
+    if (typeof document !== 'undefined') {
+      const pageText = document.body.innerText || '';
+      if (/suporte/i.test(pageText.slice(0, 2000))) return true;
+    }
+    return false;
+  }, [currentUser]);
 
   // Listener para movimentação e redimensionamento da janela flutuante
   useEffect(() => {
@@ -904,6 +950,31 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     setTimeout(() => setNotification(null), 4000);
   };
 
+  const handleDeleteSpreadsheet = () => {
+    if (!isSupportUser) {
+      alert('Ação restrita: Apenas o usuário Suporte possui autorização para excluir a planilha.');
+      return;
+    }
+    clearPersistedSpreadsheetRows();
+    savePersistedSpreadsheetRows([]);
+    setSpreadsheetRows([]);
+    setAvailableSheets([]);
+    setActiveSheetName('Planilha1');
+    setColumnFilters({});
+    setSortConfig(null);
+    setSelectedCell(null);
+    setEditingCell(null);
+    setFormulaBarValue('');
+    setUndoStack([]);
+    setRedoStack([]);
+    setShowDeleteModal(false);
+    setNotification({
+      type: 'info',
+      message: 'Planilha excluída com sucesso pelo usuário Suporte!'
+    });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
   // Atalhos de teclado
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -1162,18 +1233,48 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 {paginatedRows.length === 0 ? (
                   <tr>
                     <td colSpan={61} className="px-4 py-12 text-center text-slate-400 font-sans bg-white dark:bg-slate-900">
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <AlertCircle className="w-7 h-7 text-amber-400 opacity-60" />
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
-                          Nenhum registro localizado com os filtros aplicados.
+                      <div className="flex flex-col items-center justify-center gap-2.5">
+                        <AlertCircle className="w-8 h-8 text-amber-400 opacity-60" />
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
+                          {activeRows.length === 0 
+                            ? 'A planilha está vazia.' 
+                            : 'Nenhum registro localizado com os filtros aplicados.'}
                         </span>
-                        {(activeColumnFiltersCount > 0 || sortConfig) && (
-                          <button
-                            onClick={handleClearAllColumnFilters}
-                            className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 cursor-pointer"
-                          >
-                            Limpar Filtros das Colunas
-                          </button>
+                        {activeRows.length === 0 ? (
+                          <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                            <button
+                              onClick={handleAddRow}
+                              className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-500 cursor-pointer flex items-center gap-1 shadow-sm"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Adicionar Linha
+                            </button>
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 cursor-pointer flex items-center gap-1 shadow-sm"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              Importar Planilha XLSX
+                            </button>
+                            {isSupportUser && (
+                              <button
+                                onClick={handleResetSample}
+                                className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-1"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                Restaurar Base Exemplo
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          (activeColumnFiltersCount > 0 || sortConfig) && (
+                            <button
+                              onClick={handleClearAllColumnFilters}
+                              className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 cursor-pointer"
+                            >
+                              Limpar Filtros das Colunas
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -1479,7 +1580,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Backdrop invisível para fechar o popup de filtro */}
       {activeFilterPopup && (
         <div 
@@ -1497,33 +1598,82 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         className="hidden" 
       />
 
-      {/* BANNER PRINCIPAL DA CONTROLADORIA */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border border-indigo-900/40 p-5 sm:p-6 shadow-xl text-white">
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-semibold">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              Planilha Oficial Editável Transcunha • Alta Performance
+      {/* PAINEL UNIFICADO E ULTRA-OTIMIZADO DA CONTROLADORIA */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-3 sm:p-3.5 space-y-2.5">
+        {/* LINHA 1: TÍTULO, ORIGEM E TOOLBAR DE AÇÕES */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5">
+          {/* Lado Esquerdo: Título & Seletor de Origem */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-lg bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+              </div>
+              <h2 className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+                Controladoria & Planilha
+              </h2>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              Controladoria & Planilha de Embarques
-            </h2>
-            <p className="text-slate-300 text-xs sm:text-sm max-w-3xl leading-relaxed">
-              Abra em janela sobreposta para expandir, redimensionar e movimentar livremente sobre toda a tela do sistema.
-            </p>
+
+            {/* Alternador de Origem Estilo Pill */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-950 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setDataSource('onedrive')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  dataSource === 'onedrive'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Planilha ({spreadsheetRows.length})
+              </button>
+              <button
+                onClick={() => setDataSource('system')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  dataSource === 'system'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Sistema ({items.length})
+                {syncedCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black">
+                    {syncedCount} sinc
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Abas ativas da Planilha (se houver) */}
+            {dataSource === 'onedrive' && availableSheets.length > 1 && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto max-w-[180px] sm:max-w-xs">
+                {availableSheets.map(sheet => (
+                  <button
+                    key={sheet}
+                    onClick={() => handleSheetChange(sheet)}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      activeSheetName === sheet
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {sheet}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Lado Direito: Toolbar Compacta de Ações */}
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={() => {
                 setIsWindowOpen(true);
                 setWindowMode('fullscreen');
               }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs sm:text-sm font-black shadow-lg shadow-emerald-600/30 transition-all cursor-pointer active:scale-95"
-              title="Abrir em janela sobreposta maximizada"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/25 transition-all cursor-pointer active:scale-95"
+              title="Abrir em tela cheia maximizada (Esc para sair)"
             >
-              <Maximize2 className="w-4 h-4 text-white" />
-              Maximizar Planilha
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Maximizar Planilha</span>
             </button>
 
             <button
@@ -1531,255 +1681,210 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 setIsWindowOpen(true);
                 setWindowMode('floating');
               }}
-              className="flex items-center gap-2 px-3.5 py-2.5 bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/40 text-white rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-sm"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 dark:hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
               title="Abrir como janela flutuante arrastável"
             >
-              <Move className="w-4 h-4 text-indigo-300" />
-              Janela Flutuante
+              <Move className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Janela</span>
             </button>
 
             <button
               onClick={handleTriggerSync}
-              className="flex items-center gap-2 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs sm:text-sm font-black shadow-lg shadow-amber-500/25 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+              title="Sincronizar dados entre a planilha e o sistema"
             >
-              <ArrowLeftRight className="w-4 h-4" />
-              Sincronizar ({syncedCount})
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span>Sincronizar ({syncedCount})</span>
             </button>
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              title="Importar arquivo Excel (.xlsx, .csv)"
             >
-              <Upload className="w-4 h-4" />
-              Importar
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Importar</span>
             </button>
 
             <button
               onClick={handleExportExcelXlsx}
-              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              title="Exportar dados como planilha Excel"
             >
-              <Download className="w-4 h-4" />
-              Exportar XLSX
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Exportar</span>
             </button>
+
+            {isSupportUser && (
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+                title="Excluir Planilha (Disponível apenas para Suporte)"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                <span className="hidden sm:inline">Excluir Planilha</span>
+                <span className="sm:hidden">Excluir</span>
+              </button>
+            )}
 
             <button
               onClick={handleResetSample}
               title="Restaurar dados originais"
-              className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs border border-slate-700 transition-all cursor-pointer"
+              className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-xs transition-all cursor-pointer"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
+        {/* NOTIFICAÇÃO (SE HOUVER) */}
         {notification && (
-          <div className={`mt-3 p-3 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+          <div className={`p-2 rounded-xl border flex items-center justify-between text-xs font-semibold ${
             notification.type === 'success' 
-              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200' 
+              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-200' 
               : notification.type === 'info'
-              ? 'bg-blue-500/20 border-blue-500/40 text-blue-200'
-              : 'bg-rose-500/20 border-rose-500/40 text-rose-200'
+              ? 'bg-blue-500/15 border-blue-500/30 text-blue-700 dark:text-blue-200'
+              : 'bg-rose-500/15 border-rose-500/30 text-rose-700 dark:text-rose-200'
           }`}>
             <div className="flex items-center gap-2">
               {notification.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
               ) : (
-                <Sparkles className="w-4 h-4 text-blue-400 shrink-0" />
+                <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
               )}
               <span>{notification.message}</span>
             </div>
-            <button onClick={() => setNotification(null)} className="opacity-70 hover:opacity-100 text-white ml-2">✕</button>
+            <button onClick={() => setNotification(null)} className="opacity-70 hover:opacity-100 text-slate-500 dark:text-white ml-2">✕</button>
           </div>
         )}
-      </div>
 
-      {/* BARRA DE ORIGEM E ABAS */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Origem:</span>
-          <button
-            onClick={() => setDataSource('onedrive')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              dataSource === 'onedrive'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-            }`}
-          >
-            Planilha Editável ({spreadsheetRows.length} linhas)
-          </button>
-          <button
-            onClick={() => setDataSource('system')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              dataSource === 'system'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-            }`}
-          >
-            Embarques do Sistema ({items.length})
-            {syncedCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-emerald-500 text-white text-[10px] font-black">
-                {syncedCount} sincronizados
+        {/* LINHA 2: FAIXA INTEGRADA E ULTRA-COMPACTA DE KPIS */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-slate-50 dark:bg-slate-950/70 p-2 sm:p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+          <div className="px-2.5 py-1 border-r border-slate-200 dark:border-slate-800/80">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Frete Bruto Empresa</span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white">{formatCurrency(totalFreteEmpresa)}</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">({filteredRows.length} viag. • {totalTonnage.toFixed(0)}t)</span>
+            </div>
+          </div>
+
+          <div className="px-2.5 py-1 border-r border-slate-200 dark:border-slate-800/80">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Custo Motorista</span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-sm sm:text-base font-black text-rose-600 dark:text-rose-400">{formatCurrency(totalFreteMotorista)}</span>
+              <span className="text-[10px] text-rose-600 dark:text-rose-400/90 font-bold">
+                ({totalFreteEmpresa > 0 ? ((totalFreteMotorista / totalFreteEmpresa) * 100).toFixed(1) : 0}%)
               </span>
-            )}
-          </button>
+            </div>
+          </div>
+
+          <div className="px-2.5 py-1 border-r border-slate-200 dark:border-slate-800/80">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Margem Retida</span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400">{formatCurrency(margemBruta)}</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">({margemPercent.toFixed(1)}%)</span>
+            </div>
+          </div>
+
+          <div className="px-2.5 py-1">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Acertos Motoristas</span>
+            <div className="flex items-center justify-between text-xs font-mono font-bold mt-0.5">
+              <span className="text-blue-600 dark:text-blue-400" title="Adiantamentos">Ad: {formatCurrency(totalAdiantamentos)}</span>
+              <span className="text-indigo-600 dark:text-indigo-400" title="Saldos">Sld: {formatCurrency(totalSaldos)}</span>
+            </div>
+          </div>
         </div>
 
-        {dataSource === 'onedrive' && availableSheets.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 lg:pb-0">
-            <span className="text-xs font-semibold text-slate-400 mr-1 shrink-0">Aba:</span>
-            {availableSheets.map(sheet => (
+        {/* LINHA 3: BARRA INTEGRADA DE PESQUISA, FILTROS E CONTROLE DE VISÃO */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 pt-1 border-t border-slate-200 dark:border-slate-800/60">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Pesquisar em todas as colunas..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-1 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setShowFilterRow(prev => !prev)}
+              className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                showFilterRow
+                  ? 'bg-amber-500/15 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40'
+                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>{showFilterRow ? 'Filtros em Coluna' : 'Exibir Filtros'}</span>
+            </button>
+
+            {(activeColumnFiltersCount > 0 || sortConfig !== null) && (
               <button
-                key={sheet}
-                onClick={() => handleSheetChange(sheet)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  activeSheetName === sheet
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                onClick={handleClearAllColumnFilters}
+                className="flex items-center gap-1 px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500 text-rose-600 dark:text-rose-300 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="Limpar todos os filtros e ordenações aplicadas"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpar ({activeColumnFiltersCount + (sortConfig ? 1 : 0)})</span>
+              </button>
+            )}
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-2 py-1 rounded-xl text-xs border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+            >
+              <option value="all">Status: Todos</option>
+              <option value="CARREGADO">Carregado</option>
+              <option value="Ag. Carregamento">Ag. Carregamento</option>
+              <option value="Em Viagem">Em Viagem</option>
+              <option value="Ag. Descarga">Ag. Descarga</option>
+              <option value="Finalizado">Finalizado</option>
+            </select>
+
+            <select
+              value={saldoFilter}
+              onChange={(e) => setSaldoFilter(e.target.value)}
+              className="px-2 py-1 rounded-xl text-xs border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+            >
+              <option value="all">Saldo: Todos</option>
+              <option value="PAGO">Pago</option>
+              <option value="PENDENTE">Pendente</option>
+            </select>
+
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="px-2 py-1 rounded-xl text-xs border border-indigo-300 dark:border-indigo-500/40 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-300 font-bold outline-none cursor-pointer"
+            >
+              <option value={25}>25 por pág.</option>
+              <option value={50}>50 por pág.</option>
+              <option value={100}>100 por pág.</option>
+              <option value={200}>200 por pág.</option>
+              <option value={-1}>Todos ({filteredRows.length})</option>
+            </select>
+
+            <div className="flex items-center rounded-xl bg-slate-100 dark:bg-slate-950 p-0.5 border border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setViewMode('full')}
+                className={`px-2.5 py-0.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'full' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                {sheet}
+                Grade
               </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* KPI Cards Estratégicos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Frete Bruto Empresa</span>
-          <div className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
-            {formatCurrency(totalFreteEmpresa)}
-          </div>
-          <span className="text-[11px] text-slate-500 block">
-            {filteredRows.length} viagens • {totalTonnage.toFixed(2)} ton
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Custo Frete Motorista</span>
-          <div className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">
-            {formatCurrency(totalFreteMotorista)}
-          </div>
-          <span className="text-[11px] text-slate-500 block">
-            {totalFreteEmpresa > 0 ? ((totalFreteMotorista / totalFreteEmpresa) * 100).toFixed(1) : 0}% da receita
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Margem Bruta Retida</span>
-          <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-            {formatCurrency(margemBruta)}
-          </div>
-          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold block">
-            Margem de {margemPercent.toFixed(1)}%
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Acertos de Motoristas</span>
-          <div className="flex items-center justify-between mt-0.5">
-            <div>
-              <span className="text-[10px] text-slate-400 font-semibold">Adiant:</span>{' '}
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">{formatCurrency(totalAdiantamentos)}</span>
+              <button
+                onClick={() => setViewMode('summary')}
+                className={`px-2.5 py-0.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  viewMode === 'summary' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Resumo
+              </button>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 font-semibold">Saldo:</span>{' '}
-              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(totalSaldos)}</span>
-            </div>
-          </div>
-          <span className="text-[10px] text-slate-500 mt-1 block">Pedágios: {formatCurrency(totalPedagios)}</span>
-        </div>
-      </div>
-
-      {/* BARRA DE FILTROS GERAIS E CONTROLES */}
-      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Pesquisar registros..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowFilterRow(prev => !prev)}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-              showFilterRow
-                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            {showFilterRow ? 'Filtros em Coluna' : 'Exibir Filtros'}
-          </button>
-
-          {(activeColumnFiltersCount > 0 || sortConfig !== null) && (
-            <button
-              onClick={handleClearAllColumnFilters}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-              Limpar ({activeColumnFiltersCount + (sortConfig ? 1 : 0)})
-            </button>
-          )}
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer"
-          >
-            <option value="all">Status: Todos</option>
-            <option value="CARREGADO">Carregado</option>
-            <option value="Ag. Carregamento">Ag. Carregamento</option>
-            <option value="Em Viagem">Em Viagem</option>
-            <option value="Ag. Descarga">Ag. Descarga</option>
-            <option value="Finalizado">Finalizado</option>
-          </select>
-
-          <select
-            value={saldoFilter}
-            onChange={(e) => setSaldoFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer"
-          >
-            <option value="all">Saldo: Todos</option>
-            <option value="PAGO">Pago</option>
-            <option value="PENDENTE">Pendente</option>
-          </select>
-
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-            className="px-2.5 py-1.5 rounded-xl text-xs border border-indigo-300 dark:border-indigo-600 bg-indigo-50/40 dark:bg-slate-900 text-indigo-900 dark:text-indigo-300 font-bold outline-none cursor-pointer"
-          >
-            <option value={25}>25 por pág.</option>
-            <option value={50}>50 por pág.</option>
-            <option value={100}>100 por pág.</option>
-            <option value={200}>200 por pág.</option>
-            <option value={-1}>Todos ({filteredRows.length})</option>
-          </select>
-
-          <div className="flex items-center rounded-xl bg-slate-100 dark:bg-slate-700/60 p-0.5 border border-slate-200 dark:border-slate-600">
-            <button
-              onClick={() => setViewMode('full')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                viewMode === 'full' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Grade
-            </button>
-            <button
-              onClick={() => setViewMode('summary')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                viewMode === 'summary' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Resumo
-            </button>
           </div>
         </div>
       </div>
@@ -1906,6 +2011,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   Exportar
                 </button>
 
+                {isSupportUser && (
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    title="Excluir Planilha (Apenas Suporte)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setWindowMode(prev => prev === 'fullscreen' ? 'floating' : 'fullscreen')}
                   className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg text-xs transition-colors cursor-pointer"
@@ -1951,6 +2067,81 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 </svg>
               </div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DA PLANILHA (RESTRITO AO SUPORTE) */}
+      {showDeleteModal && isSupportUser && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-rose-500/30 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Cabeçalho do Modal */}
+            <div className="bg-gradient-to-r from-rose-600 to-red-700 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shadow-inner">
+                  <Trash2 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black leading-tight">Excluir Planilha</h3>
+                  <span className="text-[10px] font-black text-rose-100 uppercase tracking-wider bg-black/20 px-2 py-0.5 rounded-full inline-block mt-0.5 border border-white/20">
+                    Apenas Suporte
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-5 space-y-4">
+              <div className="flex items-start gap-3 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-800 dark:text-rose-200 text-xs leading-relaxed">
+                <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-sm text-rose-900 dark:text-rose-100 mb-1">
+                    Atenção: Ação irreversível
+                  </p>
+                  <p>
+                    Você está prestes a excluir todos os registros da planilha ({spreadsheetRows.length} linhas carregadas). 
+                    O armazenamento local e as abas sincronizadas serão totalmente limpos.
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-600 dark:text-slate-400 space-y-2">
+                <p className="font-bold text-slate-700 dark:text-slate-300">
+                  Ao confirmar a exclusão:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-400">
+                  <li>Todas as linhas da planilha serão excluídas da memória e do navegador;</li>
+                  <li>Esta ação só pode ser realizada pelo usuário <strong>Suporte</strong>;</li>
+                  <li>Você poderá importar um novo arquivo XLSX ou adicionar linhas manualmente a qualquer momento.</li>
+                </ul>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSpreadsheet}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-lg shadow-rose-600/30 transition-all cursor-pointer active:scale-95"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Confirmar Exclusão
+                </button>
+              </div>
+            </div>
           </div>
         </div>,
         document.body
