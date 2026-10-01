@@ -186,8 +186,8 @@ const DebouncedFilterInput: React.FC<{
         onChange={(e) => setLocalVal(e.target.value)}
         className={`w-full pl-1.5 pr-4 py-0.5 text-[10px] rounded border outline-none font-normal transition-all ${
           hasFilter
-            ? 'border-amber-400 dark:border-amber-500 bg-amber-500/10 text-amber-900 dark:text-amber-200 font-bold focus:ring-1 focus:ring-amber-500'
-            : 'border-slate-300/80 dark:border-slate-700/80 bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:border-indigo-500'
+            ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-bold focus:ring-1 focus:ring-amber-500'
+            : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-500'
         }`}
       />
       {hasFilter && (
@@ -927,13 +927,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     return (
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full h-full">
         {/* BARRA DE FÓRMULAS & CONTROLES */}
-        <div className="bg-white dark:bg-slate-800 p-2.5 border-b border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-stretch md:items-center gap-2.5 shrink-0 select-none">
+        <div className="bg-white dark:bg-slate-900 p-2.5 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-stretch md:items-center gap-2.5 shrink-0 select-none">
           <div className="flex items-center gap-2 shrink-0">
-            <div className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono font-black text-slate-800 dark:text-slate-200 min-w-[120px] text-center truncate">
+            <div className="px-2.5 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-xs font-mono font-black text-slate-800 dark:text-slate-100 min-w-[120px] text-center truncate">
               {selectedCell ? (
                 <span>{SPREADSHEET_COLUMNS.find(c => c.key === selectedCell.colKey)?.label.replace(' 🔄', '') || selectedCell.colKey}</span>
               ) : (
-                <span className="text-slate-400 font-normal">Nenhuma célula</span>
+                <span className="text-slate-400 dark:text-slate-500 font-normal">Nenhuma célula</span>
               )}
             </div>
 
@@ -950,7 +950,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               value={formulaBarValue}
               disabled={!selectedCell}
               onChange={(e) => setFormulaBarValue(e.target.value)}
-              className="flex-1 px-3 py-1 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
+              className="flex-1 px-3 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 font-mono"
             />
             {selectedCell && (
               <button
@@ -963,7 +963,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             )}
           </form>
 
-          <div className="flex items-center gap-1.5 shrink-0 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-700 pt-1.5 md:pt-0 md:pl-2.5">
+          <div className="flex items-center gap-1.5 shrink-0 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pt-1.5 md:pt-0 md:pl-2.5">
             <button
               onClick={handleAddRow}
               className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-600 hover:text-white border border-emerald-500/30 rounded-lg text-xs font-bold transition-all cursor-pointer"
@@ -976,7 +976,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               onClick={handleUndo}
               disabled={undoStack.length === 0}
               title="Desfazer (Ctrl+Z)"
-              className="p-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs border border-slate-300 dark:border-slate-600 disabled:opacity-40 transition-all cursor-pointer"
+              className="p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-xs border border-slate-300 dark:border-slate-700 disabled:opacity-40 transition-all cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
@@ -985,7 +985,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               onClick={handleRedo}
               disabled={redoStack.length === 0}
               title="Refazer (Ctrl+Y)"
-              className="p-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-xs border border-slate-300 dark:border-slate-600 disabled:opacity-40 transition-all cursor-pointer"
+              className="p-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-xs border border-slate-300 dark:border-slate-700 disabled:opacity-40 transition-all cursor-pointer"
             >
               <RotateCw className="w-3.5 h-3.5" />
             </button>
@@ -993,9 +993,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         </div>
 
         {/* TABELA COM SCROLL OTIMIZADO */}
-        <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-slate-850">
+        <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-slate-900">
           {viewMode === 'full' ? (
-            <table className="w-full text-left text-[11px] whitespace-nowrap border-collapse">
+            <table className="w-full text-left text-[11px] whitespace-nowrap border-collapse bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
               <thead className="sticky top-0 z-30 shadow-sm select-none">
                 {/* Linha 1: Setores com Cores Harmoniosas */}
                 <tr className="text-center font-black tracking-wider uppercase text-[10px]">
@@ -1012,8 +1012,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 </tr>
 
                 {/* Linha 2: Cabeçalhos com Ordenação e Filtros Rápidos */}
-                <tr className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300 dark:border-slate-700">
-                  <th className="px-2 py-1.5 border-r border-slate-200 dark:border-slate-800 text-center text-slate-400">
+                <tr className="bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-200 font-bold uppercase text-[10px] tracking-tight border-b border-slate-300 dark:border-slate-800">
+                  <th className="px-2 py-1.5 border-r border-slate-200 dark:border-slate-800 text-center text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-950">
                     <span>#</span>
                   </th>
 
@@ -1026,9 +1026,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                     return (
                       <th 
                         key={col.key}
-                        className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 relative ${
+                        className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 relative bg-slate-100 dark:bg-slate-950 ${
                           col.width || 'min-w-[115px]'
-                        } ${col.isSynchronized ? 'bg-amber-50/50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300' : ''}`}
+                        } ${col.isSynchronized ? 'bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200' : ''}`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <button
@@ -1093,13 +1093,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         {isPopupOpen && (
                           <div 
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute left-0 top-full mt-1.5 w-60 bg-white dark:bg-slate-850 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 p-2.5 text-xs text-slate-800 dark:text-slate-200 font-sans normal-case animate-in fade-in zoom-in-95 duration-100"
+                            className="absolute left-0 top-full mt-1.5 w-60 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 p-2.5 text-xs text-slate-800 dark:text-slate-200 font-sans normal-case animate-in fade-in zoom-in-95 duration-100"
                           >
-                            <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
                               <span className="font-bold text-slate-900 dark:text-white truncate">
                                 {col.label.replace(' 🔄', '')}
                               </span>
-                              <button onClick={() => setActiveFilterPopup(null)} className="text-slate-400 hover:text-white">✕</button>
+                              <button onClick={() => setActiveFilterPopup(null)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white">✕</button>
                             </div>
 
                             <div className="py-1.5 space-y-1 border-b border-slate-200 dark:border-slate-700">
@@ -1158,10 +1158,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60 font-mono text-[11px]">
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px] bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
                 {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={61} className="px-4 py-12 text-center text-slate-400 font-sans">
+                    <td colSpan={61} className="px-4 py-12 text-center text-slate-400 font-sans bg-white dark:bg-slate-900">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <AlertCircle className="w-7 h-7 text-amber-400 opacity-60" />
                         <span className="font-semibold text-slate-700 dark:text-slate-300 text-xs">
@@ -1186,11 +1186,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                     return (
                       <tr 
                         key={row.id} 
-                        className={`hover:bg-indigo-50/30 dark:hover:bg-slate-750 transition-colors group ${
-                          isRowSelected ? 'bg-indigo-50/20 dark:bg-slate-700/30' : ''
+                        className={`transition-colors group ${
+                          rowIndex % 2 === 0
+                            ? 'bg-white dark:bg-slate-900'
+                            : 'bg-slate-50/70 dark:bg-slate-900/60'
+                        } hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 ${
+                          isRowSelected ? '!bg-indigo-100/50 dark:!bg-indigo-900/60' : ''
                         }`}
                       >
-                        <td className="px-2 py-1 text-center text-slate-400 font-sans text-[10px] bg-slate-50/50 dark:bg-slate-900/40 border-r border-slate-200 dark:border-slate-800">
+                        <td className="px-2 py-1 text-center text-slate-400 dark:text-slate-500 font-sans text-[10px] bg-slate-50 dark:bg-slate-950/70 border-r border-slate-200 dark:border-slate-800">
                           <div className="flex items-center justify-center gap-1">
                             <span className="group-hover:hidden">{actualIndex + 1}</span>
                             <div className="hidden group-hover:flex items-center gap-0.5">
@@ -1232,8 +1236,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               }}
                               className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 transition-all cursor-cell relative select-none ${
                                 col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                              } ${col.isSynchronized ? 'bg-amber-50/10 dark:bg-amber-950/10' : ''} ${
-                                isSelected ? 'ring-2 ring-emerald-500 ring-inset z-10 bg-emerald-500/10 dark:bg-emerald-500/20' : ''
+                              } ${col.isSynchronized ? 'bg-amber-50/25 dark:bg-amber-950/25' : ''} ${
+                                isSelected ? 'ring-2 ring-emerald-500 ring-inset z-10 bg-emerald-500/15 dark:bg-emerald-500/30' : ''
                               }`}
                             >
                               {isEditing ? (
@@ -1247,10 +1251,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                     }}
                                     onBlur={() => setEditingCell(null)}
                                     onKeyDown={(e) => handleCellKeyDown(e, row.id, col.key, rowIndex, colIndex)}
-                                    className="w-full bg-white dark:bg-slate-900 border border-emerald-500 rounded px-1 py-0 text-xs text-slate-900 dark:text-white outline-none"
+                                    className="w-full bg-white dark:bg-slate-950 border border-emerald-500 rounded px-1 py-0 text-xs text-slate-900 dark:text-slate-100 outline-none"
                                   >
                                     {col.options.map(opt => (
-                                      <option key={opt} value={opt}>{opt}</option>
+                                      <option key={opt} value={opt} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">{opt}</option>
                                     ))}
                                   </select>
                                 ) : (
@@ -1284,7 +1288,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                         setEditingCell(null);
                                       }
                                     }}
-                                    className="w-full bg-white dark:bg-slate-900 border border-emerald-500 rounded px-1 py-0 text-xs text-slate-900 dark:text-white outline-none font-mono"
+                                    className="w-full bg-white dark:bg-slate-950 border border-emerald-500 rounded px-1 py-0 text-xs text-slate-900 dark:text-slate-100 outline-none font-mono"
                                   />
                                 )
                               ) : (
@@ -1293,13 +1297,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                     <span title="Sincronizado" className="text-emerald-500 font-sans text-xs shrink-0">✅</span>
                                   )}
                                   <span className={`truncate ${
-                                    col.key === 'placa' ? 'font-black text-slate-900 dark:text-white' :
+                                    col.key === 'placa' ? 'font-black text-slate-900 dark:text-emerald-400' :
                                     col.key === 'saldo' ? 'font-bold text-indigo-600 dark:text-indigo-400' :
                                     col.key === 'valorFreteMotorista' ? 'font-bold text-rose-600 dark:text-rose-400' :
                                     col.key === 'statusSaldo' && rawValue === 'PAGO' ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
                                     col.key === 'statusSaldo' && rawValue === 'PENDENTE' ? 'text-amber-600 dark:text-amber-400 font-bold' :
-                                    col.isSynchronized ? 'text-amber-800 dark:text-amber-300 font-semibold' :
-                                    'text-slate-800 dark:text-slate-200'
+                                    col.isSynchronized ? 'text-amber-900 dark:text-amber-300 font-semibold' :
+                                    'text-slate-800 dark:text-slate-100'
                                   }`}>
                                     {displayValue}
                                   </span>
@@ -1315,17 +1319,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               </tbody>
 
               {/* RODAPÉ DO EXCEL COM TOTAIS */}
-              <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-900 border-t-2 border-slate-300 dark:border-slate-700 font-mono font-bold text-[11px] shadow-lg">
+              <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-950 border-t-2 border-slate-300 dark:border-slate-800 font-mono font-bold text-[11px] shadow-lg text-slate-900 dark:text-slate-100">
                 <tr>
-                  <td className="px-2 py-1.5 text-center text-slate-500 border-r border-slate-300 dark:border-slate-800">
+                  <td className="px-2 py-1.5 text-center text-slate-500 dark:text-slate-400 border-r border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-950">
                     <select
                       value={totalAggregationType}
                       onChange={(e) => setTotalAggregationType(e.target.value as any)}
-                      className="bg-transparent text-[10px] font-bold text-slate-600 dark:text-slate-400 outline-none cursor-pointer"
+                      className="bg-transparent text-[10px] font-bold text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
                     >
-                      <option value="sum">SOMA</option>
-                      <option value="avg">MÉDIA</option>
-                      <option value="count">CONTAGEM</option>
+                      <option value="sum" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">SOMA</option>
+                      <option value="avg" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">MÉDIA</option>
+                      <option value="count" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">CONTAGEM</option>
                     </select>
                   </td>
 
@@ -1348,7 +1352,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         <td 
                           key={col.key} 
                           className={`px-2 py-1.5 border-r border-slate-300 dark:border-slate-800 text-right ${
-                            col.isSynchronized ? 'text-amber-800 dark:text-amber-400 bg-amber-50/20' : 'text-slate-900 dark:text-white'
+                            col.isSynchronized ? 'text-amber-800 dark:text-amber-300 bg-amber-50/20 dark:bg-amber-950/20' : 'text-slate-900 dark:text-slate-100'
                           }`}
                         >
                           {display}
@@ -1365,7 +1369,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                     }
 
                     return (
-                      <td key={col.key} className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800">
+                      <td key={col.key} className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800 text-slate-400 dark:text-slate-600">
                         -
                       </td>
                     );
@@ -1375,8 +1379,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             </table>
           ) : (
             // Visão Resumo
-            <table className="w-full text-left text-xs whitespace-nowrap">
-              <thead className="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-700 uppercase tracking-wider">
+            <table className="w-full text-left text-xs whitespace-nowrap bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+              <thead className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider">
                 <tr>
                   <th className="px-3 py-2.5">Embarque / CT-e</th>
                   <th className="px-3 py-2.5">Data</th>
@@ -1393,15 +1397,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   <th className="px-3 py-2.5">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {paginatedRows.length === 0 ? (
-                  <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-400">Nenhum registro localizado.</td></tr>
+                  <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900">Nenhum registro localizado.</td></tr>
                 ) : (
                   paginatedRows.map((r) => {
                     const margem = r.freteBrutoEmpresa - r.valorFreteMotorista - r.pedagio;
                     const margemPct = r.freteBrutoEmpresa > 0 ? (margem / r.freteBrutoEmpresa) * 100 : 0;
                     return (
-                      <tr key={r.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-750 transition-colors">
+                      <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                         <td className="px-3 py-2 font-bold font-mono">
                           {(r as ExtendedSpreadsheetRow).isSynced && <span className="text-emerald-500 mr-1">✅</span>}
                           {r.cteHoras || r.cte || '-'}
@@ -1411,18 +1415,18 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-300 font-medium max-w-[180px] truncate">{r.clienteTomadorPagador}</td>
                         <td className="px-3 py-2 font-mono">
                           <span className="font-bold text-slate-900 dark:text-white block">{r.placa}</span>
-                          <span className="text-[10px] text-slate-500 block truncate max-w-[150px]">{r.motorista}</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate max-w-[150px]">{r.motorista}</span>
                         </td>
                         <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white font-mono">{r.peso.toFixed(2)} ton</td>
                         <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 font-mono">{formatCurrency(r.freteBrutoEmpresa)}</td>
                         <td className="px-3 py-2 text-right font-bold text-rose-600 dark:text-rose-400 font-mono">{formatCurrency(r.valorFreteMotorista)}</td>
                         <td className="px-3 py-2 text-right text-slate-600 dark:text-slate-400 font-mono">{r.pedagio > 0 ? formatCurrency(r.pedagio) : '-'}</td>
-                        <td className="px-3 py-2 text-right text-blue-600 font-mono font-semibold">{r.valorAdiantamento > 0 ? formatCurrency(r.valorAdiantamento) : '-'}</td>
+                        <td className="px-3 py-2 text-right text-blue-600 dark:text-blue-400 font-mono font-semibold">{r.valorAdiantamento > 0 ? formatCurrency(r.valorAdiantamento) : '-'}</td>
                         <td className="px-3 py-2 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">{formatCurrency(r.saldo)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-emerald-600 font-bold">{formatCurrency(margem)} ({margemPct.toFixed(0)}%)</td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatCurrency(margem)} ({margemPct.toFixed(0)}%)</td>
                         <td className="px-3 py-2">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            r.statusSaldo === 'PAGO' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            r.statusSaldo === 'PAGO' ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
                           }`}>
                             {r.statusSaldo || 'PENDENTE'}
                           </span>
@@ -1438,8 +1442,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
         {/* CONTROLE DE PAGINAÇÃO */}
         {pageSize > 0 && totalPages > 1 && (
-          <div className="bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-4 py-1.5 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0 select-none">
-            <span className="text-[11px] text-slate-500">
+          <div className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-4 py-1.5 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0 select-none">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
               Mostrando <span className="font-bold text-slate-800 dark:text-slate-200">{(currentPage - 1) * pageSize + 1}</span> a{' '}
               <span className="font-bold text-slate-800 dark:text-slate-200">{Math.min(currentPage * pageSize, filteredRows.length)}</span> de{' '}
               <span className="font-bold text-slate-800 dark:text-slate-200">{filteredRows.length}</span> linhas ({activeRows.length} total)
@@ -1781,7 +1785,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       </div>
 
       {/* ÁREA DA TABELA NO MODO NORMAL DA PÁGINA */}
-      <div className="h-[700px] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden bg-white dark:bg-slate-850">
+      <div className="h-[700px] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden bg-white dark:bg-slate-900">
         {renderSpreadsheetContent(false)}
       </div>
 
@@ -1922,7 +1926,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             </div>
 
             {/* CONTEÚDO DA PLANILHA DENTRO DA JANELA SOBREPOSTA */}
-            <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-white dark:bg-slate-900">
               {renderSpreadsheetContent(true)}
             </div>
 

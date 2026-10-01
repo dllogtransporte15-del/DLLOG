@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_30_v2_38_0',
+    version: 'v2.38.0',
+    date: '30/09/2026',
+    title: 'Visualização Aperfeiçoada do Modo Escuro (Dark Mode) na Planilha',
+    summary: 'Refinamento visual completo da planilha de embarques para o tema escuro. O fundo agora adota tons profundos de ardósia (slate-900 / slate-950) com fontes e informações num tom claro e nítido de alto contraste, eliminando totalmente o contraste inadequado de letras claras sobre fundo branco.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Fundo Escuro Harmonioso na Grade de Dados',
+        description: 'Eliminação de fundos brancos residuais nas linhas e no container da tabela quando o tema escuro está ativado, aplicando tons elegantes slate-900/slate-950 com efeito zebrado sutil.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fontes e Informações em Alto Contraste',
+        description: 'Textos, números de CT-e, valores de frete, saldos e placas configurados em tons claros de excelente nitidez (slate-100, branco, esmeralda e âmbar suave).'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtros Rápidos e Barra de Fórmulas no Tema Escuro',
+        description: 'Inputs de pesquisa das colunas, barra de fórmulas fx e popups de autofiltro devidamente integrados com fundo escuro e bordas bem delineadas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_30_v2_37_0',
     version: 'v2.37.0',
     date: '30/09/2026',
