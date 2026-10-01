@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_01_v2_45_0',
+    version: 'v2.45.0',
+    date: '01/10/2026',
+    title: 'Eliminação Definitiva do Cache Residual (540 Registros), Tombstone de Exclusão e Suporte à Importação com Overlay',
+    summary: 'Diagnóstico aprofundado e resolução definitiva das duas falhas reportadas: remoção do cache legado no localStorage que forçava a restauração de 540 linhas fantasmas após recarregar a página excluída, inclusão de tombstone de exclusão explícita, correção do reset do input de arquivo permitindo re-seleção contínua e inclusão de modal de carregamento para importação de 16.819 registros.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Eliminação do Cache Fantasma no localStorage',
+        description: 'Identificado que chaves legadas no localStorage mantinham 540 linhas residuais na inicialização síncrona. O sistema agora elimina totalmente o armazenamento de linhas no localStorage, operando 100% via IndexedDB sem risco de ressuscitar dados antigos.'
+      },
+      {
+        category: 'security',
+        title: 'Tombstone de Exclusão Permanente',
+        description: 'Ao confirmar a exclusão da planilha, o sistema grava um marcador persistente de exclusão. Ao atualizar a página (F5), a tabela permanece 100% vazia (0 registros), garantindo que nada reapareça até que uma nova planilha seja importada pelo usuário.'
+      },
+      {
+        category: 'feature',
+        title: 'Reset do Seletor & Overlay Visual de Importação',
+        description: 'Corrigido o manipulador do input de arquivo para permitir selecionar o mesmo arquivo repetidas vezes. Implementado overlay com indicador de progresso e spinner enquanto os mais de 16.800 registros são processados e gravados no banco local.'
+      },
+      {
+        category: 'improvement',
+        title: 'Normalização Completa de Abas com Espaços',
+        description: 'O analisador de planilhas agora trata espaços em branco nos nomes das abas (ex: "Planilha Carregamento Geral ") e extrai diretamente os 16.819 registros válidos sem perdas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_01_v2_44_0',
     version: 'v2.44.0',
     date: '01/10/2026',

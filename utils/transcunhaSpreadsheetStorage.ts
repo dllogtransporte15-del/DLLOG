@@ -15,6 +15,8 @@ const KEY_LAST_SAVED = 'last_saved_timestamp';
 const KEY_ROW_COUNT = 'total_saved_row_count';
 const KEY_SHEET_ROWS_PREFIX = 'spreadsheet_sheet_rows_';
 
+export const KEY_USER_DELETED = 'transcunha_spreadsheet_user_deleted';
+
 const CLOUD_BACKUP_PATH = 'spreadsheet_backups/transcunha_master_spreadsheet.json';
 let cloudBackupDebounceTimer: any = null;
 
@@ -57,7 +59,7 @@ function openDB(): Promise<IDBDatabase> {
  * Garante que mesmo formatando o computador ou trocando de dispositivo, os 16.819 dados existam.
  */
 export function scheduleCloudSpreadsheetBackup(rows: TranscunhaSpreadsheetRow[]): void {
-  if (!rows || rows.length < 50) return;
+  if (!rows || rows.length < 500) return;
   if (cloudBackupDebounceTimer) clearTimeout(cloudBackupDebounceTimer);
 
   cloudBackupDebounceTimer = setTimeout(async () => {
@@ -149,6 +151,13 @@ export async function saveSpreadsheetRowsToIndexedDB(
 ): Promise<boolean> {
   if (!Array.isArray(rows) || rows.length === 0) return false;
 
+  // Ao salvar novas linhas, limpa qualquer tombstone de exclusão
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(KEY_USER_DELETED);
+    } catch {}
+  }
+
   inMemoryRowsCache = rows;
 
   try {
@@ -164,7 +173,7 @@ export async function saveSpreadsheetRowsToIndexedDB(
 
       // 2. Se for especificada uma aba, salva no bucket individual daquela aba
       if (sheetName) {
-        store.put(rows, `${KEY_SHEET_ROWS_PREFIX}${sheetName}`);
+        store.put(rows, `${KEY_SHEET_ROWS_PREFIX}${sheetName.trim()}`);
       }
 
       // 3. MASTER DATASET PROTECTION:
@@ -174,15 +183,6 @@ export async function saveSpreadsheetRowsToIndexedDB(
         store.put(rows, KEY_MASTER_MAX_ROWS);
         store.put(rows, KEY_BACKUP_ROWS);
         scheduleCloudSpreadsheetBackup(rows);
-      } else {
-        // Se tiver menos de 1.000 linhas (ex: 543 linhas da outra aba):
-        // NÃO sobrescreve KEY_MASTER_MAX_ROWS! Apenas salva no backup regular se não houver master
-        const checkMaster = store.get(KEY_MASTER_MAX_ROWS);
-        checkMaster.onsuccess = () => {
-          if (!checkMaster.result || !Array.isArray(checkMaster.result) || checkMaster.result.length === 0) {
-            store.put(rows, KEY_BACKUP_ROWS);
-          }
-        };
       }
 
       tx.oncomplete = () => {
@@ -214,11 +214,19 @@ export async function saveSpreadsheetRowsToIndexedDB(
 export async function loadSpreadsheetRowsFromIndexedDB(
   preferredSheet?: string
 ): Promise<TranscunhaSpreadsheetRow[] | null> {
+  // SE O USUÁRIO EXCLUIU A PLANILHA, NÃO RESTAURA NADA!
+  if (typeof window !== 'undefined') {
+    try {
+      if (localStorage.getItem(KEY_USER_DELETED) === 'true') {
+        inMemoryRowsCache = null;
+        return null;
+      }
+    } catch {}
+  }
+
   // Nível 1: Memória ativa se já contiver o dataset completo
   if (inMemoryRowsCache && inMemoryRowsCache.length >= 1000) {
-    if (!preferredSheet || preferredSheet.toUpperCase().includes('TESTE DAVI')) {
-      return inMemoryRowsCache;
-    }
+    return inMemoryRowsCache;
   }
 
   // Nível 2: IndexedDB Local com prioridade para o Master Dataset
@@ -231,7 +239,7 @@ export async function loadSpreadsheetRowsFromIndexedDB(
       const reqMaster = store.get(KEY_MASTER_MAX_ROWS);
       const reqPrimary = store.get(KEY_ROWS);
       const reqBackup = store.get(KEY_BACKUP_ROWS);
-      const reqSheet = preferredSheet ? store.get(`${KEY_SHEET_ROWS_PREFIX}${preferredSheet}`) : null;
+      const reqSheet = preferredSheet ? store.get(`${KEY_SHEET_ROWS_PREFIX}${preferredSheet.trim()}`) : null;
 
       tx.oncomplete = () => {
         db.close();
@@ -240,16 +248,15 @@ export async function loadSpreadsheetRowsFromIndexedDB(
         const backupVal = reqBackup.result;
         const sheetVal = reqSheet ? reqSheet.result : null;
 
-        // Se pediu uma aba secundária específica e ela tem dados próprios
-        if (preferredSheet && !preferredSheet.toUpperCase().includes('TESTE DAVI') && Array.isArray(sheetVal) && sheetVal.length > 0) {
-          resolve(sheetVal);
+        // Se o Master tiver os 16.819 registros, ele TEM prioridade máxima absoluta
+        if (Array.isArray(masterVal) && masterVal.length >= 1000) {
+          resolve(masterVal);
           return;
         }
 
-        // Se o Master tiver os 16.819 registros, ele TEM prioridade máxima absoluta
-        if (Array.isArray(masterVal) && masterVal.length >= 1000) {
-          console.log(`[Transcunha Storage] 🛡️ Carregando ${masterVal.length} registros protegidos do Master Dataset!`);
-          resolve(masterVal);
+        // Se pediu uma aba secundária específica e ela tem dados próprios
+        if (preferredSheet && Array.isArray(sheetVal) && sheetVal.length > 0) {
+          resolve(sheetVal);
           return;
         }
 
@@ -288,7 +295,7 @@ export async function loadSpreadsheetRowsFromIndexedDB(
     console.warn('Falha ao ler IndexedDB:', err);
   }
 
-  // Nível 3: Nuvem Supabase Storage (caso o IndexedDB local tenha sido limpo ou novo navegador)
+  // Nível 3: Nuvem Supabase Storage (somente datasets volumosos válidos)
   try {
     const { data, error } = await supabase.storage
       .from('shipment_attachments')
@@ -297,30 +304,15 @@ export async function loadSpreadsheetRowsFromIndexedDB(
     if (data && !error) {
       const text = await data.text();
       const parsed = JSON.parse(text);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed) && parsed.length >= 1000) {
         console.log(`[Transcunha Storage] 🚀 Restaurados ${parsed.length} registros diretamente do Supabase Cloud Backup!`);
         inMemoryRowsCache = parsed;
-        saveSpreadsheetRowsToIndexedDB(parsed, 'TESTE DAVI').catch(() => {});
+        saveSpreadsheetRowsToIndexedDB(parsed).catch(() => {});
         return parsed;
       }
     }
   } catch (cloudErr) {
     console.warn('[Transcunha Storage] Sem dados ou offline para restauração via nuvem:', cloudErr);
-  }
-
-  // Nível 4: Migração legado localStorage (caso exista)
-  if (typeof window !== 'undefined') {
-    try {
-      const legacy = localStorage.getItem('transcunha_spreadsheet_rows');
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          inMemoryRowsCache = parsed;
-          saveSpreadsheetRowsToIndexedDB(parsed).catch(() => {});
-          return parsed;
-        }
-      }
-    } catch {}
   }
 
   return null;
@@ -332,13 +324,6 @@ export async function loadSpreadsheetRowsFromIndexedDB(
 export async function saveSpreadsheetMetadata(activeSheet: string, sheetNames: string[]): Promise<void> {
   inMemoryActiveSheet = activeSheet;
   inMemorySheetNames = sheetNames;
-
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem('transcunha_spreadsheet_active_sheet', activeSheet);
-      localStorage.setItem('transcunha_spreadsheet_sheets', JSON.stringify(sheetNames));
-    } catch {}
-  }
 
   try {
     const db = await openDB();
@@ -354,19 +339,6 @@ export async function saveSpreadsheetMetadata(activeSheet: string, sheetNames: s
  * Carrega metadados da planilha
  */
 export async function loadSpreadsheetMetadata(): Promise<{ activeSheet?: string; sheetNames?: string[] }> {
-  let activeSheet = inMemoryActiveSheet || (typeof window !== 'undefined' ? localStorage.getItem('transcunha_spreadsheet_active_sheet') || undefined : undefined);
-  let sheetNames = inMemorySheetNames || undefined;
-
-  if (!sheetNames && typeof window !== 'undefined') {
-    try {
-      const raw = localStorage.getItem('transcunha_spreadsheet_sheets');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) sheetNames = parsed;
-      }
-    } catch {}
-  }
-
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -378,18 +350,18 @@ export async function loadSpreadsheetMetadata(): Promise<{ activeSheet?: string;
       tx.oncomplete = () => {
         db.close();
         resolve({
-          activeSheet: reqActive.result || activeSheet,
-          sheetNames: (Array.isArray(reqSheets.result) && reqSheets.result.length > 0) ? reqSheets.result : sheetNames
+          activeSheet: reqActive.result || inMemoryActiveSheet || undefined,
+          sheetNames: (Array.isArray(reqSheets.result) && reqSheets.result.length > 0) ? reqSheets.result : (inMemorySheetNames || undefined)
         });
       };
 
       tx.onerror = () => {
         db.close();
-        resolve({ activeSheet, sheetNames });
+        resolve({ activeSheet: inMemoryActiveSheet || undefined, sheetNames: inMemorySheetNames || undefined });
       };
     });
   } catch {
-    return { activeSheet, sheetNames };
+    return { activeSheet: inMemoryActiveSheet || undefined, sheetNames: inMemorySheetNames || undefined };
   }
 }
 
@@ -403,23 +375,47 @@ export async function clearSpreadsheetStorage(): Promise<void> {
   inMemorySheetNames = null;
   inMemoryRawBuffer = null;
 
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).clear();
-    tx.oncomplete = () => db.close();
-  } catch {}
-
   if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem('transcunha_spreadsheet_rows');
-      localStorage.removeItem('transcunha_spreadsheet_sheets');
-      localStorage.removeItem('transcunha_spreadsheet_active_sheet');
+      // 1. Marca tombstone definitivo no localStorage
+      localStorage.setItem(KEY_USER_DELETED, 'true');
+
+      // 2. Limpa todas as chaves do localStorage onde os 540 registros antigos podiam estar presos
+      const keys = [
+        'transcunha_control_spreadsheet_rows_v2',
+        'transcunha_control_spreadsheet_sheets_v2',
+        'transcunha_control_spreadsheet_active_sheet_v2',
+        'transcunha_spreadsheet_rows',
+        'transcunha_spreadsheet_sheets',
+        'transcunha_spreadsheet_active_sheet'
+      ];
+      keys.forEach(k => localStorage.removeItem(k));
     } catch {}
   }
 
   try {
-    await supabase.storage.from('shipment_attachments').remove([CLOUD_BACKUP_PATH]);
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    });
+  } catch {}
+
+  try {
+    // Sobrescreve o backup da nuvem com array vazio para impedir restauração de dados antigos
+    const emptyBlob = new Blob([JSON.stringify([])], { type: 'application/json' });
+    const emptyFile = new File([emptyBlob], 'transcunha_master_spreadsheet.json', { type: 'application/json' });
+    await supabase.storage
+      .from('shipment_attachments')
+      .upload(CLOUD_BACKUP_PATH, emptyFile, { upsert: true });
   } catch {}
 }
 

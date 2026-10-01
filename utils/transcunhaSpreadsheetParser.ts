@@ -307,19 +307,15 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
     }
   }
 
-  // 2. Encontrar melhor aba se não for explicitamente especificada
-  let activeSheet = sheetNamePreference || '';
-  if (!activeSheet || !sheetNames.includes(activeSheet)) {
-    // 2.1. Prioridade máxima: 'TESTE DAVI' (onde residem os 16.819 registros)
-    const daviCandidate = sheetNames.find(s => s.trim().toUpperCase() === 'TESTE DAVI' || s.trim().toUpperCase().includes('TESTE DAVI'));
-    if (daviCandidate) {
-      activeSheet = daviCandidate;
-    } else if (bestSheetName) {
-      // 2.2. Prioridade secundária: Aba com maior volume de linhas
-      activeSheet = bestSheetName;
-    } else {
-      activeSheet = sheetNames[0];
-    }
+  // 2. Encontrar melhor aba (com suporte a trim e seleção por maior volume)
+  let activeSheet = '';
+  if (sheetNamePreference) {
+    const match = sheetNames.find(s => s === sheetNamePreference || s.trim().toLowerCase() === sheetNamePreference.trim().toLowerCase());
+    if (match) activeSheet = match;
+  }
+
+  if (!activeSheet) {
+    activeSheet = bestSheetName || sheetNames[0];
   }
 
   const sheet = workbook.Sheets[activeSheet];
@@ -1024,20 +1020,15 @@ import {
  * Carrega as linhas persistidas (verificando cache em memória e localStorage como fallback síncrono)
  */
 export function loadPersistedSpreadsheetRows(): TranscunhaSpreadsheetRow[] | null {
-  const memory = getSpreadsheetRowsMemoryCache();
-  if (memory && memory.length > 0) return memory;
-
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_SPREADSHEET_ROWS);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
-    }
-  } catch (err) {
-    console.warn('Erro ao carregar planilha do localStorage:', err);
+  if (typeof window !== 'undefined') {
+    try {
+      if (localStorage.getItem('transcunha_spreadsheet_user_deleted') === 'true') {
+        return null;
+      }
+    } catch {}
   }
+  const memory = getSpreadsheetRowsMemoryCache();
+  if (memory && memory.length >= 1000) return memory;
   return null;
 }
 
@@ -1050,13 +1041,6 @@ export function savePersistedSpreadsheetRows(rows: TranscunhaSpreadsheetRow[], s
   saveSpreadsheetRowsToIndexedDB(rows, sheetName).catch(err => {
     console.error('Falha ao salvar no IndexedDB:', err);
   });
-
-  // Tenta manter cache no localStorage apenas se o tamanho permitir
-  if (rows.length <= 400) {
-    try {
-      localStorage.setItem(STORAGE_KEY_SPREADSHEET_ROWS, JSON.stringify(rows));
-    } catch {}
-  }
   return true;
 }
 

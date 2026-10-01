@@ -332,11 +332,18 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const [activeFilterPopup, setActiveFilterPopup] = useState<keyof TranscunhaSpreadsheetRow | null>(null);
   const [showFilterRow, setShowFilterRow] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isProcessingFile, setIsProcessingFile] = useState<boolean>(false);
 
   // Carregamento resiliente permanente via IndexedDB (sem limitação de quota do LocalStorage)
   useEffect(() => {
     let isMounted = true;
     (async () => {
+      // Se o usuário excluiu expressamente a planilha, respeita e não recarrega nada
+      if (typeof window !== 'undefined' && localStorage.getItem('transcunha_spreadsheet_user_deleted') === 'true') {
+        if (isMounted) setSpreadsheetRows([]);
+        return;
+      }
+
       // 1. Carrega o buffer binário original salvo no IndexedDB se existir
       const storedBuffer = await loadRawWorkbookBuffer();
       if (isMounted && storedBuffer) {
@@ -351,14 +358,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       }
 
       // 3. Carrega as linhas protegidas (garantindo que se houver 16.819 registros eles sempre prevalecem)
-      const preferredSheet = meta.activeSheet || 'TESTE DAVI';
+      const preferredSheet = meta.activeSheet || '';
       const savedRows = await loadSpreadsheetRowsFromIndexedDB(preferredSheet);
       if (isMounted) {
         if (savedRows && savedRows.length > 0) {
           setSpreadsheetRows(savedRows);
         } else {
-          // Se não há nenhum dado prévio salvo no IndexedDB ou na nuvem, usa amostra de demonstração
-          setSpreadsheetRows(SAMPLE_TRANSCUNHA_SHEET_ROWS);
+          setSpreadsheetRows([]);
         }
       }
     })();
@@ -368,24 +374,19 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     };
   }, []);
 
-  // Monitoramento contínuo: qualquer alteração em lote de dados (>30 linhas) garante persistência imediata
-  useEffect(() => {
-    if (spreadsheetRows && spreadsheetRows.length > 30) {
-      saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
-    }
-  }, [spreadsheetRows, activeSheetName]);
-
   // Garantia absoluta contra fechamento acidental ou recarregamento brusco
   useEffect(() => {
     const handleFlushOnExit = () => {
-      if (spreadsheetRows && spreadsheetRows.length > 30) {
+      if (typeof window !== 'undefined' && localStorage.getItem('transcunha_spreadsheet_user_deleted') === 'true') return;
+      if (spreadsheetRows && spreadsheetRows.length >= 1000) {
         saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
       }
     };
     window.addEventListener('beforeunload', handleFlushOnExit);
     window.addEventListener('pagehide', handleFlushOnExit);
     const handleVisibility = () => {
-      if (document.visibilityState === 'hidden' && spreadsheetRows && spreadsheetRows.length > 30) {
+      if (typeof window !== 'undefined' && localStorage.getItem('transcunha_spreadsheet_user_deleted') === 'true') return;
+      if (document.visibilityState === 'hidden' && spreadsheetRows && spreadsheetRows.length >= 1000) {
         saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
       }
     };
@@ -1187,13 +1188,26 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   };
 
   const handleProcessFile = async (file: File) => {
+    setIsProcessingFile(true);
+    await new Promise(resolve => setTimeout(resolve, 80));
+
     try {
+      // Remove qualquer flag de exclusão prévia para permitir nova importação limpa
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('transcunha_spreadsheet_user_deleted');
+          localStorage.removeItem(STORAGE_KEY_SPREADSHEET_ROWS);
+          localStorage.removeItem('transcunha_control_spreadsheet_rows_v2');
+          localStorage.removeItem('transcunha_spreadsheet_rows');
+        } catch {}
+      }
+
       const buffer = await file.arrayBuffer();
       setRawWorkbookBuffer(buffer);
       await saveRawWorkbookBuffer(buffer);
 
-      // Prioriza a aba principal 'TESTE DAVI' (com os 16.819 registros) ou a aba de maior volume
-      const parsed = parseTranscunhaWorkbook(buffer, 'TESTE DAVI');
+      // Processa o arquivo (seleciona automaticamente a aba de maior volume, ex: 16.819 linhas)
+      const parsed = parseTranscunhaWorkbook(buffer);
       
       if (parsed.rows.length === 0) {
         setNotification({
@@ -1211,20 +1225,21 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       // Gravação garantida permanente no IndexedDB (Master Dataset e bucket da aba)
       await saveSpreadsheetRowsToIndexedDB(parsed.rows, parsed.activeSheet);
       await saveSpreadsheetMetadata(parsed.activeSheet, parsed.sheetNames);
-      savePersistedSpreadsheetRows(parsed.rows, parsed.activeSheet);
 
       setNotification({
         type: 'success',
-        message: `Planilha importada com sucesso! ${parsed.totalRows} registros salvos permanentemente no sistema.`
+        message: `Planilha importada com sucesso! ${parsed.totalRows.toLocaleString('pt-BR')} registros salvos permanentemente no sistema.`
       });
 
-      setTimeout(() => setNotification(null), 5000);
+      setTimeout(() => setNotification(null), 6000);
     } catch (err: any) {
       console.error('Erro ao importar planilha:', err);
       setNotification({
         type: 'error',
         message: `Falha ao processar arquivo: ${err.message || 'Formato incompatível'}`
       });
+    } finally {
+      setIsProcessingFile(false);
     }
   };
 
@@ -1234,20 +1249,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     // 1. Salva a aba atual no seu respectivo bucket antes de trocar
     if (spreadsheetRows.length > 0) {
       await saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
-      savePersistedSpreadsheetRows(spreadsheetRows, activeSheetName);
     }
 
     setActiveSheetName(sheetName);
     localStorage.setItem(STORAGE_KEY_ACTIVE_SHEET, sheetName);
     await saveSpreadsheetMetadata(sheetName, availableSheets);
 
-    // 2. Se a aba for 'TESTE DAVI', restaura os 16.819 registros protegidos do Master
-    if (sheetName.toUpperCase().includes('TESTE DAVI')) {
-      const masterRows = await loadSpreadsheetRowsFromIndexedDB('TESTE DAVI');
-      if (masterRows && masterRows.length >= 1000) {
-        setSpreadsheetRows(masterRows);
-        return;
-      }
+    // 2. Se a aba contiver o master dataset, recupera os 16.819 registros protegidos
+    const masterRows = await loadSpreadsheetRowsFromIndexedDB(sheetName);
+    if (masterRows && masterRows.length >= 1000) {
+      setSpreadsheetRows(masterRows);
+      return;
     }
 
     // 3. Tenta processar a aba a partir do buffer original do arquivo XLSX
@@ -1275,6 +1287,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = ''; // Permite selecionar o mesmo arquivo novamente
     if (file) handleProcessFile(file);
   };
 
@@ -2696,6 +2709,25 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   Confirmar Exclusão
                 </button>
               </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* OVERLAY DE PROCESSAMENTO DE ARQUIVO PESADO (16.800+ LINHAS) */}
+      {isProcessingFile && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md text-white p-6 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-indigo-500/40 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl flex flex-col items-center">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 animate-pulse">
+              <Loader2 className="w-8 h-8 animate-spin" />
+            </div>
+            <h3 className="text-lg font-black tracking-tight mb-2">Importando Planilha...</h3>
+            <p className="text-xs text-slate-300 leading-relaxed mb-4">
+              Lendo e estruturando mais de 16.800 linhas com 60 colunas e salvando no armazenamento IndexedDB permanente. Aguarde um instante.
+            </p>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-indigo-500 h-full w-2/3 animate-pulse rounded-full" />
             </div>
           </div>
         </div>,
