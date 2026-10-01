@@ -21,6 +21,151 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_09_30_v2_37_0',
+    version: 'v2.37.0',
+    date: '30/09/2026',
+    title: 'Janela Flutuante Flexível, Redimensionável e Sobreposição Total via Portal',
+    summary: 'Aprimoramento completo do comando de maximização: a planilha agora é renderizada via React Portal diretamente no corpo do documento (body) com z-index máximo, sobrepondo absolutamente todos os elementos da interface sem qualquer corte. Oferece dois modos: Maximizado panorâmico em 100% da tela e Janela Flutuante com arraste livre pelo cabeçalho e redimensionamento dinâmico no canto inferior direito.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sobreposição Absoluta via Portal (document.body)',
+        description: 'A planilha agora escapa de qualquer container e restrição de layout CSS, garantindo visibilidade total sobre a tela inteira sem ficar encolhida ou presa aos limites da página.'
+      },
+      {
+        category: 'feature',
+        title: 'Janela Flutuante com Arraste e Redimensionamento Flexível',
+        description: 'Possibilidade de movimentar a janela livremente pela tela arrastando pelo cabeçalho e redimensionar largura e altura através do puxador de canto interativo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Alternância Rápida entre Janela Flutuante e Tela Cheia',
+        description: 'Controles estilo sistema operacional (fechar, alternar modo janela/tela cheia) integrados com tecla de atalho Esc e indicadores visuais dinâmicos.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_30_v2_36_0',
+    version: 'v2.36.0',
+    date: '30/09/2026',
+    title: 'Otimização Extrema de Desempenho e Modo Maximizado em Tela Cheia',
+    summary: 'Aceleração completa da planilha de embarques da Controladoria eliminando lentidão e travamentos por meio de debouncing de digitação, paginação inteligente de alta velocidade, persistência assíncrona e comando para maximizar a janela da planilha em tela cheia.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Modo Maximizado em Tela Cheia (Fullscreen)',
+        description: 'Novo comando para expandir a planilha para 100% da tela do computador, oferecendo máxima área de trabalho, visão panorâmica das 60 colunas e saída fácil via botão ou tecla Esc.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fim da Lentidão com Entradas Debounced',
+        description: 'Inputs de filtro e edição com atualização assíncrona inteligente: a digitação responde instantaneamente a 60 FPS sem travar o navegador ou re-renderizar desnecessariamente milhares de nós do DOM.'
+      },
+      {
+        category: 'improvement',
+        title: 'Paginação Inteligente de Alta Velocidade',
+        description: 'Divisão de registros com seletor flexível (25, 50, 100, 200 ou todas as linhas), tornando a rolagem e os filtros instantâneos com navegação de página rápida.'
+      },
+      {
+        category: 'improvement',
+        title: 'Layout Compacto e Refinado Estilo Excel',
+        description: 'Diminuição da altura das linhas e cabeçalhos, inputs de filtro elegantes e harmoniosos, e bordas nítidas que aumentam o volume de dados visíveis na tela.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_30_v2_35_0',
+    version: 'v2.35.0',
+    date: '30/09/2026',
+    title: 'Filtros Individuais e Classificador de Ordem para Cada Coluna',
+    summary: 'Implementação de ordenação (crescente/decrescente/cronológica) e filtros dedicados para todas as 60 colunas da planilha da Controladoria, com menu AutoFilter estilo Excel com lista de valores frequentes, linha de busca rápida sob cada cabeçalho e botão de limpeza global.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Classificador de Ordem em Todas as Colunas',
+        description: 'Permite ordenar qualquer coluna em ordem crescente (A-Z, 0-9) ou decrescente (Z-A, 9-0) com detecção inteligente de datas, moedas e números com um simples clique no cabeçalho.'
+      },
+      {
+        category: 'feature',
+        title: 'Menu AutoFilter Estilo Microsoft Excel',
+        description: 'Menu popover ao clicar no ícone de funil da coluna, contendo opções de classificação rápida, busca direta e seleção dos valores únicos mais frequentes na coluna.'
+      },
+      {
+        category: 'feature',
+        title: 'Linha de Filtros Rápidos Inline nas Colunas',
+        description: 'Inputs de pesquisa direta integrados logo abaixo de cada cabeçalho com filtragem em tempo real e botão de alternância para exibir/ocultar a linha de filtros.'
+      },
+      {
+        category: 'improvement',
+        title: 'Indicadores Visuais e Limpeza Global de Filtros',
+        description: 'Destaque visual em âmbar nas colunas com filtros ativos e botão na barra superior para limpar todos os filtros e ordenações aplicadas com um único clique.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_30_v2_34_0',
+    version: 'v2.34.0',
+    date: '30/09/2026',
+    title: 'Grade Editável Estilo Excel com Fórmulas e Persistência Permanente',
+    summary: 'Transformação da planilha de embarques da Controladoria em uma grade interativa estilo Excel com edição inline por duplo clique, barra de fórmulas (fx), recálculo automático de fretes, saldos, quebras e impostos, histórico de desfazer/refazer (Ctrl+Z/Ctrl+Y), operações de linhas e persistência contínua dos dados no sistema.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Edição Inline de Células & Barra de Fórmulas (fx)',
+        description: 'Permite selecionar e editar qualquer célula diretamente com duplo clique ou pela barra de fórmulas no topo, com navegação por teclado (Enter, Tab, Shift+Tab, Esc, F2) idêntica ao Microsoft Excel.'
+      },
+      {
+        category: 'feature',
+        title: 'Motor de Fórmulas e Recálculo Automático',
+        description: 'Recálculo instantâneo ao editar valores: Frete Bruto Empresa (Unitário × Peso), Frete Motorista (Tarifa Ton × Peso), Adiantamento (% × Frete), Quebra em Toneladas (Origem - Chegada), Saldo Final (Frete - Adiantamento - Desconto/Quebra), status de saldo e provisão de tributos.'
+      },
+      {
+        category: 'feature',
+        title: 'Persistência Permanente no Sistema',
+        description: 'Todos os dados importados, linhas adicionadas e alterações manuais são salvos automaticamente no navegador, garantindo que nada seja perdido ao recarregar a página ou navegar pelo sistema.'
+      },
+      {
+        category: 'improvement',
+        title: 'Controle de Linhas e Desfazer/Refazer (Undo/Redo)',
+        description: 'Botões e atalhos para adicionar novas linhas de embarque, duplicar registros, excluir linhas e desfazer alterações com Ctrl+Z / Ctrl+Y.'
+      },
+      {
+        category: 'improvement',
+        title: 'Rodapé com Funções do Excel (SOMA, MÉDIA, CONTAGEM) e Exportação XLSX',
+        description: 'Linha de totais fixa no rodapé com seletor de agregação e exportador nativo em arquivo real do Microsoft Excel (.xlsx).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_09_30_v2_33_0',
+    version: 'v2.33.0',
+    date: '30/09/2026',
+    title: 'Importador e Visualizador Fiel da Planilha de Embarque (OneDrive/Excel)',
+    summary: 'Configuração completa do campo "Planilha Embarque" na Controladoria para importar e exibir com total fidelidade as 60 colunas operacionais da planilha Excel/OneDrive ("3-15-07-2025- CARREGAMENTO TRANSCUNHA.xlsm"), com upload de arquivos XLSX/XLSM/CSV, seleção de abas, cálculos tributários, adiantamentos e fechamento de saldo de motoristas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Importador Inteligente de Arquivos Excel e CSV',
+        description: 'Capacidade de carregar e processar planilhas nos formatos .xlsx, .xlsm e .csv por botão de upload ou arrastar e soltar (drag & drop), com reconhecimento automático de abas e mapeamento das 60 colunas originais.'
+      },
+      {
+        category: 'feature',
+        title: 'Grade Operacional Completa com 60 Colunas e Cores Temáticas',
+        description: 'Exibição agrupada com cabeçalhos setorizados (Faturamento & Recebimento, Identificação & Motorista, Logística & Pedido, Cadastros, Tomador & Pesagem, Impostos & Deduções, Acerto Motorista, Adiantamentos e Fechamento/Quebra/CIOT).'
+      },
+      {
+        category: 'improvement',
+        title: 'KPIs e Totalizadores Executivos Integrados',
+        description: 'Cálculo dinâmico em tempo real de Frete Empresa, Frete Pago a Motoristas, Margem Bruta Retida, Total de Toneladas, Adiantamentos Liberados, Saldos e Pedágios.'
+      },
+      {
+        category: 'improvement',
+        title: 'Exportação Completa e Alternância de Visualização',
+        description: 'Permite alternar entre a visão detalhada de 60 colunas e o resumo gerencial da Controladoria, além de exportar todos os dados filtrados em CSV/Excel UTF-8.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_30_v2_32_0',
     version: 'v2.32.0',
     date: '30/09/2026',

@@ -467,6 +467,9 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
         {activeTab === 'control-shipments' && (
           <ControlShipmentsTab
             items={shipmentControlItems}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
           />
         )}
 
