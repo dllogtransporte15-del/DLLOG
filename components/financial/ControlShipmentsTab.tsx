@@ -72,8 +72,19 @@ export interface SpreadsheetColDef {
   align?: 'left' | 'right' | 'center';
 }
 
-// Definição das 60 colunas oficiais agrupadas por setor
+// Definição das 61 colunas oficiais agrupadas por setor (Primeira coluna: ID Embarque Sistema)
 export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
+  // 0. Embarques do Sistema (Primeira Coluna no Canto Esquerdo)
+  { 
+    key: 'idEmbarqueSistema', 
+    label: 'ID EMBARQUE SISTEMA', 
+    category: 'Embarques do Sistema', 
+    categoryColor: 'bg-emerald-600', 
+    type: 'text', 
+    width: 'min-w-[150px]', 
+    isSynchronized: true 
+  },
+
   // 1. Faturamento & Recebimento Empresa (Sky)
   { key: 'cteHoras', label: 'CTE E HORAS', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[110px]' },
   { key: 'jaFaturado', label: 'JÁ FATURADO', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'select', options: ['SIM', 'NÃO'], width: 'min-w-[100px]' },
@@ -154,7 +165,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
 ];
 
 /**
- * Componente de Input com Debounce para digitação 60 FPS sem congelamentos
+ * Componente de Input com Debounce para digitação rápida sem congelamentos nem perda de estado
  */
 const DebouncedFilterInput: React.FC<{
   value: string;
@@ -162,29 +173,57 @@ const DebouncedFilterInput: React.FC<{
   hasFilter?: boolean;
   onClear: () => void;
 }> = ({ value, onChange, hasFilter, onClear }) => {
-  const [localVal, setLocalVal] = useState(value);
+  const [localVal, setLocalVal] = useState<string>(value || '');
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Sincroniza quando o valor mudar externamente (ex: clique no popup de valores frequentes ou limpar)
   useEffect(() => {
-    setLocalVal(value);
+    setLocalVal(value || '');
   }, [value]);
 
+  // Limpa timer se componente desmontar
   useEffect(() => {
-    const handler = setTimeout(() => {
-      if (localVal !== value) {
-        onChange(localVal);
-      }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.value;
+    setLocalVal(nextVal);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onChange(nextVal);
     }, 200);
-    return () => clearTimeout(handler);
-  }, [localVal, onChange, value]);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      onChange(localVal);
+    } else if (e.key === 'Escape') {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setLocalVal('');
+      onClear();
+    }
+  };
+
+  const handleClearClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setLocalVal('');
+    onClear();
+  };
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full" onClick={(e) => e.stopPropagation()}>
       <input
         type="text"
         placeholder="Filtro..."
         value={localVal}
         onClick={(e) => e.stopPropagation()}
-        onChange={(e) => setLocalVal(e.target.value)}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
         className={`w-full pl-1.5 pr-4 py-0.5 text-[10px] rounded border outline-none font-normal transition-all ${
           hasFilter
             ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-950 dark:text-amber-200 font-bold focus:ring-1 focus:ring-amber-500'
@@ -193,11 +232,8 @@ const DebouncedFilterInput: React.FC<{
       />
       {hasFilter && (
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setLocalVal('');
-            onClear();
-          }}
+          type="button"
+          onClick={handleClearClick}
           title="Limpar filtro"
           className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 text-[10px] font-bold cursor-pointer"
         >
@@ -378,6 +414,26 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     }
   }, [isDraggingWindow, isResizingWindow, windowPos.x, windowPos.y]);
 
+  // Fechar popover de filtro ao clicar fora ou apertar Escape
+  useEffect(() => {
+    if (!activeFilterPopup) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-filter-popover="true"]')) {
+        setActiveFilterPopup(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveFilterPopup(null);
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeFilterPopup]);
+
   // Mapa de busca rápido da planilha importada indexado por CT-e, Placa e Motorista
   const spreadsheetSyncMap = useMemo(() => {
     const map = new Map<string, TranscunhaSpreadsheetRow>();
@@ -424,6 +480,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
       return {
         id: `sys_${item.shipmentId}`,
+        idEmbarqueSistema: item.shipmentId || s?.id || '',
         isSynced,
         cteHoras: syncRow?.cteHoras || item.cteNumber || item.shipmentId,
         jaFaturado: syncRow?.jaFaturado || (item.companyFreightTotal > 0 ? 'SIM' : 'NÃO'),
@@ -497,6 +554,172 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     });
   }, [items, shipments, spreadsheetSyncMap, shipmentMap, cargoMap, clientMap]);
 
+  // SINCRONIZAÇÃO AUTOMÁTICA EM TEMPO REAL:
+  // Cada novo embarque criado no sistema gera automaticamente uma nova linha na planilha
+  // com seu respectivo ID na 1ª coluna ("ID EMBARQUE SISTEMA") e vai preenchendo as colunas
+  // conforme o status for sendo atualizado.
+  useEffect(() => {
+    if (!shipments || shipments.length === 0) return;
+
+    setSpreadsheetRows(prevRows => {
+      let hasChanges = false;
+      const updatedRows = [...prevRows];
+
+      shipments.forEach(s => {
+        const cargo = s ? cargoMap.get(s.cargoId) : undefined;
+        const clientName = cargo?.clientId ? (clientMap.get(cargo.clientId) || cargo.clientId) : '';
+
+        // Localiza linha existente pelo ID do sistema, id direto ou CTE/Placa
+        const existingIdx = updatedRows.findIndex(r => 
+          r.idEmbarqueSistema === s.id || 
+          r.id === `sys_${s.id}` || 
+          r.id === s.id || 
+          (s.cteNumber && r.cte === s.cteNumber && r.placa === s.horsePlate)
+        );
+
+        const advTimestamp = s?.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoAdiantamento)?.timestamp;
+        const salTimestamp = s?.statusHistory?.find(h => h.status === ShipmentStatus.AguardandoPagamentoSaldo)?.timestamp;
+        const horaLiberAdiant = advTimestamp ? new Date(advTimestamp).toLocaleString('pt-BR') : '';
+        const horaLiberSald = salTimestamp ? new Date(salTimestamp).toLocaleString('pt-BR') : '';
+        const systemQuebra = (s.loadedTonnage && s.unloadedTonnage && s.loadedTonnage > s.unloadedTonnage) 
+          ? Number((s.loadedTonnage - s.unloadedTonnage).toFixed(2)) 
+          : 0;
+
+        const baseFreteEmpresa = s.companyFreightRateSnapshot && (s.loadedTonnage || s.shipmentTonnage) 
+          ? Number((s.companyFreightRateSnapshot * (s.loadedTonnage || s.shipmentTonnage)).toFixed(2)) 
+          : 0;
+
+        const calculatedSaldo = s.netBalanceValue || s.balanceToReceiveValue || Math.max(0, (s.driverFreightValue || 0) - (s.advanceValue || 0) - (s.discountValue || 0));
+
+        if (existingIdx >= 0) {
+          // Atualiza colunas de acordo com a evolução do status do embarque
+          const curr = updatedRows[existingIdx];
+          const updated: TranscunhaSpreadsheetRow = {
+            ...curr,
+            idEmbarqueSistema: s.id,
+            status: s.status ? String(s.status).toUpperCase() : curr.status,
+            peso: s.loadedTonnage || s.shipmentTonnage || curr.peso,
+            pesoChegada: s.unloadedTonnage !== undefined ? s.unloadedTonnage : curr.pesoChegada,
+            ticketDescarga: s.unloadedTonnage ? 'SIM' : curr.ticketDescarga,
+            totalQuebra: systemQuebra || curr.totalQuebra,
+            valorQuebraCiot: s.discountValue !== undefined ? s.discountValue : curr.valorQuebraCiot,
+            freteBrutoEmpresa: baseFreteEmpresa || curr.freteBrutoEmpresa,
+            valorFreteMotorista: s.driverFreightValue !== undefined ? s.driverFreightValue : curr.valorFreteMotorista,
+            tarifaTonMotorista: s.driverFreightRateSnapshot !== undefined ? s.driverFreightRateSnapshot : curr.tarifaTonMotorista,
+            percentualAdiantamento: s.advancePercentage !== undefined ? s.advancePercentage : curr.percentualAdiantamento,
+            valorAdiantamento: s.advanceValue !== undefined ? s.advanceValue : curr.valorAdiantamento,
+            horaDataLiberacaoAdiantamento: horaLiberAdiant || curr.horaDataLiberacaoAdiantamento,
+            saldo: calculatedSaldo !== undefined ? calculatedSaldo : curr.saldo,
+            horaDataLiberacaoSaldo: horaLiberSald || curr.horaDataLiberacaoSaldo,
+            statusSaldo: s.status === ShipmentStatus.Finalizado || (calculatedSaldo === 0 && s.status !== ShipmentStatus.AguardandoPagamentoSaldo) ? 'PAGO' : (curr.statusSaldo || 'PENDENTE'),
+            cte: s.cteNumber || curr.cte,
+            cteHoras: s.cteEmissionDate || (s.cteNumber ? `${s.cteNumber}` : curr.cteHoras),
+            nfCliente: s.nfeNumber || curr.nfCliente,
+            valorNf: s.nfeValue !== undefined ? s.nfeValue : curr.valorNf,
+            placa: s.horsePlate || curr.placa,
+            motorista: s.driverName || curr.motorista,
+            cpfMotorista: s.driverCpf || curr.cpfMotorista,
+            anttContratoPix: s.pixKey || s.anttOwnerIdentifier || curr.anttContratoPix,
+            telefone: s.driverContact || curr.telefone,
+            formaPagamento: s.paymentMethod ? String(s.paymentMethod).toUpperCase() : curr.formaPagamento,
+            tipoPagamentoSaldo: s.paymentMethod ? String(s.paymentMethod).toUpperCase() : curr.tipoPagamentoSaldo,
+            jaFaturado: s.status === ShipmentStatus.Finalizado ? 'SIM' : curr.jaFaturado,
+            statusRecebimento: s.status === ShipmentStatus.Finalizado ? 'RECEBIDO' : curr.statusRecebimento,
+          };
+
+          if (JSON.stringify(curr) !== JSON.stringify(updated)) {
+            updatedRows[existingIdx] = updated;
+            hasChanges = true;
+          }
+        } else {
+          // NOVO EMBARQUE CRIADO NO SISTEMA: cria nova linha no topo da planilha
+          const today = s.scheduledDate ? new Date(s.scheduledDate).toLocaleDateString('pt-BR') : new Date(s.createdAt).toLocaleDateString('pt-BR');
+          const newRow: TranscunhaSpreadsheetRow = {
+            id: `sys_${s.id}`,
+            idEmbarqueSistema: s.id,
+            cteHoras: s.cteEmissionDate || s.cteNumber || s.id,
+            jaFaturado: s.status === ShipmentStatus.Finalizado ? 'SIM' : 'NÃO',
+            dataVencimento: today,
+            formaPagamento: s.paymentMethod ? String(s.paymentMethod).toUpperCase() : 'FATURAS 14 DIAS',
+            dataPagamento: today,
+            statusRecebimento: s.status === ShipmentStatus.Finalizado ? 'RECEBIDO' : 'A RECEBER',
+
+            dataEmbarque: today,
+            placa: s.horsePlate || '-',
+            obsCavaloAntt: s.driverFreightType === 'PJ' ? 'PJ-SN' : 'PF',
+            codigoAtua: s.id,
+            motorista: s.driverName || 'Motorista',
+            cpfMotorista: s.driverCpf || '-',
+
+            proprietario: s.ownerName || s.driverName || 'Proprietário',
+            anttContratoPix: s.pixKey || s.anttOwnerIdentifier || '-',
+            telefone: s.driverContact || '-',
+            solicitante: s.createdById || 'Controladoria Transcunha',
+            carregarEmpresa: cargo?.origin || cargo?.originLocation || 'Origem',
+            numeroPedido: s.orderId || `PED-${s.id}`,
+            saldoOriginalPedido: `${(s.shipmentTonnage || 0).toFixed(1)} ton`,
+            produto: (cargo as any)?.productName || 'SOJA EM GRÃOS',
+            tipoCarga: s.vehicleSetType || 'GRANEL',
+
+            transportadora: 'TRANSCUNHA',
+            cadastro: 'LIBERADO',
+            matrizFilial: 'MATRIZ',
+            liberacao: s.riskReleaseCode || 'LIB-OK',
+            gr: s.riskQueryType ? String(s.riskQueryType).toUpperCase() : 'BUONNY OK',
+            ordemCarregamento: `OC-${s.orderId || s.id}`,
+
+            clienteTomadorPagador: clientName || 'Cliente Geral',
+            freteEmpresaUnitario: s.companyFreightRateSnapshot || 0,
+            origem: cargo?.origin || '-',
+            kmDistancia: s.route || '-',
+            destino: cargo?.destination || '-',
+            eixo: s.vehicleSetType ? String(s.vehicleSetType) : '7-EIXO',
+            pedagio: s.tollValue || 0,
+            peso: s.loadedTonnage || s.shipmentTonnage || 0,
+
+            freteBrutoEmpresa: baseFreteEmpresa,
+            icms: s.icmsValue || s.realProfitData?.icmsDifference || 0,
+            debitoPisCofins: s.federalTax || s.realProfitData?.federalTax || 0,
+            creditoPisCofins: s.generatedCredit || s.realProfitData?.generatedCredit || 0,
+            patronal4: s.realProfitData?.inssPatronal || 0,
+            inssSestSenat: 0,
+
+            tarifaTonMotorista: s.driverFreightRateSnapshot || 0,
+            valorFreteMotorista: s.driverFreightValue || 0,
+            nfCliente: s.nfeNumber || '-',
+            valorNf: s.nfeValue || 0,
+            cte: s.cteNumber || s.id,
+            controle: s.orderId || s.id,
+            status: String(s.status).toUpperCase(),
+
+            percentualAdiantamento: s.advancePercentage || 70,
+            valorAdiantamento: s.advanceValue || 0,
+            horaDataLiberacaoAdiantamento: horaLiberAdiant,
+            ticketDescarga: s.unloadedTonnage ? 'SIM' : 'NÃO',
+            pesoChegada: s.unloadedTonnage || 0,
+            saldo: calculatedSaldo,
+
+            horaDataLiberacaoSaldo: horaLiberSald,
+            tipoPagamentoSaldo: s.paymentMethod ? String(s.paymentMethod).toUpperCase() : 'PIX - E-FRETE',
+            statusSaldo: s.status === ShipmentStatus.Finalizado ? 'PAGO' : 'PENDENTE',
+            ciot: s.id,
+            totalQuebra: systemQuebra,
+            valorQuebraCiot: s.discountValue || 0,
+          };
+
+          updatedRows.unshift(newRow);
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        savePersistedSpreadsheetRows(updatedRows);
+        return updatedRows;
+      }
+      return prevRows;
+    });
+  }, [shipments, cargoMap, clientMap]);
+
   const syncedCount = useMemo(() => {
     return systemConvertedRows.filter(r => r.isSynced).length;
   }, [systemConvertedRows]);
@@ -546,48 +769,79 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const getDistinctColumnValues = useCallback((colKey: keyof TranscunhaSpreadsheetRow) => {
     const counts = new Map<string, number>();
     activeRows.forEach(r => {
-      const val = String((r as any)[colKey] ?? '').trim();
+      const raw = (r as any)[colKey];
+      const val = raw !== null && raw !== undefined ? String(raw).trim() : '';
       if (val && val !== '-') {
         counts.set(val, (counts.get(val) || 0) + 1);
       }
     });
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 25)
+      .slice(0, 35)
       .map(([val, count]) => ({ val, count }));
   }, [activeRows]);
 
+  // Função auxiliar para normalização de texto (remove acentos, espaços extras e minúsculas)
+  const normalize = (val: any): string => {
+    if (val === null || val === undefined) return '';
+    return String(val)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  };
+
   // Filtragem e Classificação Otimizada
   const filteredRows = useMemo(() => {
+    const term = normalize(searchTerm);
+
     let result = activeRows.filter(row => {
-      const term = searchTerm.toLowerCase();
-      const matchesSearch = 
-        !term ||
-        row.cteHoras.toLowerCase().includes(term) ||
-        row.cte.toLowerCase().includes(term) ||
-        row.placa.toLowerCase().includes(term) ||
-        row.motorista.toLowerCase().includes(term) ||
-        row.cpfMotorista.toLowerCase().includes(term) ||
-        row.clienteTomadorPagador.toLowerCase().includes(term) ||
-        row.origem.toLowerCase().includes(term) ||
-        row.destino.toLowerCase().includes(term) ||
-        row.produto.toLowerCase().includes(term) ||
-        row.solicitante.toLowerCase().includes(term) ||
-        row.nfCliente.toLowerCase().includes(term);
+      // 1. Busca Global Rápida
+      if (term) {
+        const matchesSearch = 
+          normalize(row.cteHoras).includes(term) ||
+          normalize(row.cte).includes(term) ||
+          normalize(row.placa).includes(term) ||
+          normalize(row.motorista).includes(term) ||
+          normalize(row.cpfMotorista).includes(term) ||
+          normalize(row.clienteTomadorPagador).includes(term) ||
+          normalize(row.origem).includes(term) ||
+          normalize(row.destino).includes(term) ||
+          normalize(row.produto).includes(term) ||
+          normalize(row.solicitante).includes(term) ||
+          normalize(row.nfCliente).includes(term) ||
+          normalize(row.formaPagamento).includes(term) ||
+          normalize(row.statusRecebimento).includes(term);
 
-      if (!matchesSearch) return false;
+        if (!matchesSearch) return false;
+      }
 
-      if (statusFilter !== 'all' && !row.status.toLowerCase().includes(statusFilter.toLowerCase())) return false;
-      if (saldoFilter !== 'all' && row.statusSaldo.toLowerCase() !== saldoFilter.toLowerCase()) return false;
-      if (faturamentoFilter !== 'all' && row.jaFaturado.toLowerCase() !== faturamentoFilter.toLowerCase()) return false;
+      // 2. Filtros de Toolbar
+      if (statusFilter !== 'all' && !normalize(row.status).includes(normalize(statusFilter))) return false;
+      if (saldoFilter !== 'all' && normalize(row.statusSaldo) !== normalize(saldoFilter)) return false;
+      if (faturamentoFilter !== 'all' && normalize(row.jaFaturado) !== normalize(faturamentoFilter)) return false;
 
       if (syncFilter === 'synced' && (row as ExtendedSpreadsheetRow).isSynced !== true && dataSource !== 'onedrive') return false;
       if (syncFilter === 'pending' && (row as ExtendedSpreadsheetRow).isSynced !== false) return false;
 
+      // 3. Filtros Individuais de cada Coluna
       for (const [colKey, filterVal] of Object.entries(columnFilters)) {
         if (!filterVal || filterVal.trim() === '') continue;
-        const cellVal = String((row as any)[colKey] ?? '').toLowerCase();
-        if (!cellVal.includes(filterVal.toLowerCase().trim())) {
+        const normFilter = normalize(filterVal);
+        const rawCell = (row as any)[colKey];
+        const normCell = normalize(rawCell);
+
+        // Se for número ou moeda, aceitar tanto formato cru quanto formatado (com vírgula ou ponto)
+        if (typeof rawCell === 'number') {
+          const numRaw = String(rawCell).toLowerCase();
+          const numPtBr = rawCell.toLocaleString('pt-BR');
+          if (normCell.includes(normFilter) || numRaw.includes(normFilter) || numPtBr.includes(normFilter)) {
+            continue;
+          }
+          return false;
+        }
+
+        if (!normCell.includes(normFilter)) {
           return false;
         }
       }
@@ -1163,23 +1417,51 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         {/* Popover AutoFilter */}
                         {isPopupOpen && (
                           <div 
+                            data-filter-popover="true"
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute left-0 top-full mt-1.5 w-60 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 p-2.5 text-xs text-slate-800 dark:text-slate-200 font-sans normal-case animate-in fade-in zoom-in-95 duration-100"
+                            className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 p-2.5 text-xs text-slate-800 dark:text-slate-200 font-sans normal-case animate-in fade-in zoom-in-95 duration-100"
                           >
                             <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
                               <span className="font-bold text-slate-900 dark:text-white truncate">
                                 {col.label.replace(' 🔄', '')}
                               </span>
-                              <button onClick={() => setActiveFilterPopup(null)} className="text-slate-400 hover:text-slate-900 dark:hover:text-white">✕</button>
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveFilterPopup(null);
+                                }} 
+                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-0.5 rounded cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
+
+                            {/* Botão de Limpar Filtro desta Coluna (se houver) */}
+                            {hasFilter && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleClearColumnFilter(col.key);
+                                  setActiveFilterPopup(null);
+                                }}
+                                className="w-full flex items-center justify-center gap-1.5 px-2 py-1 my-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 rounded-lg text-[11px] font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                                <span>Limpar Filtro ({columnFilters[col.key]})</span>
+                              </button>
+                            )}
 
                             <div className="py-1.5 space-y-1 border-b border-slate-200 dark:border-slate-700">
                               <button
-                                onClick={() => {
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSortConfig({ key: col.key, direction: 'asc' });
                                   setActiveFilterPopup(null);
                                 }}
-                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] ${
+                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] cursor-pointer ${
                                   isSorted && sortConfig.direction === 'asc' ? 'bg-amber-500 text-slate-950 font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
                                 }`}
                               >
@@ -1188,11 +1470,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               </button>
 
                               <button
-                                onClick={() => {
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSortConfig({ key: col.key, direction: 'desc' });
                                   setActiveFilterPopup(null);
                                 }}
-                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] ${
+                                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] cursor-pointer ${
                                   isSorted && sortConfig.direction === 'desc' ? 'bg-amber-500 text-slate-950 font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
                                 }`}
                               >
@@ -1203,21 +1487,42 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
                             {distinctValues.length > 0 && (
                               <div className="pt-2">
-                                <span className="text-[10px] text-slate-400 font-bold block mb-1">Valores Frequentes:</span>
-                                <div className="space-y-0.5 max-h-32 overflow-y-auto pr-1">
-                                  {distinctValues.map(({ val, count }) => (
-                                    <button
-                                      key={val}
-                                      onClick={() => {
-                                        handleSetColumnFilter(col.key, val);
-                                        setActiveFilterPopup(null);
-                                      }}
-                                      className="w-full flex items-center justify-between px-1.5 py-0.5 rounded text-left text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800 truncate"
-                                    >
-                                      <span className="truncate">{val}</span>
-                                      <span className="text-[9px] opacity-60 ml-1">({count})</span>
-                                    </button>
-                                  ))}
+                                <div className="flex items-center justify-between mb-1 text-[10px] text-slate-400 font-bold">
+                                  <span>Valores Frequentes:</span>
+                                  <span className="text-[9px]">({distinctValues.length})</span>
+                                </div>
+                                <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+                                  {distinctValues.map(({ val, count }) => {
+                                    const isSelected = columnFilters[col.key] === val;
+                                    return (
+                                      <button
+                                        key={val}
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (isSelected) {
+                                            handleClearColumnFilter(col.key);
+                                          } else {
+                                            handleSetColumnFilter(col.key, val);
+                                          }
+                                          setActiveFilterPopup(null);
+                                        }}
+                                        className={`w-full flex items-center justify-between px-2 py-1 rounded text-left text-[11px] transition-all truncate cursor-pointer ${
+                                          isSelected
+                                            ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                      >
+                                        <span className="truncate flex items-center gap-1">
+                                          {isSelected && <span className="font-bold">✓</span>}
+                                          {val}
+                                        </span>
+                                        <span className={`text-[9px] ml-1 shrink-0 ${isSelected ? 'text-slate-950/80 font-bold' : 'opacity-60'}`}>
+                                          ({count})
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
@@ -1394,20 +1699,33 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                 )
                               ) : (
                                 <div className="flex items-center gap-1 overflow-hidden">
-                                  {col.key === 'cteHoras' && (row as ExtendedSpreadsheetRow).isSynced && (
-                                    <span title="Sincronizado" className="text-emerald-500 font-sans text-xs shrink-0">✅</span>
+                                  {col.key === 'idEmbarqueSistema' ? (
+                                    rawValue ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-black border border-emerald-500/30">
+                                        <Sparkles className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                        {rawValue}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 font-mono text-[10px]">-</span>
+                                    )
+                                  ) : (
+                                    <>
+                                      {col.key === 'cteHoras' && (row as ExtendedSpreadsheetRow).isSynced && (
+                                        <span title="Sincronizado" className="text-emerald-500 font-sans text-xs shrink-0">✅</span>
+                                      )}
+                                      <span className={`truncate ${
+                                        col.key === 'placa' ? 'font-black text-slate-900 dark:text-emerald-400' :
+                                        col.key === 'saldo' ? 'font-bold text-indigo-600 dark:text-indigo-400' :
+                                        col.key === 'valorFreteMotorista' ? 'font-bold text-rose-600 dark:text-rose-400' :
+                                        col.key === 'statusSaldo' && rawValue === 'PAGO' ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
+                                        col.key === 'statusSaldo' && rawValue === 'PENDENTE' ? 'text-amber-600 dark:text-amber-400 font-bold' :
+                                        col.isSynchronized ? 'text-amber-900 dark:text-amber-300 font-semibold' :
+                                        'text-slate-800 dark:text-slate-100'
+                                      }`}>
+                                        {displayValue}
+                                      </span>
+                                    </>
                                   )}
-                                  <span className={`truncate ${
-                                    col.key === 'placa' ? 'font-black text-slate-900 dark:text-emerald-400' :
-                                    col.key === 'saldo' ? 'font-bold text-indigo-600 dark:text-indigo-400' :
-                                    col.key === 'valorFreteMotorista' ? 'font-bold text-rose-600 dark:text-rose-400' :
-                                    col.key === 'statusSaldo' && rawValue === 'PAGO' ? 'text-emerald-600 dark:text-emerald-400 font-bold' :
-                                    col.key === 'statusSaldo' && rawValue === 'PENDENTE' ? 'text-amber-600 dark:text-amber-400 font-bold' :
-                                    col.isSynchronized ? 'text-amber-900 dark:text-amber-300 font-semibold' :
-                                    'text-slate-800 dark:text-slate-100'
-                                  }`}>
-                                    {displayValue}
-                                  </span>
                                 </div>
                               )}
                             </td>
@@ -1461,6 +1779,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       );
                     }
 
+                    if (col.key === 'idEmbarqueSistema') {
+                      const systemCount = filteredRows.filter(r => Boolean(r.idEmbarqueSistema)).length;
+                      return (
+                        <td key={col.key} className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800 text-emerald-600 dark:text-emerald-400 font-bold">
+                          {systemCount} do sistema
+                        </td>
+                      );
+                    }
+
                     if (col.key === 'cteHoras') {
                       return (
                         <td key={col.key} className="px-2 py-1.5 border-r border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300">
@@ -1483,6 +1810,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             <table className="w-full text-left text-xs whitespace-nowrap bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
               <thead className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider">
                 <tr>
+                  <th className="px-3 py-2.5">ID Embarque</th>
                   <th className="px-3 py-2.5">Embarque / CT-e</th>
                   <th className="px-3 py-2.5">Data</th>
                   <th className="px-3 py-2.5">Rota</th>
@@ -1500,13 +1828,23 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {paginatedRows.length === 0 ? (
-                  <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900">Nenhum registro localizado.</td></tr>
+                  <tr><td colSpan={14} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900">Nenhum registro localizado.</td></tr>
                 ) : (
                   paginatedRows.map((r) => {
                     const margem = r.freteBrutoEmpresa - r.valorFreteMotorista - r.pedagio;
                     const margemPct = r.freteBrutoEmpresa > 0 ? (margem / r.freteBrutoEmpresa) * 100 : 0;
                     return (
                       <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                        <td className="px-3 py-2 font-mono font-bold">
+                          {r.idEmbarqueSistema ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30 text-[10px]">
+                              <Sparkles className="w-2.5 h-2.5 text-emerald-500" />
+                              {r.idEmbarqueSistema}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">-</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 font-bold font-mono">
                           {(r as ExtendedSpreadsheetRow).isSynced && <span className="text-emerald-500 mr-1">✅</span>}
                           {r.cteHoras || r.cte || '-'}

@@ -2,6 +2,8 @@ import * as XLSX from 'xlsx';
 
 export interface TranscunhaSpreadsheetRow {
   id: string;
+  // 0. Embarques do Sistema (Primeira Coluna no Canto Esquerdo)
+  idEmbarqueSistema?: string;
   // A - F: Faturamento & Financeiro Empresa
   cteHoras: string;
   jaFaturado: string;
@@ -775,13 +777,14 @@ export function recalculateSpreadsheetRow(row: TranscunhaSpreadsheetRow): Transc
 /**
  * Cria uma nova linha vazia com formatação padrão pronta para edição
  */
-export function createNewEmptyRow(index: number = 1): TranscunhaSpreadsheetRow {
+export function createNewEmptyRow(index: number = 1, idEmbarqueSistema?: string): TranscunhaSpreadsheetRow {
   const today = new Date().toLocaleDateString('pt-BR');
   const nowTime = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const randomCte = String(2000 + Math.floor(Math.random() * 8000));
 
   return {
     id: `row_manual_${Date.now()}_${index}`,
+    idEmbarqueSistema: idEmbarqueSistema || '',
     cteHoras: randomCte,
     jaFaturado: 'NÃO',
     dataVencimento: today,

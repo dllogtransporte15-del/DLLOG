@@ -21,6 +21,54 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_01_v2_42_0',
+    version: 'v2.42.0',
+    date: '01/10/2026',
+    title: 'Coluna Exclusiva "ID EMBARQUE SISTEMA" e Sincronização em Tempo Real',
+    summary: 'Criação da primeira coluna no canto esquerdo da planilha dedicada exclusivamente aos embarques gerados no sistema. Todo novo embarque cadastrado gera automaticamente uma nova linha na planilha, com sincronização contínua de status, pesagens, CTE, faturamento, adiantamentos e saldos.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Primeira Coluna: ID EMBARQUE SISTEMA',
+        description: 'Nova coluna posicionada como a 1ª coluna da planilha (canto esquerdo), com identificador visual destacado em verde esmeralda para identificar embarques originados do sistema operacional.'
+      },
+      {
+        category: 'feature',
+        title: 'Geração Automática de Novas Linhas',
+        description: 'Qualquer novo embarque criado no sistema gera automaticamente uma linha correspondente na planilha com seu respectivo ID pré-preenchido.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização Contínua de Status e Finanças',
+        description: 'Conforme o embarque avança em seu ciclo de vida (carregamento, trânsito, descarga, conferência de peso, emissão de CT-e/NF, liberação de adiantamento e saldo), as colunas da planilha são atualizadas dinamicamente em tempo real.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_41_0',
+    version: 'v2.41.0',
+    date: '01/10/2026',
+    title: 'Correção e Aperfeiçoamento dos Filtros e Popover da Planilha',
+    summary: 'Correção crítica no mecanismo de filtros individuais por coluna e no popover de seleção de valores frequentes (como "Forma de Pagamento"). Eliminado o cancelamento involuntário de filtros, adicionado suporte a buscas sem acentuação e inclusão de botão para limpar filtros ativos diretamente pelo popover.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Sincronização Estável de Filtros de Coluna',
+        description: 'Eliminada a condição de corrida no campo de filtro que apagava automaticamente a seleção feita no popover de valores frequentes (ex: BOLETO).'
+      },
+      {
+        category: 'improvement',
+        title: 'Busca Insensível a Acentos e Formatações',
+        description: 'Os filtros agora realizam comparações normalizadas, encontrando resultados com ou sem acentos (ex: "faturado", "nao", "boleto", "liberacao") e formatos numéricos em reais.'
+      },
+      {
+        category: 'feature',
+        title: 'Destaque e Botão de Limpeza no Popover',
+        description: 'Valores frequentes ativos agora recebem destaque visual com checkmark (✓), permitindo alternar seleção ou limpar o filtro diretamente pelo menu.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_09_30_v2_40_0',
     version: 'v2.40.0',
     date: '30/09/2026',
