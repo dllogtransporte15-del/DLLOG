@@ -292,11 +292,34 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
     return { sheetNames: [], activeSheet: '', rows: [], totalRows: 0 };
   }
 
-  // Encontrar melhor aba se não for especificada
+  // 1. Identificar métricas de cada aba (número de linhas estimadas via !ref)
+  let bestSheetName = '';
+  let maxRowCount = 0;
+  for (const name of sheetNames) {
+    const s = workbook.Sheets[name];
+    if (s && s['!ref']) {
+      const range = XLSX.utils.decode_range(s['!ref']);
+      const count = Math.max(0, range.e.r - range.s.r + 1);
+      if (count > maxRowCount) {
+        maxRowCount = count;
+        bestSheetName = name;
+      }
+    }
+  }
+
+  // 2. Encontrar melhor aba se não for explicitamente especificada
   let activeSheet = sheetNamePreference || '';
   if (!activeSheet || !sheetNames.includes(activeSheet)) {
-    const candidates = ['Planilha Carregamento Geral', 'TESTE DAVI', 'MONTAR TESTE OTAVIO', 'Dados'];
-    activeSheet = sheetNames.find(s => candidates.some(c => s.toLowerCase().includes(c.toLowerCase()))) || sheetNames[0];
+    // 2.1. Prioridade máxima: 'TESTE DAVI' (onde residem os 16.819 registros)
+    const daviCandidate = sheetNames.find(s => s.trim().toUpperCase() === 'TESTE DAVI' || s.trim().toUpperCase().includes('TESTE DAVI'));
+    if (daviCandidate) {
+      activeSheet = daviCandidate;
+    } else if (bestSheetName) {
+      // 2.2. Prioridade secundária: Aba com maior volume de linhas
+      activeSheet = bestSheetName;
+    } else {
+      activeSheet = sheetNames[0];
+    }
   }
 
   const sheet = workbook.Sheets[activeSheet];
@@ -519,6 +542,14 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
       valorQuebraCiot: parseNumberPtBr(getVal(colIdx.valorQuebraCiot, 59)),
     });
   }
+
+  // Ordena os registros por data de embarque decrescente (o mais recente emitido sempre no topo)
+  rows.sort((a, b) => {
+    const dateA = parseShipmentDate(a.dataEmbarque);
+    const dateB = parseShipmentDate(b.dataEmbarque);
+    if (dateA !== dateB) return dateB - dateA;
+    return (b.orderIndex ?? 0) - (a.orderIndex ?? 0);
+  });
 
   return {
     sheetNames,
@@ -1013,10 +1044,10 @@ export function loadPersistedSpreadsheetRows(): TranscunhaSpreadsheetRow[] | nul
 /**
  * Salva as linhas com persistência permanente no IndexedDB (sem limite de 5MB)
  */
-export function savePersistedSpreadsheetRows(rows: TranscunhaSpreadsheetRow[]): boolean {
+export function savePersistedSpreadsheetRows(rows: TranscunhaSpreadsheetRow[], sheetName?: string): boolean {
   if (typeof window === 'undefined') return false;
   // Dispara salvamento permanente assíncrono no IndexedDB
-  saveSpreadsheetRowsToIndexedDB(rows).catch(err => {
+  saveSpreadsheetRowsToIndexedDB(rows, sheetName).catch(err => {
     console.error('Falha ao salvar no IndexedDB:', err);
   });
 

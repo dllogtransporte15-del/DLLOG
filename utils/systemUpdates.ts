@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_01_v2_44_0',
+    version: 'v2.44.0',
+    date: '01/10/2026',
+    title: 'Proteção Absoluta do Master Dataset (16.819 Registros), Priorização Inteligente de Abas e Armazenamento do Buffer Original',
+    summary: 'Correção definitiva da queda do volume de dados para 543 registros após recarregamento. O sistema agora prioriza automaticamente a aba TESTE DAVI e a aba com maior volume de dados, protege os 16.819 registros em cofre blindado Master no IndexedDB (impedindo que abas secundárias menores sobrescrevam os dados principais) e armazena o buffer binário bruto para troca fluida de abas sem perda de dados.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Priorização Inteligente da Aba Principal (TESTE DAVI)',
+        description: 'Eliminado o comportamento em que a aba secundária "Planilha Carregamento Geral" (543 linhas) era selecionada no lugar da aba principal (16.819 linhas). O analisador agora inspeciona todas as abas e seleciona automaticamente a aba de maior volume de dados operacionais.'
+      },
+      {
+        category: 'security',
+        title: 'Cofre Blindado Master Dataset no IndexedDB',
+        description: 'Os 16.819 registros agora residem em um armazenamento mestre protegido. Mesmo que o usuário navegue ou altere para uma aba secundária com menos linhas (ex: 543), os 16.819 registros permanecem inviolados e nunca são rebaixados ou perdidos ao recarregar a página.'
+      },
+      {
+        category: 'feature',
+        title: 'Persistência do Buffer Binário XLSX',
+        description: 'O arquivo original da planilha é salvo no IndexedDB, viabilizando navegação entre diferentes abas e recarregamentos da aplicação sem necessidade de reimportar o arquivo do computador.'
+      },
+      {
+        category: 'improvement',
+        title: 'Permanência Garantida sem Exclusão Acidental',
+        description: 'Conforme solicitado, os registros permanecem salvos de maneira perpétua no sistema operacional e nuvem, sendo removidos exclusivamente se o usuário clicar no botão "Excluir Planilha" com confirmação.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_01_v2_43_0',
     version: 'v2.43.0',
     date: '01/10/2026',

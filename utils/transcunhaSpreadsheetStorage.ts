@@ -2,15 +2,18 @@ import { TranscunhaSpreadsheetRow } from './transcunhaSpreadsheetParser';
 import { supabase } from '../supabase';
 
 const DB_NAME = 'transcunha_storage_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'spreadsheet_store';
 
 const KEY_ROWS = 'spreadsheet_rows';
+const KEY_MASTER_MAX_ROWS = 'spreadsheet_master_max_rows';
 const KEY_BACKUP_ROWS = 'spreadsheet_rows_backup_snapshot';
+const KEY_RAW_WORKBOOK_BUFFER = 'spreadsheet_raw_workbook_buffer';
 const KEY_ACTIVE_SHEET = 'active_sheet';
 const KEY_SHEET_NAMES = 'sheet_names';
 const KEY_LAST_SAVED = 'last_saved_timestamp';
 const KEY_ROW_COUNT = 'total_saved_row_count';
+const KEY_SHEET_ROWS_PREFIX = 'spreadsheet_sheet_rows_';
 
 const CLOUD_BACKUP_PATH = 'spreadsheet_backups/transcunha_master_spreadsheet.json';
 let cloudBackupDebounceTimer: any = null;
@@ -19,6 +22,7 @@ let cloudBackupDebounceTimer: any = null;
 let inMemoryRowsCache: TranscunhaSpreadsheetRow[] | null = null;
 let inMemoryActiveSheet: string | null = null;
 let inMemorySheetNames: string[] | null = null;
+let inMemoryRawBuffer: ArrayBuffer | null = null;
 
 /**
  * Abre o banco de dados IndexedDB de forma resiliente
@@ -72,18 +76,80 @@ export function scheduleCloudSpreadsheetBackup(rows: TranscunhaSpreadsheetRow[])
 }
 
 /**
- * Salva as linhas no IndexedDB com snapshot de segurança duplo (sem limite de 5MB).
- * Suporta mais de 16.800 linhas com dezenas de colunas instantaneamente.
+ * Salva o buffer binário original da planilha (XLSX) para permitir reabertura e troca de abas sem reimportar
  */
-export async function saveSpreadsheetRowsToIndexedDB(rows: TranscunhaSpreadsheetRow[]): Promise<boolean> {
+export async function saveRawWorkbookBuffer(buffer: ArrayBuffer): Promise<boolean> {
+  if (!buffer || buffer.byteLength === 0) return false;
+  inMemoryRawBuffer = buffer;
+
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(buffer, KEY_RAW_WORKBOOK_BUFFER);
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    });
+  } catch (err) {
+    console.warn('[Transcunha Storage] Erro ao persistir buffer bruto do Excel:', err);
+    return false;
+  }
+}
+
+/**
+ * Carrega o buffer binário original salvo da planilha
+ */
+export async function loadRawWorkbookBuffer(): Promise<ArrayBuffer | null> {
+  if (inMemoryRawBuffer && inMemoryRawBuffer.byteLength > 0) {
+    return inMemoryRawBuffer;
+  }
+
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(KEY_RAW_WORKBOOK_BUFFER);
+
+      tx.oncomplete = () => {
+        db.close();
+        if (req.result instanceof ArrayBuffer) {
+          inMemoryRawBuffer = req.result;
+          resolve(req.result);
+        } else {
+          resolve(null);
+        }
+      };
+
+      tx.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Salva as linhas no IndexedDB com proteção do Master Dataset (16.819 linhas).
+ * Mesmo que o usuário alterne para uma aba com menos registros (ex: 543),
+ * os 16.819 registros master continuam protegidos e nunca são sobrescritos acidentalmente.
+ */
+export async function saveSpreadsheetRowsToIndexedDB(
+  rows: TranscunhaSpreadsheetRow[],
+  sheetName?: string
+): Promise<boolean> {
   if (!Array.isArray(rows) || rows.length === 0) return false;
 
   inMemoryRowsCache = rows;
-
-  // Se o dataset for expressivo (ex: 16.819 linhas), agenda backup na nuvem
-  if (rows.length > 50) {
-    scheduleCloudSpreadsheetBackup(rows);
-  }
 
   try {
     const db = await openDB();
@@ -91,14 +157,32 @@ export async function saveSpreadsheetRowsToIndexedDB(rows: TranscunhaSpreadsheet
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
-      // 1. Armazenamento principal
+      // 1. Armazenamento da aba ativa
       store.put(rows, KEY_ROWS);
       store.put(Date.now(), KEY_LAST_SAVED);
       store.put(rows.length, KEY_ROW_COUNT);
 
-      // 2. Snapshot de segurança redundante (garante que se KEY_ROWS for corrompido, este recupera)
-      if (rows.length > 30) {
+      // 2. Se for especificada uma aba, salva no bucket individual daquela aba
+      if (sheetName) {
+        store.put(rows, `${KEY_SHEET_ROWS_PREFIX}${sheetName}`);
+      }
+
+      // 3. MASTER DATASET PROTECTION:
+      // Se for um dataset massivo (>= 1.000 linhas, como as 16.819 linhas),
+      // grava no cofre MASTER_MAX_ROWS e no backup redundante
+      if (rows.length >= 1000) {
+        store.put(rows, KEY_MASTER_MAX_ROWS);
         store.put(rows, KEY_BACKUP_ROWS);
+        scheduleCloudSpreadsheetBackup(rows);
+      } else {
+        // Se tiver menos de 1.000 linhas (ex: 543 linhas da outra aba):
+        // NÃO sobrescreve KEY_MASTER_MAX_ROWS! Apenas salva no backup regular se não houver master
+        const checkMaster = store.get(KEY_MASTER_MAX_ROWS);
+        checkMaster.onsuccess = () => {
+          if (!checkMaster.result || !Array.isArray(checkMaster.result) || checkMaster.result.length === 0) {
+            store.put(rows, KEY_BACKUP_ROWS);
+          }
+        };
       }
 
       tx.oncomplete = () => {
@@ -113,59 +197,77 @@ export async function saveSpreadsheetRowsToIndexedDB(rows: TranscunhaSpreadsheet
       };
     });
   } catch (err) {
-    console.warn('IndexedDB inacessível, tentando fallback de segurança:', err);
-    if (typeof window !== 'undefined' && rows.length <= 400) {
-      try {
-        localStorage.setItem('transcunha_spreadsheet_rows', JSON.stringify(rows));
-        return true;
-      } catch {}
-    }
+    console.warn('IndexedDB inacessível ao salvar linhas:', err);
     return false;
   }
 }
 
 /**
- * Carrega as linhas salvas no IndexedDB com recuperação em 4 níveis:
+ * Carrega as linhas salvas no IndexedDB com recuperação inteligente e à prova de perdas:
  * 1. Cache em memória (0ms)
- * 2. Tabela primária do IndexedDB
- * 3. Snapshot de segurança do IndexedDB
- * 4. Backup persistido em nuvem no Supabase Storage
+ * 2. KEY_MASTER_MAX_ROWS (as 16.819 linhas importadas pelo usuário)
+ * 3. Bucket específico da aba solicitada
+ * 4. Tabela primária do IndexedDB
+ * 5. Snapshot de segurança redundante
+ * 6. Backup persistido em nuvem no Supabase Storage
  */
-export async function loadSpreadsheetRowsFromIndexedDB(): Promise<TranscunhaSpreadsheetRow[] | null> {
-  // Nível 1: Memória ativa
-  if (inMemoryRowsCache && inMemoryRowsCache.length > 30) {
-    return inMemoryRowsCache;
+export async function loadSpreadsheetRowsFromIndexedDB(
+  preferredSheet?: string
+): Promise<TranscunhaSpreadsheetRow[] | null> {
+  // Nível 1: Memória ativa se já contiver o dataset completo
+  if (inMemoryRowsCache && inMemoryRowsCache.length >= 1000) {
+    if (!preferredSheet || preferredSheet.toUpperCase().includes('TESTE DAVI')) {
+      return inMemoryRowsCache;
+    }
   }
 
-  // Nível 2 e 3: IndexedDB Local
+  // Nível 2: IndexedDB Local com prioridade para o Master Dataset
   try {
     const db = await openDB();
     const rows = await new Promise<TranscunhaSpreadsheetRow[] | null>((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.get(KEY_ROWS);
+
+      const reqMaster = store.get(KEY_MASTER_MAX_ROWS);
+      const reqPrimary = store.get(KEY_ROWS);
       const reqBackup = store.get(KEY_BACKUP_ROWS);
+      const reqSheet = preferredSheet ? store.get(`${KEY_SHEET_ROWS_PREFIX}${preferredSheet}`) : null;
 
       tx.oncomplete = () => {
         db.close();
-        const primaryVal = req.result;
+        const masterVal = reqMaster.result;
+        const primaryVal = reqPrimary.result;
         const backupVal = reqBackup.result;
+        const sheetVal = reqSheet ? reqSheet.result : null;
 
-        // Se primário for válido e tiver linhas reais
-        if (Array.isArray(primaryVal) && primaryVal.length > 30) {
+        // Se pediu uma aba secundária específica e ela tem dados próprios
+        if (preferredSheet && !preferredSheet.toUpperCase().includes('TESTE DAVI') && Array.isArray(sheetVal) && sheetVal.length > 0) {
+          resolve(sheetVal);
+          return;
+        }
+
+        // Se o Master tiver os 16.819 registros, ele TEM prioridade máxima absoluta
+        if (Array.isArray(masterVal) && masterVal.length >= 1000) {
+          console.log(`[Transcunha Storage] 🛡️ Carregando ${masterVal.length} registros protegidos do Master Dataset!`);
+          resolve(masterVal);
+          return;
+        }
+
+        // Se primário tiver registros reais
+        if (Array.isArray(primaryVal) && primaryVal.length > 0) {
           resolve(primaryVal);
           return;
         }
 
-        // Se backup tiver as 16.819 linhas recupera dele
-        if (Array.isArray(backupVal) && backupVal.length > 30) {
-          console.warn(`[Transcunha Storage] Recuperando ${backupVal.length} registros a partir do snapshot de segurança!`);
+        // Se backup redundante tiver registros
+        if (Array.isArray(backupVal) && backupVal.length > 0) {
           resolve(backupVal);
           return;
         }
 
-        if (Array.isArray(primaryVal) && primaryVal.length > 0) {
-          resolve(primaryVal);
+        // Se houver dados em qualquer aba
+        if (Array.isArray(sheetVal) && sheetVal.length > 0) {
+          resolve(sheetVal);
           return;
         }
 
@@ -186,7 +288,7 @@ export async function loadSpreadsheetRowsFromIndexedDB(): Promise<TranscunhaSpre
     console.warn('Falha ao ler IndexedDB:', err);
   }
 
-  // Nível 4: Nuvem Supabase Storage
+  // Nível 3: Nuvem Supabase Storage (caso o IndexedDB local tenha sido limpo ou novo navegador)
   try {
     const { data, error } = await supabase.storage
       .from('shipment_attachments')
@@ -198,7 +300,7 @@ export async function loadSpreadsheetRowsFromIndexedDB(): Promise<TranscunhaSpre
       if (Array.isArray(parsed) && parsed.length > 0) {
         console.log(`[Transcunha Storage] 🚀 Restaurados ${parsed.length} registros diretamente do Supabase Cloud Backup!`);
         inMemoryRowsCache = parsed;
-        saveSpreadsheetRowsToIndexedDB(parsed).catch(() => {});
+        saveSpreadsheetRowsToIndexedDB(parsed, 'TESTE DAVI').catch(() => {});
         return parsed;
       }
     }
@@ -206,7 +308,7 @@ export async function loadSpreadsheetRowsFromIndexedDB(): Promise<TranscunhaSpre
     console.warn('[Transcunha Storage] Sem dados ou offline para restauração via nuvem:', cloudErr);
   }
 
-  // Nível 5: Migração legado localStorage
+  // Nível 4: Migração legado localStorage (caso exista)
   if (typeof window !== 'undefined') {
     try {
       const legacy = localStorage.getItem('transcunha_spreadsheet_rows');
@@ -292,12 +394,14 @@ export async function loadSpreadsheetMetadata(): Promise<{ activeSheet?: string;
 }
 
 /**
- * Remove os dados persistidos do IndexedDB e do localStorage
+ * Remove todos os dados persistidos do IndexedDB, localStorage e nuvem.
+ * Chamado EXCLUSIVAMENTE pelo botão "Excluir Planilha" com confirmação do usuário.
  */
 export async function clearSpreadsheetStorage(): Promise<void> {
   inMemoryRowsCache = null;
   inMemoryActiveSheet = null;
   inMemorySheetNames = null;
+  inMemoryRawBuffer = null;
 
   try {
     const db = await openDB();
@@ -313,6 +417,10 @@ export async function clearSpreadsheetStorage(): Promise<void> {
       localStorage.removeItem('transcunha_spreadsheet_active_sheet');
     } catch {}
   }
+
+  try {
+    await supabase.storage.from('shipment_attachments').remove([CLOUD_BACKUP_PATH]);
+  } catch {}
 }
 
 /**

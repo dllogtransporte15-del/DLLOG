@@ -24,7 +24,9 @@ import {
   loadSpreadsheetRowsFromIndexedDB,
   saveSpreadsheetMetadata,
   loadSpreadsheetMetadata,
-  clearSpreadsheetStorage
+  clearSpreadsheetStorage,
+  saveRawWorkbookBuffer,
+  loadRawWorkbookBuffer
 } from '../../utils/transcunhaSpreadsheetStorage';
 import { 
   Search, 
@@ -261,9 +263,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   clients = [],
   currentUser
 }) => {
-  // Inicialização com persistência permanente no LocalStorage
+  // Inicialização com persistência permanente no LocalStorage/IndexedDB
   const [spreadsheetRows, setSpreadsheetRows] = useState<TranscunhaSpreadsheetRow[]>(() => {
-    return loadPersistedSpreadsheetRows() || SAMPLE_TRANSCUNHA_SHEET_ROWS;
+    return loadPersistedSpreadsheetRows() || [];
   });
 
   const [dataSource, setDataSource] = useState<'onedrive' | 'system'>('onedrive');
@@ -334,23 +336,32 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   // Carregamento resiliente permanente via IndexedDB (sem limitação de quota do LocalStorage)
   useEffect(() => {
     let isMounted = true;
-    loadSpreadsheetRowsFromIndexedDB().then(savedRows => {
-      if (isMounted) {
-        if (savedRows && savedRows.length > 0) {
-          setSpreadsheetRows(savedRows);
-        } else if (spreadsheetRows && spreadsheetRows.length > 30) {
-          // Se o IndexedDB ainda não tinha os dados mas a memória tem (ex: 16.819 linhas importadas), grava imediatamente
-          saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
-        }
+    (async () => {
+      // 1. Carrega o buffer binário original salvo no IndexedDB se existir
+      const storedBuffer = await loadRawWorkbookBuffer();
+      if (isMounted && storedBuffer) {
+        setRawWorkbookBuffer(storedBuffer);
       }
-    });
 
-    loadSpreadsheetMetadata().then(meta => {
+      // 2. Carrega metadados (aba ativa e abas disponíveis)
+      const meta = await loadSpreadsheetMetadata();
       if (isMounted) {
         if (meta.activeSheet) setActiveSheetName(meta.activeSheet);
         if (meta.sheetNames && meta.sheetNames.length > 0) setAvailableSheets(meta.sheetNames);
       }
-    });
+
+      // 3. Carrega as linhas protegidas (garantindo que se houver 16.819 registros eles sempre prevalecem)
+      const preferredSheet = meta.activeSheet || 'TESTE DAVI';
+      const savedRows = await loadSpreadsheetRowsFromIndexedDB(preferredSheet);
+      if (isMounted) {
+        if (savedRows && savedRows.length > 0) {
+          setSpreadsheetRows(savedRows);
+        } else {
+          // Se não há nenhum dado prévio salvo no IndexedDB ou na nuvem, usa amostra de demonstração
+          setSpreadsheetRows(SAMPLE_TRANSCUNHA_SHEET_ROWS);
+        }
+      }
+    })();
 
     return () => {
       isMounted = false;
@@ -360,22 +371,22 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   // Monitoramento contínuo: qualquer alteração em lote de dados (>30 linhas) garante persistência imediata
   useEffect(() => {
     if (spreadsheetRows && spreadsheetRows.length > 30) {
-      saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+      saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
     }
-  }, [spreadsheetRows]);
+  }, [spreadsheetRows, activeSheetName]);
 
   // Garantia absoluta contra fechamento acidental ou recarregamento brusco
   useEffect(() => {
     const handleFlushOnExit = () => {
       if (spreadsheetRows && spreadsheetRows.length > 30) {
-        saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+        saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
       }
     };
     window.addEventListener('beforeunload', handleFlushOnExit);
     window.addEventListener('pagehide', handleFlushOnExit);
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden' && spreadsheetRows && spreadsheetRows.length > 30) {
-        saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+        saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
@@ -385,7 +396,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       window.removeEventListener('pagehide', handleFlushOnExit);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [spreadsheetRows]);
+  }, [spreadsheetRows, activeSheetName]);
 
   // Paginação de alta performance
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -1022,12 +1033,12 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     setIsSavedRecently(false);
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveSpreadsheetRowsToIndexedDB(newRows).then(() => {
+      saveSpreadsheetRowsToIndexedDB(newRows, activeSheetName).then(() => {
         setIsSavedRecently(true);
       });
-      savePersistedSpreadsheetRows(newRows);
+      savePersistedSpreadsheetRows(newRows, activeSheetName);
     }, 400);
-  }, []);
+  }, [activeSheetName]);
 
   // Atualização de Célula
   const handleUpdateCell = useCallback((rowId: string, colKey: keyof TranscunhaSpreadsheetRow, rawValue: string) => {
@@ -1179,7 +1190,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     try {
       const buffer = await file.arrayBuffer();
       setRawWorkbookBuffer(buffer);
-      const parsed = parseTranscunhaWorkbook(buffer);
+      await saveRawWorkbookBuffer(buffer);
+
+      // Prioriza a aba principal 'TESTE DAVI' (com os 16.819 registros) ou a aba de maior volume
+      const parsed = parseTranscunhaWorkbook(buffer, 'TESTE DAVI');
       
       if (parsed.rows.length === 0) {
         setNotification({
@@ -1194,14 +1208,14 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       setSpreadsheetRows(parsed.rows);
       setDataSource('onedrive');
 
-      // Gravação garantida permanente no IndexedDB
-      await saveSpreadsheetRowsToIndexedDB(parsed.rows);
+      // Gravação garantida permanente no IndexedDB (Master Dataset e bucket da aba)
+      await saveSpreadsheetRowsToIndexedDB(parsed.rows, parsed.activeSheet);
       await saveSpreadsheetMetadata(parsed.activeSheet, parsed.sheetNames);
-      persistChanges(parsed.rows);
+      savePersistedSpreadsheetRows(parsed.rows, parsed.activeSheet);
 
       setNotification({
         type: 'success',
-        message: `Planilha importada com sucesso! ${parsed.totalRows} registros salvos permanentemente.`
+        message: `Planilha importada com sucesso! ${parsed.totalRows} registros salvos permanentemente no sistema.`
       });
 
       setTimeout(() => setNotification(null), 5000);
@@ -1214,13 +1228,49 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     }
   };
 
-  const handleSheetChange = (sheetName: string) => {
+  const handleSheetChange = async (sheetName: string) => {
+    if (sheetName === activeSheetName) return;
+
+    // 1. Salva a aba atual no seu respectivo bucket antes de trocar
+    if (spreadsheetRows.length > 0) {
+      await saveSpreadsheetRowsToIndexedDB(spreadsheetRows, activeSheetName);
+      savePersistedSpreadsheetRows(spreadsheetRows, activeSheetName);
+    }
+
     setActiveSheetName(sheetName);
     localStorage.setItem(STORAGE_KEY_ACTIVE_SHEET, sheetName);
-    if (!rawWorkbookBuffer) return;
-    const parsed = parseTranscunhaWorkbook(rawWorkbookBuffer, sheetName);
-    setSpreadsheetRows(parsed.rows);
-    persistChanges(parsed.rows);
+    await saveSpreadsheetMetadata(sheetName, availableSheets);
+
+    // 2. Se a aba for 'TESTE DAVI', restaura os 16.819 registros protegidos do Master
+    if (sheetName.toUpperCase().includes('TESTE DAVI')) {
+      const masterRows = await loadSpreadsheetRowsFromIndexedDB('TESTE DAVI');
+      if (masterRows && masterRows.length >= 1000) {
+        setSpreadsheetRows(masterRows);
+        return;
+      }
+    }
+
+    // 3. Tenta processar a aba a partir do buffer original do arquivo XLSX
+    let bufferToUse = rawWorkbookBuffer;
+    if (!bufferToUse) {
+      bufferToUse = await loadRawWorkbookBuffer();
+      if (bufferToUse) setRawWorkbookBuffer(bufferToUse);
+    }
+
+    if (bufferToUse) {
+      const parsed = parseTranscunhaWorkbook(bufferToUse, sheetName);
+      if (parsed.rows.length > 0) {
+        setSpreadsheetRows(parsed.rows);
+        await saveSpreadsheetRowsToIndexedDB(parsed.rows, sheetName);
+        return;
+      }
+    }
+
+    // 4. Fallback: carrega do IndexedDB salvo para essa aba
+    const stored = await loadSpreadsheetRowsFromIndexedDB(sheetName);
+    if (stored && stored.length > 0) {
+      setSpreadsheetRows(stored);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1362,14 +1412,14 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleDeleteSpreadsheet = () => {
+  const handleDeleteSpreadsheet = async () => {
     if (!isSupportUser) {
       alert('Ação restrita: Apenas o usuário Suporte possui autorização para excluir a planilha.');
       return;
     }
-    clearSpreadsheetStorage();
+    await clearSpreadsheetStorage();
     clearPersistedSpreadsheetRows();
-    savePersistedSpreadsheetRows([]);
+    setRawWorkbookBuffer(null);
     setSpreadsheetRows([]);
     setAvailableSheets([]);
     setActiveSheetName('Planilha1');
@@ -1383,7 +1433,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     setShowDeleteModal(false);
     setNotification({
       type: 'info',
-      message: 'Planilha excluída com sucesso pelo usuário Suporte!'
+      message: 'Planilha e todos os registros foram excluídos permanentemente do sistema pelo usuário Suporte!'
     });
     setTimeout(() => setNotification(null), 5000);
   };
@@ -2143,15 +2193,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
             {/* Abas ativas da Planilha (se houver) */}
             {dataSource === 'onedrive' && availableSheets.length > 1 && (
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto max-w-[180px] sm:max-w-xs">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-950 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto max-w-[280px] sm:max-w-md">
                 {availableSheets.map(sheet => (
                   <button
                     key={sheet}
                     onClick={() => handleSheetChange(sheet)}
-                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
                       activeSheetName === sheet
-                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800'
                     }`}
                   >
                     {sheet}
