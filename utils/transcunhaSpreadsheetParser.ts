@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 
 export interface TranscunhaSpreadsheetRow {
   id: string;
+  orderIndex?: number;
   // 0. Embarques do Sistema (Primeira Coluna no Canto Esquerdo)
   idEmbarqueSistema?: string;
   // A - F: Faturamento & Financeiro Empresa
@@ -145,6 +146,47 @@ export function formatDatePtBr(val: any): string {
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   }
   return str;
+}
+
+/**
+ * Converte qualquer valor de data (string BR, ISO, Date ou timestamp) para timestamp numérico para ordenação
+ */
+export function parseShipmentDate(val: any): number {
+  if (!val) return 0;
+  if (val instanceof Date) return isNaN(val.getTime()) ? 0 : val.getTime();
+  if (typeof val === 'number') {
+    if (val > 10000000000) return val;
+    // Serial do Excel
+    return new Date(Math.round((val - 25569) * 86400 * 1000)).getTime() || 0;
+  }
+  const str = String(val).trim();
+  if (!str || str === '-' || str === '0') return 0;
+
+  // DD/MM/YYYY ou DD/MM/YYYY HH:mm ou DD/MM/YYYY HH:mm:ss
+  const brMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[\sT](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (brMatch) {
+    const d = parseInt(brMatch[1], 10);
+    const m = parseInt(brMatch[2], 10) - 1;
+    const y = parseInt(brMatch[3], 10);
+    const h = brMatch[4] ? parseInt(brMatch[4], 10) : 0;
+    const min = brMatch[5] ? parseInt(brMatch[5], 10) : 0;
+    const s = brMatch[6] ? parseInt(brMatch[6], 10) : 0;
+    return new Date(y, m, d, h, min, s).getTime();
+  }
+
+  // YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[\sT](\d{1,2}):(\d{1,2}))?/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10) - 1;
+    const d = parseInt(isoMatch[3], 10);
+    const h = isoMatch[4] ? parseInt(isoMatch[4], 10) : 0;
+    const min = isoMatch[5] ? parseInt(isoMatch[5], 10) : 0;
+    return new Date(y, m, d, h, min).getTime();
+  }
+
+  const d = new Date(str).getTime();
+  return isNaN(d) ? 0 : d;
 }
 
 /**
@@ -315,6 +357,7 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
 
     rows.push({
       id: `row_${r}_${cteHoras || placa || r}`,
+      orderIndex: r,
       cteHoras,
       jaFaturado: String(getVal(colIdx.jaFaturado, 1) || '').trim().toUpperCase(),
       dataVencimento: formatDatePtBr(getVal(colIdx.dataVencimento, 2)),
@@ -784,6 +827,7 @@ export function createNewEmptyRow(index: number = 1, idEmbarqueSistema?: string)
 
   return {
     id: `row_manual_${Date.now()}_${index}`,
+    orderIndex: Date.now() + index,
     idEmbarqueSistema: idEmbarqueSistema || '',
     cteHoras: randomCte,
     jaFaturado: 'NÃO',
@@ -848,10 +892,19 @@ export function createNewEmptyRow(index: number = 1, idEmbarqueSistema?: string)
   };
 }
 
+import {
+  saveSpreadsheetRowsToIndexedDB,
+  clearSpreadsheetStorage,
+  getSpreadsheetRowsMemoryCache
+} from './transcunhaSpreadsheetStorage';
+
 /**
- * Carrega as linhas persistidas no localStorage ou retorna null
+ * Carrega as linhas persistidas (verificando cache em memória e localStorage como fallback síncrono)
  */
 export function loadPersistedSpreadsheetRows(): TranscunhaSpreadsheetRow[] | null {
+  const memory = getSpreadsheetRowsMemoryCache();
+  if (memory && memory.length > 0) return memory;
+
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SPREADSHEET_ROWS);
@@ -867,29 +920,27 @@ export function loadPersistedSpreadsheetRows(): TranscunhaSpreadsheetRow[] | nul
 }
 
 /**
- * Salva as linhas no localStorage para persistência permanente
+ * Salva as linhas com persistência permanente no IndexedDB (sem limite de 5MB)
  */
 export function savePersistedSpreadsheetRows(rows: TranscunhaSpreadsheetRow[]): boolean {
   if (typeof window === 'undefined') return false;
-  try {
-    localStorage.setItem(STORAGE_KEY_SPREADSHEET_ROWS, JSON.stringify(rows));
-    return true;
-  } catch (err) {
-    console.error('Erro ao salvar planilha no localStorage:', err);
-    return false;
+  // Dispara salvamento permanente assíncrono no IndexedDB
+  saveSpreadsheetRowsToIndexedDB(rows).catch(err => {
+    console.error('Falha ao salvar no IndexedDB:', err);
+  });
+
+  // Tenta manter cache no localStorage apenas se o tamanho permitir
+  if (rows.length <= 400) {
+    try {
+      localStorage.setItem(STORAGE_KEY_SPREADSHEET_ROWS, JSON.stringify(rows));
+    } catch {}
   }
+  return true;
 }
 
 /**
  * Remove os dados persistidos para restaurar dados padrão
  */
 export function clearPersistedSpreadsheetRows(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(STORAGE_KEY_SPREADSHEET_ROWS);
-    localStorage.removeItem(STORAGE_KEY_SPREADSHEET_SHEETS);
-    localStorage.removeItem(STORAGE_KEY_ACTIVE_SHEET);
-  } catch (err) {
-    console.warn('Erro ao limpar localStorage da planilha:', err);
-  }
+  clearSpreadsheetStorage().catch(() => {});
 }

@@ -13,10 +13,18 @@ import {
   savePersistedSpreadsheetRows,
   clearPersistedSpreadsheetRows,
   parseNumberPtBr,
+  parseShipmentDate,
   STORAGE_KEY_SPREADSHEET_ROWS,
   STORAGE_KEY_SPREADSHEET_SHEETS,
   STORAGE_KEY_ACTIVE_SHEET
 } from '../../utils/transcunhaSpreadsheetParser';
+import {
+  saveSpreadsheetRowsToIndexedDB,
+  loadSpreadsheetRowsFromIndexedDB,
+  saveSpreadsheetMetadata,
+  loadSpreadsheetMetadata,
+  clearSpreadsheetStorage
+} from '../../utils/transcunhaSpreadsheetStorage';
 import { 
   Search, 
   Download, 
@@ -44,7 +52,8 @@ import {
   Minimize2,
   ChevronLeft,
   ChevronRight,
-  Move
+  Move,
+  Loader2
 } from 'lucide-react';
 
 interface ExtendedSpreadsheetRow extends TranscunhaSpreadsheetRow {
@@ -311,11 +320,36 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const [formulaBarValue, setFormulaBarValue] = useState<string>('');
   const [isSavedRecently, setIsSavedRecently] = useState<boolean>(true);
 
-  // Classificador de Ordem e Filtros por Coluna
-  const [sortConfig, setSortConfig] = useState<{ key: keyof TranscunhaSpreadsheetRow; direction: 'asc' | 'desc' } | null>(null);
+  // Classificador de Ordem Padrão: Último embarque emitido sempre o primeiro (dataEmbarque decrescente)
+  const [sortConfig, setSortConfig] = useState<{ key: keyof TranscunhaSpreadsheetRow; direction: 'asc' | 'desc' } | null>({
+    key: 'dataEmbarque',
+    direction: 'desc'
+  });
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [activeFilterPopup, setActiveFilterPopup] = useState<keyof TranscunhaSpreadsheetRow | null>(null);
   const [showFilterRow, setShowFilterRow] = useState<boolean>(true);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+
+  // Carregamento resiliente permanente via IndexedDB (sem limitação de quota do LocalStorage)
+  useEffect(() => {
+    let isMounted = true;
+    loadSpreadsheetRowsFromIndexedDB().then(savedRows => {
+      if (isMounted && savedRows && savedRows.length > 0) {
+        setSpreadsheetRows(savedRows);
+      }
+    });
+
+    loadSpreadsheetMetadata().then(meta => {
+      if (isMounted) {
+        if (meta.activeSheet) setActiveSheetName(meta.activeSheet);
+        if (meta.sheetNames && meta.sheetNames.length > 0) setAvailableSheets(meta.sheetNames);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Paginação de alta performance
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -636,6 +670,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           const today = s.scheduledDate ? new Date(s.scheduledDate).toLocaleDateString('pt-BR') : new Date(s.createdAt).toLocaleDateString('pt-BR');
           const newRow: TranscunhaSpreadsheetRow = {
             id: `sys_${s.id}`,
+            orderIndex: Date.now() + Math.floor(Math.random() * 1000),
             idEmbarqueSistema: s.id,
             cteHoras: s.cteEmissionDate || s.cteNumber || s.id,
             jaFaturado: s.status === ShipmentStatus.Finalizado ? 'SIM' : 'NÃO',
@@ -736,9 +771,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     setSortConfig(current => {
       if (current?.key === key) {
         if (current.direction === 'asc') return { key, direction: 'desc' };
-        return null;
+        // Ao desativar classificação secundária, retorna para a ordem padrão: último embarque emitido no topo
+        return { key: 'dataEmbarque', direction: 'desc' };
       }
-      return { key, direction: 'asc' };
+      return { key, direction: key === 'dataEmbarque' ? 'desc' : 'asc' };
     });
   }, []);
 
@@ -849,41 +885,49 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       return true;
     });
 
-    if (sortConfig) {
-      const { key, direction } = sortConfig;
-      const colDef = SPREADSHEET_COLUMNS.find(c => c.key === key);
+    // Classificação garantida: Por padrão ou por configuração, último embarque sempre no topo
+    const effectiveSort = sortConfig || { key: 'dataEmbarque' as keyof TranscunhaSpreadsheetRow, direction: 'desc' as const };
+    const { key, direction } = effectiveSort;
+    const colDef = SPREADSHEET_COLUMNS.find(c => c.key === key);
 
-      result = [...result].sort((a, b) => {
-        const valA = (a as any)[key];
-        const valB = (b as any)[key];
+    result = [...result].sort((a, b) => {
+      const valA = (a as any)[key];
+      const valB = (b as any)[key];
 
-        if (colDef?.type === 'number' || colDef?.type === 'currency' || colDef?.type === 'percent') {
-          const numA = typeof valA === 'number' ? valA : (parseFloat(String(valA).replace(/[^\d.-]/g, '')) || 0);
-          const numB = typeof valB === 'number' ? valB : (parseFloat(String(valB).replace(/[^\d.-]/g, '')) || 0);
-          return direction === 'asc' ? numA - numB : numB - numA;
-        }
+      // Ordenação especial por Datas (dataEmbarque, dataVencimento, dataPagamento, etc)
+      if (key === 'dataEmbarque' || key === 'dataVencimento' || key === 'dataPagamento' || /data/i.test(String(key))) {
+        const timeA = parseShipmentDate(valA);
+        const timeB = parseShipmentDate(valB);
 
-        if (typeof valA === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(valA) && typeof valB === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(valB)) {
-          const parseDate = (dStr: string) => {
-            const parts = dStr.split(/[\/\s:]/);
-            const d = parseInt(parts[0], 10) || 1;
-            const m = (parseInt(parts[1], 10) || 1) - 1;
-            const y = parseInt(parts[2], 10) || 2026;
-            const h = parseInt(parts[3], 10) || 0;
-            const min = parseInt(parts[4], 10) || 0;
-            return new Date(y, m, d, h, min).getTime();
-          };
-          const timeA = parseDate(valA);
-          const timeB = parseDate(valB);
+        if (timeA !== timeB) {
           return direction === 'asc' ? timeA - timeB : timeB - timeA;
         }
+        // Desempate de mesma data: o embarque emitido por último aparece primeiro
+        const orderA = a.orderIndex !== undefined ? a.orderIndex : (parseInt(String(a.id).replace(/\D/g, ''), 10) || 0);
+        const orderB = b.orderIndex !== undefined ? b.orderIndex : (parseInt(String(b.id).replace(/\D/g, ''), 10) || 0);
+        return orderB - orderA;
+      }
 
+      if (colDef?.type === 'number' || colDef?.type === 'currency' || colDef?.type === 'percent') {
+        const numA = typeof valA === 'number' ? valA : (parseFloat(String(valA).replace(/[^\d.-]/g, '')) || 0);
+        const numB = typeof valB === 'number' ? valB : (parseFloat(String(valB).replace(/[^\d.-]/g, '')) || 0);
+        if (numA !== numB) {
+          return direction === 'asc' ? numA - numB : numB - numA;
+        }
+      } else {
         const strA = String(valA ?? '').trim();
         const strB = String(valB ?? '').trim();
         const comp = strA.localeCompare(strB, 'pt-BR', { numeric: true, sensitivity: 'base' });
-        return direction === 'asc' ? comp : -comp;
-      });
-    }
+        if (comp !== 0) {
+          return direction === 'asc' ? comp : -comp;
+        }
+      }
+
+      // Desempate final sempre pela ordem de emissão (último emitido no topo)
+      const orderA = a.orderIndex !== undefined ? a.orderIndex : (parseInt(String(a.id).replace(/\D/g, ''), 10) || 0);
+      const orderB = b.orderIndex !== undefined ? b.orderIndex : (parseInt(String(b.id).replace(/\D/g, ''), 10) || 0);
+      return orderB - orderA;
+    });
 
     return result;
   }, [activeRows, searchTerm, statusFilter, saldoFilter, faturamentoFilter, syncFilter, dataSource, columnFilters, sortConfig]);
@@ -918,14 +962,16 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  // Persistência assíncrona
+  // Persistência assíncrona segura no IndexedDB (sem travamentos e sem limite de 5MB)
   const persistChanges = useCallback((newRows: TranscunhaSpreadsheetRow[]) => {
     setIsSavedRecently(false);
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
+      saveSpreadsheetRowsToIndexedDB(newRows).then(() => {
+        setIsSavedRecently(true);
+      });
       savePersistedSpreadsheetRows(newRows);
-      setIsSavedRecently(true);
-    }, 450);
+    }, 400);
   }, []);
 
   // Atualização de Célula
@@ -1093,13 +1139,14 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       setSpreadsheetRows(parsed.rows);
       setDataSource('onedrive');
 
+      // Gravação garantida permanente no IndexedDB
+      await saveSpreadsheetRowsToIndexedDB(parsed.rows);
+      await saveSpreadsheetMetadata(parsed.activeSheet, parsed.sheetNames);
       persistChanges(parsed.rows);
-      localStorage.setItem(STORAGE_KEY_ACTIVE_SHEET, parsed.activeSheet);
-      localStorage.setItem(STORAGE_KEY_SPREADSHEET_SHEETS, JSON.stringify(parsed.sheetNames));
 
       setNotification({
         type: 'success',
-        message: `Planilha importada com sucesso! ${parsed.totalRows} registros carregados.`
+        message: `Planilha importada com sucesso! ${parsed.totalRows} registros salvos permanentemente.`
       });
 
       setTimeout(() => setNotification(null), 5000);
@@ -1142,51 +1189,107 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     setTimeout(() => setNotification(null), 5000);
   };
 
+  // Exportação Segura, Otimizada e Não-Bloqueante (Garante permanência total dos dados gravados)
   const handleExportExcelXlsx = () => {
-    try {
-      const exportData = filteredRows.map(r => {
-        const obj: { [key: string]: any } = {};
-        SPREADSHEET_COLUMNS.forEach(col => {
-          obj[col.label.replace(' 🔄', '')] = (r as any)[col.key];
+    if (isExporting) return;
+    setIsExporting(true);
+    setNotification({
+      type: 'info',
+      message: `Preparando exportação de ${filteredRows.length} registros... Aguarde um instante.`
+    });
+
+    // Desacopla da thread principal para permitir renderização imediata do feedback
+    setTimeout(() => {
+      try {
+        const headers = SPREADSHEET_COLUMNS.map(col => col.label.replace(' 🔄', ''));
+        // Uso de AOA (Array of Arrays) para alta performance e baixíssimo consumo de memória
+        const rowsAoa = filteredRows.map(r => {
+          return SPREADSHEET_COLUMNS.map(col => {
+            const val = (r as any)[col.key];
+            if (val === undefined || val === null) return '';
+            return val;
+          });
         });
-        return obj;
-      });
 
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, activeSheetName || 'Carregamento');
-      
-      const fileName = `PLANILHA_EMBARQUE_TRANSCUNHA_${activeSheetName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(workbook, fileName);
+        const aoaData = [headers, ...rowsAoa];
+        const worksheet = XLSX.utils.aoa_to_sheet(aoaData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, activeSheetName || 'Carregamento');
 
-      setNotification({
-        type: 'success',
-        message: `Planilha exportada com sucesso (${fileName})!`
-      });
-      setTimeout(() => setNotification(null), 4000);
-    } catch {
-      handleExportFullCsv();
-    }
+        const fileName = `PLANILHA_EMBARQUE_TRANSCUNHA_${(activeSheetName || 'EMBARQUES').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        
+        // Escreve como binário em array para criação segura de Blob
+        const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+
+        // Limpeza segura com atraso para garantir que o Chrome inicie o download
+        setTimeout(() => {
+          if (link.parentNode) link.parentNode.removeChild(link);
+          URL.revokeObjectURL(url);
+        }, 3000);
+
+        setNotification({
+          type: 'success',
+          message: `Planilha exportada com sucesso (${filteredRows.length} linhas)! Todos os dados permanecem salvos.`
+        });
+        setTimeout(() => setNotification(null), 4000);
+      } catch (err) {
+        console.warn('Erro na geração XLSX, executando fallback CSV direto:', err);
+        handleExportFullCsv();
+      } finally {
+        setIsExporting(false);
+      }
+    }, 60);
   };
 
   const handleExportFullCsv = () => {
-    const headers = SPREADSHEET_COLUMNS.map(c => c.label.replace(' 🔄', ''));
-    const rows = filteredRows.map(r => {
-      return SPREADSHEET_COLUMNS.map(col => {
-        const val = (r as any)[col.key];
-        if (typeof val === 'number') return val.toFixed(2).replace('.', ',');
-        return `"${String(val || '').replace(/"/g, '""')}"`;
-      }).join(';');
-    });
+    try {
+      const headers = SPREADSHEET_COLUMNS.map(c => c.label.replace(' 🔄', ''));
+      const rows = filteredRows.map(r => {
+        return SPREADSHEET_COLUMNS.map(col => {
+          const val = (r as any)[col.key];
+          if (val === null || val === undefined) return '""';
+          if (typeof val === 'number') return val.toFixed(2).replace('.', ',');
+          return `"${String(val).replace(/"/g, '""')}"`;
+        }).join(';');
+      });
 
-    const csvContent = [headers.join(';'), ...rows].join('\r\n');
-    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `PLANILHA_EMBARQUE_TRANSCUNHA_${activeSheetName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+      const csvContent = [headers.join(';'), ...rows].join('\r\n');
+      const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `PLANILHA_EMBARQUE_TRANSCUNHA_${(activeSheetName || 'EMBARQUES').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 3000);
+
+      setNotification({
+        type: 'success',
+        message: `Planilha CSV exportada com sucesso (${filteredRows.length} registros)!`
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (err: any) {
+      console.error('Falha ao exportar CSV:', err);
+      setNotification({
+        type: 'error',
+        message: 'Falha ao processar arquivo de exportação.'
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleResetSample = () => {
@@ -1209,13 +1312,14 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       alert('Ação restrita: Apenas o usuário Suporte possui autorização para excluir a planilha.');
       return;
     }
+    clearSpreadsheetStorage();
     clearPersistedSpreadsheetRows();
     savePersistedSpreadsheetRows([]);
     setSpreadsheetRows([]);
     setAvailableSheets([]);
     setActiveSheetName('Planilha1');
     setColumnFilters({});
-    setSortConfig(null);
+    setSortConfig({ key: 'dataEmbarque', direction: 'desc' });
     setSelectedCell(null);
     setEditingCell(null);
     setFormulaBarValue('');
@@ -2046,11 +2150,14 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
             <button
               onClick={handleExportExcelXlsx}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              title="Exportar dados como planilha Excel"
+              disabled={isExporting}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                isExporting ? 'opacity-70 cursor-wait' : ''
+              }`}
+              title="Exportar dados como planilha Excel (.xlsx)"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Exportar</span>
+              {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isExporting ? 'Exportando...' : 'Exportar'}</span>
             </button>
 
             {isSupportUser && (
@@ -2343,10 +2450,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
                 <button
                   onClick={handleExportExcelXlsx}
-                  className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  disabled={isExporting}
+                  className={`flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    isExporting ? 'opacity-70 cursor-wait' : ''
+                  }`}
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  Exportar
+                  {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  {isExporting ? 'Exportando...' : 'Exportar'}
                 </button>
 
                 {isSupportUser && (

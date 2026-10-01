@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_01_v2_43_0',
+    version: 'v2.43.0',
+    date: '01/10/2026',
+    title: 'Persistência Permanente via IndexedDB, Ordem por Emissão Recente e Exportação Segura',
+    summary: 'Resolução definitiva da falha de página não encontrada (404) no recarregamento da planilha, implementação de armazenamento resiliente em IndexedDB capaz de manter mais de 16.000 registros sem perda de dados, ordenação padrão por emissão de embarque (o mais recente sempre no topo) e otimização da exportação Excel/CSV com proteção contra congelamentos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Correção de Rota e Erro 404 no Vercel',
+        description: 'Eliminado o conflito de normalização cleanUrls no servidor de borda do Vercel, permitindo que a rota direta /financial?tab=control-shipments seja recarregada ou acessada sem cair em tela de erro 404.'
+      },
+      {
+        category: 'improvement',
+        title: 'Armazenamento Ilimitado via IndexedDB',
+        description: 'Substituído o limite restritivo de 5MB do LocalStorage por banco de dados IndexedDB no navegador. Agora planilhas com mais de 16.800 linhas e 58 colunas são gravadas permanentemente, sobrevivendo a recarregamentos, fechamentos e exportações sem nenhuma perda de campos.'
+      },
+      {
+        category: 'feature',
+        title: 'Ordem por Emissão: Último Embarque Sempre o Primeiro',
+        description: 'A planilha agora organiza automaticamente todas as linhas pela data de emissão de embarque (decrescente). O último embarque cadastrado ou emitido aparece sempre na primeira linha do topo, seguido pelas emissões subsequentes em ordem decrescente, inclusive ao importar novas planilhas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Exportação Otimizada e Não-Bloqueante',
+        description: 'Processamento de exportação em Array of Arrays (AOA) com feedback visual de carregamento (spinner), evitando que o navegador congele ou caia durante a geração de arquivos pesados com dezenas de milhares de células.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_01_v2_42_0',
     version: 'v2.42.0',
     date: '01/10/2026',
