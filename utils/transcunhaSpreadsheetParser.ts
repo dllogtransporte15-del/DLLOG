@@ -190,6 +190,93 @@ export function parseShipmentDate(val: any): number {
 }
 
 /**
+ * Formata a informação da coluna "CTE E HORAS" exatamente no modelo padrão solicitado:
+ * [NUMERO_CTE] - [DD/MM/AA] - [HH:mm]
+ * Exemplo: 1999 - 29/09/26 - 08:00
+ */
+export function formatCteAndHours(
+  rawCte?: string | null,
+  rawDateHour?: string | null,
+  fallbackDate?: string | null,
+  fallbackId?: string | null
+): string {
+  const fullStr = String(rawCte || '').trim();
+
+  // Se o valor já estiver rigorosamente no formato padrão "XXXX - DD/MM/AA - HH:mm"
+  if (/^[A-Za-z0-9\-_\.\/]+\s*-\s*\d{2}\/\d{2}\/\d{2}\s*-\s*\d{2}:\d{2}$/.test(fullStr)) {
+    return fullStr;
+  }
+  // Se estiver no formato com ano de 4 dígitos "XXXX - DD/MM/AAAA - HH:mm"
+  if (/^[A-Za-z0-9\-_\.\/]+\s*-\s*\d{2}\/\d{2}\/\d{4}\s*-\s*\d{2}:\d{2}$/.test(fullStr)) {
+    return fullStr.replace(/(\d{2}\/\d{2}\/)20(\d{2})/, '$1$2');
+  }
+
+  // 1. Identificar o número do CT-e
+  let cteNumber = '';
+  if (rawCte && !/^\d{2}\/\d{2}\/\d{2,4}/.test(fullStr)) {
+    if (fullStr.includes(' - ')) {
+      cteNumber = fullStr.split(' - ')[0].trim();
+    } else {
+      cteNumber = fullStr;
+    }
+  }
+  if (!cteNumber && fallbackId) {
+    cteNumber = String(fallbackId).trim();
+  }
+
+  // 2. Identificar data e horário
+  let sourceDateStr = '';
+  if (rawDateHour && rawDateHour !== '-' && rawDateHour.trim() !== '') {
+    sourceDateStr = String(rawDateHour).trim();
+  } else if (rawCte && /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(fullStr)) {
+    sourceDateStr = fullStr;
+  } else if (fallbackDate && fallbackDate !== '-' && fallbackDate.trim() !== '') {
+    sourceDateStr = String(fallbackDate).trim();
+  }
+
+  let datePart = '';
+  let timePart = '08:00';
+
+  if (sourceDateStr) {
+    // DD/MM/YYYY ou DD/MM/YY com HH:mm opcional
+    const brMatch = sourceDateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:[,\sT]+(\d{1,2}):(\d{1,2}))?/);
+    if (brMatch) {
+      const d = brMatch[1].padStart(2, '0');
+      const m = brMatch[2].padStart(2, '0');
+      let y = brMatch[3];
+      if (y.length === 4) y = y.slice(-2);
+      datePart = `${d}/${m}/${y}`;
+      if (brMatch[4] && brMatch[5]) {
+        timePart = `${brMatch[4].padStart(2, '0')}:${brMatch[5].padStart(2, '0')}`;
+      }
+    } else {
+      // ISO YYYY-MM-DD
+      const isoMatch = sourceDateStr.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[,\sT]+(\d{1,2}):(\d{1,2}))?/);
+      if (isoMatch) {
+        const y = isoMatch[1].slice(-2);
+        const m = isoMatch[2].padStart(2, '0');
+        const d = isoMatch[3].padStart(2, '0');
+        datePart = `${d}/${m}/${y}`;
+        if (isoMatch[4] && isoMatch[5]) {
+          timePart = `${isoMatch[4].padStart(2, '0')}:${isoMatch[5].padStart(2, '0')}`;
+        }
+      }
+    }
+  }
+
+  if (!datePart) {
+    const today = new Date();
+    const d = String(today.getDate()).padStart(2, '0');
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const y = String(today.getFullYear()).slice(-2);
+    datePart = `${d}/${m}/${y}`;
+  }
+
+  const finalCte = cteNumber || (fallbackId ? String(fallbackId).trim() : 'CTE');
+  return `${finalCte} - ${datePart} - ${timePart}`;
+}
+
+/**
  * Lê e analisa a planilha do Excel (XLSX, XLSM ou CSV)
  */
 export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetNamePreference?: string): ParseResult {
@@ -334,10 +421,14 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
 
     const placa = String(getVal(colIdx.placa, 7)).trim();
     const motorista = String(getVal(colIdx.motorista, 10)).trim();
-    const cteHoras = String(getVal(colIdx.cteHoras, 0)).trim();
+    const rawCteHoras = String(getVal(colIdx.cteHoras, 0)).trim();
+    const cteVal = String(getVal(colIdx.cte, 45) || '').trim();
+    const dataEmbarqueVal = formatDatePtBr(getVal(colIdx.dataEmbarque, 6));
 
     // Linha vazia ou sem informações cruciais
-    if (!placa && !motorista && !cteHoras) continue;
+    if (!placa && !motorista && !rawCteHoras && !cteVal) continue;
+
+    const cteHoras = formatCteAndHours(rawCteHoras || cteVal, null, dataEmbarqueVal, cteVal || placa);
 
     const peso = parseNumberPtBr(getVal(colIdx.peso, 34));
     const freteEmpresaUnitario = parseNumberPtBr(getVal(colIdx.freteEmpresaUnitario, 28));
@@ -443,7 +534,7 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
 export const SAMPLE_TRANSCUNHA_SHEET_ROWS: TranscunhaSpreadsheetRow[] = [
   {
     id: 'row_1874',
-    cteHoras: '1822',
+    cteHoras: '1822 - 01/09/26 - 08:00',
     jaFaturado: 'SIM',
     dataVencimento: '15/09/2026',
     formaPagamento: 'FATURAS 14 DIAS',
@@ -829,7 +920,7 @@ export function createNewEmptyRow(index: number = 1, idEmbarqueSistema?: string)
     id: `row_manual_${Date.now()}_${index}`,
     orderIndex: Date.now() + index,
     idEmbarqueSistema: idEmbarqueSistema || '',
-    cteHoras: randomCte,
+    cteHoras: formatCteAndHours(randomCte, `${today} ${nowTime}`),
     jaFaturado: 'NÃO',
     dataVencimento: today,
     formaPagamento: 'FATURAS 14 DIAS',

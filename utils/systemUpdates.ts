@@ -46,6 +46,11 @@ export const SYSTEM_RELEASES: SystemRelease[] = [
         category: 'improvement',
         title: 'Exportação Otimizada e Não-Bloqueante',
         description: 'Processamento de exportação em Array of Arrays (AOA) com feedback visual de carregamento (spinner), evitando que o navegador congele ou caia durante a geração de arquivos pesados com dezenas de milhares de células.'
+      },
+      {
+        category: 'feature',
+        title: 'Formatação Padronizada da Coluna CTE E HORAS',
+        description: 'Ajustada a exibição e geração do campo CTE E HORAS para o modelo unificado: [NÚMERO CT-e] - [DATA EMISSÃO DD/MM/AA] - [HORÁRIO HH:mm] (ex: 1999 - 29/09/26 - 08:00), unindo o identificador fiscal e a estampa de data/hora em uma única informação clara e legível.'
       }
     ]
   },

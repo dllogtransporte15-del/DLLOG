@@ -14,6 +14,7 @@ import {
   clearPersistedSpreadsheetRows,
   parseNumberPtBr,
   parseShipmentDate,
+  formatCteAndHours,
   STORAGE_KEY_SPREADSHEET_ROWS,
   STORAGE_KEY_SPREADSHEET_SHEETS,
   STORAGE_KEY_ACTIVE_SHEET
@@ -95,7 +96,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   },
 
   // 1. Faturamento & Recebimento Empresa (Sky)
-  { key: 'cteHoras', label: 'CTE E HORAS', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[110px]' },
+  { key: 'cteHoras', label: 'CTE E HORAS', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[175px]' },
   { key: 'jaFaturado', label: 'JÁ FATURADO', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'select', options: ['SIM', 'NÃO'], width: 'min-w-[100px]' },
   { key: 'dataVencimento', label: 'DATA VENCIM', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[105px]' },
   { key: 'formaPagamento', label: 'FORMA DE PAGAMENTO', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[140px]' },
@@ -334,8 +335,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   useEffect(() => {
     let isMounted = true;
     loadSpreadsheetRowsFromIndexedDB().then(savedRows => {
-      if (isMounted && savedRows && savedRows.length > 0) {
-        setSpreadsheetRows(savedRows);
+      if (isMounted) {
+        if (savedRows && savedRows.length > 0) {
+          setSpreadsheetRows(savedRows);
+        } else if (spreadsheetRows && spreadsheetRows.length > 30) {
+          // Se o IndexedDB ainda não tinha os dados mas a memória tem (ex: 16.819 linhas importadas), grava imediatamente
+          saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+        }
       }
     });
 
@@ -350,6 +356,36 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       isMounted = false;
     };
   }, []);
+
+  // Monitoramento contínuo: qualquer alteração em lote de dados (>30 linhas) garante persistência imediata
+  useEffect(() => {
+    if (spreadsheetRows && spreadsheetRows.length > 30) {
+      saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+    }
+  }, [spreadsheetRows]);
+
+  // Garantia absoluta contra fechamento acidental ou recarregamento brusco
+  useEffect(() => {
+    const handleFlushOnExit = () => {
+      if (spreadsheetRows && spreadsheetRows.length > 30) {
+        saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+      }
+    };
+    window.addEventListener('beforeunload', handleFlushOnExit);
+    window.addEventListener('pagehide', handleFlushOnExit);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden' && spreadsheetRows && spreadsheetRows.length > 30) {
+        saveSpreadsheetRowsToIndexedDB(spreadsheetRows);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleFlushOnExit);
+      window.removeEventListener('pagehide', handleFlushOnExit);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [spreadsheetRows]);
 
   // Paginação de alta performance
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -512,11 +548,16 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       const fallbackHoraLiberSald = salTimestamp ? new Date(salTimestamp).toLocaleString('pt-BR') : '-';
       const systemQuebra = (s?.loadedTonnage && s?.unloadedTonnage) ? (s.loadedTonnage - s.unloadedTonnage) : 0;
 
+      const cteNum = s?.cteNumber || (s?.documents as any)?.cte_number || item.cteNumber || item.shipmentId;
+      const emissionDt = s?.cteEmissionDate || (s?.documents as any)?.cte_emission_date;
+      const fallbackDt = item.scheduledDate ? new Date(item.scheduledDate).toISOString() : (s?.createdAt || item.scheduledDate);
+      const formattedCteHoras = formatCteAndHours(syncRow?.cteHoras || cteNum, emissionDt, fallbackDt, item.shipmentId);
+
       return {
         id: `sys_${item.shipmentId}`,
         idEmbarqueSistema: item.shipmentId || s?.id || '',
         isSynced,
-        cteHoras: syncRow?.cteHoras || item.cteNumber || item.shipmentId,
+        cteHoras: formattedCteHoras,
         jaFaturado: syncRow?.jaFaturado || (item.companyFreightTotal > 0 ? 'SIM' : 'NÃO'),
         dataVencimento: syncRow?.dataVencimento || (item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('pt-BR') : ''),
         formaPagamento: syncRow?.formaPagamento || 'FATURAS 14 DIAS',
@@ -662,17 +703,31 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           };
 
           if (JSON.stringify(curr) !== JSON.stringify(updated)) {
-            updatedRows[existingIdx] = updated;
+            const cteNum = s.cteNumber || (s.documents as any)?.cte_number || curr.cte || s.id;
+            const emissionDt = s.cteEmissionDate || (s.documents as any)?.cte_emission_date;
+            const fallbackDt = s.scheduledDate || s.createdAt;
+
+            updatedRows[existingIdx] = {
+              ...curr,
+              ...updated,
+              cte: s.cteNumber || curr.cte,
+              cteHoras: formatCteAndHours(curr.cteHoras ? curr.cteHoras : cteNum, emissionDt, fallbackDt, s.id),
+              idEmbarqueSistema: s.id,
+            };
             hasChanges = true;
           }
         } else {
           // NOVO EMBARQUE CRIADO NO SISTEMA: cria nova linha no topo da planilha
           const today = s.scheduledDate ? new Date(s.scheduledDate).toLocaleDateString('pt-BR') : new Date(s.createdAt).toLocaleDateString('pt-BR');
+          const cteNum = s.cteNumber || (s.documents as any)?.cte_number || s.id;
+          const emissionDt = s.cteEmissionDate || (s.documents as any)?.cte_emission_date;
+          const fallbackDt = s.scheduledDate || s.createdAt;
+
           const newRow: TranscunhaSpreadsheetRow = {
             id: `sys_${s.id}`,
             orderIndex: Date.now() + Math.floor(Math.random() * 1000),
             idEmbarqueSistema: s.id,
-            cteHoras: s.cteEmissionDate || s.cteNumber || s.id,
+            cteHoras: formatCteAndHours(cteNum, emissionDt, fallbackDt, s.id),
             jaFaturado: s.status === ShipmentStatus.Finalizado ? 'SIM' : 'NÃO',
             dataVencimento: today,
             formaPagamento: s.paymentMethod ? String(s.paymentMethod).toUpperCase() : 'FATURAS 14 DIAS',
@@ -1724,7 +1779,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                           const rawValue = (row as any)[col.key];
 
                           let displayValue = rawValue || '-';
-                          if (col.type === 'currency' && typeof rawValue === 'number') {
+                          if (col.key === 'cteHoras' && rawValue && rawValue !== '-') {
+                            displayValue = formatCteAndHours(rawValue, (row as any).cteEmissionDate, row.dataEmbarque, (row as any).cte || row.idEmbarqueSistema || row.id);
+                          } else if (col.type === 'currency' && typeof rawValue === 'number') {
                             displayValue = rawValue > 0 ? formatCurrency(rawValue) : '-';
                           } else if (col.type === 'percent' && typeof rawValue === 'number') {
                             displayValue = rawValue > 0 ? `${rawValue}%` : '-';
@@ -1951,7 +2008,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         </td>
                         <td className="px-3 py-2 font-bold font-mono">
                           {(r as ExtendedSpreadsheetRow).isSynced && <span className="text-emerald-500 mr-1">✅</span>}
-                          {r.cteHoras || r.cte || '-'}
+                          {r.cteHoras ? formatCteAndHours(r.cteHoras, (r as any).cteEmissionDate, r.dataEmbarque, r.cte || r.idEmbarqueSistema || r.id) : (r.cte || '-')}
                         </td>
                         <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-mono">{r.dataEmbarque || '-'}</td>
                         <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{r.origem} → {r.destino}</td>
