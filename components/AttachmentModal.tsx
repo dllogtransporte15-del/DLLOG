@@ -35,6 +35,7 @@ interface AttachmentModalProps {
     riskQueryType?: string,
     riskQueryCost?: number,
     realProfitData?: RealProfitData,
+    codigoAtua?: string,
   }) => Promise<void>;
   shipment: Shipment;
   documentName: string;
@@ -270,6 +271,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [riskReleaseCode, setRiskReleaseCode] = useState('');
   const [riskQueryType, setRiskQueryType] = useState<string>('');
   const [grStatus, setGrStatus] = useState<'aprovado' | 'reprovado' | 'reprovado_restrito'>('aprovado');
+  const [codigoAtua, setCodigoAtua] = useState<string>('');
   const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -442,6 +444,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setRiskReleaseCode(shipment.riskReleaseCode || '');
       setRiskQueryType((shipment.riskQueryType as RiskQueryType) || '');
       setGrStatus('aprovado');
+      setCodigoAtua(
+        shipment.codigoAtua || 
+        (shipment.documents as any)?.codigo_atua || 
+        (shipment.documents as any)?.codg_atua || 
+        (shipment.documents as any)?.codigoAtua || 
+        ''
+      );
 
       // Se o pedágio ou adiantamento ou peso do CT-e não estiverem preenchidos, verifica os documentos já anexados
       if (shipment.documents) {
@@ -1098,6 +1107,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         riskReleaseCode: (isRiskModal && grStatus === 'aprovado') ? riskReleaseCode : undefined,
         riskQueryType: isRiskModal ? (riskQueryType || undefined) : undefined,
         riskQueryCost: isRiskModal ? (calculatedRiskCost !== undefined ? calculatedRiskCost : (riskQueryType ? 31.50 : undefined)) : undefined,
+        codigoAtua: codigoAtua ? codigoAtua.trim() : undefined,
       });
     } catch (err: any) {
       console.error('Error in handleSave:', err);
@@ -2385,6 +2395,32 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     </div>
                   )
                 )}
+              </div>
+            ) : shipment.status === ShipmentStatus.PreCadastro ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                  <FileInput
+                    label={documentName || "Comprovante de Cadastro"}
+                    files={singleFiles}
+                    onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                    onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                  />
+                  <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">
+                      CODG. ATUA <span className="text-xs font-normal text-gray-500">(Código de Atualização Cadastral)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={codigoAtua}
+                      onChange={(e) => setCodigoAtua(e.target.value)}
+                      placeholder="Ex: ATUA-123456 ou Cód. do Cadastro"
+                      className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary/20"
+                    />
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                      Código informativo vinculado à coluna <strong>CODG. ATUA</strong> da planilha de controle.
+                    </p>
+                  </div>
+                </div>
               </div>
             ) : (
               <FileInput

@@ -21,6 +21,407 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_02_v2_64_0',
+    version: 'v2.64.0',
+    date: '02/10/2026',
+    title: 'Conformidade de CIOT, SEST/SENAT e Saldo Líquido com a Carta Frete',
+    summary: 'Ajuste da extração, sincronização e exibição do SEST/SENAT (base previdenciária TAC de 20% s/ frete s/ pedágio), número do CIOT ANTT e saldo líquido contratual para refletir com exatidão os valores oficiais impressos na Carta Frete (CT-e 2041).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Cálculo e Preenchimento Exato do SEST/SENAT (R$ 23,82 no CT-e 2041)',
+        description: 'Corrigido o cálculo do SEST/SENAT para motoristas TAC/PF aplicando a alíquota legal de 2,5% sobre a base fiscal previdenciária (20% do frete contratual abatido o pedágio), eliminando divergências e sincronizando perfeitamente os R$ 23,82 da Carta Frete.'
+      },
+      {
+        category: 'feature',
+        title: 'Exibição do Código Oficial ANTT do CIOT na Planilha',
+        description: 'A coluna CIOT da planilha de controle agora exibe com clareza o número do CIOT homologado pela ANTT (ex: 5200352430756629) extraído da Carta Frete/Declaração de Operação de Transporte, mantendo no detalhamento a taxa bancária calculada.'
+      },
+      {
+        category: 'fix',
+        title: 'Conformidade do Saldo Contratual e Retenções Fiscais',
+        description: 'Garantida a integridade do saldo contratual líquido a receber (R$ 369,72 no CT-e 2041) abatendo corretamente o INSS (R$ 82,80) e SEST/SENAT (R$ 23,82) do saldo original de R$ 476,34 conforme Cláusula 3.5 da Carta Frete.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_63_0',
+    version: 'v2.63.0',
+    date: '02/10/2026',
+    title: 'Cadastro do Nº do Pedido, Tipo de Embalagem e Ajuste de Produto na Planilha',
+    summary: 'Inclusão do campo Número do Pedido no cadastro de carga com sincronização na Ordem de Carregamento e coluna Nº PEDIDO, exibição do produto real na coluna PRODUTO e preenchimento da embalagem da carga (Granel, Bigbag, Sacos) na coluna TIPO da planilha de controladoria.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Nº do Pedido no Cadastro de Carga e Ordem de Carregamento',
+        description: 'Adicionada a opção de informar o "Nº do Pedido (Cliente / Embarcador)" durante o cadastro de novas cargas, sendo impresso na Ordem de Carregamento (PDF) e preenchido na coluna "Nº PEDIDO" da planilha.'
+      },
+      {
+        category: 'feature',
+        title: 'Tipo de Embalagem (Granel, Bigbag, Sacos)',
+        description: 'Adicionado seletor/campo de embalagem (Granel, Bigbag, Sacos, Granel / Caçamba, etc.) no cadastro da carga, refletindo diretamente na coluna "TIPO" ao lado de Produto e na Ordem de Carregamento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Nome Real do Produto na Coluna PRODUTO',
+        description: 'A coluna PRODUTO da planilha de controle agora realiza o cruzamento com a base de produtos para exibir a denominação comercial real da mercadoria cadastrada na carga em vez de identificadores internos.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_62_0',
+    version: 'v2.62.0',
+    date: '02/10/2026',
+    title: 'Ajustes das Colunas de Liberação, Remetente, Código ATUA e Enquadramento ANTT',
+    summary: 'Configuração aprimorada das colunas da planilha de controle de embarques da controladoria: registro de data e hora reais de avanço com comprovante para saldo e adiantamento, renomeação de CARREGAR EMPRESA para REMETENTE, campo CODG. ATUA em Ag. Cadastro e ENQUADRAMENTO ANTT com base no Regime Tributário.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Horários Reais de Liberação de Adiantamento e Saldo',
+        description: 'As colunas HORA/DATA LIBER. ADIANT e HORA/DATA LIBER. SALDO agora capturam e exibem a data e hora exatas em que o comprovante foi anexado e o embarque avançou de etapa no sistema.'
+      },
+      {
+        category: 'feature',
+        title: 'Campo CODG. ATUA na Etapa de Cadastro',
+        description: 'Ao anexar o Comprovante de Cadastro em "Ag. Cadastro", foi adicionado um campo para informar o "CODG. ATUA", que é persistido no banco de dados e exibido na coluna correspondente da planilha.'
+      },
+      {
+        category: 'improvement',
+        title: 'Coluna REMETENTE',
+        description: 'A coluna CARREGAR EMPRESA foi renomeada para REMETENTE, mantendo a identificação do carregador da carga.'
+      },
+      {
+        category: 'improvement',
+        title: 'Coluna ENQUADRAMENTO ANTT pelo Regime Tributário',
+        description: 'A coluna PF/PJ OBS CAVALO ANTT foi renomeada para ENQUADRAMENTO ANTT e agora reflete fielmente o Regime Tributário informado no embarque (Simples Nacional, Lucro Real, Lucro Presumido, MEI, PF/TAC).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_61_0',
+    version: 'v2.61.0',
+    date: '02/10/2026',
+    title: 'Integração do Valor da NF-e (Mercadoria) na Planilha de Controle de Embarques',
+    summary: 'A coluna "VALOR DA NF" na planilha de controle de embarques da controladoria agora puxa e exibe automaticamente o valor da Nota Fiscal / mercadoria (ex: R$ 5.592,12), sincronizado diretamente com o painel de custos automatizados do CT-e e com os documentos fiscais importados.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Valor da NF-e Exibido na Planilha',
+        description: 'A coluna VALOR DA NF puxa o valor monetário real da mercadoria / NF-e do embarque e do cálculo de Lucro Real, formatado em moeda brasileira e com destaque visual.'
+      },
+      {
+        category: 'improvement',
+        title: 'Mapeamento e Fallback Inteligente de Documentos',
+        description: 'Sincronização abrangente entre nfeValue, realProfitData.invoiceValue, nfe_value e valor_mercadoria extraídos automaticamente do XML dos documentos fiscais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Rastreamento e Persistência do Valor da NF',
+        description: 'Adicionado suporte ao nfeValue no histórico de alterações do embarque, banco de dados Supabase e atualizações em lote.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_60_0',
+    version: 'v2.60.0',
+    date: '02/10/2026',
+    title: 'Remoção das Colunas Redundantes CTE e Controle em Frete & Acerto Motorista',
+    summary: 'Exclusão das colunas duplicadas CTE e Controle do setor "Frete & Acerto Motorista", liberando espaço horizontal na planilha de controle de embarques da controladoria.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Remoção de Colunas Duplicadas',
+        description: 'Excluídas as colunas CTE e CONTROLE do setor de Frete & Acerto Motorista, uma vez que o número do CT-e e data/hora de emissão já são apresentados nas colunas dedicadas de abertura.'
+      },
+      {
+        category: 'improvement',
+        title: 'Reajuste do Cabeçalho de Frete & Acerto Motorista',
+        description: 'O banner do setor "Frete & Acerto Motorista" foi ajustado para ocupar 5 colunas, mantendo a simetria perfeita da grade.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_59_0',
+    version: 'v2.59.0',
+    date: '02/10/2026',
+    title: 'Integração do Valor Financeiro do CIOT (0,20% s/ Frete Motorista) na Planilha de Controle',
+    summary: 'A coluna CIOT na planilha de controle de embarques da controladoria agora puxa e exibe automaticamente o valor financeiro real do CIOT (0,20% sobre o frete do motorista abatido pedágio e deduções TAC/PF), exatamente como calculado no card de custos da automatização do CT-e, com suporte ao código cadastrado.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Coluna CIOT com Valor Financeiro Calculado',
+        description: 'A coluna CIOT agora puxa o valor monetário real do CIOT do embarque (0,20% sobre o frete motorista abatido o pedágio e encargos PF), formatado em moeda (ex: R$ 14,34) e com destaque visual.'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção de Código e Valor nos Detalhes',
+        description: 'Ao passar o mouse sobre a célula de CIOT, exibe-se tanto o valor monetário quanto o número do CIOT cadastrado no embarque ou extraído dos documentos.'
+      },
+      {
+        category: 'fix',
+        title: 'Eliminação de Códigos Internos no Campo CIOT',
+        description: 'Removida a atribuição incorreta que exibia o ID interno do embarque (ex: CEL-665) na coluna CIOT.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_58_0',
+    version: 'v2.58.0',
+    date: '02/10/2026',
+    title: 'Otimização de Espaço Horizontal e Quebra dos Títulos das Colunas em 2 Linhas',
+    summary: 'Redução e padronização da largura das colunas que continham espaço vazio excessivo, com quebra inteligente dos títulos dos cabeçalhos em duas linhas para economizar espaço horizontal e permitir a visualização de mais colunas simultaneamente.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Quebra de Títulos em 2 Linhas nos Cabeçalhos',
+        description: 'Os títulos das colunas agora quebram naturalmente em até duas linhas sem forçar a expansão horizontal desnecessária da tabela.'
+      },
+      {
+        category: 'improvement',
+        title: 'Redução e Padronização da Largura das Colunas',
+        description: 'Colunas como ID do Embarque, CT-e, Já Faturado, Datas, Formas de Pagamento e Status foram compactadas para eliminar espaços ociosos e maximizar a densidade de dados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_57_0',
+    version: 'v2.57.0',
+    date: '02/10/2026',
+    title: 'Aumento de Destaque Visual e Contraste nos Cabeçalhos da Controladoria',
+    summary: 'Novo layout premium de alto contraste para o cabeçalho da planilha de embarques da controladoria, com gradientes harmoniosos para os setores operacionais, tipografia mais imponente e cabeçalhos de colunas nítidos.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Banners dos Setores com Gradientes e Alto Destaque',
+        description: 'Os títulos de setores operacionais receberam gradientes refinados, maior altura, tipografia em caixa alta destacada e divisórias nítidas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Cabeçalhos de Colunas com Alto Contraste e Tipografia Black',
+        description: 'A linha de colunas agora possui contraste aprimorado tanto no tema escuro quanto no tema claro, com fontes 11px em negrito pesado (font-black), indicadores de ordenação vibrantes e linhas de filtro modernizadas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_56_0',
+    version: 'v2.56.0',
+    date: '02/10/2026',
+    title: 'Exclusão Automática de Embarques Cancelados na Planilha da Controladoria',
+    summary: 'A planilha da controladoria financeira agora filtra e descarta automaticamente os embarques cancelados, garantindo que apenas fretes e documentos ativos façam parte do faturamento, cobrança e acertos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Ocultação de Embarques Cancelados por Padrão',
+        description: 'Embarques cancelados (como WEB-400, WEB-279, etc.) que possuíam registros de CT-e gerados antes do cancelamento foram removidos da visualização operacional padrão.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtro de Status com Opção Específica para Cancelados',
+        description: 'A opção "Status: Todos (Ativos)" exibe estritamente cargas em trânsito ou finalizadas, disponibilizando a opção "Cancelado" apenas para consultas pontuais de auditoria.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_55_0',
+    version: 'v2.55.0',
+    date: '02/10/2026',
+    title: 'Separação das Colunas CTE e Data/Hora de Emissão e Ordenação Decrescente por CTE',
+    summary: 'Organização automática das linhas da planilha pelo número de CT-e em ordem decrescente, criação da nova coluna "DATA/HORA DE EMISSÃO" e exibição limpa do número do documento na coluna "CTE".',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Coluna "CTE" com Apenas o Número do Documento',
+        description: 'O cabeçalho foi alterado para "CTE" e o valor agora exibe puramente o número do CT-e de forma limpa, elegante e destacada.'
+      },
+      {
+        category: 'feature',
+        title: 'Nova Coluna "DATA/HORA DE EMISSÃO"',
+        description: 'Coluna dedicada adicionada logo ao lado do CT-e exibindo separadamente a data e hora oficial de emissão vinculada ao documento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ordenação Padrão por CT-e Decrescente',
+        description: 'As linhas da planilha da controladoria passam a ser organizadas por padrão pelo número de CT-e em ordem decrescente com comparação numérica precisa.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_54_0',
+    version: 'v2.54.0',
+    date: '02/10/2026',
+    title: 'Padronização da Quantidade de Eixos por Conjunto Veicular na Controladoria',
+    summary: 'A coluna "EIXO" do setor Tomador, Rota & Pesagem agora traduz e exibe com exatidão a quantidade de eixos do veículo vinculado ao embarque, seguindo a matriz operacional de conjuntos veiculares e basculantes.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Matriz Oficial de Eixos por Conjunto Veicular',
+        description: 'Mapeamento automático: Rodotrem/Rodotrem 3x3 (9 eixos), Bitrem 8e (8 eixos), Bitrem 7e/Cavalo 4e/Carreta 4e (7 eixos), LS Trucada/Vanderleia (6 eixos), LS Simples (5 eixos), Bitruck (4 eixos) e Caminhão Truck (3 eixos).'
+      },
+      {
+        category: 'improvement',
+        title: 'Visualização Clara e Subtítulo de Modelo',
+        description: 'Exibição da quantidade de eixos em destaque com indicação compacta do modelo do conjunto veicular, integrando à exportação Excel e aos filtros.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_53_0',
+    version: 'v2.53.0',
+    date: '01/10/2026',
+    title: 'Recuperação e Amarração de Origem e Destino para Embarques Órfãos',
+    summary: 'Identificação e resolução de embarques sem cidade de origem e destino na planilha de controladoria. A carga vinculada (CRG-253) foi restaurada no banco de dados com base nas Ordens de Carregamento oficiais do TMS, associando Pratápolis/MG a Salto de Pirapora/SP e eliminando pontos soltos na rota.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Restauração da Carga CRG-253 no Banco de Dados',
+        description: 'Recriação da carga de Gesso da Mineração Morro Verde / Massari (Pratápolis, MG → Salto de Pirapora, SP), vinculando-a aos embarques MUR-647 até MUR-652.'
+      },
+      {
+        category: 'improvement',
+        title: 'Tratamento Resiliente de Rotas e Destinos',
+        description: 'Eliminação de caracteres pontuais provisórios (.) no campo de rota com fallback inteligente para trajetos diretos e cálculo de quilometragem rodoviária (416 km).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_52_0',
+    version: 'v2.52.0',
+    date: '01/10/2026',
+    title: 'Cálculo de KM de Distância entre Cidade de Origem e Cidade de Destino',
+    summary: 'A coluna "KM DISTÂNCIA" do setor Tomador, Rota & Pesagem agora calcula e apresenta com exatidão a quilometragem rodoviária entre a cidade de origem e a cidade de destino de cada embarque, acompanhada da indicação clara do trajeto direto.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Remoção de Pontos e Cadeias Excessivas de Cidades',
+        description: 'Eliminação de pontos soltos (.) e de sequências com múltiplos waypoints intermediários na coluna de distância, focando exclusivamente na relação Origem x Destino.'
+      },
+      {
+        category: 'feature',
+        title: 'Cálculo Rodoviário Automático de KM',
+        description: 'Integração de matriz de coordenadas logísticas com cálculo de sinuosidade rodoviária (ex: Lagamar, MG → Nazário, GO: 464 km; Monte Belo, MG → Cubatão, SP: 358 km; Catalão, GO → Sacramento, MG: 245 km).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_51_0',
+    version: 'v2.51.0',
+    date: '01/10/2026',
+    title: 'Adequação da Forma de Pagamento ao Padrão do Cliente (Pix, Boleto, Transferência Bancária)',
+    summary: 'A coluna "FORMA DE PAGAMENTO" do setor de Faturamento & Recebimento Empresa foi reestruturada para refletir exclusivamente a modalidade de liquidação do cliente (Boleto, Pix ou Transferência Bancária), com seleção rápida e interativa na própria planilha.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Mapeamento Fiel da Modalidade do Cliente',
+        description: 'Substituição das modalidades de pagamento do motorista (ex: PIX - E-FRETE) pelas formas oficiais de recebimento do cliente/tomador: Boleto, Pix e Transferência Bancária.'
+      },
+      {
+        category: 'feature',
+        title: 'Seletor Interativo e Persistência de Modalidade',
+        description: 'Inclusão de dropdown seletor estilizado diretamente na célula da planilha com persistência automática de escolha por embarque.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_50_0',
+    version: 'v2.50.0',
+    date: '01/10/2026',
+    title: 'Exibição Exclusiva de Embarques com CT-e na Planilha de Controladoria',
+    summary: 'A planilha de controladoria agora filtra e exibe nativamente apenas os embarques que possuem CT-e emitido, formatando a numeração oficial na coluna "CTE E HORAS" e disponibilizando um botão de alternância rápida na barra de ferramentas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Filtro Automático de Embarques com CT-e',
+        description: 'A planilha carrega por padrão apenas os registros com CT-e emitido e válido, eliminando linhas provisórias que exibiam o ID do embarque.'
+      },
+      {
+        category: 'improvement',
+        title: 'Botão de Controle "Apenas com CT-e"',
+        description: 'Novo botão na barra de ferramentas indicando a quantidade total de embarques com CT-e emitido e permitindo alternar a visualização a qualquer momento.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_49_0',
+    version: 'v2.49.0',
+    date: '01/10/2026',
+    title: 'Exibição Correta do Embarcador Solicitante na Planilha de Controladoria',
+    summary: 'A coluna SOLICITANTE da planilha de controladoria agora resolve dinamicamente o nome completo do Embarcador ou Agenciador Solicitante vinculado a cada embarque (via embarcadorId, createdById, cadastro de usuários e clientes), eliminando o fallback genérico.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Resolução Dinâmica do Embarcador Solicitante',
+        description: 'A coluna SOLICITANTE busca e exibe o nome real do usuário solicitante (ex: Felipe Miguel de Paula Eduardo, Rafael Tarantelli, Webert Diniz, Celso Pucci Godoy) com base no cadastro de usuários e clientes do sistema.'
+      },
+      {
+        category: 'fix',
+        title: 'Alinhamento Rigoroso de Tipagem TypeScript (Cargo & Shipment)',
+        description: 'Correção de acessos a propriedades no mapeamento da planilha: substituição de referências como companyFreightValuePerTon, driverFreightType, riskReleaseCode e cálculo de saldo do pedido.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_48_0',
+    version: 'v2.48.0',
+    date: '01/10/2026',
+    title: 'Integração Nativa da Planilha da Controladoria com Data Binding em Tempo Real',
+    summary: 'Implementação da arquitetura oficial de 61 colunas da planilha do OneDrive vinculadas diretamente às tabelas operacionais e financeiras do sistema (shipments, cargos, clients, drivers). Os dados operacionais agora preenchem automaticamente todas as colunas com recálculo instantâneo de KPIs, filtros rápidos de período (Dia, Semana, Mês, Ano e Calendário) e exportação Excel.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Mapeamento Completo de 61 Colunas Oficiais',
+        description: 'Estruturação dos 10 setores de negócio com data binding automático a partir das tabelas nativas de embarques, fretes e cadastros.'
+      },
+      {
+        category: 'improvement',
+        title: 'Preenchimento Automático em Tempo de Execução',
+        description: 'Sincronização imediata: qualquer alteração de frete, peso, status ou adiantamento no sistema reflete instantaneamente na planilha.'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro Avançado com Calendário Personalizado',
+        description: 'Suporte a filtros rápidos por Dia, Semana, Mês, Ano e seletor com calendário de data inicial e final.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_47_0',
+    version: 'v2.47.0',
+    date: '01/10/2026',
+    title: 'Reset Completo da Planilha da Controladoria para Novo Recomeço',
+    summary: 'Limpeza de todos os dados legados e reset do código do módulo de planilha para início de uma nova implementação do zero.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Reset de Código e Storage',
+        description: 'Componente da Planilha limpo e estruturado para receber a nova modelagem de dados, colunas e funcionalidades.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_01_v2_46_0',
+    version: 'v2.46.0',
+    date: '01/10/2026',
+    title: 'Filtro Avançado de Períodos: Hoje (Dia), Semana, Mês, Anual e Calendário Personalizado (Início e Fim)',
+    summary: 'Implementação de novo sistema completo de filtragem temporal por períodos na Planilha da Controladoria, com suporte a filtros rápidos (Hoje, Esta Semana, Este Mês, Este Ano) e seletor com calendário interativo para escolha de faixas de datas personalizadas (Início e Fim).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Filtros Rápidos por Período',
+        description: 'Adicionados botões e seletor para filtragem instantânea por Dia (Hoje), Semana Atual, Mês Atual e Ano Atual, recalculando automaticamente os KPIs de frete bruto, custo motorista e margem.'
+      },
+      {
+        category: 'feature',
+        title: 'Calendário Personalizado com Início e Fim',
+        description: 'Interface interativa com seleção de Data Inicial (Início) e Data Final (Fim), com badge de status, botão de limpeza rápida e integração total com os dados da planilha.'
+      },
+      {
+        category: 'improvement',
+        title: 'Análise Resiliente de Datas Brasileiras e Horários',
+        description: 'Motor de interpretação de datas aprimorado para aceitar formatos DD/MM/AAAA, DD/MM/AA, strings compostas "CTE - DD/MM/AA - HH:mm", números de série do Excel e timestamps ISO com máxima precisão.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_01_v2_45_0',
     version: 'v2.45.0',
     date: '01/10/2026',

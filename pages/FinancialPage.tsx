@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { Shipment, Cargo, Client, User, FinancialTransaction, BankAccount, FinancialTab, Branch } from '../types';
+import type { Shipment, Cargo, Client, User, FinancialTransaction, BankAccount, FinancialTab, Branch, Product } from '../types';
 import { FinancialTransactionStatus } from '../types';
 import { 
   DollarSign, 
@@ -36,6 +36,7 @@ interface FinancialPageProps {
   users: User[];
   currentUser?: User | null;
   branches?: Branch[];
+  products?: Product[];
 }
 
 const STORAGE_TRANSACTIONS_KEY = 'transcunha_financial_transactions';
@@ -83,7 +84,8 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   clients,
   users,
   currentUser: _currentUser,
-  branches = []
+  branches = [],
+  products = []
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab') as FinancialTab | null;
@@ -470,7 +472,9 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             shipments={shipments}
             cargos={cargos}
             clients={clients}
+            users={users}
             currentUser={_currentUser}
+            products={products}
           />
         )}
 

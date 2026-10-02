@@ -9,7 +9,7 @@ import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus } from '../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
 import { isDemoUser } from '../auth';
 
 
@@ -241,6 +241,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       anttOwnerIdentifier: shipment.anttOwnerIdentifier,
       cteNumber: isCteApplicableForStatus(shipment.status) ? (shipment.cteNumber || (getShipmentCte(shipment) !== '-' ? getShipmentCte(shipment) : '')) : '',
       cteEmissionDate: isCteApplicableForStatus(shipment.status) ? (shipment.cteEmissionDate || (getShipmentCteEmissionDate(shipment) || '')) : '',
+      ciotNumber: shipment.ciotNumber || shipment.ciot || (getShipmentCiotNumber(shipment) !== '-' ? getShipmentCiotNumber(shipment) : ''),
+      ciot: shipment.ciot || shipment.ciotNumber || (getShipmentCiotNumber(shipment) !== '-' ? getShipmentCiotNumber(shipment) : ''),
     });
     setIsEditingData(true);
   };
@@ -322,11 +324,13 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">
                 <DetailItem label="Origem da Carga" value={cargo?.origin} />
                 <DetailItem label="Destino da Carga" value={cargo?.destination} />
-                <DetailItem label="Produto" value={product?.name} />
+                <DetailItem label="Produto" value={product?.name || (cargo as any)?.productName || 'GRÃOS'} />
+                <DetailItem label="Nº do Pedido" value={cargo?.orderNumber || (cargo as any)?.numeroPedido || cargo?.tmsLoteNumber || 'N/A'} />
+                <DetailItem label="Tipo / Embalagem" value={cargo?.packaging || 'Granel'} />
                 <DetailItem label="Carga Vinculada">
                     <div className="flex items-center justify-between gap-2 mt-0.5">
                         <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                            {cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.tmsLoteNumber ? ` (Lote TMS: ${cargo.tmsLoteNumber})` : ''}` : (cargo?.id || 'N/A')}
+                            {cargo?.sequenceId ? `#${cargo.sequenceId}${cargo.orderNumber ? ` (Ped: ${cargo.orderNumber})` : (cargo.tmsLoteNumber ? ` (Lote: ${cargo.tmsLoteNumber})` : '')}` : (cargo?.id || 'N/A')}
                         </span>
                         {onSwapCargo && !isDemo && shipment.status !== ShipmentStatus.Cancelado && (
                             <button
@@ -499,6 +503,16 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     placeholder="Ex: 13/08/2026 11:40"
                                 />
                             </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Número do CIOT</label>
+                                <input 
+                                    type="text"
+                                    className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    value={editedData.ciotNumber || ''}
+                                    onChange={e => setEditedData({...editedData, ciotNumber: e.target.value, ciot: e.target.value})}
+                                    placeholder="Ex: 123456789012"
+                                />
+                            </div>
                         </>
                     ) : (
                         <>
@@ -526,6 +540,13 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                             {cteDate && <p className="text-xs text-gray-500 dark:text-gray-400">Emissão: {cteDate}</p>}
                                         </div>
                                     );
+                                })()}
+                            </DetailItem>
+                            <DetailItem label="CIOT">
+                                {(() => {
+                                    const ciotVal = getShipmentCiotNumber(shipment);
+                                    if (ciotVal === '-') return <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>;
+                                    return <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{ciotVal}</p>;
                                 })()}
                             </DetailItem>
                         </>

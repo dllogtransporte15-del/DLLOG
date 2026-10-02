@@ -73,6 +73,11 @@ export async function syncSingleShipmentDocuments(
 
         // 4. Sincronização Carta Frete / Contrato de Frete
         if (extracted.documentType === 'Carta Frete' || docType.toLowerCase().includes('carta frete') || docType.toLowerCase().includes('contrato') || docType.toLowerCase().includes('e-frete')) {
+          if (extracted.ciot && (shipment.ciotNumber !== extracted.ciot || shipment.ciot !== extracted.ciot)) {
+            updated.ciotNumber = extracted.ciot;
+            updated.ciot = extracted.ciot;
+            hasChanges = true;
+          }
           if (extracted.financeiro?.porcentagemAdiantamento !== undefined && shipment.advancePercentage !== extracted.financeiro.porcentagemAdiantamento) {
             updated.advancePercentage = extracted.financeiro.porcentagemAdiantamento;
             hasChanges = true;
@@ -85,12 +90,24 @@ export async function syncSingleShipmentDocuments(
             updated.tollValue = extracted.financeiro.valorPedagio;
             hasChanges = true;
           }
-          if (extracted.financeiro?.valorSaldo !== undefined && shipment.balanceToReceiveValue !== extracted.financeiro.valorSaldo) {
-            updated.balanceToReceiveValue = extracted.financeiro.valorSaldo;
+          const saldoFromDoc = extracted.calculoSaldoFrete?.subtotal !== undefined 
+            ? extracted.calculoSaldoFrete.subtotal 
+            : extracted.financeiro?.valorSaldo;
+          if (saldoFromDoc !== undefined && shipment.balanceToReceiveValue !== saldoFromDoc) {
+            updated.balanceToReceiveValue = saldoFromDoc;
             hasChanges = true;
           }
           if (extracted.financeiro?.chavePix && !shipment.pixKey) {
             updated.pixKey = extracted.financeiro.chavePix;
+            hasChanges = true;
+          }
+          if (extracted.calculoSaldoFrete?.sestSenat !== undefined) {
+            const currentRealProfit: any = { ...(shipment.realProfitData || {}), ...(updated.realProfitData || {}) };
+            currentRealProfit.sestSenat = extracted.calculoSaldoFrete.sestSenat;
+            if (extracted.calculoSaldoFrete.inssRetido !== undefined) {
+              currentRealProfit.inssRetido = extracted.calculoSaldoFrete.inssRetido;
+            }
+            updated.realProfitData = currentRealProfit;
             hasChanges = true;
           }
         }

@@ -130,7 +130,11 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   vehicleBodyType: 'Tipo de Carroceria',
   cteNumber: 'Número do CT-e',
   cteEmissionDate: 'Data/Hora de Emissão do CT-e',
+  ciotNumber: 'Número do CIOT',
+  ciot: 'Número do CIOT',
   nfeNumber: 'Número da NF-e',
+  nfeValue: 'Valor da NF-e',
+  codigoAtua: 'CODG. ATUA',
   mdfeNumber: 'Número do MDF-e',
   federalTax: 'Imposto Federal',
   isFederalTaxManual: 'Imposto Federal Manual',
@@ -1848,8 +1852,9 @@ const App: React.FC = () => {
     riskQueryType?: string,
     riskQueryCost?: number,
     realProfitData?: RealProfitData,
+    codigoAtua?: string,
   }) => {
-    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, isBreakageWaived, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost, realProfitData } = data;
+    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, isBreakageWaived, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost, realProfitData, codigoAtua } = data;
     
     if (!currentUser) {
       showToast('Usuário não autenticado.', 'error');
@@ -2044,6 +2049,24 @@ const App: React.FC = () => {
         const existingDocs = updatedDocuments[docType] || [];
         updatedDocuments[docType] = [...existingDocs, ...newDocUrls];
       }
+
+      if (codigoAtua !== undefined && codigoAtua !== null && String(codigoAtua).trim() !== '') {
+        const cleanAtua = String(codigoAtua).trim();
+        updatedDocuments.codigo_atua = cleanAtua;
+        updatedDocuments.codg_atua = cleanAtua;
+      }
+
+      if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento && nextStatus !== originalShipment.status) {
+        const nowIso = new Date().toISOString();
+        updatedDocuments.data_liberacao_adiantamento = nowIso;
+        updatedDocuments.hora_data_liberacao_adiantamento = nowIso;
+      }
+
+      if (originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo && nextStatus !== originalShipment.status) {
+        const nowIso = new Date().toISOString();
+        updatedDocuments.data_liberacao_saldo = nowIso;
+        updatedDocuments.hora_data_liberacao_saldo = nowIso;
+      }
     } catch (error) {
       console.error('Erro ao fazer upload dos anexos:', error);
       showToast('Ocorreu um erro ao enviar os arquivos. Verifique sua conexão e tente novamente.', 'error');
@@ -2056,16 +2079,19 @@ const App: React.FC = () => {
 
     let extractedCteNumber: string | undefined = originalShipment.cteNumber || latestDbCteNumber || undefined;
     let extractedCteEmissionDate: string | undefined = originalShipment.cteEmissionDate || latestDbCteDate || undefined;
+    let extractedCiotNumber: string | undefined = originalShipment.ciotNumber || originalShipment.ciot || undefined;
     let extractedNfeNumber: string | undefined = originalShipment.nfeNumber || latestDbNfeNumber || undefined;
     let extractedMdfeNumber: string | undefined = originalShipment.mdfeNumber || latestDbMdfeNumber || undefined;
     let fiscalDocLog = '';
     let extractedTollValue: number | undefined = undefined;
     let extractedAdvanceValue: number | undefined = undefined;
     let extractedAdvancePercentage: number | undefined = undefined;
+    let extractedFiscalNums: any = null;
 
     if (Object.keys(filesToAttach).length > 0) {
       try {
         const fiscalNums = await extractFiscalDocNumbers(filesToAttach);
+        extractedFiscalNums = fiscalNums;
         const hasCteFileInBatch = Object.keys(filesToAttach).some(dt => isCteDocType(dt));
 
         if (canExtractCte && fiscalNums.cteNumber && (hasCteFileInBatch || !extractedCteNumber)) {
@@ -2073,6 +2099,22 @@ const App: React.FC = () => {
         }
         if (canExtractCte && fiscalNums.cteEmissionDate && (hasCteFileInBatch || !extractedCteEmissionDate)) {
           extractedCteEmissionDate = fiscalNums.cteEmissionDate;
+        }
+        if (fiscalNums.ciotNumber) {
+          extractedCiotNumber = fiscalNums.ciotNumber;
+          updatedDocuments.ciot_number = fiscalNums.ciotNumber;
+          updatedDocuments.ciot = fiscalNums.ciotNumber;
+        }
+        if (fiscalNums.sestSenatValue !== undefined) {
+          updatedDocuments.sest_senat = fiscalNums.sestSenatValue;
+          updatedDocuments.sestSenat = fiscalNums.sestSenatValue;
+        }
+        if (fiscalNums.inssRetidoValue !== undefined) {
+          updatedDocuments.inss_retido = fiscalNums.inssRetidoValue;
+          updatedDocuments.inssRetido = fiscalNums.inssRetidoValue;
+        }
+        if (fiscalNums.subtotalSaldoValue !== undefined) {
+          updatedDocuments.saldo_liquido = fiscalNums.subtotalSaldoValue;
         }
         if (fiscalNums.nfeNumber) extractedNfeNumber = fiscalNums.nfeNumber;
         if (fiscalNums.mdfeNumber) extractedMdfeNumber = fiscalNums.mdfeNumber;
@@ -2083,6 +2125,7 @@ const App: React.FC = () => {
         const docLogs = [
           (canExtractCte && fiscalNums.cteNumber) ? `CT-e nº ${fiscalNums.cteNumber}` : null,
           (canExtractCte && fiscalNums.cteEmissionDate) ? `Emissão: ${fiscalNums.cteEmissionDate}` : null,
+          fiscalNums.ciotNumber ? `CIOT nº ${fiscalNums.ciotNumber}` : null,
           fiscalNums.nfeNumber ? `NF-e nº ${fiscalNums.nfeNumber}` : null,
           fiscalNums.mdfeNumber ? `MDF-e nº ${fiscalNums.mdfeNumber}` : null,
           fiscalNums.advanceValue !== undefined ? `Adiantamento: R$ ${fiscalNums.advanceValue.toLocaleString('pt-BR')}` : null,
@@ -2175,7 +2218,11 @@ const App: React.FC = () => {
       historyLogs.push(`Pedágio no Tag: R$ ${Number(effectiveTollValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`);
     }
 
-    let finalBalanceToReceive = balanceToReceiveValue ?? ((originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue > 0 && originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo) ? originalShipment.balanceToReceiveValue : calcResult.balanceToReceiveValue);
+    let finalBalanceToReceive = balanceToReceiveValue ?? (
+      (extractedFiscalNums?.subtotalSaldoValue !== undefined && extractedFiscalNums.subtotalSaldoValue > 0)
+        ? extractedFiscalNums.subtotalSaldoValue
+        : ((originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue > 0 && originalShipment.status === ShipmentStatus.AguardandoPagamentoSaldo) ? originalShipment.balanceToReceiveValue : calcResult.balanceToReceiveValue)
+    );
     let finalDiscountValue = isBreakageWaived ? 0 : (discountValue ?? originalShipment.discountValue);
     let finalNetBalanceValue = netBalanceValue ?? originalShipment.netBalanceValue;
     let finalIsBreakageWaived = isBreakageWaived !== undefined ? isBreakageWaived : originalShipment.isBreakageWaived;
@@ -2241,9 +2288,19 @@ const App: React.FC = () => {
         riskQueryCost: riskQueryCost !== undefined ? riskQueryCost : originalShipment.riskQueryCost,
         cteNumber: extractedCteNumber,
         cteEmissionDate: extractedCteEmissionDate,
+        ciotNumber: extractedCiotNumber,
+        ciot: extractedCiotNumber,
         nfeNumber: extractedNfeNumber,
         mdfeNumber: extractedMdfeNumber,
-        realProfitData: realProfitData || originalShipment.realProfitData,
+        codigoAtua: (codigoAtua !== undefined && codigoAtua !== null && String(codigoAtua).trim() !== '') ? String(codigoAtua).trim() : originalShipment.codigoAtua,
+        realProfitData: (realProfitData || originalShipment.realProfitData || extractedFiscalNums?.sestSenatValue !== undefined)
+          ? {
+              ...(originalShipment.realProfitData || {}),
+              ...(realProfitData || {}),
+              ...(extractedFiscalNums?.sestSenatValue !== undefined ? { sestSenat: extractedFiscalNums.sestSenatValue } : {}),
+              ...(extractedFiscalNums?.inssRetidoValue !== undefined ? { inssRetido: extractedFiscalNums.inssRetidoValue } : {}),
+            } as any
+          : undefined,
         history: [...originalShipment.history, statusChangeLog],
         statusHistory: isStatusSame
             ? (originalShipment.statusHistory || [])
@@ -2494,7 +2551,7 @@ const App: React.FC = () => {
       'shipmentTonnage', 'unloadedTonnage', 'driverFreightValue', 'driverFreightRateSnapshot',
       'driverFreightType', 'anttModality', 'anttOwnerIdentifier', 'etcTaxRegime',
       'bankDetails', 'driverReferences', 'ownerContact',
-      'cteNumber', 'cteEmissionDate', 'nfeNumber', 'mdfeNumber', 
+      'cteNumber', 'cteEmissionDate', 'ciotNumber', 'ciot', 'nfeNumber', 'nfeValue', 'codigoAtua', 'mdfeNumber', 
       'federalTax', 'isFederalTaxManual', 'generatedCredit', 'isGeneratedCreditManual',
       'riskQueryType', 'riskQueryCost', 'riskReleaseCode',
       'advancePercentage', 'advanceValue', 'tollValue',
@@ -2509,7 +2566,7 @@ const App: React.FC = () => {
         let oldVal = rawOld !== undefined && rawOld !== null && rawOld !== '' ? String(rawOld) : 'Não informado';
         let newVal = rawNew !== undefined && rawNew !== null && rawNew !== '' ? String(rawNew) : 'Não informado';
 
-        if (['driverFreightValue', 'advanceValue', 'tollValue', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'federalTax', 'generatedCredit', 'riskQueryCost'].includes(field)) {
+        if (['driverFreightValue', 'advanceValue', 'tollValue', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'federalTax', 'generatedCredit', 'riskQueryCost', 'nfeValue'].includes(field)) {
           oldVal = rawOld !== undefined && rawOld !== null ? `R$ ${Number(rawOld).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
           newVal = rawNew !== undefined && rawNew !== null ? `R$ ${Number(rawNew).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
         } else if (['shipmentTonnage', 'unloadedTonnage'].includes(field)) {
@@ -2569,6 +2626,7 @@ const App: React.FC = () => {
       ...(data.cteNumber !== undefined ? { cte_number: data.cteNumber } : {}),
       ...(data.cteEmissionDate !== undefined ? { cte_emission_date: data.cteEmissionDate } : {}),
       ...(data.nfeNumber !== undefined ? { nfe_number: data.nfeNumber } : {}),
+      ...(data.nfeValue !== undefined ? { nfe_value: data.nfeValue, valor_mercadoria: data.nfeValue } : {}),
       ...(data.mdfeNumber !== undefined ? { mdfe_number: data.mdfeNumber } : {}),
       ...(data.riskQueryType !== undefined ? { risk_query_type: data.riskQueryType } : {}),
       ...(data.riskQueryCost !== undefined ? { risk_query_cost: data.riskQueryCost } : {}),
@@ -3774,7 +3832,7 @@ const App: React.FC = () => {
           <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
           <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
           <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
-          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} />} />
+          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} products={products} />} />
           <Route path="/commissions" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
           <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
           <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />

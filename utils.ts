@@ -257,6 +257,66 @@ export function hasCteAttached(shipment?: { cteNumber?: string; documents?: any;
 
 export const getShipmentCteNumber = getShipmentCte;
 
+/**
+ * Retorna o número do CIOT informado ou extraído no embarque.
+ * Se não houver CIOT cadastrado, retorna '-'.
+ * Garante que o ID do embarque (ex: CEL-665) não seja erroneamente retornado como CIOT.
+ */
+export function getShipmentCiotNumber(shipment?: { id?: string; ciot?: string; ciotNumber?: string; documents?: any } | null): string {
+  if (!shipment) return '-';
+  const sId = shipment.id ? String(shipment.id).trim().toUpperCase() : '';
+
+  const isInvalid = (val: any) => {
+    if (!val || typeof val !== 'string') return true;
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === '-' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') return true;
+    if (sId && trimmed.toUpperCase() === sId) return true;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('/')) return true;
+    return false;
+  };
+
+  // 1. Campo explícito no objeto do embarque
+  if (!isInvalid(shipment.ciotNumber)) return String(shipment.ciotNumber).trim();
+  if (!isInvalid(shipment.ciot)) return String(shipment.ciot).trim();
+  if (!isInvalid((shipment as any).ciot_number)) return String((shipment as any).ciot_number).trim();
+
+  // 2. Campo em documents
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    if (!isInvalid(docs.ciot_number)) return String(docs.ciot_number).trim();
+    if (!isInvalid(docs.ciotNumber)) return String(docs.ciotNumber).trim();
+    if (!isInvalid(docs.ciot)) return String(docs.ciot).trim();
+    if (!isInvalid(docs.CIOT)) return String(docs.CIOT).trim();
+
+    // Buscar em chaves com nome ciot
+    for (const [key, val] of Object.entries(docs)) {
+      if (/ciot/i.test(key)) {
+        if (!isInvalid(val)) {
+          return String(val).trim();
+        }
+        if (Array.isArray(val) && val.length > 0) {
+          for (const item of val) {
+            if (typeof item === 'string') {
+              const m = item.match(/\b(?:ciot)?[^\d\n]*?(\d{8,20})/i);
+              if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return m[1];
+            }
+          }
+        }
+      }
+    }
+
+    // Buscar em comprovantes / contratos de frete / PEF
+    for (const [key, val] of Object.entries(docs)) {
+      if (/carta|contrato|pef/i.test(key) && typeof val === 'string') {
+        const m = val.match(/\bciot[^\d\n]*?(\d{8,20})/i);
+        if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return m[1];
+      }
+    }
+  }
+
+  return '-';
+}
+
 export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any } | null): string | null {
   if (!shipment) return null;
   if (shipment.status && !isCteApplicableForStatus(shipment.status)) return null;

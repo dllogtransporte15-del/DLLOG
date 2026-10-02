@@ -205,7 +205,18 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                     <DetailItem label="CNPJ Principal" value={client?.cnpj} />
                   );
                 })()}
-                <DetailItem label="Produto" value={product?.name} />
+                <DetailItem label="Produto" value={product?.name || (cargo as any)?.productName || 'GRÃOS'} />
+                <DetailItem label="Embalagem (Tipo)" value={cargo.packaging || 'Granel'} />
+                <DetailItem label="Nº do Pedido">
+                    {cargo.orderNumber ? (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-600 text-white shadow-sm text-[10px]">✓</span>
+                            <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">{cargo.orderNumber}</span>
+                        </div>
+                    ) : (
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Não informado</span>
+                    )}
+                </DetailItem>
                 <DetailItem label="Origem" value={cargo.origin} />
                 <DetailItem label="Destino" value={cargo.destination} />
                 <DetailItem label="Lote TMS">

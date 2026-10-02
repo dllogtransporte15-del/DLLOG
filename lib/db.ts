@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
-import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate } from '../utils';
+import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, getShipmentCiotNumber } from '../utils';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
@@ -401,6 +401,20 @@ export const toCargo = (row: any): Cargo => ({
     if (metaLog?.description) return Number(metaLog.description) || 0;
     return safeParseJson(row.freight_legs, undefined)?.[0]?.icmsValue || 0;
   })(),
+  orderNumber: (() => {
+    if (row.order_number) return row.order_number;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_order_number') : null;
+    if (metaLog?.description) return metaLog.description;
+    return undefined;
+  })(),
+  packaging: (() => {
+    if (row.packaging) return row.packaging;
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_packaging') : null;
+    if (metaLog?.description) return metaLog.description;
+    return undefined;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -482,6 +496,28 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
       timestamp: new Date().toISOString(),
       description: String(c.icmsValue)
     });
+  }
+  if (c.orderNumber !== undefined) {
+    history = history.filter(h => h.id !== 'meta_order_number');
+    if (c.orderNumber) {
+      history.push({
+        id: 'meta_order_number',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.orderNumber
+      });
+    }
+  }
+  if (c.packaging !== undefined) {
+    history = history.filter(h => h.id !== 'meta_packaging');
+    if (c.packaging) {
+      history.push({
+        id: 'meta_packaging',
+        userId: 'system',
+        timestamp: new Date().toISOString(),
+        description: c.packaging
+      });
+    }
   }
 
   const cargoId = (c as Cargo).id;
@@ -627,8 +663,20 @@ export const toShipment = (row: any): Shipment => {
     driverFreightType: row.driver_freight_type || docs.driver_freight_type || 'PJ',
     cteNumber: row.cte_number || docs.cte_number || (getShipmentCte({ status: row.status, documents: docs }) !== '-' ? getShipmentCte({ status: row.status, documents: docs }) : undefined),
     cteEmissionDate: row.cte_emission_date || docs.cte_emission_date || (getShipmentCteEmissionDate({ status: row.status, documents: docs }) || undefined),
+    ciotNumber: row.ciot_number || docs.ciot_number || docs.ciot || docs.ciotNumber || (row.ciot && row.ciot !== row.id ? row.ciot : (getShipmentCiotNumber({ id: row.id, documents: docs }) !== '-' ? getShipmentCiotNumber({ id: row.id, documents: docs }) : undefined)),
+    ciot: row.ciot || docs.ciot || docs.ciot_number || docs.ciotNumber || (row.ciot_number && row.ciot_number !== row.id ? row.ciot_number : (getShipmentCiotNumber({ id: row.id, documents: docs }) !== '-' ? getShipmentCiotNumber({ id: row.id, documents: docs }) : undefined)),
     nfeNumber: row.nfe_number || docs.nfe_number,
+    nfeValue: row.nfe_value !== null && row.nfe_value !== undefined 
+      ? Number(row.nfe_value) 
+      : (docs.nfe_value !== undefined && docs.nfe_value !== null 
+          ? Number(docs.nfe_value) 
+          : (docs.valor_mercadoria !== undefined && docs.valor_mercadoria !== null 
+              ? Number(docs.valor_mercadoria) 
+              : (realProfit?.invoiceValue !== undefined && realProfit?.invoiceValue !== null 
+                  ? Number(realProfit.invoiceValue) 
+                  : undefined))),
     mdfeNumber: row.mdfe_number || docs.mdfe_number,
+    codigoAtua: row.codigo_atua || docs.codigo_atua || docs.codg_atua || docs.codigoAtua || undefined,
     realProfitData: realProfit,
     isFederalTaxManual: isFederalTaxManual,
     federalTax: federalTax,
@@ -718,8 +766,13 @@ const fromShipment = (s: Shipment) => {
     driver_freight_type: s.driverFreightType !== undefined ? s.driverFreightType : (s.documents?.driver_freight_type ?? 'PJ'),
     cte_number: s.cteNumber !== undefined ? s.cteNumber : (s.documents?.cte_number ?? null),
     cte_emission_date: s.cteEmissionDate !== undefined ? s.cteEmissionDate : (s.documents?.cte_emission_date ?? null),
+    ciot_number: s.ciotNumber !== undefined ? s.ciotNumber : (s.ciot !== undefined ? s.ciot : (s.documents?.ciot_number ?? s.documents?.ciot ?? null)),
+    ciot: s.ciot !== undefined ? s.ciot : (s.ciotNumber !== undefined ? s.ciotNumber : (s.documents?.ciot ?? s.documents?.ciot_number ?? null)),
     nfe_number: s.nfeNumber !== undefined ? s.nfeNumber : (s.documents?.nfe_number ?? null),
+    nfe_value: s.nfeValue !== undefined ? s.nfeValue : (s.documents?.nfe_value ?? s.documents?.valor_mercadoria ?? s.realProfitData?.invoiceValue ?? null),
+    valor_mercadoria: s.nfeValue !== undefined ? s.nfeValue : (s.documents?.valor_mercadoria ?? s.documents?.nfe_value ?? s.realProfitData?.invoiceValue ?? null),
     mdfe_number: s.mdfeNumber !== undefined ? s.mdfeNumber : (s.documents?.mdfe_number ?? null),
+    codigo_atua: s.codigoAtua !== undefined ? s.codigoAtua : (s.documents?.codigo_atua ?? s.documents?.codg_atua ?? null),
     is_federal_tax_manual: isFederalTaxManual,
     federal_tax: federalTax,
     imposto_federal: federalTax,

@@ -1134,10 +1134,14 @@ export interface FiscalDocNumbers {
   nfeNumber?: string;
   nfeValue?: number;
   mdfeNumber?: string;
+  ciotNumber?: string;
   advancePercentage?: number;
   advanceValue?: number;
   tollValue?: number;
   totalFreightValue?: number;
+  sestSenatValue?: number;
+  inssRetidoValue?: number;
+  subtotalSaldoValue?: number;
 }
 
 export async function extractFiscalDocNumbers(
@@ -1169,6 +1173,11 @@ export async function extractFiscalDocNumbers(
         if (detailed.documentType === 'MDF-e' || isMdfeDocType(docType)) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
         }
+        if (detailed.ciot && !result.ciotNumber) {
+          result.ciotNumber = detailed.ciot;
+        } else if ((detailed.documentType === 'CIOT' || docType.toUpperCase().includes('CIOT')) && detailed.docNumber && !result.ciotNumber) {
+          result.ciotNumber = detailed.docNumber;
+        }
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
         }
@@ -1185,6 +1194,15 @@ export async function extractFiscalDocNumbers(
           }
           if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
             result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
+          }
+          if (detailed.calculoSaldoFrete?.sestSenat !== undefined && result.sestSenatValue === undefined) {
+            result.sestSenatValue = detailed.calculoSaldoFrete.sestSenat;
+          }
+          if (detailed.calculoSaldoFrete?.inssRetido !== undefined && result.inssRetidoValue === undefined) {
+            result.inssRetidoValue = detailed.calculoSaldoFrete.inssRetido;
+          }
+          if (detailed.calculoSaldoFrete?.subtotal !== undefined && result.subtotalSaldoValue === undefined) {
+            result.subtotalSaldoValue = detailed.calculoSaldoFrete.subtotal;
           }
         }
       } catch (e) {
@@ -1223,6 +1241,11 @@ export async function extractFiscalDocNumbersFromUrls(
         if (detailed.documentType === 'MDF-e' || isMdfeDocType(docType)) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
         }
+        if (detailed.ciot && !result.ciotNumber) {
+          result.ciotNumber = detailed.ciot;
+        } else if ((detailed.documentType === 'CIOT' || docType.toUpperCase().includes('CIOT')) && detailed.docNumber && !result.ciotNumber) {
+          result.ciotNumber = detailed.docNumber;
+        }
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
         }
@@ -1239,6 +1262,15 @@ export async function extractFiscalDocNumbersFromUrls(
           }
           if (detailed.financeiro?.porcentagemAdiantamento !== undefined && result.advancePercentage === undefined) {
             result.advancePercentage = detailed.financeiro.porcentagemAdiantamento;
+          }
+          if (detailed.calculoSaldoFrete?.sestSenat !== undefined && result.sestSenatValue === undefined) {
+            result.sestSenatValue = detailed.calculoSaldoFrete.sestSenat;
+          }
+          if (detailed.calculoSaldoFrete?.inssRetido !== undefined && result.inssRetidoValue === undefined) {
+            result.inssRetidoValue = detailed.calculoSaldoFrete.inssRetido;
+          }
+          if (detailed.calculoSaldoFrete?.subtotal !== undefined && result.subtotalSaldoValue === undefined) {
+            result.subtotalSaldoValue = detailed.calculoSaldoFrete.subtotal;
           }
         }
       } catch (e) {

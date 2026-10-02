@@ -318,6 +318,8 @@ export interface Cargo {
   clientCnpj?: string;
   clientBranchId?: string;
   isExport?: boolean;
+  orderNumber?: string;
+  packaging?: string;
 }
 
 
@@ -441,6 +443,9 @@ export interface RealProfitData {
   federalTax?: number;
   isFederalTaxManual?: boolean;
   inssPatronal?: number;
+  sestSenat?: number;         // SEST/SENAT retido (PF)
+  inssRetido?: number;        // INSS retido (PF)
+  ciot?: number;              // 0,20% sobre frete do motorista
   insuranceDifference?: number;
   insuranceAcidente?: number; // 0,0125% do valor da NF
   insuranceRoubo?: number;    // 0,0125% do valor da NF
@@ -533,9 +538,12 @@ export interface Shipment {
   branchId?: string;
   cteNumber?: string;   // Número do CT-e extraído automaticamente do XML/PDF
   cteEmissionDate?: string; // Data e Hora da Emissão do CT-e (ex: 13/08/2026 11:40)
+  ciotNumber?: string;  // Número do CIOT informado ou extraído do embarque
+  ciot?: string;        // Código Identificador da Operação de Transporte (CIOT)
   nfeNumber?: string;   // Número da Nota Fiscal (NF-e) extraído automaticamente
   nfeValue?: number;    // Valor da Nota Fiscal / Mercadoria averbada
   mdfeNumber?: string;  // Número do MDF-e extraído automaticamente
+  codigoAtua?: string;  // Código de Atualização cadastral informado em Ag. Cadastro / Sistema ATUA
   realProfitData?: RealProfitData; // Resumo e detalhamento de despesas extraídos via OCR/IA
   additionalCost?: {
     value: number;

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { calculateTacTaxDeductions } from './freightCalculation';
 
 export interface TranscunhaSpreadsheetRow {
   id: string;
@@ -7,6 +8,7 @@ export interface TranscunhaSpreadsheetRow {
   idEmbarqueSistema?: string;
   // A - F: Faturamento & Financeiro Empresa
   cteHoras: string;
+  dataHoraEmissao?: string;
   jaFaturado: string;
   dataVencimento: string;
   formaPagamento: string;
@@ -79,7 +81,7 @@ export interface TranscunhaSpreadsheetRow {
   horaDataLiberacaoSaldo: string;
   tipoPagamentoSaldo: string;
   statusSaldo: string;
-  ciot: string;
+  ciot: number | string;
   totalQuebra: number;
   valorQuebraCiot: number;
 }
@@ -162,12 +164,15 @@ export function parseShipmentDate(val: any): number {
   const str = String(val).trim();
   if (!str || str === '-' || str === '0') return 0;
 
-  // DD/MM/YYYY ou DD/MM/YYYY HH:mm ou DD/MM/YYYY HH:mm:ss
-  const brMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[\sT](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  // DD/MM/YYYY ou DD/MM/YY ou DD/MM/YYYY HH:mm ou DD/MM/YY HH:mm:ss
+  const brMatch = str.match(/(?:^|\s|-)(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:[\sT](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (brMatch) {
     const d = parseInt(brMatch[1], 10);
     const m = parseInt(brMatch[2], 10) - 1;
-    const y = parseInt(brMatch[3], 10);
+    let y = parseInt(brMatch[3], 10);
+    if (y < 100) {
+      y = y > 50 ? 1900 + y : 2000 + y;
+    }
     const h = brMatch[4] ? parseInt(brMatch[4], 10) : 0;
     const min = brMatch[5] ? parseInt(brMatch[5], 10) : 0;
     const s = brMatch[6] ? parseInt(brMatch[6], 10) : 0;
@@ -363,7 +368,8 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
 
   // Mapeamento dos índices das 60 colunas
   const colIdx = {
-    cteHoras: getColIdx(['CTE E HORAS', 'CTE HORAS', 'CTE/HORAS']),
+    cteHoras: getColIdx(['CTE', 'CTE E HORAS', 'CTE HORAS', 'CTE/HORAS']),
+    dataHoraEmissao: getColIdx(['DATA/HORA DE EMISSÃO', 'DATA/HORA DE EMISSAO', 'DATA HORA DE EMISSÃO', 'DATA HORA EMISSAO', 'DATA/HORA EMISSAO', 'DATA EMISSAO']),
     jaFaturado: getColIdx(['JÁ FATURADO', 'JA FATURADO', 'FATURADO']),
     dataVencimento: getColIdx(['DATA VENCIM', 'DATA VENCIMENTO', 'VENCIMENTO']),
     formaPagamento: getColIdx(['FORMA DE PAGAMENTO', 'FORMA PAGAMENTO']),
@@ -469,6 +475,7 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
       id: `row_${r}_${cteHoras || placa || r}`,
       orderIndex: r,
       cteHoras,
+      dataHoraEmissao: String(getVal(colIdx.dataHoraEmissao) || '').trim() || (dataEmbarqueVal ? `${dataEmbarqueVal} 08:00` : ''),
       jaFaturado: String(getVal(colIdx.jaFaturado, 1) || '').trim().toUpperCase(),
       dataVencimento: formatDatePtBr(getVal(colIdx.dataVencimento, 2)),
       formaPagamento: String(getVal(colIdx.formaPagamento, 3) || '').trim(),
@@ -925,11 +932,18 @@ export function recalculateSpreadsheetRow(row: TranscunhaSpreadsheetRow): Transc
   if (updated.freteBrutoEmpresa > 0 && updated.debitoPisCofins === 0) {
     updated.debitoPisCofins = Number((updated.freteBrutoEmpresa * 0.0925).toFixed(2));
   }
-  if (updated.valorFreteMotorista > 0 && updated.patronal4 === 0 && updated.obsCavaloAntt?.includes('PJ')) {
-    updated.patronal4 = Number((updated.valorFreteMotorista * 0.04).toFixed(2));
+  const isPf = updated.obsCavaloAntt?.includes('PF') || updated.obsCavaloAntt?.includes('TAC');
+  if (updated.valorFreteMotorista > 0 && updated.patronal4 === 0 && isPf) {
+    const baseInss = Math.max(0, updated.valorFreteMotorista - (updated.pedagio || 0));
+    updated.patronal4 = Number((baseInss * 0.04).toFixed(2));
   }
   if (updated.valorFreteMotorista > 0 && updated.inssSestSenat === 0) {
-    updated.inssSestSenat = Number((updated.valorFreteMotorista * 0.025).toFixed(2));
+    if (isPf) {
+      const tacTaxes = calculateTacTaxDeductions(updated.valorFreteMotorista, updated.pedagio || 0);
+      updated.inssSestSenat = tacTaxes.sestSenat;
+    } else {
+      updated.inssSestSenat = 0;
+    }
   }
 
   return updated;

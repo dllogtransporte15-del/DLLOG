@@ -114,7 +114,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         tmsLoteNumber: '',
         clientCnpj: offerToConvert.clientCnpj || '',
         clientBranchId: offerToConvert.clientBranchId || '',
-        isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined
+        isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined,
+        orderNumber: (offerToConvert as any)?.orderNumber || '',
+        packaging: (offerToConvert as any)?.packaging || 'Granel'
       };
     }
 
@@ -163,7 +165,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       tmsLoteNumber: '',
       clientCnpj: firstClient?.cnpj || '',
       clientBranchId: '',
-      isExport: undefined
+      isExport: undefined,
+      orderNumber: '',
+      packaging: 'Granel'
     };
   };
   
@@ -295,7 +299,9 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 tmsLoteNumber: editableLoad.tmsLoteNumber || '',
                 clientCnpj: editableLoad.clientCnpj || '',
                 clientBranchId: editableLoad.clientBranchId || '',
-                isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined
+                isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined,
+                orderNumber: editableLoad.orderNumber || (editableLoad as any).numeroPedido || '',
+                packaging: editableLoad.packaging || 'Granel'
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
@@ -1032,9 +1038,61 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
                 </datalist>
 
-                {/* Volume Total & Prazo */}
+                {/* Produto, Embalagem, Pedido e Volume */}
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Detalhes do Volume, Prazo e Lote</h3>
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2.5">Produto, Embalagem, Pedido e Volume</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-3.5">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              Produto da Carga
+                            </label>
+                            <select 
+                              name="productId" 
+                              value={load.productId} 
+                              onChange={handleChange} 
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs font-medium" 
+                              required
+                            >
+                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              Tipo de Embalagem (Ex: Granel, Bigbag, Sacos)
+                            </label>
+                            <input 
+                              list="packaging-options-list"
+                              name="packaging" 
+                              value={load.packaging ?? 'Granel'} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Granel, Bigbag, Sacos..."
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs font-medium" 
+                            />
+                            <datalist id="packaging-options-list">
+                                <option value="Granel" />
+                                <option value="Bigbag" />
+                                <option value="Sacos" />
+                                <option value="Granel / Caçamba" />
+                                <option value="Fardos" />
+                                <option value="Tambores" />
+                            </datalist>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                              Nº do Pedido (Cliente / Embarcador)
+                            </label>
+                            <input 
+                              name="orderNumber" 
+                              value={load.orderNumber || ''} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Ex: PED-12345, 45009823"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs font-medium" 
+                            />
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                         <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Volume Total (ton)</label>
@@ -2041,6 +2099,40 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             >
                                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Embalagem</label>
+                            <input 
+                              list="packaging-options-list-step3"
+                              name="packaging" 
+                              value={load.packaging ?? 'Granel'} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Granel, Bigbag, Sacos..."
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
+                            />
+                            <datalist id="packaging-options-list-step3">
+                                <option value="Granel" />
+                                <option value="Bigbag" />
+                                <option value="Sacos" />
+                                <option value="Granel / Caçamba" />
+                                <option value="Fardos" />
+                                <option value="Tambores" />
+                            </datalist>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Nº do Pedido</label>
+                            <input 
+                              name="orderNumber" 
+                              value={load.orderNumber || ''} 
+                              onChange={handleChange} 
+                              type="text" 
+                              placeholder="Ex: PED-12345, 45009823"
+                              className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
+                            />
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Status da Carga</label>

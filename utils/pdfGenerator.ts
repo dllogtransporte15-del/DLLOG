@@ -128,7 +128,9 @@ export const generateLoadingOrderPDF = (
     head: [["Descrição do Requisito", "Informações Detalhadas"]],
     body: [
       ["CLIENTE / EMBARCADOR", (client?.nomeFantasia || client?.razaoSocial || cargo.clientId || '').toUpperCase()],
+      ["Nº DO PEDIDO", (cargo.orderNumber || (cargo as any).numeroPedido || cargo.tmsLoteNumber || 'N/A').toUpperCase()],
       ["PRODUTO / MERCADORIA", (product?.name || cargo.productId || '').toUpperCase()],
+      ["TIPO DE EMBALAGEM", (cargo.packaging || 'GRANEL').toUpperCase()],
       ["PESO / TONELAGEM", `${(Number(shipment.shipmentTonnage) || 0).toLocaleString("pt-BR")} TON`],
       ["ORIGEM DO CARREGAMENTO", cargo.originLocation ? `${cargo.origin || ''} - ${cargo.originLocation}`.toUpperCase() : (cargo.origin || '').toUpperCase()],
       ["DESTINO DA CARGA", cargo.destinationLocation ? `${cargo.destination || ''} - ${cargo.destinationLocation}`.toUpperCase() : (cargo.destination || '').toUpperCase()],
