@@ -59,6 +59,7 @@ export interface TranscunhaSpreadsheetRow {
   creditoPisCofins: number;
   patronal4: number;
   inssSestSenat: number;
+  valorTaxaCiot?: number;
   
   // AP - AU: Custos de Frete do Motorista
   tarifaTonMotorista: number;
@@ -84,6 +85,12 @@ export interface TranscunhaSpreadsheetRow {
   ciot: number | string;
   totalQuebra: number;
   valorQuebraCiot: number;
+
+  // Metadata para atalhos e links diretos
+  shipmentId?: string;
+  cteFileUrl?: string | null;
+  ticketDescargaUrl?: string | null;
+  ordemCarregamentoUrl?: string | null;
 }
 
 export interface ParseResult {

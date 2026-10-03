@@ -14,7 +14,7 @@ import { WhatsAppIcon } from '../components/icons/WhatsAppIcon';
 import { DashboardIcon } from '../components/icons/DashboardIcon';
 import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
 import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
-import { Building2, ChevronRight } from 'lucide-react';
+import { Building2, ChevronRight, Calendar, ChevronDown, Check, X, Filter } from 'lucide-react';
 import { CargoStatus, ShipmentStatus, UserProfile, FreightOfferStatus, REQUIRED_DOCUMENT_MAP } from '../types';
 import type { Cargo, Driver, Shipment, User, Client, Product, Vehicle, FreightOffer, RiskQueryOption, Owner } from '../types';
 import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
@@ -24,7 +24,7 @@ import { OptimizedShipmentsBoard, KanbanColumnConfig } from '../components/Optim
 import FreightOfferModal from '../components/FreightOfferModal';
 import FreightOffersList from '../components/FreightOffersList';
 import DriverOrderRequestsList from '../components/DriverOrderRequestsList';
-import { getMatchedCargo, getShipmentEffectiveDate, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
+import { getMatchedCargo, getShipmentEffectiveDate, hasCteAttached, findCargoById, findProductForCargo, checkRequiresRiskManagement } from '../utils';
 
 import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import NewShipmentModal from '../components/NewShipmentModal';
@@ -117,6 +117,9 @@ interface DashboardPageProps {
   allShipments?: Shipment[];
   riskQueryOptions?: RiskQueryOption[];
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
+  realtimeStatus?: 'connected' | 'connecting' | 'disconnected' | 'error';
+  lastSyncTime?: Date;
+  onRefreshData?: (isBackground?: boolean) => Promise<void>;
 }
 
 
@@ -277,7 +280,10 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   onCreateShipment, 
   allShipments,
   riskQueryOptions,
-  onSwapCargo
+  onSwapCargo,
+  realtimeStatus,
+  lastSyncTime,
+  onRefreshData
 }) => {
   const navigate = useNavigate();
   const [detailsModalShipment, setDetailsModalShipment] = React.useState<Shipment | null>(null);
@@ -288,7 +294,152 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const [selectedDriverForHistoryId, setSelectedDriverForHistoryId] = React.useState<string | null>(null);
   const [offerForNewShipment, setOfferForNewShipment] = React.useState<FreightOffer | null>(null);
   const [selectedClientForBranchesHistory, setSelectedClientForBranchesHistory] = useState<Client | null>(null);
-  
+
+  // Filtro de Período e Calendário para os Relatórios do Dashboard (Padrão: Mês Atual dos Efetivados)
+  const [periodFilter, setPeriodFilter] = useState<'month' | 'today' | 'week' | 'year' | 'custom' | 'all'>('month');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [showDatePickerPopup, setShowDatePickerPopup] = useState<boolean>(false);
+  const datePickerPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showDatePickerPopup) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (datePickerPopoverRef.current && !datePickerPopoverRef.current.contains(e.target as Node)) {
+        setShowDatePickerPopup(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDatePickerPopup(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showDatePickerPopup]);
+
+  const dateRangeBounds = useMemo(() => {
+    if (periodFilter === 'all') return { start: null, end: null };
+    const now = new Date();
+
+    if (periodFilter === 'today') {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
+      return { start, end };
+    }
+    if (periodFilter === 'week') {
+      const dayOfWeek = now.getDay();
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday, 0, 0, 0, 0);
+      const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
+      return { start: monday.getTime(), end: sunday.getTime() };
+    }
+    if (periodFilter === 'month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+      return { start: firstDay, end: lastDay };
+    }
+    if (periodFilter === 'year') {
+      const firstDay = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0).getTime();
+      const lastDay = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999).getTime();
+      return { start: firstDay, end: lastDay };
+    }
+    if (periodFilter === 'custom') {
+      let start: number | null = null;
+      let end: number | null = null;
+      if (customStartDate) {
+        const parts = customStartDate.split('-');
+        if (parts.length === 3) {
+          start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0).getTime();
+        }
+      }
+      if (customEndDate) {
+        const parts = customEndDate.split('-');
+        if (parts.length === 3) {
+          end = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59, 999).getTime();
+        }
+      }
+      return { start, end };
+    }
+    return { start: null, end: null };
+  }, [periodFilter, customStartDate, customEndDate]);
+
+  const periodLabel = useMemo(() => {
+    if (periodFilter === 'month') return 'Mês Atual';
+    if (periodFilter === 'today') return 'Hoje';
+    if (periodFilter === 'week') return 'Esta Semana';
+    if (periodFilter === 'year') return 'Este Ano';
+    if (periodFilter === 'custom') {
+      if (customStartDate && customEndDate) {
+        return `${customStartDate.split('-').reverse().join('/')} a ${customEndDate.split('-').reverse().join('/')}`;
+      }
+      return 'Período Personalizado';
+    }
+    return 'Todos os Períodos';
+  }, [periodFilter, customStartDate, customEndDate]);
+
+  const isShipmentEffectiveAndInPeriod = useCallback((s: Shipment): boolean => {
+    if (s.status === ShipmentStatus.Cancelado || (s.status as string) === 'Cancelado') return false;
+
+    // Embarque efetivado: ter CT-e emitido ou ter alcançado status de carregamento efetivo (Ag. Nota em diante)
+    const effectiveStatuses: (string | ShipmentStatus)[] = [
+      ShipmentStatus.AguardandoNota,
+      'Ag. Nota',
+      'Aguardando Nota',
+      ShipmentStatus.AguardandoFiscal,
+      'Ag. Fiscal',
+      'Aguardando Fiscal',
+      ShipmentStatus.AguardandoAdiantamento,
+      'Ag. Adiantamento',
+      'Aguardando Adiantamento',
+      ShipmentStatus.AguardandoAgendamento,
+      'Ag. Agendamento',
+      'Ag. Agend. ou Troca/nfe',
+      ShipmentStatus.AguardandoDescarga,
+      'Ag. Descarga',
+      'Aguardando Descarga',
+      ShipmentStatus.ValidacaoTicket,
+      'Valid. de Ticket',
+      'Validação de Ticket',
+      ShipmentStatus.AguardandoPagamentoSaldo,
+      'Ag. Saldo',
+      'Aguardando Saldo',
+      ShipmentStatus.Finalizado,
+      'Finalizado',
+    ];
+
+    const hasCte = Boolean(hasCteAttached(s) || (s.documents as any)?.cte_number || s.cteNumber);
+    const isStatusEffective = effectiveStatuses.includes(s.status);
+
+    if (!hasCte && !isStatusEffective) {
+      return false;
+    }
+
+    if (dateRangeBounds.start === null && dateRangeBounds.end === null) {
+      return true;
+    }
+
+    const effDateStr = getShipmentEffectiveDate(s);
+    let timestamp = 0;
+    if (effDateStr) {
+      const parts = effDateStr.split('-');
+      if (parts.length === 3) {
+        timestamp = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0).getTime();
+      } else {
+        timestamp = new Date(effDateStr).getTime();
+      }
+    } else if (s.createdAt) {
+      timestamp = new Date(s.createdAt).getTime();
+    }
+
+    if (!timestamp || isNaN(timestamp)) return false;
+    if (dateRangeBounds.start !== null && timestamp < dateRangeBounds.start) return false;
+    if (dateRangeBounds.end !== null && timestamp > dateRangeBounds.end) return false;
+
+    return true;
+  }, [dateRangeBounds]);
   // Modals state for quick direct actions (Attachment and ANTT)
   const [selectedShipmentForAttachment, setSelectedShipmentForAttachment] = useState<Shipment | null>(null);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -493,26 +644,20 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   }, [shipments]);
 
   const clientVolumeData = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
     const volumesByClient: Record<string, { total: number; branches: Record<string, { name: string; cnpj: string; city?: string; state?: string; volume: number; shipmentsCount: number }> }> = {};
 
     shipments.forEach(s => {
-      // Find effective date (CT-e emission date or when it reached Aguardando Nota)
-      const effDateStr = getShipmentEffectiveDate(s);
-      if (effDateStr) {
-        const date = new Date(effDateStr + 'T00:00:00');
-        if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
-          const cargo = cargos.find(c => c.id === s.cargoId);
-          if (cargo) {
-            const client = clients.find(c => c.id === cargo.clientId);
-            if (!volumesByClient[cargo.clientId]) {
-              volumesByClient[cargo.clientId] = { total: 0, branches: {} };
-            }
-            const clientEntry = volumesByClient[cargo.clientId];
-            const tonnage = Number(s.shipmentTonnage) || 0;
-            clientEntry.total += tonnage;
+      if (!isShipmentEffectiveAndInPeriod(s)) return;
+
+      const cargo = cargos.find(c => c.id === s.cargoId);
+      if (cargo) {
+        const client = clients.find(c => c.id === cargo.clientId);
+        if (!volumesByClient[cargo.clientId]) {
+          volumesByClient[cargo.clientId] = { total: 0, branches: {} };
+        }
+        const clientEntry = volumesByClient[cargo.clientId];
+        const tonnage = Number(s.shipmentTonnage) || 0;
+        clientEntry.total += tonnage;
 
             // Resolve branch
             let branchKey = 'matriz';
@@ -551,8 +696,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             }
             clientEntry.branches[branchKey].volume += tonnage;
             clientEntry.branches[branchKey].shipmentsCount += 1;
-          }
-        }
       }
     });
 
@@ -581,7 +724,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
         };
       })
       .sort((a, b) => b.value - a.value);
-  }, [shipments, cargos, clients]);
+  }, [shipments, cargos, clients, isShipmentEffectiveAndInPeriod]);
   
   const activeShipments = useMemo(() => {
     return shipments.filter(s => s.status !== ShipmentStatus.Finalizado && s.status !== ShipmentStatus.Cancelado).length;
@@ -597,19 +740,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   }, [currentUser]);
 
   const dashboardStats = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
     let monthlyEffectiveTonnage = 0;
     
     shipments.forEach(s => {
-      const effDateStr = getShipmentEffectiveDate(s);
-      if (effDateStr) {
-        const date = new Date(effDateStr + 'T00:00:00');
-        if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
-          monthlyEffectiveTonnage += s.shipmentTonnage || 0;
-        }
+      if (isShipmentEffectiveAndInPeriod(s)) {
+        monthlyEffectiveTonnage += s.shipmentTonnage || 0;
       }
     });
 
@@ -621,7 +756,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       monthlyCommission,
       canViewCommission
     };
-  }, [shipments, currentUser]);
+  }, [shipments, currentUser, isShipmentEffectiveAndInPeriod]);
 
   const clientDashboardData = useMemo(() => {
     if (currentUser?.profile !== UserProfile.Cliente) return null;
@@ -769,6 +904,165 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [isViewSelectorOpen]);
 
+  const renderPeriodSelector = () => {
+    const periodOptions = [
+      { id: 'month', label: 'Este Mês', badge: 'Padrão' },
+      { id: 'week', label: 'Esta Semana' },
+      { id: 'today', label: 'Hoje' },
+      { id: 'year', label: 'Este Ano' },
+      { id: 'custom', label: 'Personalizado...' },
+      { id: 'all', label: 'Todos os Períodos' },
+    ];
+
+    return (
+      <div className="relative inline-block text-left" ref={datePickerPopoverRef}>
+        <button
+          type="button"
+          onClick={() => setShowDatePickerPopup(prev => !prev)}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 border shadow-sm ${
+            periodFilter === 'month'
+              ? 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-700 hover:border-primary/50 dark:hover:border-blue-500'
+              : 'bg-primary/10 text-primary dark:bg-blue-900/30 dark:text-blue-300 border-primary/30 dark:border-blue-700 hover:bg-primary/15'
+          }`}
+          title="Filtrar período das métricas e relatórios do Dashboard"
+          aria-expanded={showDatePickerPopup}
+        >
+          <Calendar className="w-4 h-4 text-primary dark:text-blue-400 shrink-0" />
+          <span className="truncate max-w-[170px] sm:max-w-[220px]">
+            {periodFilter === 'month' ? 'Período: Este Mês' : `Período: ${periodLabel}`}
+          </span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showDatePickerPopup ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showDatePickerPopup && (
+          <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-black/10 dark:ring-white/10 z-50 p-3 border border-gray-100 dark:border-gray-700 backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-primary dark:text-blue-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                  Filtrar por Período
+                </h4>
+              </div>
+              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                Apenas Efetivados
+              </span>
+            </div>
+
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
+              Exibe apenas embarques efetivados (com CT-e ou carregamento concluído) dentro do período selecionado.
+            </p>
+
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
+              {periodOptions.map(opt => {
+                const isActive = periodFilter === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setPeriodFilter(opt.id as any);
+                      if (opt.id !== 'custom') {
+                        setShowDatePickerPopup(false);
+                      }
+                    }}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-gray-50 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span className="truncate">{opt.label}</span>
+                    {opt.badge && !isActive && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 ml-1 font-bold">
+                        {opt.badge}
+                      </span>
+                    )}
+                    {isActive && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom Date Range Inputs */}
+            {periodFilter === 'custom' && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-200/80 dark:border-gray-600/60 mb-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
+                    Definir Intervalo:
+                  </span>
+                  {(customStartDate || customEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomStartDate('');
+                        setCustomEndDate('');
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      Limpar datas
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                      Data Inicial
+                    </label>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+                      Data Final
+                    </label>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDatePickerPopup(false)}
+                  disabled={!customStartDate && !customEndDate}
+                  className="w-full mt-2 py-1.5 text-xs font-semibold bg-primary hover:bg-primary-hover text-white rounded-lg transition-all disabled:opacity-50"
+                >
+                  Aplicar Período
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700 text-[11px]">
+              <span className="text-gray-500 dark:text-gray-400">
+                Ativo: <strong className="text-gray-700 dark:text-gray-200">{periodLabel}</strong>
+              </span>
+              {periodFilter !== 'month' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeriodFilter('month');
+                    setCustomStartDate('');
+                    setCustomEndDate('');
+                    setShowDatePickerPopup(false);
+                  }}
+                  className="text-primary dark:text-blue-400 hover:underline font-medium"
+                >
+                  Restaurar Mês Atual
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const currentViewConfig = VIEW_MODES.find(m => m.id === viewMode) || VIEW_MODES[0];
 
   const renderHeaderTitle = () => {
@@ -883,7 +1177,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
     return (
       <>
-        <Header title="Dashboard do Embarcador" />
+        <Header title="Dashboard do Embarcador">
+          {renderPeriodSelector()}
+        </Header>
         {pendingRequests.length > 0 && (
           <div className="mb-8">
             <DriverOrderRequestsList
@@ -966,7 +1262,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="space-y-6">
             <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
             <DonutChartCard 
-              title="Volume Carregado por Cliente (Mês)" 
+              title={`Volume Carregado por Cliente (${periodLabel})`} 
               data={clientVolumeData} 
               unit="t" 
               onViewClientHistory={(clientId) => {
@@ -976,7 +1272,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             />
           </div>
           <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
-          <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} />
+          <ShipperRankingCard shipments={allShipments || shipments} cargos={cargos} users={users} currentUser={currentUser} dateRangeBounds={dateRangeBounds} periodLabel={periodLabel} />
         </div>
         <ShipmentDetailsModal
           isOpen={!!detailsModalShipment}
@@ -1278,6 +1574,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
         <ShipmentDetailsModal
@@ -1357,6 +1656,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
         <ShipmentDetailsModal
@@ -1701,7 +2003,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   return (
     <>
-      <Header title={renderHeaderTitle()} />
+      <Header title={renderHeaderTitle()}>
+        {renderPeriodSelector()}
+      </Header>
 
       {viewMode === 'fiscal' && (
         <div className="mb-8">
@@ -1721,6 +2025,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
       )}
@@ -1743,6 +2050,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             onAttach={onUpdateAttachment ? handleOpenAttachmentModal : undefined}
             onOpenCadastroAntt={handleOpenCadastroAntt}
             onEditPrice={onUpdatePrice ? (s) => setDetailsModalShipment(s) : undefined}
+            realtimeStatus={realtimeStatus}
+            lastSyncTime={lastSyncTime}
+            onRefreshData={onRefreshData}
           />
         </div>
       )}
@@ -1909,14 +2219,14 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               colorClass="bg-secondary"
             />
             <Card
-              title="Tons Efetivadas (Mês)"
+              title={`Tons Efetivadas (${periodLabel})`}
               value={`${dashboardStats.monthlyEffectiveTonnage.toLocaleString('pt-BR')} t`}
               icon={<TruckIcon className="w-6 h-6 text-white" />}
               colorClass="bg-green-500"
             />
             {dashboardStats.canViewCommission ? (
               <Card
-                title="Comissão (Mês)"
+                title={`Comissão (${periodLabel})`}
                 value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(dashboardStats.monthlyCommission)}
                 icon={<DollarSignIcon className="w-6 h-6 text-white" />}
                 colorClass="bg-accent"
@@ -1934,7 +2244,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="space-y-6">
                 <DonutChartCard title="Distribuição de Cargas por Status" data={cargoStatusData} />
                 <DonutChartCard 
-                  title="Volume Carregado por Cliente (Mês)" 
+                  title={`Volume Carregado por Cliente (${periodLabel})`} 
                   data={clientVolumeData} 
                   unit="t" 
                   onViewClientHistory={(clientId) => {
@@ -1944,7 +2254,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                 />
             </div>
             <ShipmentFunnelCard title="Funil de Embarques" data={shipmentStatusData} />
-            {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} />}
+            {canViewRanking && <ShipperRankingCard shipments={shipments} cargos={cargos} users={users} currentUser={currentUser} dateRangeBounds={dateRangeBounds} periodLabel={periodLabel} />}
           </div>
         </>
       )}

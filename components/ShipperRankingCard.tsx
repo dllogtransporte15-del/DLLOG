@@ -11,6 +11,8 @@ interface ShipperRankingCardProps {
   cargos: Cargo[];
   users: User[];
   currentUser: User | null;
+  dateRangeBounds?: { start: number | null; end: number | null };
+  periodLabel?: string;
 }
 
 interface ShipperStat {
@@ -23,7 +25,14 @@ interface ShipperStat {
   commission: number;
 }
 
-const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, cargos, users, currentUser }) => {
+const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ 
+  shipments, 
+  cargos, 
+  users, 
+  currentUser,
+  dateRangeBounds,
+  periodLabel
+}) => {
   const canViewCommission = React.useMemo(() => {
     if (!currentUser) return false;
     return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao].includes(currentUser.profile);
@@ -66,10 +75,28 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
         const effDateStr = getShipmentEffectiveDate(shipment);
         
         if (effDateStr) {
-          const referenceDate = new Date(effDateStr + 'T00:00:00');
-          const isCurrentMonth = referenceDate.getMonth() === currentMonth && referenceDate.getFullYear() === currentYear;
+          let isInPeriod = false;
+          let refTime = 0;
+          const parts = effDateStr.split('-');
+          if (parts.length === 3) {
+            refTime = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0).getTime();
+          } else {
+            refTime = new Date(effDateStr).getTime();
+          }
 
-          if (isCurrentMonth) {
+          if (dateRangeBounds) {
+            if (dateRangeBounds.start === null && dateRangeBounds.end === null) {
+              isInPeriod = true;
+            } else {
+              isInPeriod = (dateRangeBounds.start === null || refTime >= dateRangeBounds.start) &&
+                           (dateRangeBounds.end === null || refTime <= dateRangeBounds.end);
+            }
+          } else {
+            const referenceDate = new Date(refTime);
+            isInPeriod = referenceDate.getMonth() === currentMonth && referenceDate.getFullYear() === currentYear;
+          }
+
+          if (isInPeriod) {
             shipmentCount++;
             if (shipment.horsePlate) {
                 uniqueVehicles.add(shipment.horsePlate);
@@ -103,7 +130,7 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
     });
 
     return stats.sort((a, b) => b.netMargin - a.netMargin);
-  }, [shipments, cargos, users]);
+  }, [shipments, cargos, users, dateRangeBounds]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -112,7 +139,7 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({ shipments, carg
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
       <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-1">Ranking de Embarcadores</h3>
-      <p className="text-xs text-gray-500 mb-4">Resultados do mês atual</p>
+      <p className="text-xs text-gray-500 mb-4">Resultados ({periodLabel || 'Mês Atual'})</p>
       <div className="overflow-x-auto">
         <table className="min-w-full">
           <thead className="border-b dark:border-gray-700">

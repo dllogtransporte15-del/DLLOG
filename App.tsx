@@ -240,7 +240,10 @@ const App: React.FC = () => {
     branches, setBranches,
     stays, setStays,
     freightOffers, setFreightOffers,
-    riskQueryOptions, setRiskQueryOptions
+    riskQueryOptions, setRiskQueryOptions,
+    realtimeStatus,
+    lastSyncTime,
+    loadAllData
   } = useDatabase(currentUser);
 
   const { showToast } = useToast();
@@ -3821,7 +3824,7 @@ const App: React.FC = () => {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
         <Routes>
-          <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
+          <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} onMergeClients={handleMergeClients} currentUser={currentUser} profilePermissions={profilePermissions} />} />
           <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} vehicles={vehicles} drivers={drivers} shipments={shipments} />} />
@@ -3849,7 +3852,7 @@ const App: React.FC = () => {
           <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
           <Route path="/whatsapp" element={<Navigate to="/messenger" replace />} />
           <Route path="/messenger" element={!can('read', currentUser, 'messenger', profilePermissions) ? <Navigate to="/" replace /> : <MessengerPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} users={users} currentUser={currentUser} />} />
-          <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} />} />
+          <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
         </Routes>
       </React.Suspense>
     );

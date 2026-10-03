@@ -26,45 +26,8 @@ import { isDemoUser } from '../auth';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
 
-export const getShipmentTmsOrderUrl = (shipment: Shipment): string | null => {
-  if (!shipment.documents || typeof shipment.documents !== 'object') return null;
-
-  const possibleKeys = [
-    'Ordem de Carregamento TMS',
-    'Ordem de Carregamento',
-    'Ordem de Carregamento (TMS)',
-    'Ordem Carregamento',
-    'Ordem TMS',
-    'ordem_carregamento_tms',
-    'ordem_carregamento',
-    'OC TMS',
-    'OC'
-  ];
-
-  for (const k of possibleKeys) {
-    const val = shipment.documents[k];
-    if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].trim()) {
-      return val[0];
-    }
-    if (typeof val === 'string' && val.trim()) {
-      return val;
-    }
-  }
-
-  for (const [k, val] of Object.entries(shipment.documents)) {
-    const kLower = k.toLowerCase();
-    if (kLower.includes('ordem') && (kLower.includes('carregamento') || kLower.includes('tms') || kLower.includes('oc'))) {
-      if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].trim()) {
-        return val[0];
-      }
-      if (typeof val === 'string' && val.trim()) {
-        return val;
-      }
-    }
-  }
-
-  return null;
-};
+import { getShipmentTmsOrderUrl, getShipmentCteFileUrl, getShipmentDischargeTicketUrl } from '../utils/documentViewer';
+export { getShipmentTmsOrderUrl, getShipmentCteFileUrl, getShipmentDischargeTicketUrl };
 
 interface ShipmentTableProps {
   shipments: Shipment[];
@@ -955,19 +918,40 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 w-fit group/cte">
                             <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                             <span className="text-[10px] text-blue-700 dark:text-blue-300 font-bold uppercase">CTE:</span>
-                            <span 
-                              onClick={() => {
-                                if (canEditCte) {
-                                  setEditingCteId(shipment.id);
-                                  setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                                  setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
-                                }
-                              }}
-                              className={`text-xs font-bold text-blue-900 dark:text-blue-200 ${canEditCte ? 'cursor-pointer hover:underline' : ''}`}
-                              title={canEditCte ? "Clique para editar o CT-e" : undefined}
-                            >
-                              {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
-                            </span>
+                            {(() => {
+                              const cteFile = getShipmentCteFileUrl(shipment);
+                              return (
+                                <div className="flex items-center gap-1">
+                                  <span 
+                                    onClick={() => {
+                                      if (cteFile) {
+                                        openDocumentInNewTab(cteFile, `CTE_${cteVal}`);
+                                      } else if (canEditCte) {
+                                        setEditingCteId(shipment.id);
+                                        setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                        setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                      }
+                                    }}
+                                    className={`text-xs font-bold text-blue-900 dark:text-blue-200 ${
+                                      cteFile ? 'cursor-pointer hover:underline text-blue-600 dark:text-blue-400' : canEditCte ? 'cursor-pointer hover:underline' : ''
+                                    }`}
+                                    title={cteFile ? "Clique para abrir o PDF do CT-e em nova aba" : canEditCte ? "Clique para editar o CT-e" : undefined}
+                                  >
+                                    {cteVal !== '-' ? cteVal : 'Adicionar CT-e'}
+                                  </span>
+                                  {cteFile && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDocumentInNewTab(cteFile, `CTE_${cteVal}`)}
+                                      className="p-0.5 rounded text-blue-600 hover:text-blue-800 transition-colors"
+                                      title="Abrir PDF do CT-e"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {canEditCte && (
                               <button
                                 onClick={() => {
@@ -1390,22 +1374,31 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                         return (
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5 group/cte">
-                              {cteVal && cteVal !== '-' ? (
-                                <span 
-                                  onClick={() => {
-                                    if (canEditCte) {
-                                      setEditingCteId(shipment.id);
-                                      setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
-                                      setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
-                                    }
-                                  }}
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm ${canEditCte ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/70 transition-colors' : ''}`}
-                                  title={canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                                  {cteVal}
-                                </span>
-                              ) : (
+                              {cteVal && cteVal !== '-' ? (() => {
+                                const cteFile = getShipmentCteFileUrl(shipment);
+                                return (
+                                  <div className="inline-flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (cteFile) {
+                                          openDocumentInNewTab(cteFile, `CTE_${cteVal}`);
+                                        } else if (canEditCte) {
+                                          setEditingCteId(shipment.id);
+                                          setEditingCteValue(shipment.cteNumber || (cteVal !== '-' ? cteVal : ''));
+                                          setEditingCteDateValue(shipment.cteEmissionDate || (cteDate || ''));
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-sm cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/70 transition-colors"
+                                      title={cteFile ? "Clique para abrir o PDF do CT-e em nova aba" : canEditCte ? "Clique para editar o CT-e" : `CT-e nº ${cteVal}`}
+                                    >
+                                      <FileText className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                                      <span>{cteVal}</span>
+                                      {cteFile && <ExternalLink className="w-2.5 h-2.5 opacity-80" />}
+                                    </button>
+                                  </div>
+                                );
+                              })() : (
                                 <span 
                                   onClick={() => {
                                     if (canEditCte) {

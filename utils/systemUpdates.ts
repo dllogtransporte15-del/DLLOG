@@ -21,6 +21,150 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_03_v2_67_2',
+    version: 'v2.67.2',
+    date: '03/10/2026',
+    title: 'Atalhos de Documentos (Ticket de Descarga, CTE e OC TMS) e Nova Coluna VL. CIOT',
+    summary: 'Configuração de links e atalhos dinâmicos com abertura imediata de documentos anexados (Ticket de Descarga, CT-e e Ordem de Carregamento TMS no canto superior esquerdo dos cards e colunas da planilha) com tratamento de documentos ausentes, além da inclusão da nova coluna "VL. CIOT" na seção de Impostos & Deduções.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Atalho Dinâmico para Ticket de Descarga',
+        description: 'Na coluna "TICKET DESCARGA", os registros tornaram-se botões clicáveis que abrem diretamente o comprovante/documento de descarga anexado ao embarque em nova aba com ferramentas de visualização, impressão e download, com aviso amigável caso não esteja anexado.'
+      },
+      {
+        category: 'feature',
+        title: 'Atalho Direto para o PDF do CT-e',
+        description: 'Na coluna "CTE", cada registro com CT-e passa a abrir o documento/PDF oficial do CT-e anexado em nova aba ao ser clicado, agilizando conferências fiscais.'
+      },
+      {
+        category: 'feature',
+        title: 'Gatilho de Ordem de Carregamento (OC TMS) no Canto Superior Esquerdo',
+        description: 'Conforme especificado, o número identificador do embarque (#ID/Ordem) no canto superior esquerdo de cada card no Kanban/Board e na planilha aciona instantaneamente a abertura do PDF da Ordem de Carregamento (OC TMS).'
+      },
+      {
+        category: 'fix',
+        title: 'Suporte Completo para Fotos de Tickets de Descarga (Girar 90°, Zoom e Impressão)',
+        description: 'Ajustada a abertura de tickets de descarga para suportar fotos tiradas por motoristas (JPEG, PNG, WEBP, HEIC) sem forçar extensão .pdf. O visualizador agora renderiza imagens instantaneamente (sem travar em CORS), incluindo botões interativos para Girar 90°, Zoom +, Zoom -, Redefinir Zoom, Imprimir e Baixar.'
+      },
+      {
+        category: 'feature',
+        title: 'Nova Coluna VL. CIOT em Impostos e Deduções',
+        description: 'Adicionada a coluna "VL. CIOT" na seção de Impostos & Deduções da planilha de controladoria, calculando a taxa de 0,20% sobre a base líquida de frete do motorista (abatendo pedágio e retenções previdenciárias quando TAC/PF) e integrando o totalizador na barra fixa superior.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_03_v2_67_1',
+    version: 'v2.67.1',
+    date: '03/10/2026',
+    title: 'Planilha de Controladoria: Saldo do Pedido com Volume Total Lançado na Carga',
+    summary: 'Ajuste na coluna "SALDO PEDIDO" da planilha de controladoria de embarques para exibir com fidelidade o saldo total em toneladas que foi lançado/contratado na carga (totalVolume), eliminando distorções de arredondamento e subtrações flutuantes. Inclui formatação numérica refinada e tooltip com detalhamento completo.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Exibição do Saldo Total Lançado na Carga',
+        description: 'A coluna SALDO PEDIDO passa a refletir fielmente o saldo total em toneladas cadastrado/lançado na carga (totalVolume), permitindo conferência imediata do volume total da ordem.'
+      },
+      {
+        category: 'fix',
+        title: 'Eliminação de Flutuações Decimais',
+        description: 'Eliminadas casas decimais excessivas geradas por subtrações de ponto flutuante, formatando os valores de forma padronizada e legível em toneladas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Tooltip com Balanço Operacional Completo',
+        description: 'Ao posicionar o mouse sobre a célula, é exibido o detalhamento com Volume Total Lançado, Volume Carregado e Saldo Restante a carregar.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_03_v2_67_0',
+    version: 'v2.67.0',
+    date: '03/10/2026',
+    title: 'Dashboard: Relatórios Padrão para Efetivados do Mês e Filtro Temporal com Calendário',
+    summary: 'Configuração padrão inicial do Dashboard para consolidar relatórios, tonelagens, comissões e ranking exclusivamente de embarques efetivados do mês corrente. Adicionado novo componente interativo com ícone de calendário no topo do Dashboard para filtragem por períodos predefinidos (Mês Atual, Esta Semana, Hoje, Este Ano, Todos) e intervalos personalizados com seleção de datas específicas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Padrão Inicial: Apenas Embarques Efetivados do Mês Atual',
+        description: 'Os relatórios de Toneladas Efetivadas, Comissões, Volume Carregado por Cliente e Ranking de Solicitantes agora iniciam padronizados filtrando exclusivamente embarques efetivados (com CT-e emitido ou status carregado/finalizado) dentro do mês corrente.'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro por Calendário e Períodos Específicos no Cabeçalho',
+        description: 'Adicionado botão elegante com ícone de calendário no cabeçalho do Dashboard permitindo filtrar instantaneamente por Este Mês (Padrão), Esta Semana, Hoje, Este Ano, Todos os Períodos ou Intervalo Personalizado com campos de Data Inicial e Data Final.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atualização Dinâmica dos Títulos e Ranking de Solicitantes',
+        description: 'Os títulos dos cards e gráficos refletem dinamicamente o período ativo selecionado no calendário, e o ShipperRankingCard agora recalcula volume, quantidade e ticket médio respeitando o filtro de datas aplicado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_66_1',
+    version: 'v2.66.1',
+    date: '02/10/2026',
+    title: 'Linha Fixa de Totais no Topo da Planilha de Controladoria',
+    summary: 'Transferência da linha de totais acumulados para a parte superior da planilha (fixada diretamente no thead abaixo dos cabeçalhos das colunas), permitindo conferência imediata e permanente de Pedágio, Peso (ton), Frete Bruto Empresa, ICMS, PIS/COFINS, Patronal, INSS/SEST SENAT, Frete Motorista, Valor da NF, Adiantamentos e Saldo Restante.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Posicionamento dos Totais no Topo (Header Sticky)',
+        description: 'A linha ∑ TOTAIS agora reside no topo da tabela, logo abaixo dos títulos de colunas e antes dos filtros. Fica permanentemente visível durante toda a rolagem vertical sem poluir o rodapé.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_66_0',
+    version: 'v2.66.0',
+    date: '02/10/2026',
+    title: 'Planilha da Controladoria: Rolagem Contínua e Filtro Padrão da Semana Atual',
+    summary: 'Remoção definitiva da quebra de páginas (paginação em blocos de 50) na planilha de controladoria de embarques, passando a exibir todas as linhas continuamente com rolagem fluida. Configurado como padrão inicial o filtro por data da semana atual, garantindo visualização imediata de todas as viagens e faturamentos da semana em andamento.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Remoção da Quebra de Páginas (Rolagem Contínua)',
+        description: 'Eliminada a paginação estática (1/9, anterior/próxima e seletor por página). Agora todas as linhas correspondentes ao filtro temporal selecionado são renderizadas continuamente de ponta a ponta na tabela com indexação sequencial perfeita (1, 2, 3...).'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro Inicial Padrão: Semana Atual',
+        description: 'A planilha de controladoria agora inicia automaticamente trazendo os embarques da semana corrente (segunda a domingo), permitindo alternar instantaneamente para Hoje, Mês, Ano, Período Customizado ou Todos os Embarques.'
+      },
+      {
+        category: 'improvement',
+        title: 'Novo Rodapé Informativo de Período e Rolagem',
+        description: 'Adicionada barra informativa no rodapé indicando a quantidade de embarques exibidos, o total existente na base e badge visual do período ativo com status de rolagem contínua.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_02_v2_65_0',
+    version: 'v2.65.0',
+    date: '02/10/2026',
+    title: 'Sincronização em Tempo Real dos Dashboards e Modo TV 24/7 com Recarga de Segurança',
+    summary: 'Aprimoramento completo da infraestrutura em tempo real via Supabase Realtime (WebSockets) com propagação instantânea de status, anexos e movimentação de colunas nos Dashboards Fiscal e Financeiro. Implementado mecanismo de recarga de segurança periódica a cada 15 minutos para monitores dedicados operando 24/7 com prevenção de memory leak e restauração automática do Modo TV.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Mecanismo de Recarga de Segurança a Cada 15 Minutos (Modo TV)',
+        description: 'Implementado ciclo de 15 minutos (900s) que realiza Hard Refresh automático para descarregar o heap de memória e conexões WebSockets do navegador em painéis de TV 24/7, prevenindo travamentos. O Modo TV conta com persistência automática (sessionStorage) que reabre a tela em Fullscreen e rolagem automática sem qualquer intervenção humana.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização Instantânea via WebSockets (Realtime Refinado)',
+        description: 'Garantida a atualização em milissegundos dos cartões nos painéis Kanban ao ocorrer qualquer alteração de status, avanço de etapa, upload de anexos ou edição de dados em embarques e cargas, aplicando merge resiliente de estado sem necessidade de F5 manual.'
+      },
+      {
+        category: 'feature',
+        title: 'Indicador Visual Dinâmico de Conexão e Botão de Sincronização Rápida',
+        description: 'O badge "TEMPO REAL" agora reflete o estado real da rede (Verde: Conectado e Ativo; Âmbar: Reconectando; Vermelho: Offline com reconexão em 1 clique), exibindo a hora da última sincronização, contagem regressiva para a próxima limpeza de segurança e botão de revalidação manual instantânea.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_02_v2_64_0',
     version: 'v2.64.0',
     date: '02/10/2026',

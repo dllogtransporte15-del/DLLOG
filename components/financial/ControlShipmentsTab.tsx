@@ -37,14 +37,19 @@ import {
   X, 
   Maximize2, 
   Minimize2, 
-  ChevronLeft, 
-  ChevronRight, 
   Move, 
   Loader2, 
   Calendar,
   Database,
-  FileText
+  FileText,
+  ExternalLink
 } from 'lucide-react';
+import { 
+  openDocumentInNewTab, 
+  getShipmentCteFileUrl, 
+  getShipmentDischargeTicketUrl, 
+  getShipmentTmsOrderUrl 
+} from '../../utils/documentViewer';
 
 interface ControlShipmentsTabProps {
   items: ShipmentControlItem[];
@@ -284,7 +289,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'solicitante', label: 'SOLICITANTE', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[110px] max-w-[130px]' },
   { key: 'carregarEmpresa', label: 'REMETENTE', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[125px] max-w-[155px]' },
   { key: 'numeroPedido', label: 'Nº PEDIDO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[85px] max-w-[110px]', align: 'center' },
-  { key: 'saldoOriginalPedido', label: 'SALDO PEDIDO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[80px] max-w-[90px]', align: 'center' },
+  { key: 'saldoOriginalPedido', label: 'SALDO PEDIDO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[85px] max-w-[105px]', align: 'center' },
   { key: 'produto', label: 'PRODUTO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[110px] max-w-[140px]' },
   { key: 'tipoCarga', label: 'TIPO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[80px] max-w-[105px]', align: 'center' },
 
@@ -313,6 +318,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'creditoPisCofins', label: 'CRÉDITO PIS/COFINS', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
   { key: 'patronal4', label: 'PATRONAL 4%', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
   { key: 'inssSestSenat', label: 'INSS / SEST SENAT', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
+  { key: 'valorTaxaCiot', label: 'VL. CIOT', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
 
   // 7. Frete & Acerto Motorista
   { key: 'tarifaTonMotorista', label: 'TARIFA TON MOTORISTA', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'currency', width: 'min-w-[90px] max-w-[100px]', align: 'right' },
@@ -362,11 +368,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, windowX: 20, windowY: 20 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 1200, startH: 750 });
 
-  // Paginação e filtros
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(50);
+  // Filtros e busca (rolagem contínua por período, sem quebra de páginas)
   const [searchTerm, setSearchTerm] = useState('');
-  const [periodFilter, setPeriodFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year' | 'custom'>('all');
+  const [periodFilter, setPeriodFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year' | 'custom'>('week');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [showDatePickerPopup, setShowDatePickerPopup] = useState<boolean>(false);
@@ -624,7 +628,12 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         solicitante: solicitanteName,
         carregarEmpresa: (cargo as any)?.loadingCompany || (cargo as any)?.remetente || clientName || '-',
         numeroPedido: cargo?.orderNumber || (cargo as any)?.numeroPedido || cargo?.tmsLoteNumber || (cargo?.sequenceId ? String(cargo.sequenceId) : (s.orderId || '-')),
-        saldoOriginalPedido: cargo ? String(Math.max(0, (cargo.totalVolume || 0) - (cargo.loadedVolume || 0))) : '-',
+        saldoOriginalPedido: (() => {
+          if (!cargo) return '-';
+          const totalLancado = Number(cargo.totalVolume ?? (cargo as any).scheduledVolume ?? 0);
+          if (totalLancado <= 0) return '-';
+          return totalLancado % 1 === 0 ? String(totalLancado) : Number(totalLancado.toFixed(2)).toString();
+        })(),
         produto: (() => {
           const p = cargo?.productId ? productMap.get(cargo.productId) : undefined;
           if (p?.name) return p.name.toUpperCase();
@@ -675,6 +684,24 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           }
           return 0;
         })(),
+        valorTaxaCiot: (() => {
+          const isShipmentPf = (s.driverFreightType === 'PF' || s.anttModality === 'TAC');
+          const savedCiotFee = (s as any).ciotFeeValue || 
+            (s.documents as any)?.taxa_ciot || 
+            (s.documents as any)?.ciotFeeValue || 
+            (s.realProfitData as any)?.ciotFeeValue;
+          if (savedCiotFee !== undefined && savedCiotFee !== null && Number(savedCiotFee) > 0) {
+            return Number(savedCiotFee);
+          }
+          const tollVal = s.tollValue || 0;
+          const tacDeds = isShipmentPf ? calculateTacTaxDeductions(freteMotorista, tollVal) : null;
+          const inssPf = tacDeds?.inss || 0;
+          const sestSenatPf = tacDeds?.sestSenat || 0;
+          const baseCiotFreight = isShipmentPf
+            ? Math.max(0, freteMotorista - tollVal - inssPf - sestSenatPf)
+            : Math.max(0, freteMotorista - tollVal);
+          return baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0;
+        })(),
 
         tarifaTonMotorista: tarifaMotorista,
         valorFreteMotorista: freteMotorista,
@@ -695,7 +722,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         percentualAdiantamento: s.advancePercentage || 70,
         valorAdiantamento: s.advanceValue || 0,
         horaDataLiberacaoAdiantamento: getAdvanceLiberationDateTime(s),
-        ticketDescarga: pesoChegada > 0 ? 'SIM' : 'NÃO',
+        ticketDescarga: (getShipmentDischargeTicketUrl(s) || pesoChegada > 0) ? 'SIM' : 'NÃO',
         pesoChegada,
         saldo: calculatedSaldo,
 
@@ -713,6 +740,12 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         })(),
         totalQuebra: quebra,
         valorQuebraCiot: s.discountValue || 0,
+
+        // Metadata para atalhos diretos aos documentos
+        shipmentId: s.id,
+        cteFileUrl: getShipmentCteFileUrl(s),
+        ticketDescargaUrl: getShipmentDischargeTicketUrl(s),
+        ordemCarregamentoUrl: getShipmentTmsOrderUrl(s),
       };
     });
   }, [shipmentsFiltered, cargoMap, clientMap, clientObjMap, userMap, users, clientPaymentMethodOverrides, productMap]);
@@ -767,6 +800,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const getRowDateTimestamp = useCallback((row: TranscunhaSpreadsheetRow): number => {
     if (row.dataEmbarque) {
       const t = parseShipmentDate(row.dataEmbarque);
+      if (t > 0) return t;
+    }
+    if ((row as any).dataHoraEmissao) {
+      const t = parseShipmentDate((row as any).dataHoraEmissao);
       if (t > 0) return t;
     }
     return 0;
@@ -830,6 +867,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           return false;
         }
 
+        if (colKey === 'saldoOriginalPedido') {
+          const cleanFilter = normFilter.replace(/\./g, '').replace(/,/g, '.');
+          const cleanCell = normCell.replace(/\./g, '').replace(/,/g, '.');
+          if (normCell.includes(normFilter) || cleanCell.includes(cleanFilter)) {
+            continue;
+          }
+          return false;
+        }
+
         if (!normCell.includes(normFilter)) return false;
       }
 
@@ -874,16 +920,16 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const margemBruta = totalFreteEmpresa - totalFreteMotorista;
   const margemPercent = totalFreteEmpresa > 0 ? (margemBruta / totalFreteEmpresa) * 100 : 0;
   const totalTonnage = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.peso || 0), 0), [filteredRows]);
+  const totalPedagio = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.pedagio || 0), 0), [filteredRows]);
+  const totalIcms = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.icms || 0), 0), [filteredRows]);
+  const totalDebitoPisCofins = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.debitoPisCofins || 0), 0), [filteredRows]);
+  const totalCreditoPisCofins = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.creditoPisCofins || 0), 0), [filteredRows]);
+  const totalPatronal = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.patronal4 || 0), 0), [filteredRows]);
+  const totalInssSestSenat = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.inssSestSenat || 0), 0), [filteredRows]);
+  const totalValorTaxaCiot = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.valorTaxaCiot || 0), 0), [filteredRows]);
+  const totalValorNf = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.valorNf || 0), 0), [filteredRows]);
   const totalAdiantamentos = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.valorAdiantamento || 0), 0), [filteredRows]);
   const totalSaldos = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.saldo || 0), 0), [filteredRows]);
-
-  // Paginação
-  const totalPages = pageSize > 0 ? Math.ceil(filteredRows.length / pageSize) : 1;
-  const paginatedRows = useMemo(() => {
-    if (pageSize <= 0) return filteredRows;
-    const start = (currentPage - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, currentPage, pageSize]);
 
   const activeColumnFiltersCount = useMemo(() => {
     let count = Object.values(columnFilters).filter(v => Boolean(v && v.trim())).length;
@@ -896,7 +942,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const handleClearAllFilters = () => {
     setColumnFilters({});
     setSortConfig({ key: 'cteHoras', direction: 'desc' });
-    setPeriodFilter('all');
+    setPeriodFilter('week');
     setCustomStartDate('');
     setCustomEndDate('');
     setStatusFilter('all');
@@ -1005,6 +1051,41 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               })}
             </tr>
 
+            {/* Linha Fixa de Totais na Parte Superior da Planilha */}
+            <tr className="bg-slate-950 text-white font-mono text-[11px] font-black border-b border-indigo-500/80 shadow-md select-none">
+              <th className="px-2 py-2 text-center text-[10px] bg-slate-900 text-indigo-400 font-black uppercase tracking-wider border-r border-slate-800">
+                ∑ TOTAIS
+              </th>
+              {SPREADSHEET_COLUMNS.map(col => {
+                let totalDisplay = '';
+                if (col.key === 'cteHoras') totalDisplay = `${filteredRows.length} VIAGENS`;
+                else if (col.key === 'pedagio') totalDisplay = formatCurrency(totalPedagio);
+                else if (col.key === 'peso') totalDisplay = `${totalTonnage.toFixed(2)} t`;
+                else if (col.key === 'freteBrutoEmpresa') totalDisplay = formatCurrency(totalFreteEmpresa);
+                else if (col.key === 'icms') totalDisplay = formatCurrency(totalIcms);
+                else if (col.key === 'debitoPisCofins') totalDisplay = formatCurrency(totalDebitoPisCofins);
+                else if (col.key === 'creditoPisCofins') totalDisplay = formatCurrency(totalCreditoPisCofins);
+                else if (col.key === 'patronal4') totalDisplay = formatCurrency(totalPatronal);
+                else if (col.key === 'inssSestSenat') totalDisplay = formatCurrency(totalInssSestSenat);
+                else if (col.key === 'valorTaxaCiot') totalDisplay = formatCurrency(totalValorTaxaCiot);
+                else if (col.key === 'valorFreteMotorista') totalDisplay = formatCurrency(totalFreteMotorista);
+                else if (col.key === 'valorNf') totalDisplay = formatCurrency(totalValorNf);
+                else if (col.key === 'valorAdiantamento') totalDisplay = formatCurrency(totalAdiantamentos);
+                else if (col.key === 'saldo') totalDisplay = formatCurrency(totalSaldos);
+
+                return (
+                  <th
+                    key={`top-total-${col.key}`}
+                    className={`px-2 py-2 border-r border-slate-800 font-black ${
+                      col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
+                    } ${totalDisplay ? 'bg-slate-900 text-amber-300 font-bold' : 'text-slate-600'}`}
+                  >
+                    {totalDisplay || '-'}
+                  </th>
+                );
+              })}
+            </tr>
+
             {/* Linha 3: Filtros por Coluna Refinados e Compactos */}
             {showFilterRow && (
               <tr className="bg-slate-100/90 dark:bg-slate-950 border-b border-slate-300 dark:border-slate-800">
@@ -1037,7 +1118,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           </thead>
 
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px] bg-white dark:bg-slate-900">
-            {paginatedRows.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <tr>
                 <td colSpan={SPREADSHEET_COLUMNS.length + 1} className="px-4 py-16 text-center text-slate-400 font-sans">
                   <div className="flex flex-col items-center justify-center gap-2">
@@ -1057,8 +1138,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 </td>
               </tr>
             ) : (
-              paginatedRows.map((row, idx) => {
-                const actualIndex = pageSize > 0 ? (currentPage - 1) * pageSize + idx : idx;
+              filteredRows.map((row, idx) => {
                 return (
                   <tr 
                     key={row.id} 
@@ -1067,20 +1147,75 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                     }`}
                   >
                     <td className="px-2 py-1 text-center text-slate-400 font-sans text-[10px] bg-slate-50 dark:bg-slate-950/70 border-r border-slate-200 dark:border-slate-800">
-                      {actualIndex + 1}
+                      {idx + 1}
                     </td>
                     {SPREADSHEET_COLUMNS.map(col => {
                       const raw = (row as any)[col.key];
 
-                      // Coluna Especial: CTE (apenas número do CT-e)
+                      // Coluna Especial: ID EMBARQUE SISTEMA (Atalho rápido para Ordem de Carregamento)
+                      if (col.key === 'idEmbarqueSistema') {
+                        const idVal = String(raw || row.id || '-');
+                        return (
+                          <td 
+                            key={col.key}
+                            className="px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px]"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (row.ordemCarregamentoUrl) {
+                                  openDocumentInNewTab(row.ordemCarregamentoUrl, `OC_TMS_${idVal}`);
+                                } else {
+                                  setNotification({
+                                    type: 'info',
+                                    message: `Nenhum arquivo de Ordem de Carregamento (OC TMS) anexado para o embarque #${idVal}.`
+                                  });
+                                }
+                              }}
+                              className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
+                                row.ordemCarregamentoUrl
+                                  ? 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 hover:underline'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                              title={row.ordemCarregamentoUrl ? `Clique para abrir a Ordem de Carregamento TMS (#${idVal})` : `Embarque #${idVal} (sem OC TMS anexada)`}
+                            >
+                              <span>#{idVal}</span>
+                              {row.ordemCarregamentoUrl && <ExternalLink className="w-2.5 h-2.5 opacity-70" />}
+                            </button>
+                          </td>
+                        );
+                      }
+
+                      // Coluna Especial: CTE (link direto para abrir PDF do CT-e)
                       if (col.key === 'cteHoras') {
                         const cteVal = String(raw || '-');
                         return (
                           <td 
                             key={col.key}
-                            className="px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-bold text-sky-600 dark:text-sky-400 font-mono text-[11px]"
+                            className="px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-bold font-mono text-[11px]"
                           >
-                            {cteVal}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (row.cteFileUrl) {
+                                  openDocumentInNewTab(row.cteFileUrl, `CTE_${cteVal}`);
+                                } else {
+                                  setNotification({
+                                    type: 'info',
+                                    message: `Nenhum documento/PDF de CT-e anexado para o embarque ${cteVal}.`
+                                  });
+                                }
+                              }}
+                              className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
+                                row.cteFileUrl
+                                  ? 'text-sky-600 dark:text-sky-400 hover:text-sky-500 hover:underline'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                              }`}
+                              title={row.cteFileUrl ? `Clique para abrir o PDF do CT-e ${cteVal}` : `CT-e: ${cteVal} (sem PDF anexado)`}
+                            >
+                              <span>{cteVal}</span>
+                              {row.cteFileUrl && <ExternalLink className="w-2.5 h-2.5 opacity-70" />}
+                            </button>
                           </td>
                         );
                       }
@@ -1219,6 +1354,33 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         );
                       }
 
+                      // Coluna Especial: SALDO PEDIDO (Saldo total em ton lançado na carga)
+                      if (col.key === 'saldoOriginalPedido') {
+                        const valNum = Number(raw);
+                        const isNum = !isNaN(valNum) && valNum > 0;
+                        const displayVal = isNum 
+                          ? (valNum % 1 === 0 ? valNum.toLocaleString('pt-BR') : valNum.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+                          : String(raw || '-');
+
+                        const sOrig = shipments.find(s => s.id === row.id);
+                        const matchedCargo = sOrig?.cargoId ? cargoMap.get(sOrig.cargoId) : undefined;
+                        const totalLancado = matchedCargo ? Number(matchedCargo.totalVolume ?? (matchedCargo as any).scheduledVolume ?? 0) : valNum;
+                        const carregado = matchedCargo ? Number(matchedCargo.loadedVolume || 0) : 0;
+                        const saldoRestante = Math.max(0, totalLancado - carregado);
+
+                        return (
+                          <td 
+                            key={col.key}
+                            className="px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px]"
+                            title={isNum ? `Saldo Total Lançado: ${displayVal} ton | Carregado: ${carregado.toLocaleString('pt-BR')} ton | Saldo Restante: ${saldoRestante.toLocaleString('pt-BR')} ton` : 'Saldo do pedido'}
+                          >
+                            <span className={isNum ? 'font-bold text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-slate-500'}>
+                              {displayVal}
+                            </span>
+                          </td>
+                        );
+                      }
+
                       // Coluna Especial: NF CLIENTE (Número da Nota Fiscal)
                       if (col.key === 'nfCliente') {
                         const nfVal = String(raw || '-');
@@ -1334,6 +1496,92 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         );
                       }
 
+                      // Coluna Especial: ORDEM DE CARREGAMENTO (link direto para abrir OC TMS)
+                      if (col.key === 'ordemCarregamento') {
+                        const ocVal = String(raw || '-');
+                        return (
+                          <td 
+                            key={col.key}
+                            className="px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px]"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (row.ordemCarregamentoUrl) {
+                                  openDocumentInNewTab(row.ordemCarregamentoUrl, `OC_${ocVal}`);
+                                } else {
+                                  setNotification({
+                                    type: 'info',
+                                    message: `Nenhum arquivo de Ordem de Carregamento (OC TMS) anexado para o embarque ${row.cte || row.id}.`
+                                  });
+                                }
+                              }}
+                              className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
+                                row.ordemCarregamentoUrl
+                                  ? 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 hover:underline'
+                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                              }`}
+                              title={row.ordemCarregamentoUrl ? `Clique para abrir a Ordem de Carregamento TMS (${ocVal})` : `${ocVal} (sem OC TMS anexada)`}
+                            >
+                              <span>{ocVal}</span>
+                              {row.ordemCarregamentoUrl && <ExternalLink className="w-2.5 h-2.5 opacity-70" />}
+                            </button>
+                          </td>
+                        );
+                      }
+
+                      // Coluna Especial: TICKET DE DESCARGA (link direto para abrir foto/comprovante de descarga)
+                      if (col.key === 'ticketDescarga') {
+                        const sOrig = shipments.find(s => s.id === row.id);
+                        const ticketUrl = row.ticketDescargaUrl || (sOrig ? getShipmentDischargeTicketUrl(sOrig) : null);
+                        const hasDoc = Boolean(ticketUrl);
+                        const ticketVal = String(raw || 'NÃO').toUpperCase();
+                        const isSim = ticketVal === 'SIM' || hasDoc;
+                        
+                        return (
+                          <td key={col.key} className="px-1.5 py-1 border-r border-slate-200 dark:border-slate-800 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (ticketUrl) {
+                                  openDocumentInNewTab(ticketUrl, `Ticket_Descarga_${row.id}`);
+                                } else {
+                                  setNotification({
+                                    type: 'info',
+                                    message: `Nenhum comprovante de descarga anexado para o embarque ${row.cte || row.id}.`
+                                  });
+                                }
+                              }}
+                              className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                isSim 
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 shadow-xs' 
+                                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                              }`}
+                              title={ticketUrl ? "Clique para abrir a foto/comprovante de descarga anexado" : "Nenhum comprovante de descarga anexado"}
+                            >
+                              <span>{isSim ? 'SIM' : 'NÃO'}</span>
+                              {hasDoc && <ExternalLink className="w-2.5 h-2.5 opacity-80" />}
+                            </button>
+                          </td>
+                        );
+                      }
+
+                      // Coluna Especial: VL. CIOT (Taxa de 0,20% s/ Frete Líquido do motorista)
+                      if (col.key === 'valorTaxaCiot') {
+                        const feeVal = typeof raw === 'number' ? raw : 0;
+                        return (
+                          <td 
+                            key={col.key}
+                            className="px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-right font-mono text-[11px]"
+                            title={feeVal > 0 ? `Taxa CIOT (0,20%): ${formatCurrency(feeVal)}` : 'Sem taxa CIOT calculada'}
+                          >
+                            <span className={feeVal > 0 ? 'font-bold text-purple-700 dark:text-purple-300' : 'text-slate-400 dark:text-slate-500'}>
+                              {feeVal > 0 ? formatCurrency(feeVal) : '-'}
+                            </span>
+                          </td>
+                        );
+                      }
+
                       let display = raw !== null && raw !== undefined ? String(raw) : '-';
 
                       if (col.type === 'currency' && typeof raw === 'number') {
@@ -1363,36 +1611,30 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         </table>
       </div>
 
-      {/* Paginação */}
-      {pageSize > 0 && totalPages > 1 && (
-        <div className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-4 py-1.5 flex items-center justify-between gap-2 shrink-0 select-none text-xs">
+      {/* Rodapé Informativo (Rolagem contínua sem quebra de página) */}
+      <div className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shrink-0 select-none text-xs">
+        <div className="flex items-center gap-2.5">
           <span className="text-slate-500">
-            Mostrando <span className="font-bold text-slate-800 dark:text-slate-200">{(currentPage - 1) * pageSize + 1}</span> a{' '}
-            <span className="font-bold text-slate-800 dark:text-slate-200">{Math.min(currentPage * pageSize, filteredRows.length)}</span> de{' '}
-            <span className="font-bold text-slate-800 dark:text-slate-200">{filteredRows.length}</span> embarques
+            Mostrando todos os <span className="font-bold text-slate-900 dark:text-white">{filteredRows.length}</span> embarques
+            {filteredRows.length !== mappedRows.length && (
+              <span className="text-slate-400 font-normal"> (de {mappedRows.length} no total)</span>
+            )}
           </span>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              className="px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-30 font-bold flex items-center gap-1 cursor-pointer"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Anterior
-            </button>
-            <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-slate-800 border border-indigo-200 dark:border-slate-700 font-bold text-indigo-900 dark:text-indigo-300">
-              {currentPage} / {totalPages}
-            </span>
-            <button
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              className="px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-30 font-bold flex items-center gap-1 cursor-pointer"
-            >
-              Próxima <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300">
+            {periodFilter === 'week' && '📆 Semana Atual'}
+            {periodFilter === 'today' && '📅 Hoje'}
+            {periodFilter === 'month' && '🗓️ Este Mês'}
+            {periodFilter === 'year' && '📊 Este Ano'}
+            {periodFilter === 'custom' && '⚙️ Personalizado'}
+            {periodFilter === 'all' && '🌐 Todos os Embarques'}
+          </span>
         </div>
-      )}
+
+        <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          Rolagem contínua • Sem quebra de página
+        </div>
+      </div>
     </div>
   );
 
@@ -1672,7 +1914,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                     <button 
                       type="button" 
                       onClick={() => { 
-                        setPeriodFilter('all'); 
+                        setPeriodFilter('week'); 
                         setCustomStartDate(''); 
                         setCustomEndDate(''); 
                         setShowDatePickerPopup(false); 
@@ -1726,18 +1968,6 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 <span>Limpar ({activeColumnFiltersCount})</span>
               </button>
             )}
-
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="px-3 py-1.5 rounded-xl text-xs border border-indigo-400 dark:border-indigo-500/50 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-300 font-bold outline-none cursor-pointer"
-            >
-              <option value={25} className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">25 por pág.</option>
-              <option value={50} className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">50 por pág.</option>
-              <option value={100} className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">100 por pág.</option>
-              <option value={200} className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">200 por pág.</option>
-              <option value={-1} className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">Todos ({filteredRows.length})</option>
-            </select>
           </div>
         </div>
       </div>

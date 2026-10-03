@@ -76,7 +76,11 @@ function calculateNextIds(
 
 // ─────────────────────────────────────────────
 
+export type RealtimeStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
+
 export function useDatabase(currentUser: User | null) {
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting');
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(() => new Date());
   const [clients, setClients] = useState<Client[]>([]);
   const [owners, setOwners] = useState<Owner[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -299,6 +303,9 @@ export function useDatabase(currentUser: User | null) {
       const { table, eventType } = payload;
       console.log(`[Realtime] ⚡ Mudança detectada em ${table} (${eventType}):`, payload.new?.id || payload.old?.id);
 
+      // Marca o timestamp da última atualização em tempo real recebida
+      setLastSyncTime(new Date());
+
       // Permite atualizações em tempo real mesmo com modais abertos para fluxos principais
       const alwaysUpdateTables = ['tickets', 'cargos', 'shipments', 'freight_offers', 'shipment_locks'];
       if (isAnyModalActiveRef.current && !alwaysUpdateTables.includes(table)) return;
@@ -317,9 +324,11 @@ export function useDatabase(currentUser: User | null) {
             } else if (payload.new && eventType === 'UPDATE') {
               const updatedShipment = toShipment(payload.new);
               setShipments(prev => {
-                const exists = prev.some(s => s.id === updatedShipment.id);
+                const exists = prev.find(s => s.id === updatedShipment.id);
                 if (exists) {
-                  return prev.map(s => s.id === updatedShipment.id ? updatedShipment : s);
+                  // Merge dos dados recebidos com os dados existentes para garantir integridade completa
+                  const merged = { ...exists, ...updatedShipment };
+                  return prev.map(s => s.id === updatedShipment.id ? merged : s);
                 }
                 return [updatedShipment, ...prev];
               });
@@ -349,9 +358,10 @@ export function useDatabase(currentUser: User | null) {
             } else if (payload.new && eventType === 'UPDATE') {
               const updatedCargo = toCargo(payload.new);
               setCargos(prev => {
-                const exists = prev.some(c => c.id === updatedCargo.id);
+                const exists = prev.find(c => c.id === updatedCargo.id);
                 if (exists) {
-                  return prev.map(c => c.id === updatedCargo.id ? updatedCargo : c);
+                  const merged = { ...exists, ...updatedCargo };
+                  return prev.map(c => c.id === updatedCargo.id ? merged : c);
                 }
                 return [updatedCargo, ...prev];
               });
@@ -573,8 +583,11 @@ export function useDatabase(currentUser: User | null) {
       channelRef = ch.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('[Realtime] ✅ Conexão Realtime ativa — sincronização instantânea pronta');
+          setRealtimeStatus('connected');
+          setLastSyncTime(new Date());
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           console.warn(`[Realtime] ⚠️ Canal ${status} — reconectando em 3s...`);
+          setRealtimeStatus('connecting');
           if (isSubscribed) {
             if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
             reconnectTimeoutId = setTimeout(() => {
@@ -610,6 +623,7 @@ export function useDatabase(currentUser: User | null) {
           if (isSubscribed) {
             setShipments(dbShipments);
             setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
+            setLastSyncTime(new Date());
           }
         } else if (shipmentTs) {
           lastShipmentCheckTs = shipmentTs;
@@ -631,6 +645,7 @@ export function useDatabase(currentUser: User | null) {
           if (isSubscribed) {
             setCargos(dbCargos);
             setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
+            setLastSyncTime(new Date());
           }
         } else if (cargoTs) {
           lastCargoCheckTs = cargoTs;
@@ -651,8 +666,22 @@ export function useDatabase(currentUser: User | null) {
       }
     };
 
+    const handleOnline = () => {
+      console.log('[Realtime] 🌐 Conexão de internet restabelecida — reconectando canais em tempo real');
+      setRealtimeStatus('connecting');
+      subscribeChannel();
+      loadAllData(true);
+    };
+
+    const handleOffline = () => {
+      console.warn('[Realtime] ⚠️ Conexão de rede offline detectada');
+      setRealtimeStatus('disconnected');
+    };
+
     window.addEventListener('focus', handleFocusOrVisibility);
     document.addEventListener('visibilitychange', handleFocusOrVisibility);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     return () => {
       isSubscribed = false;
@@ -660,6 +689,8 @@ export function useDatabase(currentUser: User | null) {
       clearInterval(pollInterval);
       window.removeEventListener('focus', handleFocusOrVisibility);
       document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       if (channelRef) {
         try { supabase.removeChannel(channelRef); } catch {}
         channelRef = null;
@@ -688,6 +719,11 @@ export function useDatabase(currentUser: User | null) {
     themeImage, setThemeImage,
     nextIds, setNextIds,
     loadAllData,
+    refreshData: loadAllData,
+    realtimeStatus,
+    setRealtimeStatus,
+    lastSyncTime,
+    setLastSyncTime,
     isAnyModalActiveRef
   };
 }

@@ -25,11 +25,16 @@ import {
   Tv,
   Radio,
   Wallet,
-  Banknote
+  Banknote,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Loader2
 } from 'lucide-react';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { Shipment, Cargo, Client, Product, Driver, Vehicle, User, ShipmentStatus, REQUIRED_DOCUMENT_MAP } from '../types';
 import { useToast } from '../hooks/useToast';
+import { openDocumentInNewTab, getShipmentTmsOrderUrl } from '../utils/documentViewer';
 
 export interface KanbanColumnConfig {
   id: string;
@@ -58,6 +63,9 @@ export interface OptimizedShipmentsBoardProps {
   onAttach?: (shipment: Shipment) => void;
   onOpenCadastroAntt?: (shipment: Shipment) => void;
   onEditPrice?: (shipment: Shipment) => void;
+  realtimeStatus?: 'connected' | 'connecting' | 'disconnected' | 'error';
+  lastSyncTime?: Date;
+  onRefreshData?: (isBackground?: boolean) => Promise<void>;
 }
 
 type SlaUrgencyFilter = 'all' | 'normal' | 'warning' | 'critical';
@@ -90,8 +98,16 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
   onAttach,
   onOpenCadastroAntt,
   onEditPrice,
+  realtimeStatus = 'connected',
+  lastSyncTime,
+  onRefreshData,
 }) => {
   const { showToast } = useToast();
+
+  // 15 Minutos exatos (15 * 60 = 900 segundos) para reciclagem de memória do Modo TV e revalidação de dados
+  const REFRESH_INTERVAL_SECONDS = 15 * 60;
+  const [countdown, setCountdown] = useState(REFRESH_INTERVAL_SECONDS);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,10 +123,30 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
   const columnScrollRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
 
+  // Auto-recuperação do Modo TV após recarga programada de 15 minutos (para monitores dedicados 24/7)
+  useEffect(() => {
+    try {
+      const isSavedTv = sessionStorage.getItem('transcunha_auto_tv_mode') === 'true';
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const hasTvParam = urlParams?.get('tv') === 'true' || urlParams?.get('tv') === '1';
+
+      if (isSavedTv || hasTvParam) {
+        setIsTvMode(true);
+        setSearchTerm('');
+        setSlaFilter('all');
+        setSelectedEmbarcadorId('all');
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      }
+    } catch {}
+  }, []);
+
   const toggleTvMode = useCallback(() => {
     setIsTvMode(prev => {
       const next = !prev;
       if (next) {
+        try { sessionStorage.setItem('transcunha_auto_tv_mode', 'true'); } catch {}
         // Entering TV Mode: reset filters to ensure all shipments are shown
         setSearchTerm('');
         setSlaFilter('all');
@@ -123,12 +159,63 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
           document.documentElement.requestFullscreen().catch(() => {});
         }
       } else {
+        try { sessionStorage.removeItem('transcunha_auto_tv_mode'); } catch {}
         if (document.fullscreenElement && document.exitFullscreen) {
           document.exitFullscreen().catch(() => {});
         }
       }
       return next;
     });
+  }, []);
+
+  // Temporizador de 15 Minutos (Modo TV / Hard Refresh de Segurança 24/7 & Fallback de Dados)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          if (isTvMode) {
+            // Em monitor dedicado de TV: Hard Refresh para liberar 100% de memória heap, WebGL e conexões
+            try { sessionStorage.setItem('transcunha_auto_tv_mode', 'true'); } catch {}
+            console.log('[Modo TV] 🔄 Executando recarga de segurança periódica de 15 minutos...');
+            window.location.reload();
+            return REFRESH_INTERVAL_SECONDS;
+          } else {
+            // Em uso convencional: revalidação silenciosa profunda via estado do banco de dados
+            console.log('[Dashboard] 🔄 Revalidação completa de 15 minutos em segundo plano...');
+            if (onRefreshData) {
+              onRefreshData(true).catch(() => {});
+            }
+            return REFRESH_INTERVAL_SECONDS;
+          }
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isTvMode, onRefreshData]);
+
+  // Função manual de sincronização sob demanda
+  const handleManualSync = useCallback(async () => {
+    if (isManualRefreshing) return;
+    setIsManualRefreshing(true);
+    try {
+      if (onRefreshData) {
+        await onRefreshData(false);
+      }
+      setCountdown(REFRESH_INTERVAL_SECONDS);
+      showToast('Dados sincronizados em tempo real!', 'success', 2000);
+    } catch {
+      showToast('Erro ao sincronizar dados.', 'error', 2000);
+    } finally {
+      setTimeout(() => setIsManualRefreshing(false), 500);
+    }
+  }, [isManualRefreshing, onRefreshData, showToast]);
+
+  const formatCountdown = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }, []);
 
   useEffect(() => {
@@ -309,6 +396,16 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
       setCopiedPlate(itemKey);
       setTimeout(() => setCopiedPlate(null), 2000);
       showToast(`Placa ${text} copiada!`, 'info', 2000);
+    }
+  }, [showToast]);
+
+  const handleOpenTmsOrder = useCallback((e: React.MouseEvent, shipment: Shipment) => {
+    e.stopPropagation();
+    const ocUrl = getShipmentTmsOrderUrl(shipment);
+    if (ocUrl) {
+      openDocumentInNewTab(ocUrl, `OC_TMS_${shipment.id}`);
+    } else {
+      showToast(`Nenhuma Ordem de Carregamento (OC TMS) anexada para o embarque #${shipment.id}`, 'info', 3000);
     }
   }, [showToast]);
 
@@ -652,6 +749,17 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
 
   return (
     <div className="w-full space-y-6">
+      {/* Aviso suave de reciclagem de segurança no Modo TV (últimos 12s dos 15 minutos) */}
+      {isTvMode && countdown <= 12 && (
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white text-xs font-bold py-2 px-4 rounded-xl shadow-md flex items-center justify-between gap-2 animate-pulse border border-indigo-400/40">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            <span>Recarga de segurança do Modo TV em {countdown}s (limpeza periódica de memória para estabilidade 24/7)...</span>
+          </div>
+          <span className="text-[10px] opacity-80 uppercase tracking-widest font-mono">Monitor TV Ativo</span>
+        </div>
+      )}
+
       {/* Top Header & Metrics Bar */}
       <div className="bg-white dark:bg-gray-800/95 backdrop-blur-md rounded-2xl border border-gray-200/80 dark:border-gray-700/80 shadow-sm p-4 sm:p-5 transition-all">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -667,12 +775,54 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">
                     {title || 'Painel de Gestão dos Embarques'}
                   </h2>
-                  <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-[11px] font-mono font-bold shadow-xs">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <span>TEMPO REAL • <LiveClock /></span>
+                  
+                  {/* Status de Conexão Realtime & Tempo Real */}
+                  <div
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-mono font-bold shadow-xs transition-all ${
+                      realtimeStatus === 'connected'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                        : realtimeStatus === 'connecting'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                        : 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                    }`}
+                    title={`Supabase Realtime: ${
+                      realtimeStatus === 'connected'
+                        ? 'Conexão via WebSockets ativa e saudável'
+                        : realtimeStatus === 'connecting'
+                        ? 'Reconectando canal em tempo real...'
+                        : 'Desconectado / Sem rede'
+                    }\nÚltima sincronização: ${lastSyncTime ? lastSyncTime.toLocaleTimeString('pt-BR') : 'Agora'}\nPróxima recarga de segurança: ${formatCountdown(countdown)}`}
+                  >
+                    {realtimeStatus === 'connected' ? (
+                      <>
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span>TEMPO REAL • <LiveClock /></span>
+                      </>
+                    ) : realtimeStatus === 'connecting' ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+                        <span>RECONECTANDO... • <LiveClock /></span>
+                      </>
+                    ) : (
+                      <>
+                        <WifiOff className="w-3 h-3 text-rose-500" />
+                        <span className="cursor-pointer" onClick={handleManualSync}>OFFLINE • RECONECTAR</span>
+                      </>
+                    )}
+
+                    {onRefreshData && (
+                      <button
+                        onClick={handleManualSync}
+                        disabled={isManualRefreshing}
+                        className="ml-1 p-0.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors opacity-75 hover:opacity-100 disabled:opacity-40"
+                        title="Sincronizar e revalidar agora"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isManualRefreshing ? 'animate-spin' : ''}`} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
@@ -880,6 +1030,9 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                 <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
                   <Radio className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
                   <span>Rolagem Automática</span>
+                  <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100/70 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded-md ml-1" title="Contagem regressiva para a recarga de segurança periódica de 15 minutos">
+                    Refresh {formatCountdown(countdown)}
+                  </span>
                 </div>
               </div>
             )}
@@ -1087,14 +1240,12 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                             <div className="flex items-center gap-1 min-w-0">
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onShowDetails(shipment);
-                                }}
-                                className="font-mono text-xs font-bold text-primary dark:text-blue-400 hover:underline truncate cursor-pointer"
-                                title="Ver detalhes completos"
+                                onClick={(e) => handleOpenTmsOrder(e, shipment)}
+                                className="group/oc inline-flex items-center gap-1 font-mono text-xs font-bold text-primary dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 hover:underline truncate cursor-pointer"
+                                title={getShipmentTmsOrderUrl(shipment) ? "Clique para abrir a Ordem de Carregamento (OC TMS)" : "Ordem de Carregamento (OC TMS) não anexada"}
                               >
-                                #{shipment.id}
+                                <span>#{shipment.id}</span>
+                                <FileText className="w-2.5 h-2.5 opacity-60 group-hover/oc:opacity-100 group-hover/oc:text-blue-500" />
                               </button>
                               <button
                                 type="button"
@@ -1223,14 +1374,12 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                           <div className="flex items-center gap-1.5 min-w-0">
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onShowDetails(shipment);
-                              }}
-                              className="font-mono text-xs font-bold text-primary dark:text-blue-400 hover:underline cursor-pointer"
-                              title="Ver detalhes do embarque"
+                              onClick={(e) => handleOpenTmsOrder(e, shipment)}
+                              className="group/oc inline-flex items-center gap-1 font-mono text-xs font-bold text-primary dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 hover:underline cursor-pointer"
+                              title={getShipmentTmsOrderUrl(shipment) ? "Clique para abrir a Ordem de Carregamento (OC TMS)" : "Ordem de Carregamento (OC TMS) não anexada"}
                             >
-                              #{shipment.id}
+                              <span>#{shipment.id}</span>
+                              <FileText className="w-2.5 h-2.5 opacity-60 group-hover/oc:opacity-100 group-hover/oc:text-blue-500" />
                             </button>
                             <button
                               type="button"
