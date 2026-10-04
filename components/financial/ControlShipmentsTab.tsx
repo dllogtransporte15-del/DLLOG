@@ -1544,7 +1544,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               type="button"
                               onClick={() => {
                                 if (ticketUrl) {
-                                  openDocumentInNewTab(ticketUrl, `Ticket_Descarga_${row.id}`);
+                                  const rawName = typeof ticketUrl === 'string' ? ticketUrl.split('/').pop()?.split('?')[0] : '';
+                                  const cleanDocName = rawName ? decodeURIComponent(rawName) : `Comprovante_de_Descarga_${row.cte || row.id}`;
+                                  openDocumentInNewTab(ticketUrl, cleanDocName);
                                 } else {
                                   setNotification({
                                     type: 'info',
@@ -1557,7 +1559,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 shadow-xs' 
                                   : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                               }`}
-                              title={ticketUrl ? "Clique para abrir a foto/comprovante de descarga anexado" : "Nenhum comprovante de descarga anexado"}
+                              title={ticketUrl ? "Clique para abrir o Comprovante de Descarga anexado" : "Nenhum comprovante de descarga anexado"}
                             >
                               <span>{isSim ? 'SIM' : 'NÃO'}</span>
                               {hasDoc && <ExternalLink className="w-2.5 h-2.5 opacity-80" />}

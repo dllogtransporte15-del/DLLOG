@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_04_v2_67_3',
+    version: 'v2.67.3',
+    date: '04/10/2026',
+    title: 'Ajuste de Vinculação Precisa do Comprovante de Descarga na Planilha',
+    summary: 'Aperfeiçoamento da busca e extração de documentos na coluna "TICKET DESCARGA" da planilha de embarques, garantindo que o atalho puxe exatamente o "Comprovante de Descarga" anexado ao embarque com prioridade máxima e filtre com rigor documentos de etapas anteriores (carregamento, adiantamentos e pagamentos).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Atalho da Planilha para o Comprovante de Descarga',
+        description: 'Configurada a resolução precisa na coluna "TICKET DESCARGA" para priorizar especificamente a chave "Comprovante de Descarga" e fotos com identificador de descarga (JPEG, PNG, WEBP, PDF), ignorando tickets de carregamento ou comprovantes de adiantamento/saldo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Normalização Segura de URLs e Nomes de Arquivo',
+        description: 'Aprimorado o visualizador e normalizador de URLs para rejeitar strings de status ("SIM", "NÃO", etc.), recuperar o caminho público correto no Supabase Storage e abrir o arquivo preservando o nome original e ferramentas de zoom, rotação e download.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_03_v2_67_2',
     version: 'v2.67.2',
     date: '03/10/2026',

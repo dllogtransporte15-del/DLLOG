@@ -11,6 +11,18 @@ export function normalizeDocumentUrl(rawVal: any): string | null {
     const trimmed = rawVal.trim();
     if (!trimmed) return null;
 
+    const lower = trimmed.toLowerCase();
+    // Rejeita explicitamente valores booleanos ou marcadores de texto da planilha que não são URLs ou arquivos
+    if (
+      lower === 'sim' || lower === 'não' || lower === 'nao' || 
+      lower === 's' || lower === 'n' || lower === '-' || lower === '--' ||
+      lower === 'true' || lower === 'false' || lower === 'null' || lower === 'undefined' ||
+      lower === 'pendente' || lower === 'pago' || lower === 'ok' || lower === 'sem anexo' ||
+      lower === 'sem documento'
+    ) {
+      return null;
+    }
+
     if (
       trimmed.startsWith('http://') || 
       trimmed.startsWith('https://') || 
@@ -29,7 +41,18 @@ export function normalizeDocumentUrl(rawVal: any): string | null {
         // fallback
       }
     }
-    return trimmed;
+
+    // Se tiver extensão típica de arquivo ou foto
+    const fileExts = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.heic', '.gif', '.bmp'];
+    if (fileExts.some(ext => lower.endsWith(ext) || lower.includes(ext + '?'))) {
+      try {
+        const { data } = supabase.storage.from('shipment_attachments').getPublicUrl(trimmed);
+        if (data?.publicUrl) return data.publicUrl;
+      } catch (e) {}
+      return trimmed;
+    }
+
+    return null;
   }
 
   if (typeof rawVal === 'object') {
@@ -37,7 +60,12 @@ export function normalizeDocumentUrl(rawVal: any): string | null {
     if (typeof rawVal.path === 'string') return normalizeDocumentUrl(rawVal.path);
     if (typeof rawVal.fileUrl === 'string') return normalizeDocumentUrl(rawVal.fileUrl);
     if (typeof rawVal.publicUrl === 'string') return normalizeDocumentUrl(rawVal.publicUrl);
-    if (Array.isArray(rawVal) && rawVal.length > 0) return normalizeDocumentUrl(rawVal[0]);
+    if (Array.isArray(rawVal) && rawVal.length > 0) {
+      for (const item of rawVal) {
+        const u = normalizeDocumentUrl(item);
+        if (u) return u;
+      }
+    }
   }
 
   return null;
@@ -535,87 +563,149 @@ export function getShipmentCteFileUrl(shipment?: { documents?: any; cteUrl?: str
 /**
  * Retorna a URL do documento/ticket/comprovante de descarga anexado ao embarque, se disponível.
  * Suporta fotos (JPEG/PNG/WEBP/HEIC), PDFs, arrays de URLs, caminhos de storage e campos diretos.
+ * Prioriza com máxima exatidão o "Comprovante de Descarga" anexado na etapa de Descarga,
+ * evitando absolutamente documentos de carregamento, adiantamento ou saldo.
  */
 export function getShipmentDischargeTicketUrl(shipment?: { documents?: any; [key: string]: any } | null): string | null {
   if (!shipment) return null;
 
-  // Propriedades diretas no objeto do embarque
+  // Função auxiliar para verificar se a chave pertence a outras etapas e deve ser ignorada
+  const isForbiddenKey = (k: string) => {
+    const kl = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return (
+      kl.includes('carregamento') ||
+      kl.includes('carreg') ||
+      kl.includes('adiantamento') ||
+      kl.includes('adiant') ||
+      kl.includes('saldo') ||
+      kl.includes('quitacao') ||
+      kl.includes('pix') ||
+      kl.includes('bancario') ||
+      kl.includes('cte') ||
+      kl.includes('ct-e') ||
+      kl.includes('dacte') ||
+      kl.includes('nfe') ||
+      kl.includes('nf-e') ||
+      kl.includes('danfe') ||
+      kl.includes('mdfe') ||
+      kl.includes('mdf-e') ||
+      kl.includes('ordem') ||
+      kl.includes('tms') ||
+      kl.includes('seguradora') ||
+      kl.includes('gerenciadora') ||
+      kl.includes('consulta') ||
+      kl.includes('cnh') ||
+      kl.includes('contrato')
+    );
+  };
+
+  // Helper para extrair URL válida de um valor (seja string, array ou objeto)
+  const extractUrlFromVal = (val: any): string | null => {
+    if (!val) return null;
+    if (Array.isArray(val)) {
+      if (val.length === 0) return null;
+      // Se houver múltiplos arquivos, prioriza aquele cujo nome ou URL contenha 'descarga'
+      for (const item of val) {
+        const str = typeof item === 'string' ? item : (item?.url || item?.path || '');
+        if (typeof str === 'string' && str.toLowerCase().includes('descarga')) {
+          const u = normalizeDocumentUrl(item);
+          if (u) return u;
+        }
+      }
+      // Caso contrário, busca do mais recente (último) para o primeiro
+      for (let i = val.length - 1; i >= 0; i--) {
+        const u = normalizeDocumentUrl(val[i]);
+        if (u) return u;
+      }
+      return null;
+    }
+    return normalizeDocumentUrl(val);
+  };
+
+  const docs = shipment.documents;
+  const hasDocs = docs && typeof docs === 'object';
+
+  // 1. PRIORIDADE MÁXIMA: "Comprovante de Descarga" (exato e variações de escrita)
+  if (hasDocs) {
+    const comprovanteDescargaExactKeys = [
+      'Comprovante de Descarga',
+      'comprovante de descarga',
+      'Comprovante de descarga',
+      'comprovante_descarga',
+      'comprovantedescarga',
+      'comprovante_de_descarga'
+    ];
+    for (const k of comprovanteDescargaExactKeys) {
+      if (docs[k] !== undefined && docs[k] !== null) {
+        const u = extractUrlFromVal(docs[k]);
+        if (u) return u;
+      }
+    }
+
+    // Busca por qualquer chave em docs que contenha 'descarga' e ('comprovante' ou 'recibo' ou 'foto' ou 'ticket')
+    for (const [k, val] of Object.entries(docs)) {
+      if (isForbiddenKey(k)) continue;
+      const kl = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (kl.includes('descarga') && (kl.includes('comprovante') || kl.includes('recibo') || kl.includes('foto') || kl.includes('ticket'))) {
+        const u = extractUrlFromVal(val);
+        if (u) return u;
+      }
+    }
+  }
+
+  // 2. Propriedades diretas no objeto do embarque
   const directFields = [
-    (shipment as any).dischargeTicketUrl,
-    (shipment as any).ticketUrl,
     (shipment as any).ticketDescargaUrl,
     (shipment as any).comprovanteDescargaUrl,
+    (shipment as any).dischargeTicketUrl,
     (shipment as any).dischargeUrl,
     (shipment as any).unloadedTonnageTicketUrl,
   ];
   for (const f of directFields) {
-    const u = normalizeDocumentUrl(f);
+    const u = extractUrlFromVal(f);
     if (u) return u;
   }
 
-  const docs = shipment.documents;
-  if (!docs || typeof docs !== 'object') return null;
-
-  // Lista exata de chaves utilizadas no sistema para salvar fotos e tickets de descarga
-  const priorityKeys = [
-    'Comprovante de Descarga',
-    'comprovante de descarga',
-    'Validação de Ticket e Peso',
-    'Validacao de Ticket e Peso',
-    'Ticket de Descarga',
-    'ticket de descarga',
-    'Ticket de Balança',
-    'Ticket de Balanca',
-    'ticket de balança',
-    'ticket de balanca',
-    'ticket_descarga',
-    'comprovante_descarga',
-    'comprovante_balanca',
-    'ticket',
-    'Ticket',
-    'Descarga',
-    'descarga',
-    'Comprovante',
-    'comprovante',
-    'Valid. de Ticket',
-    'Validação de Ticket',
-    'foto_ticket',
-    'foto_descarga',
-    'foto_balanca',
-    'balanca',
-    'balança'
-  ];
-
-  for (const k of priorityKeys) {
-    const val = docs[k];
-    if (Array.isArray(val) && val.length > 0) {
-      for (const item of val) {
-        const u = normalizeDocumentUrl(item);
+  // 3. Etapa de Validação de Ticket e Ticket de Balança
+  if (hasDocs) {
+    const ticketBalancaKeys = [
+      'Validação de Ticket e Peso',
+      'Validacao de Ticket e Peso',
+      'Valid. de Ticket',
+      'Validação de Ticket',
+      'Ticket de Descarga',
+      'ticket de descarga',
+      'Ticket de Balança',
+      'Ticket de Balanca',
+      'ticket de balança',
+      'ticket de balanca',
+      'ticket_descarga',
+      'ticket_balanca',
+      'foto_ticket_descarga',
+      'foto_descarga'
+    ];
+    for (const k of ticketBalancaKeys) {
+      if (docs[k] !== undefined && docs[k] !== null) {
+        const u = extractUrlFromVal(docs[k]);
         if (u) return u;
       }
-    } else {
-      const u = normalizeDocumentUrl(val);
-      if (u) return u;
     }
-  }
 
-  // Busca em quaisquer outras chaves que contenham palavras-chave
-  for (const [k, val] of Object.entries(docs)) {
-    const kl = k.toLowerCase();
-    if (
-      kl.includes('descarga') || 
-      kl.includes('ticket') || 
-      kl.includes('balanca') || 
-      kl.includes('balança') || 
-      kl.includes('comprovante')
-    ) {
-      if (Array.isArray(val) && val.length > 0) {
-        for (const item of val) {
-          const u = normalizeDocumentUrl(item);
-          if (u) return u;
-        }
-      } else {
-        const u = normalizeDocumentUrl(val);
+    // 4. Varredura ampla em docs: se algum anexo tiver a palavra 'descarga' no nome do arquivo ou URL
+    for (const [k, val] of Object.entries(docs)) {
+      if (isForbiddenKey(k)) continue;
+      const u = extractUrlFromVal(val);
+      if (u && u.toLowerCase().includes('descarga')) {
+        return u;
+      }
+    }
+
+    // 5. Fallback final controlado em docs para 'descarga' ou 'balança'
+    for (const [k, val] of Object.entries(docs)) {
+      if (isForbiddenKey(k)) continue;
+      const kl = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (kl.includes('descarga') || kl.includes('balanca')) {
+        const u = extractUrlFromVal(val);
         if (u) return u;
       }
     }
