@@ -20,7 +20,7 @@ import RealProfitReport from '../components/reports/RealProfitReport';
 import OthersReport from '../components/reports/OthersReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
-import { getShipmentCte, getShipmentEffectiveDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd } from '../utils';
+import { getShipmentCte, getShipmentEffectiveDate, getShipmentCteEmissionDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd } from '../utils';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ReportsPageProps {
@@ -132,15 +132,32 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     return getShipmentEffectiveDate(s) || s.scheduledDate;
   };
 
+  // Critério inteligente: considera CTE emission OU data agendada no período.
+  // Garante que embarques cujo CT-e foi emitido na virada do mês (ex: 30/09 para
+  // uma viagem de 01/10) sejam incluídos corretamente no relatório de outubro,
+  // alinhando com o filtro inteligente da Planilha de Controladoria.
+  const isShipmentInPeriod = (s: Shipment, start: string, end: string): boolean => {
+    const cteDate = getShipmentCteEmissionDate(s);
+    const cteDateYmd = cteDate ? parseDateToYmd(cteDate) : null;
+    const scheduledYmd = s.scheduledDate ? parseDateToYmd(s.scheduledDate) ?? s.scheduledDate.substring(0, 10) : null;
+
+    const inRange = (d: string | null) => d != null && d >= start && d <= end;
+
+    // Se tem CT-e: inclui se emissão OU agendamento estiver no período
+    if (cteDateYmd) {
+      return inRange(cteDateYmd) || inRange(scheduledYmd);
+    }
+    // Sem CT-e: usa a data efetiva normal (com fallback para scheduledDate)
+    const effDate = getEffectiveDate(s);
+    return Boolean(effDate && effDate >= start && effDate <= end);
+  };
+
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
 
   const filteredShipments = useMemo(() => {
     return shipments.filter(s => {
-       // Filter by effective date (the moment CT-e was emitted or it was loaded/became effective)
-       const effDate = getEffectiveDate(s);
-       if (!effDate) return false; // Not effective yet
-
-       if (effDate < startDate || effDate > endDate) return false;
+       // Filtro de período: critério inteligente (emissão CT-e OU data agendada)
+       if (!isShipmentInPeriod(s, startDate, endDate)) return false;
 
        if (filterStatus.length > 0 && !filterStatus.includes(s.status)) return false;
 
@@ -270,10 +287,22 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         ShipmentStatus.Finalizado
     ];
 
+    let effectiveCount = 0;
+    let programmedCount = 0;
+    let cancelledCount = 0;
+
     filteredShipments.forEach(s => {
        const cargo = cargoMap.get(s.cargoId);
        const cteVal = getShipmentCte(s);
        const hasCte = isCteApplicableForStatus(s.status) && cteVal !== '-' && cteVal.trim() !== '' && s.status !== ShipmentStatus.Cancelado;
+
+       if (hasCte) {
+         effectiveCount += 1;
+       } else if (s.status === ShipmentStatus.Cancelado) {
+         cancelledCount += 1;
+       } else {
+         programmedCount += 1;
+       }
 
        if (profitMarginStatuses.includes(s.status)) {
            const expenses = calculateShipmentExpenses(s, cargo);
@@ -308,7 +337,10 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         totalProfitMargin, 
         percentageMargin,
         effectivePercentageMargin,
-        count: filteredShipments.length 
+        count: filteredShipments.length,
+        effectiveCount,
+        programmedCount,
+        cancelledCount
     };
   }, [filteredShipments, cargoMap, stays]);
 
@@ -570,11 +602,25 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">
-             <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">
+             <div 
+               className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm"
+               title={`Total: ${kpis.count} | Com CT-e (efetivados): ${kpis.effectiveCount} | Sem CT-e (programados/ag.): ${kpis.programmedCount} | Cancelados: ${kpis.cancelledCount}`}
+             >
                  <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 flex flex-shrink-0 items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50"><ShipIcon className="w-5 h-5" /></div>
                  <div className="min-w-0 flex-1">
                     <p className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider truncate mb-0.5">Embarques</p>
-                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight truncate">{kpis.count}</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none">{kpis.count}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">✓ {kpis.effectiveCount} c/CT-e</span>
+                      <span className="text-[9px] text-gray-400">·</span>
+                      <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400">{kpis.programmedCount} prog.</span>
+                      {kpis.cancelledCount > 0 && (
+                        <>
+                          <span className="text-[9px] text-gray-400">·</span>
+                          <span className="text-[9px] font-semibold text-rose-500 dark:text-rose-400">{kpis.cancelledCount} canc.</span>
+                        </>
+                      )}
+                    </div>
                  </div>
              </div>
              <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">

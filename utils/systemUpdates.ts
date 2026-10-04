@@ -21,6 +21,121 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_04_v2_67_8',
+    version: 'v2.67.8',
+    date: '04/10/2026',
+    title: 'Sincronização dos Campos de Impostos & Deduções da Planilha com a Automatização do CT-e',
+    summary: 'Os 7 campos da seção "Impostos & Deduções" da Planilha de Controladoria agora usam exatamente a mesma hierarquia de fontes e lógica de cálculo do painel "Automatização do CT-e" de cada embarque. Elimina divergências entre os valores exibidos na planilha e os calculados no painel fiscal.',
+    items: [
+      {
+        category: 'fix',
+        title: 'FRETE BRUTO EMPRESA prioriza realProfitData.companyFreight',
+        description: 'Antes calculava sempre peso × tarifa local. Agora prioriza o valor salvo em realProfitData.companyFreight (mesma fonte principal do painel CT-e), com fallback ao cálculo local apenas se não houver valor salvo.'
+      },
+      {
+        category: 'fix',
+        title: 'ICMS lê também documents.icms_value e icmsValue',
+        description: 'Antes lia apenas realProfitData.icmsDifference. Agora usa a mesma hierarquia do painel: icmsDifference > documents.icms_value > icmsValue, garantindo que o ICMS destacado no CT-e seja sempre refletido.'
+      },
+      {
+        category: 'fix',
+        title: 'DÉBITO PIS/COFINS respeita flag isFederalTaxManual',
+        description: 'Quando o fiscal edita manualmente o Imposto Federal no painel CT-e (isFederalTaxManual = true), a planilha agora exibe o valor manual, lendo da mesma cadeia: realProfitData.federalTax > federalTax > documents.federal_tax > documents.imposto_federal.'
+      },
+      {
+        category: 'fix',
+        title: 'CRÉDITO PIS/COFINS respeita flag isGeneratedCreditManual',
+        description: 'Quando o crédito gerado é editado manualmente (isGeneratedCreditManual = true), a planilha exibe o valor manual via realProfitData.generatedCredit > generatedCredit > documents.generated_credit > documents.credito_gerado.'
+      },
+      {
+        category: 'improvement',
+        title: 'PATRONAL 4% recalculado igual ao painel CT-e',
+        description: 'Agora calcula 4% × (Frete Motorista − Pedágio) para motoristas PF/TAC e retorna R$ 0,00 para PJ/ETC, espelhando exatamente a lógica do CteCostAutomationPanel.'
+      },
+      {
+        category: 'improvement',
+        title: 'INSS/SEST SENAT e VL. CIOT com base de cálculo unificada',
+        description: 'Ambos os campos usam calculateTacTaxDeductions para PF/TAC com a mesma base líquida de pedágio + deduções do panel, garantindo que os valores da planilha batam com o painel fiscal do embarque.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_04_v2_67_7',
+    version: 'v2.67.7',
+    date: '04/10/2026',
+    title: 'Alinhamento do Filtro de Período no Relatório com a Planilha (CT-e Virada de Mês)',
+    summary: 'Corrigido o filtro de período em filteredShipments na página de Relatórios para usar o mesmo critério inteligente da Planilha de Controladoria: inclui embarques cujo CT-e foi emitido OU cuja data agendada está no período. Resolve o caso do CEL-662 (CTE 2051 emitido em 30/09 para um embarque de 01/10), fazendo relatório e planilha apresentarem 18 embarques com CT-e.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Relatório contava 17 CT-e, Planilha contava 18 (CEL-662)',
+        description: 'O embarque CEL-662 (CTE 2051) tinha data de emissão fiscal em 30/09/2026 16:08 mas estava agendado para 01/10/2026. O filtro anterior do Relatório usava apenas a data de emissão do CT-e, excluindo o CEL-662 de outubro. Agora usa critério smart: CT-e emitido OU agendado no período, alinhando com a Planilha de Controladoria.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_04_v2_67_6',
+    version: 'v2.67.6',
+    date: '04/10/2026',
+    title: 'Esclarecimento e Transparência nos Contadores de Embarques (Relatório vs Planilha)',
+    summary: 'Investigação confirmou que a diferença de contagem entre o Relatório (28) e a Planilha de Controladoria (18 com CT-e) era esperada e correta: o Relatório conta TODOS os embarques do período (incluindo os sem CT-e, programados e cancelados), enquanto a Planilha filtra apenas embarques com CT-e fiscal emitido. O card de Embarques no Relatório foi aprimorado para exibir o breakdown transparente: total, com CT-e (efetivados), programados (aguardando) e cancelados.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Breakdown do Card "Embarques" no Relatório',
+        description: 'O card de KPI de Embarques agora exibe: total no período + quantos possuem CT-e emitido (efetivados, contados na planilha) + quantos estão programados (sem CT-e ainda) + quantos foram cancelados. Elimina ambiguidade entre os 28 do relatório e os 18 com CT-e da planilha.'
+      },
+      {
+        category: 'fix',
+        title: 'Análise da Diferença 28 (Relatório) vs 18 (Planilha com CT-e)',
+        description: 'Confirmado por inspeção no banco: os 28 do relatório incluem 4 cancelados, 7 programados/ag. carregamento e 17 com CT-e. A planilha corretamente exibe 18 com CT-e (o CEL-662 com CTE 2051 emitido em 30/09 entra pelo filtro inteligente, pois o embarque está agendado em outubro).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_04_v2_67_5',
+    version: 'v2.67.5',
+    date: '04/10/2026',
+    title: 'Congelamento da Coluna CT-e, Navegação com Setas e Filtro Inteligente de Período',
+    summary: 'Trava horizontal (sticky) das colunas de identificação e CT-e na rolagem da planilha de embarques, suporte total à navegação de células via teclado com as setas e resolução do filtro de período para contemplar os 28 embarques com CT-e emitidos no ciclo de fechamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Coluna "CTE" Fixa e Congelada na Rolagem Lateral',
+        description: 'As colunas de índice (#), ID do Sistema e número do CT-e agora ficam fixas no lado esquerdo da planilha durante a rolagem horizontal, com background sólido e sombra divisória de alto contraste, garantindo leitura contínua e sem sobreposição.'
+      },
+      {
+        category: 'feature',
+        title: 'Seleção de Células e Navegação por Teclado',
+        description: 'Possibilidade de clicar em qualquer célula da planilha para selecioná-la e navegar livremente utilizando as setas do teclado (Cima, Baixo, Esquerda, Direita), Tab, Shift+Tab, Home, End, PageUp e PageDown, com auto-scroll e destaque visual.'
+      },
+      {
+        category: 'improvement',
+        title: 'Critério de Data Inteligente para CT-e (28 vs 13 Embarques)',
+        description: 'Adicionado filtro por data de emissão do CT-e e opção inteligente (CT-e ou Embarque no período), garantindo que viagens com CT-e emitido no mês corrente ou no ciclo recente (28 embarques ativos) sejam visualizadas com total clareza, com contador exibindo viagens no período vs total geral.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_04_v2_67_4',
+    version: 'v2.67.4',
+    date: '04/10/2026',
+    title: 'Destaque Retroativo de ICMS (12%) e Recálculo de Lucro Real na Carga #253',
+    summary: 'Destaque e apuração de ICMS de 12% nos 6 embarques vinculados à carga #253 (CRG-253), com dedução no frete líquido da empresa, apuração do spread comercial real, atualização dos impostos federais (9,25% s/ spread PJ), despesas operacionais e recálculo da comissão de agência sobre o resultado líquido real.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Destaque de ICMS (12% CT-e) nos Embarques da Carga #253',
+        description: 'Lançado o valor de ICMS de 12% (conferido diretamente nos DACTEs oficiais) em todos os embarques da carga #253 (MUR-647, MUR-648, MUR-649, MUR-650, MUR-651 e MUR-652), abatendo o imposto destacado no frete líquido e integrando-o às despesas operacionais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Recálculo Automatizado do Lucro Real e Comissões',
+        description: 'Spread comercial, Imposto Federal e comissão de agência (30%) recalculados automaticamente com base no frete líquido pós-ICMS, com persistência no banco Supabase e histórico auditado.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_04_v2_67_3',
     version: 'v2.67.3',
     date: '04/10/2026',

@@ -1337,11 +1337,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : 0;
 
   // Valor ICMS Completo (Destacado no CT-e)
+  const icmsDoc = Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0;
   const icms = icmsBruto > 0
     ? icmsBruto
     : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
         ? shipment.realProfitData.icmsDifference
-        : 0);
+        : (icmsDoc > 0 ? icmsDoc : 0));
 
   const allDocText = [
     cargo?.observations,
@@ -1381,7 +1382,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   // Frete_Bruto = cteGrossFreight (vTPrest)
   // ICMS_Destacado = icmsBruto (vICMS)
   // Frete_Liquido = Frete_Bruto - ICMS_Destacado
-  const freteLiquidoIcms = Math.max(0, cteGrossFreight - icmsBruto);
+  const freteLiquidoIcms = Math.max(0, cteGrossFreight - (icmsBruto > 0 ? icmsBruto : icms));
 
   // Passo 2: Apurar o Spread Comercial (Diferença de Frete)
   // Diferenca_Frete_RS = Frete_Empresa_Liquido - Frete_Motorista

@@ -122,14 +122,15 @@ export function calculateShipmentExpenses(
           ));
 
   // 3. ICMS Destacado Completo
-  const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
+  const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : ((shipment as any)?.icmsPercentage || 0));
   const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
     ? Number((companyFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
-  const icms = icmsBruto > 0 ? icmsBruto : (shipment.realProfitData?.icmsDifference || 0);
+  const icmsDoc = Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0;
+  const icms = icmsBruto > 0 ? icmsBruto : (icmsDoc > 0 ? icmsDoc : (shipment.realProfitData?.icmsDifference || 0));
 
   // 4. Frete Empresa Líquido de ICMS
-  const freteLiquidoIcms = Math.max(0, companyFreight - icmsBruto);
+  const freteLiquidoIcms = Math.max(0, companyFreight - (icmsBruto > 0 ? icmsBruto : icms));
 
   // 5. Diferença de Frete / Spread Comercial
   const freightDifference = Number((freteLiquidoIcms - driverFreight).toFixed(2));
