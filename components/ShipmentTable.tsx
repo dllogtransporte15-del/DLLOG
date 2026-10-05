@@ -1013,25 +1013,25 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
         {/* Desktop View - Table */}
         <div className="hidden lg:block overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+          <table className="min-w-full sheet-table divide-y divide-[#00B0F0]">
+            <thead className="sheet-thead">
               <tr>
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Embarque / Carga</th>
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Motorista / Solicitante</th>
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Origem / Destino</th>
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">CTE</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Embarque / Carga</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Motorista / Solicitante</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Origem / Destino</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">CTE</th>
                 {currentUser.profile !== UserProfile.Embarcador && currentUser.profile !== UserProfile.Cliente && currentUser.profile !== UserProfile.Motorista && (
-                  <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Margem</th>
+                  <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Margem</th>
                 )}
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Frete / Ton</th>
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Status Atual</th>
-                <th scope="col" className="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Data Programada</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Frete / Ton</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Status Atual</th>
+                <th scope="col" className="px-6 py-2 text-left text-xs font-bold text-white tracking-wider">Data Programada</th>
                 {(!isClient || showActionsColumnForClient) && (
-                  <th scope="col" className="px-6 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Ações</th>
+                  <th scope="col" className="px-6 py-2 text-center text-xs font-bold text-white tracking-wider">Ações</th>
                 )}
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="sheet-tbody divide-y divide-[#00B0F0]">
               {paginatedShipments.map((shipment) => {
                 const cargo = getCargoInfo(shipment.cargoId);
                 const vehicle = vehicles.find(v => v.plate === shipment.horsePlate);
@@ -1051,7 +1051,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 }
 
                 return (
-                  <tr key={shipment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <tr key={shipment.id} className="sheet-row">
                     <td className="px-6 py-[11px] whitespace-nowrap text-sm">
                       <div className="flex items-center gap-1">
                         {isClient ? (

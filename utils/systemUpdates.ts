@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_04_v2_68_0',
+    version: 'v2.68.0',
+    date: '04/10/2026',
+    title: 'Paleta de Cores da Tabela de Embarques Atualizada — Padrão Planilha Excel',
+    summary: 'A tabela de embarques (desktop) agora utiliza a mesma paleta de cores da planilha oficial de Carregamento Transcunha. Cabeçalho em azul escuro (#0070C0), linhas em azul claro (#d0ecfa/#b8e3f8) com hover em azul médio (#8dd0f5), bordas em azul céu (#00B0F0). O CSS global foi atualizado com as variáveis e classes da nova paleta.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Cabeçalho da tabela em azul escuro (#0070C0)',
+        description: 'O thead da tabela desktop de embarques passou a usar fundo azul escuro com texto branco em bold e uppercase, idêntico ao cabeçalho da planilha Excel de referência.'
+      },
+      {
+        category: 'improvement',
+        title: 'Linhas alternadas em tons de azul claro',
+        description: 'As linhas ímpares recebem #d0ecfa e as pares #b8e3f8, replicando o padrão visual azul da planilha. Hover destaca a linha em #8dd0f5.'
+      },
+      {
+        category: 'improvement',
+        title: 'Bordas e divisores em azul céu (#00B0F0)',
+        description: 'Os separadores de células e linhas agora usam o azul céu (#00B0F0), igual às bordas da grade da planilha Excel.'
+      },
+      {
+        category: 'improvement',
+        title: 'Variáveis CSS globais atualizadas',
+        description: 'As variáveis --primary, --accent e as novas variáveis --sheet-* foram adicionadas ao :root do index.css para permitir consistência da paleta em todo o sistema.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_04_v2_67_8',
     version: 'v2.67.8',
     date: '04/10/2026',
