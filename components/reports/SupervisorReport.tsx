@@ -4,7 +4,7 @@ import { ShipmentStatus, UserProfile } from '../../types';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached } from '../../utils';
 import { 
   Building2, 
   CheckCircle2, 
@@ -554,9 +554,12 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     return list;
   };
 
-  // Gerador de PDF detalhado por agência
   const exportUserShipmentsPDF = (targetUser: User, customShipments?: ReturnType<typeof getDetailedShipmentsForUser>) => {
-    const list = customShipments || getDetailedShipmentsForUser(targetUser);
+    const rawList = customShipments || getDetailedShipmentsForUser(targetUser);
+    const list = rawList.filter(item => {
+      const cteVal = item.cte || (item.rawShipment ? getShipmentCte(item.rawShipment) : '');
+      return (Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '')) || (item.rawShipment ? hasCteAttached(item.rawShipment) : false);
+    });
     const isAgenciador = targetUser.profile === UserProfile.Agenciador;
 
     const doc = new jsPDF('landscape');

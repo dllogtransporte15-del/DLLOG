@@ -11,7 +11,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import MultiSelectDropdown from '../MultiSelectDropdown';
-import { hasCteAttached } from '../../utils';
+import { hasCteAttached, isCteApplicableForStatus, getShipmentCte } from '../../utils';
 
 interface ShipperReportProps {
   shipments: Shipment[];
@@ -73,7 +73,12 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         return creatorIds.map(creatorId => {
             const creator = users.find(u => u.id === creatorId);
             const creatorRate = Number(creator?.shipperCommissionRatePerTon) || 0;
-            const creatorShipments = shipments.filter(s => s.embarcadorId === creatorId || s.createdById === creatorId);
+            const creatorShipments = shipments.filter(s => 
+                (s.embarcadorId === creatorId || s.createdById === creatorId) &&
+                s.status !== ShipmentStatus.Cancelado &&
+                isCteApplicableForStatus(s.status) &&
+                hasCteAttached(s)
+            );
           
             const stats = creatorShipments.reduce((acc, shipment) => {
                 if (shipment.status === ShipmentStatus.Finalizado) {
@@ -110,7 +115,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
     }, [shipments, users]);
 
     const getShipmentsForPdfAndList = (embarcadorId?: string) => {
-        const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+        const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado && isCteApplicableForStatus(s.status) && hasCteAttached(s));
         if (embarcadorId && embarcadorId !== 'ALL') {
             return nonCanceled.filter(s => s.embarcadorId === embarcadorId || s.createdById === embarcadorId);
         }
@@ -118,7 +123,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
     };
 
     const baseModalShipments = useMemo(() => {
-        const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+        const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado && isCteApplicableForStatus(s.status) && hasCteAttached(s));
         if (selectedEmbarcadorId && selectedEmbarcadorId !== 'ALL') {
             return nonCanceled.filter(s => s.embarcadorId === selectedEmbarcadorId || s.createdById === selectedEmbarcadorId);
         }
@@ -176,7 +181,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         }
 
         const startY = filterDesc.length > 0 ? 34 : 28;
-        const tableColumn = ["ID", "Início", "Fim", "Cliente", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Carregado", "Peso Destino", "Quebra", "Status"];
+        const tableColumn = ["ID", "CT-e", "Início", "Fim", "Cliente", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Carregado", "Peso Destino", "Quebra", "Status"];
         const tableRows: any[] = [];
 
         let totalFreteEmpresa = 0;
@@ -184,7 +189,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         let totalPesoCarregado = 0;
         let totalPesoDestino = 0;
 
-        const shipmentsForPdf = filteredModalShipments.filter(s => s.status === ShipmentStatus.Finalizado);
+        const shipmentsForPdf = filteredModalShipments.filter(s => s.status === ShipmentStatus.Finalizado && hasCteAttached(s));
 
         shipmentsForPdf.forEach(shipment => {
             const cargo = cargoMap.get(shipment.cargoId);
@@ -195,6 +200,8 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             const dataInicio = new Date(shipment.createdAt).toLocaleDateString('pt-BR');
             const statusFinalizado = shipment.statusHistory?.find(h => h.status === ShipmentStatus.Finalizado);
             const dataFim = statusFinalizado ? new Date(statusFinalizado.timestamp).toLocaleDateString('pt-BR') : '-';
+
+            const cteNumber = getShipmentCte(shipment) || shipment.cteNumber || '-';
 
             const freteEmpresa = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
             const freteMotorista = shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1));
@@ -218,6 +225,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
 
             tableRows.push([
                 shipment.id,
+                cteNumber,
                 dataInicio,
                 dataFim,
                 cliente,
@@ -237,7 +245,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         const fmt = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
         
         tableRows.push([
-            "TOTAIS", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
+            "TOTAIS", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-", "-",
             fmt(totalFreteEmpresa),
             fmt(totalFreteMotorista),
             totalPesoCarregado.toFixed(2) + ' t',
@@ -246,7 +254,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         ]);
 
         tableRows.push([
-            "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-",
+            "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-",
             fmt(totalFreteEmpresa - totalFreteMotorista),
             "-", "-", "-", "-", "-"
         ]);
@@ -282,7 +290,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
 
     const generatePDF = (embarcadorId?: string) => {
         // Filter to only export finalized shipments for the PDF
-        const targetShipments = getShipmentsForPdfAndList(embarcadorId).filter(s => s.status === ShipmentStatus.Finalizado);
+        const targetShipments = getShipmentsForPdfAndList(embarcadorId).filter(s => s.status === ShipmentStatus.Finalizado && hasCteAttached(s));
         const embarcadorName = embarcadorId && embarcadorId !== 'ALL' 
             ? operatorStats.find(o => o.id === embarcadorId)?.name 
             : 'Geral';
@@ -295,7 +303,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         doc.setFontSize(10);
         doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22);
 
-        const tableColumn = ["ID", "Início", "Fim", "Cliente", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Carregado", "Peso Destino", "Quebra"];
+        const tableColumn = ["ID", "CT-e", "Início", "Fim", "Cliente", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Carregado", "Peso Destino", "Quebra"];
         const tableRows: any[] = [];
 
         let totalFreteEmpresa = 0;
@@ -312,6 +320,8 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             const dataInicio = new Date(shipment.createdAt).toLocaleDateString('pt-BR');
             const statusFinalizado = shipment.statusHistory?.find(h => h.status === ShipmentStatus.Finalizado);
             const dataFim = statusFinalizado ? new Date(statusFinalizado.timestamp).toLocaleDateString('pt-BR') : '-';
+
+            const cteNumber = getShipmentCte(shipment) || shipment.cteNumber || '-';
             
             const freteEmpresa = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
             const freteMotorista = shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1));
@@ -335,6 +345,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
 
             const rowData = [
                 shipment.id,
+                cteNumber,
                 dataInicio,
                 dataFim,
                 cliente,
@@ -354,7 +365,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
         tableRows.push([
-            "TOTAIS", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
+            "TOTAIS", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-", "-",
             formatCurrency(totalFreteEmpresa),
             formatCurrency(totalFreteMotorista),
             totalPesoCarregado.toFixed(2) + ' t',
@@ -363,7 +374,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         ]);
 
         tableRows.push([
-            "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-",
+            "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-",
             formatCurrency(totalFreteEmpresa - totalFreteMotorista),
             "-", "-", "-", "-"
         ]);

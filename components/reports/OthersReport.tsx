@@ -25,7 +25,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached } from '../../utils';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import type { StayRecord } from '../../utils/toolStorage';
@@ -389,6 +389,13 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       : 'Período: Completo';
     doc.text(`${periodText} | Emitido em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 40, 60);
 
+    // Apenas registros de embarques com CT-e emitido
+    const exportTaxCreditItems = taxCreditItems.filter(d => (Boolean(d.rawCte && d.rawCte !== '-' && d.rawCte.trim() !== '')) || hasCteAttached(d.shipment));
+    const exportAdditionalCostItems = additionalCostItems.filter(d => (Boolean(d.rawCte && d.rawCte !== '-' && d.rawCte.trim() !== '')) || hasCteAttached(d.shipment));
+
+    const exportTotalCredit = exportTaxCreditItems.reduce((acc, curr) => acc + curr.creditValue, 0);
+    const exportTotalCost = exportAdditionalCostItems.reduce((acc, curr) => acc + curr.addCostValue, 0);
+
     // Resumo dos Indicadores
     doc.setFillColor(245, 247, 250);
     doc.roundedRect(40, 75, pageWidth - 80, 45, 6, 6, 'F');
@@ -399,8 +406,8 @@ export const OthersReport: React.FC<OthersReportProps> = ({
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Total Créditos de Imposto: ${formatCurrency(kpis.totalCredit)} (${kpis.countCredit} embarques)`, 55, 108);
-    doc.text(`Total Custos Adicionais / Prejuízos: ${formatCurrency(kpis.totalCost)} (${kpis.countCost} ocorrências)`, 380, 108);
+    doc.text(`Total Créditos de Imposto: ${formatCurrency(exportTotalCredit)} (${exportTaxCreditItems.length} embarques)`, 55, 108);
+    doc.text(`Total Custos Adicionais / Prejuízos: ${formatCurrency(exportTotalCost)} (${exportAdditionalCostItems.length} ocorrências)`, 380, 108);
 
     let startY = 135;
 
@@ -408,12 +415,12 @@ export const OthersReport: React.FC<OthersReportProps> = ({
     if (activeTab === 'todos' || activeTab === 'creditos') {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text(`1. Créditos de Imposto Gerados (${taxCreditItems.length} registros)`, 40, startY);
+      doc.text(`1. Créditos de Imposto Gerados (${exportTaxCreditItems.length} registros)`, 40, startY);
 
       autoTable(doc, {
         startY: startY + 10,
         head: [['ID Frete', 'Nº CT-e', 'Data', 'Cliente', 'Origem / Destino', 'Modalidade', 'Crédito Gerado']],
-        body: taxCreditItems.map(d => [
+        body: exportTaxCreditItems.map(d => [
           d.shipment.id,
           d.rawCte || '-',
           formatDate(d.effectiveDate),
@@ -440,12 +447,12 @@ export const OthersReport: React.FC<OthersReportProps> = ({
 
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text(`2. Custos Adicionais e Registro de Prejuízos (${additionalCostItems.length} ocorrências)`, 40, startY);
+      doc.text(`2. Custos Adicionais e Registro de Prejuízos (${exportAdditionalCostItems.length} ocorrências)`, 40, startY);
 
       autoTable(doc, {
         startY: startY + 10,
         head: [['ID Frete', 'Nº CT-e', 'Data', 'Motorista / Placa', 'Categoria do Custo', 'Justificativa', 'Valor Prejuízo']],
-        body: additionalCostItems.map(d => [
+        body: exportAdditionalCostItems.map(d => [
           d.shipment.id,
           d.rawCte || '-',
           formatDate(d.effectiveDate),

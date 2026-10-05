@@ -5,7 +5,7 @@ import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { isStayForShipment } from '../../utils';
+import { isStayForShipment, hasCteAttached, isCteApplicableForStatus, getShipmentCte } from '../../utils';
 import { Download, List, X, Filter, Building2, ChevronDown, ChevronUp, MapPin, CheckCircle2, TrendingUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -165,50 +165,24 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       });
     });
 
-    // Mesma regra do Fat. Bruto global: apenas embarques com CT-e emitido
-    // Inclui também estadias com CT-e complementar (approvedValue > 0)
-    const countableStatuses = [
-      ShipmentStatus.AguardandoSeguradora,
-      ShipmentStatus.PreCadastro,
-      ShipmentStatus.AguardandoCarregamento,
-      ShipmentStatus.AguardandoNota,
-      ShipmentStatus.AguardandoFiscal,
-      ShipmentStatus.AguardandoAdiantamento,
-      ShipmentStatus.AguardandoAgendamento,
-      ShipmentStatus.AguardandoDescarga,
-      ShipmentStatus.ValidacaoTicket,
-      ShipmentStatus.AguardandoPagamentoSaldo,
-      ShipmentStatus.Finalizado
-    ];
+    // Regra: considerar exclusivamente embarques válidos com CT-e emitido
+    shipments.forEach(shipment => {
+      if (shipment.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(shipment.status)) return;
+      if (!hasCteAttached(shipment)) return;
 
-    shipments.filter(s => countableStatuses.includes(s.status)).forEach(shipment => {
       const cargo = cargoMap.get(shipment.cargoId);
       if (!cargo) return;
 
       const clientEntry = statsMap.get(cargo.clientId);
       if (!clientEntry) return;
 
-      // Verificar se possui CT-e (embarque principal) OU CT-e de estadia (complementar)
-      const hasShipmentCte = Boolean(
-        shipment.cteNumber ||
-        shipment.documents?.cte_number ||
-        shipment.documents?.['CT-e'] ||
-        shipment.documents?.['CTE']
-      );
-
-      // CT-e de estadia: estadias aprovadas vinculadas a este embarque
-      const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment) && (stay.approvedValue || 0) > 0);
-      const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
-
-      // Contar apenas se tiver CT-e do embarque ou CT-e complementar de estadia
-      if (!hasShipmentCte && !hasStayCte) return;
-
       const client = clients.find(c => c.id === cargo.clientId);
       const ton = shipment.loadedTonnage || shipment.shipmentTonnage || 0;
       const expenses = calculateShipmentExpenses(shipment, cargo);
       const grossValue = expenses.companyFreight;
 
-      // Estadia aprovada: faturamento bruto inclui o valor cobrado ao cliente (approvedValue)
+      // Estadias aprovadas vinculadas a este embarque com CT-e
+      const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment) && (stay.approvedValue || 0) > 0);
       const demurrageRevenue = shipmentStays
         .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
 
@@ -216,21 +190,15 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
         .reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
 
       // Faturamento bruto = frete + estadias aprovadas
-      const totalGrossValue = hasShipmentCte ? grossValue + demurrageRevenue : demurrageRevenue;
-
-      const profit = hasShipmentCte
-        ? (expenses.netProfit + demurrageProfit)
-        : demurrageProfit;
+      const totalGrossValue = grossValue + demurrageRevenue;
+      const profit = expenses.netProfit + demurrageProfit;
 
       const isCompleted = shipment.status === ShipmentStatus.Finalizado;
-      const isCanceled = shipment.status === ShipmentStatus.Cancelado;
 
       // Add to overall client
-      if (hasShipmentCte && !isCanceled) {
-        clientEntry.totalTonnage += ton;
-        clientEntry.totalShipments += 1;
-        if (isCompleted) clientEntry.completedShipments += 1;
-      }
+      clientEntry.totalTonnage += ton;
+      clientEntry.totalShipments += 1;
+      if (isCompleted) clientEntry.completedShipments += 1;
       clientEntry.grossBilled += totalGrossValue;
       clientEntry.profitMargin += profit;
 
@@ -257,11 +225,9 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
         }
       }
 
-      if (hasShipmentCte && !isCanceled) {
-        branchStat.totalTonnage += ton;
-        branchStat.totalShipments += 1;
-        if (isCompleted) branchStat.completedShipments += 1;
-      }
+      branchStat.totalTonnage += ton;
+      branchStat.totalShipments += 1;
+      if (isCompleted) branchStat.completedShipments += 1;
       branchStat.grossBilled += totalGrossValue;
       branchStat.profitMargin += profit;
     });
@@ -302,7 +268,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const getShipmentsForPdfAndList = (clientId?: string, specificCnpj?: string) => {
-    let result = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+    let result = shipments.filter(s => s.status !== ShipmentStatus.Cancelado && isCteApplicableForStatus(s.status) && hasCteAttached(s));
     if (clientId && clientId !== 'ALL') {
       result = result.filter(s => cargoMap.get(s.cargoId)?.clientId === clientId);
     }
@@ -320,7 +286,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const baseModalShipments = useMemo(() => {
-    const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+    const nonCanceled = shipments.filter(s => s.status !== ShipmentStatus.Cancelado && isCteApplicableForStatus(s.status) && hasCteAttached(s));
     if (selectedClientId && selectedClientId !== 'ALL') {
       return nonCanceled.filter(s => cargoMap.get(s.cargoId)?.clientId === selectedClientId);
     }
@@ -394,7 +360,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
   };
 
   const generatePDF = (clientId?: string, specificCnpj?: string) => {
-    const targetShipments = getShipmentsForPdfAndList(clientId, specificCnpj).filter(s => s.status === ShipmentStatus.Finalizado);
+    const targetShipments = getShipmentsForPdfAndList(clientId, specificCnpj).filter(s => s.status === ShipmentStatus.Finalizado && hasCteAttached(s));
     const client = clientId && clientId !== 'ALL' ? clients.find(c => c.id === clientId) : (isClientUser && currentUser?.clientId ? clients.find(c => c.id === currentUser.clientId) : undefined);
     
     let subTitleName = client?.nomeFantasia || client?.razaoSocial || 'Todos os Clientes';
@@ -414,8 +380,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22);
 
     const tableColumn = isClientUser
-      ? ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra"]
-      : ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra"];
+      ? ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra"]
+      : ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra"];
     
     const tableRows: any[] = [];
 
@@ -434,6 +400,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       const dataInicio = new Date(shipment.createdAt).toLocaleDateString('pt-BR');
       const statusFinalizado = shipment.statusHistory?.find(h => h.status === ShipmentStatus.Finalizado);
       const dataFim = statusFinalizado ? new Date(statusFinalizado.timestamp).toLocaleDateString('pt-BR') : '-';
+
+      const cteNumber = getShipmentCte(shipment) || shipment.cteNumber || '-';
 
       const freteEmpresa = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
       const freteMotorista = shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1));
@@ -458,6 +426,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       if (isClientUser) {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           cliente,
@@ -474,6 +443,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       } else {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           cliente,
@@ -495,7 +465,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
     if (isClientUser) {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
         formatCurrency(totalFreteEmpresa),
         totalPesoCarregado.toFixed(2) + ' t',
         totalPesoDestino > 0 ? totalPesoDestino.toFixed(2) + ' t' : '-',
@@ -503,7 +473,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
     } else {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${targetShipments.length}`, "-", "-",
         formatCurrency(totalFreteEmpresa),
         formatCurrency(totalFreteMotorista),
         totalPesoCarregado.toFixed(2) + ' t',
@@ -512,7 +482,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
 
       tableRows.push([
-        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-",
+        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-", "-",
         formatCurrency(totalFreteEmpresa - totalFreteMotorista),
         "-", "-", "-", "-"
       ]);
@@ -574,8 +544,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
     const startY = filterDesc.length > 0 ? 32 : 27;
     const tableColumn = isClientUser
-      ? ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra", "Status"]
-      : ["ID", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra", "Status"];
+      ? ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Contratado (/Ton)", "Peso Origem", "Peso Destino", "Quebra", "Status"]
+      : ["ID", "CT-e", "Início", "Fim", "Cliente / Filial", "CNPJ", "Motorista", "Placa", "Origem", "Destino", "Frete Emp/Ton", "Frete Mot/Ton", "Peso Origem", "Peso Destino", "Quebra", "Status"];
     
     const tableRows: any[] = [];
 
@@ -584,7 +554,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
     let totalPesoCarregado = 0;
     let totalPesoDestino = 0;
 
-    const shipmentsForPdf = filteredModalShipments.filter(s => s.status === ShipmentStatus.Finalizado);
+    const shipmentsForPdf = filteredModalShipments.filter(s => s.status === ShipmentStatus.Finalizado && hasCteAttached(s));
 
     shipmentsForPdf.forEach(shipment => {
       const cargo = cargoMap.get(shipment.cargoId);
@@ -596,6 +566,8 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       const dataInicio = new Date(shipment.createdAt).toLocaleDateString('pt-BR');
       const statusFinalizado = shipment.statusHistory?.find(h => h.status === ShipmentStatus.Finalizado);
       const dataFim = statusFinalizado ? new Date(statusFinalizado.timestamp).toLocaleDateString('pt-BR') : '-';
+
+      const cteNumber = getShipmentCte(shipment) || shipment.cteNumber || '-';
 
       const freteEmpresa = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
       const freteMotorista = shipment.driverFreightRateSnapshot || (shipment.driverFreightValue / (shipment.shipmentTonnage || 1));
@@ -620,6 +592,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       if (isClientUser) {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           `${clienteNome} (${info.name})`,
@@ -637,6 +610,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       } else {
         tableRows.push([
           shipment.id,
+          cteNumber,
           dataInicio,
           dataFim,
           `${clienteNome} (${info.name})`,
@@ -659,7 +633,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
     if (isClientUser) {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
         fmt(totalFreteEmpresa),
         totalPesoCarregado.toFixed(2) + ' t',
         totalPesoDestino > 0 ? totalPesoDestino.toFixed(2) + ' t' : '-',
@@ -667,7 +641,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
     } else {
       tableRows.push([
-        "TOTAIS", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
+        "TOTAIS", "-", "-", "-", "-", "-", "-", `Embarques: ${shipmentsForPdf.length}`, "-", "-",
         fmt(totalFreteEmpresa),
         fmt(totalFreteMotorista),
         totalPesoCarregado.toFixed(2) + ' t',
@@ -676,7 +650,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
       ]);
 
       tableRows.push([
-        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-",
+        "LÍQUIDO", "-", "-", "-", "-", "-", "-", "-", "-", "-",
         fmt(totalFreteEmpresa - totalFreteMotorista),
         "-", "-", "-", "-", "-"
       ]);

@@ -21,6 +21,86 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_05_v2_70_2',
+    version: 'v2.70.2',
+    date: '05/10/2026',
+    title: 'Relatórios PDF: Adicionada coluna com número do CT-e',
+    summary: 'Os relatórios exportados em formato PDF agora incluem expressamente uma coluna com o número do CT-e emitido para cada embarque listado, facilitando a conciliação fiscal e auditoria dos fretes.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Coluna "CT-e" adicionada aos relatórios PDF',
+        description: 'Adicionada a coluna "CT-e" em destaque logo após o ID do embarque nos PDFs do Relatório de Clientes (Consolidado e por Filial/CNPJ) e do Relatório de Embarcadores (Geral e Listagem Modal). Os relatórios de Lucro Real, Outros e Agência/Comercial já contavam com a coluna.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_70_1',
+    version: 'v2.70.1',
+    date: '05/10/2026',
+    title: 'Relatório de Desempenho por Cliente: Apenas embarques com CT-e emitido',
+    summary: 'O relatório de Desempenho por Cliente (cards de Total de Embarques, Volume Total, Faturamento Bruto, Lucro Operacional e a tabela de detalhamento por CNPJ/Filial) agora considera exclusivamente embarques que possuem CT-e emitido/anexado, alinhando os números em tela com os relatórios gerenciais e PDF.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Filtragem por CT-e nas métricas e tabelas de Clientes e Embarcadores',
+        description: 'No ClientReport, as métricas consolidadas (Total de Embarques, Volume, Faturamento e Lucro) e o detalhamento por CNPJ/Filial passam a validar estritamente hasCteAttached(shipment) e status não cancelado. O mesmo critério foi estendido para a listagem modal de embarques e para os relatórios de Embarcadores, Vendedores e Filiais.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_70_0',
+    version: 'v2.70.0',
+    date: '05/10/2026',
+    title: 'Relatórios PDF: Exibição exclusiva de embarques com CT-e emitido',
+    summary: 'Todos os relatórios do sistema com exportação para PDF (Relatório de Clientes e Filiais, Relatório de Embarcadores, Relatório Detalhado por Agência, Lucro Real, Outros e Previsão de Demandas) foram configurados para considerar estritamente registros de embarques que possuem CT-e anexado/emitido.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Filtro de CT-e obrigatório para Relatórios PDF',
+        description: 'As rotinas de geração de PDF em ClientReport (Geral e Modal), ShipperReport (Geral e Modal), SupervisorReport (Listagem de Agência), RealProfitReport, OthersReport e DemandForecastReport agora validam a existência do CT-e emitido através de hasCteAttached / getShipmentCte, garantindo que embarques sem CT-e não entrem nos relatórios e totais dos documentos PDF gerados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_69_1',
+    version: 'v2.69.1',
+    date: '05/10/2026',
+    title: 'Fix: Pedágio indevido removido do embarque CEL-631',
+    summary: 'O embarque CEL-631 estava exibindo R$ 652,75 de pedágio indevidamente. O valor estava armazenado no campo documents.valor_pedagio, puxado pela cascata de fallback do operationalExpensesCalculator. O campo foi zerado diretamente no banco de dados.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Pedágio do CEL-631 corrigido para R$ 0,00',
+        description: 'O campo documents.valor_pedagio do embarque CEL-631 foi zerado. O tollValue principal já era 0, mas a cascata de fallback (shipment.tollValue || realProfitData.toll || documents.toll_value || documents.valor_pedagio) estava capturando o valor R$ 652,75 de documents.valor_pedagio, exibindo pedágio indevido nos cálculos operacionais e financeiros.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_69_0',
+    version: 'v2.69.0',
+    date: '05/10/2026',
+    title: 'Revert: Paleta de Cores da Tabela de Embarques Restaurada ao Padrão Anterior',
+    summary: 'A paleta de cores aplicada na versão v2.68.0 (estilo planilha Excel) foi revertida. A tabela de embarques voltou ao visual padrão dark/light do sistema: cabeçalho cinza (bg-gray-50/bg-gray-700), linhas brancas/dark (bg-white/bg-gray-800) com hover sutil, e as variáveis CSS --primary, --accent restauradas aos valores originais (#0B66E4, #0284C7). As classes CSS de planilha (sheet-thead, sheet-tbody, sheet-row, etc.) foram removidas do CSS global.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Paleta da tabela de embarques revertida ao design padrão',
+        description: 'O thead voltou a usar bg-gray-50/dark:bg-gray-700 com texto text-gray-500/dark:text-gray-300. O tbody voltou a usar bg-white/dark:bg-gray-800 com divisores divide-gray-200/dark:divide-gray-700 e hover hover:bg-gray-50/dark:hover:bg-gray-700.'
+      },
+      {
+        category: 'fix',
+        title: 'Variáveis CSS --primary e --accent restauradas',
+        description: 'As variáveis globais foram restauradas: --primary: #0B66E4, --primary-dark: #0047AB, --accent: #0284C7, --accent-dark: #0369A1. As variáveis --sheet-* foram removidas.'
+      },
+      {
+        category: 'fix',
+        title: 'Classes CSS de paleta planilha removidas do index.css',
+        description: 'Todo o bloco de estilos .sheet-thead, .sheet-tbody, .sheet-row, .sheet-table, .badge-sheet-*, .sheet-value-* foi removido do index.css, limpando o CSS global.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_04_v2_68_0',
     version: 'v2.68.0',
     date: '04/10/2026',

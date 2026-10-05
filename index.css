@@ -1,16 +1,9 @@
 
 :root {
-  --primary: #0070C0;
-  --primary-dark: #005a9e;
-  --accent: #00B0F0;
-  --accent-dark: #0095cc;
-  /* Planilha palette */
-  --sheet-bg: #00B0F0;
-  --sheet-header: #0070C0;
-  --sheet-green: #00B050;
-  --sheet-red: #FF0000;
-  --sheet-orange: #FFC000;
-  --sheet-yellow: #FFFF00;
+  --primary: #0B66E4;
+  --primary-dark: #0047AB;
+  --accent: #0284C7;
+  --accent-dark: #0369A1;
 }
 
 /* Base styles for a premium feel & mobile gestures protection */
@@ -350,113 +343,4 @@ html.dark .glass-panel {
 }
 :is(.dark .chat-bubble-left::after) {
   border-right-color: #374151;
-}
-
-
-
-/* ============================================================ */
-/* PALETA PLANILHA EXCEL - Transcunha Logistica                  */
-/* Cores espelhadas da planilha 3-15-07-2025-CARREGAMENTO       */
-/* ============================================================ */
-
-/* --- Cabecalho da tabela (thead) --- */
-.sheet-thead {
-  background-color: #0070C0 !important;
-}
-.sheet-thead th {
-  color: #ffffff !important;
-  font-weight: 700 !important;
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  border-bottom: 2px solid #005a9e !important;
-}
-
-/* --- Linhas da tabela (preenchimento azul #00B0F0 da planilha) --- */
-.sheet-tbody tr {
-  background-color: #00B0F0 !important;
-}
-.sheet-tbody tr:nth-child(even) {
-  background-color: #00a4e0 !important;
-}
-.sheet-tbody tr:hover {
-  background-color: #0095cc !important;
-  transition: background-color 0.15s ease;
-}
-
-/* --- Divisores das celulas --- */
-.sheet-table td,
-.sheet-table th {
-  border: 1px solid #0082b3 !important;
-}
-
-/* --- Badges de Status (paleta planilha) --- */
-
-.badge-sheet-liberado {
-  background-color: #e6f9ee;
-  color: #00692e;
-  border: 1px solid #00B050;
-  font-weight: 700;
-  font-size: 0.68rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.badge-sheet-carregado {
-  background-color: #FF0000;
-  color: #ffffff;
-  font-weight: 700;
-  font-size: 0.68rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.badge-sheet-boleto {
-  background-color: #FFC000;
-  color: #3d2e00;
-  font-weight: 700;
-  font-size: 0.68rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.badge-sheet-sim {
-  background-color: #00B050;
-  color: #ffffff;
-  font-weight: 700;
-  font-size: 0.68rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.sheet-value-negative {
-  color: #CC0000;
-  font-weight: 700;
-}
-
-.sheet-value-positive {
-  color: #00692e;
-  font-weight: 700;
-}
-
-/* Sheet row - preenchimento exato #00B0F0 da planilha */
-.sheet-row {
-  background-color: #00B0F0;
-  transition: background-color 0.12s ease;
-}
-.sheet-tbody tr.sheet-row:nth-child(even) {
-  background-color: #00a4e0;
-}
-.sheet-row:hover {
-  background-color: #0095cc !important;
-}
-.sheet-row td {
-  color: #002244;
-  font-weight: 500;
 }

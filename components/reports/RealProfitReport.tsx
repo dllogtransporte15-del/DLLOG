@@ -24,7 +24,7 @@ import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached } from '../../utils';
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
@@ -487,8 +487,13 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
               : 'Todos os períodos'));
     doc.text(`${periodText} | Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, 21);
 
-    // Tabela
-    const tableData = enrichedRows.map(r => {
+    // Tabela - Apenas embarques com CT-e emitido
+    const validRows = enrichedRows.filter(r => {
+      const cteVal = r.cte || (r.shipment ? getShipmentCte(r.shipment) : '');
+      return (Boolean(cteVal && cteVal !== '-' && cteVal !== '---' && cteVal.trim() !== '')) || (r.shipment ? hasCteAttached(r.shipment) : false);
+    });
+
+    const tableData = validRows.map(r => {
       const rowArr = [
         r.shipment.id,
         r.cte || '---',

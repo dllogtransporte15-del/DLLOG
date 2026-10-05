@@ -5,7 +5,7 @@ import { Download, FileSpreadsheet } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { addPdfLogo } from "../../utils/pdfGenerator";
-import { getShipmentEffectiveDate } from "../../utils";
+import { getShipmentEffectiveDate, hasCteAttached } from "../../utils";
 
 interface DemandForecastReportProps {
   cargos: Cargo[];
@@ -73,6 +73,7 @@ const DemandForecastReport: React.FC<DemandForecastReportProps> = ({ cargos, cli
   const attendedTonnageByCargoAndDate = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
     shipments.forEach((s) => {
+      if (s.status === ShipmentStatus.Cancelado || !hasCteAttached(s)) return;
       const effDate = getShipmentEffectiveDate(s) ?? s.scheduledDate;
       if (!effDate || effDate < startDate || effDate > endDate) return;
       if (!map.has(s.cargoId)) map.set(s.cargoId, new Map());

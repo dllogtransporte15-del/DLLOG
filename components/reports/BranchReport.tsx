@@ -40,8 +40,8 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s) && (stay.approvedValue || 0) > 0);
       const hasStayCte = shipmentStays.some(stay => stay.cteUrl);
 
-      // Contabiliza apenas se tiver CT-e do embarque ou CT-e complementar de estadia
-      if (!hasShipmentCte && !hasStayCte) return;
+      // Contabiliza apenas se tiver CT-e do embarque emitido
+      if (!hasShipmentCte) return;
 
       const cargo = cargoMap.get(s.cargoId);
       if (!cargo) return;
