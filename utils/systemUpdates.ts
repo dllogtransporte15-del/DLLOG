@@ -21,6 +21,111 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_05_v2_70_7',
+    version: 'v2.70.7',
+    date: '05/10/2026',
+    title: 'Planilha de Controladoria: Paleta Original do Excel com Alto Contraste em Modo Claro',
+    summary: 'A Planilha de Embarques (Controladoria) agora reproduz fielmente a paleta de cores original da planilha oficial do Excel (OneDrive). No Modo Claro, as linhas assumem o característico preenchimento azul (#00a8e5), com texto preto encorpado de altíssimo contraste sobre o azul, preenchimento verde floresta (#005c00) para Transcunha com texto amarelo, preenchimento amarelo (#e2d308) para agência Rafael, laranja (#ea580c) para Filial SP, status SIM em amarelo ouro vibrante, RECEBIDO em lilás, deduções/descontos em vermelho vivo, fretes destacados em amarelo e boletos/pix em verde.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Fidelidade visual à Planilha Original do Excel',
+        description: 'Preenchimento azul clássico de planilha (#00a8e5) nas linhas de dados com linhas de grade nítidas e textos pretos bem definidos para máxima legibilidade.'
+      },
+      {
+        category: 'improvement',
+        title: 'Cores de preenchimento e tipografia com contraste dedicado',
+        description: 'Destaque automático de filiais (Transcunha em verde floresta com amarelo, Rafael em amarelo ouro com preto, Filial SP em laranja), status já faturado SIM em amarelo ouro, pagamentos em verde, impostos e deduções em vermelho vivo e totais de destaque em amarelo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_70_6',
+    version: 'v2.70.6',
+    date: '05/10/2026',
+    title: 'Planilha de Controladoria: Modo Escuro e Claro Independente',
+    summary: 'Adicionada a funcionalidade de alternar a Planilha de Embarques (Controladoria) entre Modo Claro (estilo planilha clássica, fundo branco e alto contraste) e Modo Escuro independente do tema global do sistema, com persistência automática da preferência do usuário.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Alternância independente de Modo Escuro / Claro',
+        description: 'Botão de alternância com ícone de Sol e Lua disponível na barra de ações e no topo da visualização em Tela Cheia (Maximizar). Permite visualizar a planilha com tema claro e limpo ou tema escuro navy sem alterar o restante do sistema.'
+      },
+      {
+        category: 'improvement',
+        title: 'Persistência e adaptação completa de estilos',
+        description: 'Cores de linhas alternadas, cabeçalhos, bordas, filtros de coluna, badges de status, inputs e totais foram adaptados para máxima legibilidade tanto no tema claro quanto no escuro, memorizando sua preferência via navegador.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_70_5',
+    version: 'v2.70.5',
+    date: '05/10/2026',
+    title: 'Relatório por Cliente: Correção na apuração de embarques por período (Ex: Organis Nazário 40 -> 37)',
+    summary: 'Corrigido o filtro de período em ReportsPage e Desempenho por Cliente (ClientReport). Embarques agendados em 30/09 cujo CT-e foi emitido em 01/10 (CEL-631, CEL-640 e FEL-644) estavam sendo contabilizados indevidamente no mês de setembro devido à verificação secundária por scheduledDate. Com a regra estrita de cteEmissionDate, a contagem de setembro foi corrigida com precisão matemática (ex: de 40 para 37 embarques em Organis Nazário).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Exclusividade estrita da data de emissão do CT-e no filtro de período',
+        description: 'A função isShipmentInPeriod agora valida exclusivamente a data de emissão do CT-e quando o embarque possui CT-e emitido. Embarques como CEL-631 (CT-e 2059), CEL-640 (CT-e 2054) e FEL-644 (CT-e 2055), agendados para 30/09/2026 mas com emissão fiscal em 01/10/2026, pertencem estritamente a outubro e não constam mais em setembro.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização de métricas e listagem por filial/CNPJ',
+        description: 'Tanto os cards de resumo geral quanto as tabelas detalhadas por cliente e filiais (ex: ORGANIS NAZARIO) refletem fielmente os embarques faturados no período selecionado, sem distorção na virada de mês.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_70_4',
+    version: 'v2.70.4',
+    date: '05/10/2026',
+    title: 'Faturamento e Relatórios: Contabilização estrita na data de emissão do CT-e',
+    summary: 'Corrigido o critério de apuração temporal em todos os relatórios e faturamentos do sistema para que embarques com CT-e emitido sejam contabilizados estritamente no dia da emissão do CT-e (cteEmissionDate). Embarques com agendamento/embarque no final do mês anterior (ex: 29/30 de setembro) cujos CT-es foram emitidos no mês seguinte (ex: 01/10 - CTE 2056 e CTE 2053) pertencem exclusivamente ao faturamento do mês da emissão (outubro), não constando mais no mês de setembro.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Faturamento contabilizado estritamente na data de emissão do CT-e',
+        description: 'No ReportsPage (Relatórios de Clientes, Embarcadores, Vendedores e Comercial), o filtro de período passa a utilizar exclusivamente a data de emissão do CT-e (cteEmissionDate) quando o embarque possui CT-e emitido, eliminando a inclusão indevida por data de agendamento em meses anteriores.'
+      },
+      {
+        category: 'fix',
+        title: 'Planilha de Controladoria (Controle de Embarques) e 1º Resultado alinhados',
+        description: 'Na planilha de controladoria (ControlShipmentsTab) e no DRE do 1º Resultado (FirstResultTab), a filtragem por mês, dia e período customizado prioriza estritamente a data de emissão do CT-e (cteEmissionDate) sobre a data de agendamento, garantindo que o faturamento reflita fielmente o dia da emissão fiscal.'
+      },
+      {
+        category: 'improvement',
+        title: 'Suporte robusto a formatos de datas fiscais (D/M/AAAA)',
+        description: 'Os utilitários parseDateToYmd, formatFiscalDateTime e extractCteEmissionDateFromText foram aprimorados para reconhecer e normalizar perfeitamente datas com um ou dois dígitos (ex: 1/10/2026 e 01/10/2026), evitando falhas de conversão para o padrão ISO (AAAA-MM-DD).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_05_v2_70_3',
+    version: 'v2.70.3',
+    date: '05/10/2026',
+    title: 'Fix definitivo: pedágio indevido em embarques sem pedágio (CEL-631)',
+    summary: 'O pedágio do CEL-631 voltava a aparecer mesmo após ser zerado, porque o painel de custos do CT-e relia os documentos a cada abertura e regravava o valor capturado incorretamente. A leitura, a sincronização e os cálculos agora respeitam o pedágio zerado do embarque.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Leitura de pedágio nos documentos mais precisa',
+        description: 'O leitor de documentos agora entende textos como "SEM PEDÁGIO", "PEDÁGIO: ISENTO/NÃO HÁ" e "R$ 0,00" como pedágio zero. Ele também não pega mais valores de outros campos (frete total, adiantamento, saldo, NF) que aparecem na mesma linha, e descarta pedágios iguais ao frete total ou ao adiantamento.'
+      },
+      {
+        category: 'fix',
+        title: 'Pedágio zerado não é mais sobrescrito',
+        description: 'O painel de automatização de custos do CT-e, o modal de anexos e a sincronização em lote não substituem mais um pedágio zerado do embarque por um valor lido automaticamente.'
+      },
+      {
+        category: 'fix',
+        title: 'Cálculos usam o pedágio oficial do embarque',
+        description: 'O cálculo de despesas operacionais (INSS Patronal, CIOT), o relatório de Lucro Real e o painel do CT-e passam a usar o pedágio cadastrado no embarque, inclusive quando ele é R$ 0,00. Valores antigos guardados nos documentos não são mais usados no lugar dele.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_05_v2_70_2',
     version: 'v2.70.2',
     date: '05/10/2026',

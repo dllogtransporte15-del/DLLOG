@@ -42,7 +42,9 @@ import {
   Calendar,
   Database,
   FileText,
-  ExternalLink
+  ExternalLink,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { 
   openDocumentInNewTab, 
@@ -381,6 +383,28 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const [showFilterRow, setShowFilterRow] = useState<boolean>(true);
   const [onlyWithCte, setOnlyWithCte] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'full' | 'summary'>('full');
+
+  // Modo de tema independente da planilha (Escuro ou Claro)
+  const [sheetTheme, setSheetTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('control_shipments_theme_mode');
+      if (saved === 'dark' || saved === 'light') return saved;
+      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    }
+    return 'dark';
+  });
+
+  const isSheetDark = sheetTheme === 'dark';
+
+  const toggleSheetTheme = useCallback(() => {
+    setSheetTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('control_shipments_theme_mode', next);
+      }
+      return next;
+    });
+  }, []);
 
   // Seleção e Navegação Ativa por Célula (Estilo Excel / Planilha com Setas)
   const [selectedCell, setSelectedCell] = useState<{ rowIdx: number; colIdx: number } | null>(null);
@@ -859,7 +883,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     return { start: null, end: null };
   }, [periodFilter, customStartDate, customEndDate]);
 
-  // Avaliação temporal inteligente para contemplar emissão do CT-e e data de embarque
+  // Avaliação temporal para contemplar emissão do CT-e e data de embarque
   const isRowInPeriod = useCallback((
     row: TranscunhaSpreadsheetRow, 
     bounds: { start: number | null; end: number | null }, 
@@ -877,21 +901,23 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       return true;
     };
 
-    if (basis === 'emission') {
-      return emissionTime > 0 ? checkTime(emissionTime) : checkTime(embarqueTime);
-    }
     if (basis === 'boarding') {
       return embarqueTime > 0 ? checkTime(embarqueTime) : checkTime(emissionTime);
     }
 
-    // Modo 'smart' (Padrão e Recomendado):
-    // Se a emissão do CT-e OU a data de embarque estiverem dentro do período selecionado, inclui!
-    // Isso garante que embarques agendados na virada de mês (29/30 de setembro) cujos CT-es foram emitidos em outubro
-    // entrem perfeitamente no fechamento deste mês!
-    const inEmission = emissionTime > 0 && checkTime(emissionTime);
-    const inEmbarque = embarqueTime > 0 && checkTime(embarqueTime);
+    // Tanto no modo 'smart' quanto no modo 'emission':
+    // O faturamento e o fechamento de embarques com CT-e emitido devem SEMPRE ser contabilizados
+    // para o dia/período em que o CT-e foi emitido.
+    // Apenas se ainda não houver CT-e emitido é que utiliza a data de embarque/agendamento.
+    const hasCte = row.cteHoras && row.cteHoras !== '-' && row.cteHoras !== row.id;
+    if (hasCte && emissionTime > 0) {
+      return checkTime(emissionTime);
+    }
+    if (emissionTime > 0) {
+      return checkTime(emissionTime);
+    }
 
-    return inEmission || inEmbarque;
+    return checkTime(embarqueTime);
   }, []);
 
   // Normalização de texto para busca
@@ -1167,184 +1193,201 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   }, [selectedCell]);
 
   // Tabela renderizada
-  const renderTable = () => (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full h-full bg-white dark:bg-slate-900">
-      <div 
-        ref={tableContainerRef}
-        tabIndex={0}
-        onKeyDown={handleTableKeyDown}
-        className="flex-1 min-h-0 overflow-auto outline-none focus:ring-1 focus:ring-indigo-500/40"
-      >
-        <table className="w-full text-left text-[11px] whitespace-nowrap border-collapse text-slate-800 dark:text-slate-100">
-          <thead className="sticky top-0 z-30 shadow-md select-none">
-            {/* Linha 1: Setores com Cores Harmoniosas e Alto Destaque (com colunas fixas alinhadas) */}
-            <tr className="text-center font-black tracking-wider uppercase text-[11px] sm:text-xs">
-              <th className="sticky left-0 z-50 bg-slate-950 text-white py-2 px-1 border-r border-slate-700 w-10 min-w-[40px] max-w-[40px] text-center text-xs font-black shadow-xs">#</th>
-              <th className="sticky left-[40px] z-50 bg-slate-950 text-emerald-400 py-2 px-1 border-r border-slate-700 w-[100px] min-w-[100px] max-w-[100px] text-center text-[10px] font-black shadow-xs">SISTEMA</th>
-              <th className="sticky left-[140px] z-50 bg-slate-950 text-sky-400 py-2 px-1 border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)] w-[75px] min-w-[75px] max-w-[75px] text-center text-[10px] font-black">CTE</th>
-              <th colSpan={6} className="bg-gradient-to-r from-sky-600 to-sky-500 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Faturamento & Recebimento Empresa</th>
-              <th colSpan={6} className="bg-gradient-to-r from-blue-700 to-blue-600 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Identificação & Motorista</th>
-              <th colSpan={9} className="bg-gradient-to-r from-cyan-700 to-cyan-600 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Carga, Pedido & Logística</th>
-              <th colSpan={6} className="bg-gradient-to-r from-slate-700 to-slate-600 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Cadastros & Controles</th>
-              <th colSpan={8} className="bg-gradient-to-r from-amber-600 to-amber-500 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Tomador, Rota & Pesagem</th>
-              <th colSpan={7} className="bg-gradient-to-r from-purple-700 to-purple-600 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Impostos & Deduções</th>
-              <th colSpan={5} className="bg-gradient-to-r from-indigo-700 to-indigo-600 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Frete & Acerto Motorista</th>
-              <th colSpan={6} className="bg-gradient-to-r from-emerald-700 to-emerald-600 text-white py-2.5 px-3 border-r border-white/20 shadow-xs drop-shadow-sm">Adiantamentos & Saldo</th>
-              <th colSpan={6} className="bg-gradient-to-r from-rose-700 to-rose-600 text-white py-2.5 px-3 shadow-xs drop-shadow-sm">Fechamento, CIOT, Quebra & Valor Total</th>
-            </tr>
+  const renderTable = () => {
+    const isDark = isSheetDark;
+    const borderCol = isDark ? 'border-slate-800' : 'border-black/35';
 
-            {/* Linha 2: Cabeçalhos das Colunas com Quebra em 2 Linhas e Altura Compacta */}
-            <tr className="bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white font-black uppercase text-[10px] sm:text-[11px] tracking-tight border-b-2 border-indigo-500/70 shadow-sm">
-              <th className="sticky left-0 z-40 bg-slate-200 dark:bg-slate-900 px-1.5 py-2 border-r border-slate-300 dark:border-slate-800 text-center text-slate-600 dark:text-slate-300 font-black text-xs w-10 min-w-[40px] max-w-[40px]">#</th>
-              {SPREADSHEET_COLUMNS.map(col => {
-                const isSorted = sortConfig?.key === col.key;
-                const isStickyId = col.key === 'idEmbarqueSistema';
-                const isStickyCte = col.key === 'cteHoras';
-                const stickyClass = isStickyId 
-                  ? 'sticky left-[40px] z-40 bg-slate-200 dark:bg-slate-900 w-[100px] min-w-[100px] max-w-[100px]' 
-                  : isStickyCte 
-                  ? 'sticky left-[140px] z-40 bg-slate-200 dark:bg-slate-900 w-[75px] min-w-[75px] max-w-[75px] border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' 
-                  : (col.width || 'min-w-[85px]');
+    return (
+      <div className={`flex-1 flex flex-col min-h-0 overflow-hidden w-full h-full ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-[#00a8e5] text-black'}`}>
+        <div 
+          ref={tableContainerRef}
+          tabIndex={0}
+          onKeyDown={handleTableKeyDown}
+          className="flex-1 min-h-0 overflow-auto outline-none focus:ring-1 focus:ring-indigo-500/40"
+        >
+          <table className={`w-full text-left text-[11px] whitespace-nowrap border-collapse ${isDark ? 'text-slate-100' : 'text-black'}`}>
+            <thead className="sticky top-0 z-30 shadow-md select-none">
+              {/* Linha 1: Setores com Cores Harmoniosas e Alto Destaque (com colunas fixas alinhadas) */}
+              <tr className="text-center font-black tracking-wider uppercase text-[11px] sm:text-xs">
+                <th className={`sticky left-0 z-50 ${isDark ? 'bg-slate-950 text-white border-slate-700' : 'bg-[#002b52] text-white border-black/40'} py-2 px-1 border-r w-10 min-w-[40px] max-w-[40px] text-center text-xs font-black shadow-xs`}>#</th>
+                <th className={`sticky left-[40px] z-50 ${isDark ? 'bg-slate-950 text-emerald-400 border-slate-700' : 'bg-[#002b52] text-emerald-300 border-black/40'} py-2 px-1 border-r w-[100px] min-w-[100px] max-w-[100px] text-center text-[10px] font-black shadow-xs`}>SISTEMA</th>
+                <th className={`sticky left-[140px] z-50 ${isDark ? 'bg-slate-950 text-sky-400 border-slate-700' : 'bg-[#002b52] text-sky-200 border-r-2 border-black'} py-2 px-1 border-r-2 ${isDark ? 'border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'border-black'} w-[75px] min-w-[75px] max-w-[75px] text-center text-[10px] font-black`}>CTE</th>
+                <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-sky-600 to-sky-500' : 'bg-[#0070c0]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Faturamento & Recebimento Empresa</th>
+                <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-blue-700 to-blue-600' : 'bg-[#005a9e]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Identificação & Motorista</th>
+                <th colSpan={9} className={`${isDark ? 'bg-gradient-to-r from-cyan-700 to-cyan-600' : 'bg-[#006e82]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Carga, Pedido & Logística</th>
+                <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-slate-700 to-slate-600' : 'bg-[#475569]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Cadastros & Controles</th>
+                <th colSpan={8} className={`${isDark ? 'bg-gradient-to-r from-amber-600 to-amber-500' : 'bg-[#b45309]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Tomador, Rota & Pesagem</th>
+                <th colSpan={7} className={`${isDark ? 'bg-gradient-to-r from-purple-700 to-purple-600' : 'bg-[#6b21a8]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Impostos & Deduções</th>
+                <th colSpan={5} className={`${isDark ? 'bg-gradient-to-r from-indigo-700 to-indigo-600' : 'bg-[#3730a3]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Frete & Acerto Motorista</th>
+                <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-emerald-700 to-emerald-600' : 'bg-[#15803d]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Adiantamentos & Saldo</th>
+                <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-rose-700 to-rose-600' : 'bg-[#9f1239]'} text-white py-2.5 px-3 shadow-xs drop-shadow-sm font-black`}>Fechamento, CIOT, Quebra & Valor Total</th>
+              </tr>
 
-                return (
-                  <th 
-                    key={col.key}
-                    onClick={() => handleSort(col.key)}
-                    className={`px-1.5 py-1.5 border-r border-slate-300 dark:border-slate-800 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-950/70 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all select-none whitespace-normal text-center align-middle ${stickyClass} ${
-                      isSorted ? 'bg-indigo-500/15 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 ring-1 ring-inset ring-indigo-500/40' : ''
-                    }`}
-                    title={col.label}
-                  >
-                    <div className="flex items-center justify-center gap-1 text-center whitespace-normal leading-[1.15]">
-                      <span className="break-words font-black tracking-tight">{col.label}</span>
-                      {isSorted && (
-                        <span className="text-amber-500 dark:text-amber-400 font-black text-xs shrink-0 drop-shadow-sm">
-                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                );
-              })}
-            </tr>
-
-            {/* Linha Fixa de Totais na Parte Superior da Planilha */}
-            <tr className="bg-slate-950 text-white font-mono text-[11px] font-black border-b border-indigo-500/80 shadow-md select-none">
-              <th className="sticky left-0 z-40 bg-slate-900 px-2 py-2 text-center text-[10px] text-indigo-400 font-black uppercase tracking-wider border-r border-slate-800 w-10 min-w-[40px] max-w-[40px]">
-                ∑ TOTAIS
-              </th>
-              {SPREADSHEET_COLUMNS.map(col => {
-                let totalDisplay = '';
-                if (col.key === 'cteHoras') totalDisplay = `${filteredRows.length} VIAGENS`;
-                else if (col.key === 'pedagio') totalDisplay = formatCurrency(totalPedagio);
-                else if (col.key === 'peso') totalDisplay = `${totalTonnage.toFixed(2)} t`;
-                else if (col.key === 'freteBrutoEmpresa') totalDisplay = formatCurrency(totalFreteEmpresa);
-                else if (col.key === 'icms') totalDisplay = formatCurrency(totalIcms);
-                else if (col.key === 'debitoPisCofins') totalDisplay = formatCurrency(totalDebitoPisCofins);
-                else if (col.key === 'creditoPisCofins') totalDisplay = formatCurrency(totalCreditoPisCofins);
-                else if (col.key === 'patronal4') totalDisplay = formatCurrency(totalPatronal);
-                else if (col.key === 'inssSestSenat') totalDisplay = formatCurrency(totalInssSestSenat);
-                else if (col.key === 'valorTaxaCiot') totalDisplay = formatCurrency(totalValorTaxaCiot);
-                else if (col.key === 'valorFreteMotorista') totalDisplay = formatCurrency(totalFreteMotorista);
-                else if (col.key === 'valorNf') totalDisplay = formatCurrency(totalValorNf);
-                else if (col.key === 'valorAdiantamento') totalDisplay = formatCurrency(totalAdiantamentos);
-                else if (col.key === 'saldo') totalDisplay = formatCurrency(totalSaldos);
-
-                const isStickyId = col.key === 'idEmbarqueSistema';
-                const isStickyCte = col.key === 'cteHoras';
-                const stickyClass = isStickyId 
-                  ? 'sticky left-[40px] z-40 bg-slate-900 w-[100px] min-w-[100px] max-w-[100px]' 
-                  : isStickyCte 
-                  ? 'sticky left-[140px] z-40 bg-slate-900 w-[75px] min-w-[75px] max-w-[75px] border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' 
-                  : '';
-
-                return (
-                  <th
-                    key={`top-total-${col.key}`}
-                    className={`px-2 py-2 border-r border-slate-800 font-black ${stickyClass} ${
-                      col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                    } ${totalDisplay ? 'bg-slate-900 text-amber-300 font-bold' : 'text-slate-600'}`}
-                  >
-                    {totalDisplay || '-'}
-                  </th>
-                );
-              })}
-            </tr>
-
-            {/* Linha 3: Filtros por Coluna Refinados e Compactos */}
-            {showFilterRow && (
-              <tr className="bg-slate-100/90 dark:bg-slate-950 border-b border-slate-300 dark:border-slate-800">
-                <th className="sticky left-0 z-40 bg-slate-100 dark:bg-slate-950 px-1 py-1 text-center border-r border-slate-300 dark:border-slate-800 text-slate-400 w-10 min-w-[40px] max-w-[40px]">
-                  <Filter className="w-3.5 h-3.5 mx-auto text-indigo-500 dark:text-indigo-400" />
-                </th>
+              {/* Linha 2: Cabeçalhos das Colunas com Quebra em 2 Linhas e Altura Compacta */}
+              <tr className={`${isDark ? 'bg-slate-900 text-white border-b-2 border-indigo-500/70' : 'bg-[#004b87] text-white border-b-2 border-black'} font-black uppercase text-[10px] sm:text-[11px] tracking-tight shadow-sm`}>
+                <th className={`sticky left-0 z-40 ${isDark ? 'bg-slate-900 text-slate-300 border-slate-800' : 'bg-[#00386b] text-white border-black/40'} px-1.5 py-2 border-r text-center font-black text-xs w-10 min-w-[40px] max-w-[40px]`}>#</th>
                 {SPREADSHEET_COLUMNS.map(col => {
+                  const isSorted = sortConfig?.key === col.key;
                   const isStickyId = col.key === 'idEmbarqueSistema';
                   const isStickyCte = col.key === 'cteHoras';
                   const stickyClass = isStickyId 
-                    ? 'sticky left-[40px] z-40 bg-slate-100 dark:bg-slate-950 w-[100px] min-w-[100px] max-w-[100px]' 
+                    ? `sticky left-[40px] z-40 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-[#004b87] border-black/40 text-white'} w-[100px] min-w-[100px] max-w-[100px]` 
                     : isStickyCte 
-                    ? 'sticky left-[140px] z-40 bg-slate-100 dark:bg-slate-950 w-[75px] min-w-[75px] max-w-[75px] border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' 
-                    : '';
+                    ? `sticky left-[140px] z-40 ${isDark ? 'bg-slate-900 border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'bg-[#004b87] text-yellow-300 border-r-2 border-black'} w-[75px] min-w-[75px] max-w-[75px]` 
+                    : (col.width || 'min-w-[85px]');
 
                   return (
-                    <th key={`filter-${col.key}`} className={`px-1 py-1 border-r border-slate-300 dark:border-slate-800 ${stickyClass}`}>
-                      <input
-                        type="text"
-                        placeholder="Filtro..."
-                        value={columnFilters[col.key] || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setColumnFilters(prev => {
-                            if (!val) {
-                              const next = { ...prev };
-                              delete next[col.key];
-                              return next;
-                            }
-                            return { ...prev, [col.key]: val };
-                          });
-                        }}
-                        className="w-full px-1 py-0.5 text-[10px] text-center rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-indigo-500 font-normal transition-all shadow-xs"
-                      />
+                    <th 
+                      key={col.key}
+                      onClick={() => handleSort(col.key)}
+                      className={`px-1.5 py-1.5 border-r ${isDark ? 'border-slate-800 hover:bg-indigo-950/70 hover:text-indigo-300' : 'border-black/30 hover:bg-[#00386b] text-white font-black'} cursor-pointer transition-all select-none whitespace-normal text-center align-middle ${stickyClass} ${
+                        isSorted ? (isDark ? 'bg-indigo-900/40 text-indigo-300 ring-1 ring-inset ring-indigo-500/40' : 'bg-[#00386b] text-yellow-300 ring-1 ring-inset ring-yellow-400') : ''
+                      }`}
+                      title={col.label}
+                    >
+                      <div className="flex items-center justify-center gap-1 text-center whitespace-normal leading-[1.15]">
+                        <span className="break-words font-black tracking-tight">{col.label}</span>
+                        {isSorted && (
+                          <span className="text-amber-300 font-black text-xs shrink-0 drop-shadow-sm">
+                            {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </div>
                     </th>
                   );
                 })}
               </tr>
-            )}
-          </thead>
 
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px] bg-white dark:bg-slate-900">
-            {filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={SPREADSHEET_COLUMNS.length + 1} className="px-4 py-16 text-center text-slate-400 font-sans">
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <AlertCircle className="w-8 h-8 text-amber-500 opacity-60" />
-                    <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
-                      Nenhum embarque localizado com os filtros informados.
-                    </span>
-                    {activeColumnFiltersCount > 0 && (
-                      <button
-                        onClick={handleClearAllFilters}
-                        className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 cursor-pointer mt-1"
-                      >
-                        Limpar Filtros
-                      </button>
-                    )}
-                  </div>
-                </td>
+              {/* Linha Fixa de Totais na Parte Superior da Planilha */}
+              <tr className={`${isDark ? 'bg-slate-950 text-white border-indigo-500/80' : 'bg-[#00264d] text-white border-b-2 border-black'} font-mono text-[11px] font-black border-b shadow-md select-none`}>
+                <th className={`sticky left-0 z-40 ${isDark ? 'bg-slate-950 text-indigo-400 border-slate-800' : 'bg-[#001c38] text-amber-300 border-black/40'} px-2 py-2 text-center text-[10px] font-black uppercase tracking-wider border-r w-10 min-w-[40px] max-w-[40px]`}>
+                  ∑ TOTAIS
+                </th>
+                {SPREADSHEET_COLUMNS.map(col => {
+                  let totalDisplay = '';
+                  if (col.key === 'cteHoras') totalDisplay = `${filteredRows.length} VIAGENS`;
+                  else if (col.key === 'pedagio') totalDisplay = formatCurrency(totalPedagio);
+                  else if (col.key === 'peso') totalDisplay = `${totalTonnage.toFixed(2)} t`;
+                  else if (col.key === 'freteBrutoEmpresa') totalDisplay = formatCurrency(totalFreteEmpresa);
+                  else if (col.key === 'icms') totalDisplay = formatCurrency(totalIcms);
+                  else if (col.key === 'debitoPisCofins') totalDisplay = formatCurrency(totalDebitoPisCofins);
+                  else if (col.key === 'creditoPisCofins') totalDisplay = formatCurrency(totalCreditoPisCofins);
+                  else if (col.key === 'patronal4') totalDisplay = formatCurrency(totalPatronal);
+                  else if (col.key === 'inssSestSenat') totalDisplay = formatCurrency(totalInssSestSenat);
+                  else if (col.key === 'valorTaxaCiot') totalDisplay = formatCurrency(totalValorTaxaCiot);
+                  else if (col.key === 'valorFreteMotorista') totalDisplay = formatCurrency(totalFreteMotorista);
+                  else if (col.key === 'valorNf') totalDisplay = formatCurrency(totalValorNf);
+                  else if (col.key === 'valorAdiantamento') totalDisplay = formatCurrency(totalAdiantamentos);
+                  else if (col.key === 'saldo') totalDisplay = formatCurrency(totalSaldos);
+
+                  const isStickyId = col.key === 'idEmbarqueSistema';
+                  const isStickyCte = col.key === 'cteHoras';
+                  const stickyClass = isStickyId 
+                    ? `sticky left-[40px] z-40 ${isDark ? 'bg-slate-950' : 'bg-[#00264d] text-amber-300 border-black/40'} w-[100px] min-w-[100px] max-w-[100px]` 
+                    : isStickyCte 
+                    ? `sticky left-[140px] z-40 ${isDark ? 'bg-slate-950 border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'bg-[#00264d] text-yellow-300 border-r-2 border-black'} w-[75px] min-w-[75px] max-w-[75px]` 
+                    : '';
+
+                  return (
+                    <th
+                      key={`top-total-${col.key}`}
+                      className={`px-2 py-2 border-r ${isDark ? 'border-slate-800' : 'border-black/30'} font-black ${stickyClass} ${
+                        col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
+                      } ${totalDisplay ? (isDark ? 'bg-slate-900 text-amber-300 font-bold' : 'bg-[#001c38] text-amber-300 font-black') : (isDark ? 'text-slate-600' : 'text-slate-400')}`}
+                    >
+                      {totalDisplay || '-'}
+                    </th>
+                  );
+                })}
               </tr>
-            ) : (
-              filteredRows.map((row, idx) => {
-                const rowBg = idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900/60';
-                const rowBgSticky = idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900';
 
-                return (
-                  <tr 
-                    key={row.id} 
-                    className={`transition-colors hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 ${rowBg}`}
-                  >
-                    <td className={`sticky left-0 z-20 ${rowBgSticky} px-2 py-1 text-center text-slate-400 font-sans text-[10px] border-r border-slate-200 dark:border-slate-800 w-10 min-w-[40px] max-w-[40px] select-none`}>
-                      {idx + 1}
-                    </td>
+              {/* Linha 3: Filtros por Coluna Refinados e Compactos */}
+              {showFilterRow && (
+                <tr className={`${isDark ? 'bg-slate-950 border-slate-800' : 'bg-[#005a9e] border-b border-black/40'} border-b`}>
+                  <th className={`sticky left-0 z-40 ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-[#004b87] border-black/40'} px-1 py-1 text-center border-r text-slate-400 w-10 min-w-[40px] max-w-[40px]`}>
+                    <Filter className={`w-3.5 h-3.5 mx-auto ${isDark ? 'text-indigo-400' : 'text-yellow-300'}`} />
+                  </th>
+                  {SPREADSHEET_COLUMNS.map(col => {
+                    const isStickyId = col.key === 'idEmbarqueSistema';
+                    const isStickyCte = col.key === 'cteHoras';
+                    const stickyClass = isStickyId 
+                      ? `sticky left-[40px] z-40 ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-[#005a9e] border-black/40'} w-[100px] min-w-[100px] max-w-[100px]` 
+                      : isStickyCte 
+                      ? `sticky left-[140px] z-40 ${isDark ? 'bg-slate-950 border-r-2 border-indigo-500/80' : 'bg-[#005a9e] border-r-2 border-black'} w-[75px] min-w-[75px] max-w-[75px]` 
+                      : '';
+
+                    return (
+                      <th key={`filter-${col.key}`} className={`px-1 py-1 border-r ${isDark ? 'border-slate-800' : 'border-black/30'} ${stickyClass}`}>
+                        <input
+                          type="text"
+                          placeholder="Filtro..."
+                          value={columnFilters[col.key] || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setColumnFilters(prev => {
+                              if (!val) {
+                                const next = { ...prev };
+                                delete next[col.key];
+                                return next;
+                              }
+                              return { ...prev, [col.key]: val };
+                            });
+                          }}
+                          className={`w-full px-1 py-0.5 text-[10px] text-center rounded border outline-none font-bold transition-all shadow-xs ${
+                            isDark 
+                              ? 'border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus:border-indigo-500' 
+                              : 'border-black/40 bg-white text-black font-bold placeholder:text-slate-400 focus:border-amber-400'
+                          }`}
+                        />
+                      </th>
+                    );
+                  })}
+                </tr>
+              )}
+            </thead>
+
+            <tbody className={`divide-y font-mono text-[11px] ${
+              isDark ? 'divide-slate-800 bg-slate-900 text-slate-100' : 'divide-slate-200 bg-white text-slate-900'
+            }`}>
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={SPREADSHEET_COLUMNS.length + 1} className="px-4 py-16 text-center text-slate-400 font-sans">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <AlertCircle className="w-8 h-8 text-amber-500 opacity-60" />
+                      <span className={`font-semibold text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Nenhum embarque localizado com os filtros informados.
+                      </span>
+                      {activeColumnFiltersCount > 0 && (
+                        <button
+                          onClick={handleClearAllFilters}
+                          className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 cursor-pointer mt-1"
+                        >
+                          Limpar Filtros
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((row, idx) => {
+                  const rowBg = isDark
+                    ? (idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/60')
+                    : (idx % 2 === 0 ? 'bg-[#00a8e5]' : 'bg-[#009ee0]');
+
+                  const rowBgSticky = isDark
+                    ? (idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900')
+                    : (idx % 2 === 0 ? 'bg-[#0096d8]' : 'bg-[#008dcf]');
+
+                  const hoverBg = isDark ? 'hover:bg-indigo-950/40' : 'hover:bg-[#008ecb]/90';
+
+                  return (
+                    <tr 
+                      key={row.id} 
+                      className={`transition-colors ${hoverBg} ${rowBg}`}
+                    >
+                      <td className={`sticky left-0 z-20 ${rowBgSticky} px-2 py-1 text-center font-sans text-[10px] border-r ${borderCol} ${isDark ? 'text-slate-400' : 'text-black font-black'} w-10 min-w-[40px] max-w-[40px] select-none`}>
+                        {idx + 1}
+                      </td>
                     {SPREADSHEET_COLUMNS.map((col, colIndex) => {
                       const raw = (row as any)[col.key];
                       const isSelected = selectedCell?.rowIdx === idx && selectedCell?.colIdx === colIndex;
@@ -1352,7 +1395,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       const isStickyCte = col.key === 'cteHoras';
 
                       const cellFocusRing = isSelected
-                        ? 'ring-2 ring-indigo-500 ring-inset bg-indigo-100/90 dark:bg-indigo-950/90 font-bold z-30'
+                        ? (isDark
+                            ? 'ring-2 ring-indigo-500 ring-inset bg-indigo-950/90 font-bold z-30'
+                            : 'ring-2 ring-yellow-400 ring-inset bg-yellow-300 text-black font-black z-30 shadow-md')
                         : '';
 
                       const stickyClass = isStickyId
@@ -1375,7 +1420,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
                           >
                             <button
                               type="button"
@@ -1393,8 +1438,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               }}
                               className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
                                 row.ordemCarregamentoUrl
-                                  ? 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 hover:underline'
-                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                  ? (isDark ? 'text-emerald-400 hover:text-emerald-300 hover:underline' : 'text-emerald-950 font-black hover:underline bg-emerald-300/40 px-1 py-0.5 rounded border border-emerald-600/50')
+                                  : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
                               }`}
                               title={row.ordemCarregamentoUrl ? `Clique para abrir a Ordem de Carregamento TMS (#${idVal})` : `Embarque #${idVal} (sem OC TMS anexada)`}
                             >
@@ -1413,7 +1458,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)] text-center font-bold font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
+                            className={`px-2 py-1 ${isDark ? 'border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'border-r-2 border-black'} text-center font-bold font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
                           >
                             <button
                               type="button"
@@ -1431,8 +1476,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               }}
                               className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
                                 row.cteFileUrl
-                                  ? 'text-sky-600 dark:text-sky-400 hover:text-sky-500 hover:underline'
-                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                                  ? (isDark ? 'text-sky-400 hover:text-sky-300 hover:underline' : 'text-blue-950 font-black hover:underline bg-white/70 px-1.5 py-0.5 rounded border border-blue-900/40 shadow-xs')
+                                  : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
                               }`}
                               title={row.cteFileUrl ? `Clique para abrir o PDF do CT-e ${cteVal}` : `CT-e: ${cteVal} (sem PDF anexado)`}
                             >
@@ -1451,7 +1496,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[10px] text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             {dhVal}
                           </td>
@@ -1465,27 +1510,33 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         const isTransf = currentVal.includes('TRANSF');
                         const isBoleto = !isPix && !isTransf;
 
-                        const badgeColor = isPix
-                          ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
-                          : isTransf
-                          ? 'border-sky-500/40 text-sky-400 bg-sky-500/10'
-                          : 'border-amber-500/40 text-amber-400 bg-amber-500/10';
+                        const badgeColor = isDark
+                          ? (isPix
+                              ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                              : isTransf
+                              ? 'border-sky-500/40 text-sky-400 bg-sky-500/10'
+                              : 'border-amber-500/40 text-amber-400 bg-amber-500/10')
+                          : (isPix
+                              ? 'border-teal-700 text-white bg-teal-600 shadow-xs'
+                              : isTransf
+                              ? 'border-blue-800 text-white bg-blue-700 shadow-xs'
+                              : 'border-emerald-700 text-white bg-emerald-600 shadow-xs');
 
                         return (
                           <td 
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-1.5 py-1 border-r border-slate-200 dark:border-slate-800 text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-1.5 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             <select
                               value={isPix ? 'PIX' : isTransf ? 'TRANSFERÊNCIA BANCÁRIA' : 'BOLETO'}
                               onChange={(e) => handlePaymentMethodChange(row.id, e.target.value)}
-                              className={`text-[10px] font-black py-0.5 px-1 rounded-lg border outline-none cursor-pointer transition-all shadow-xs ${badgeColor} bg-white dark:bg-slate-900 w-full max-w-[105px] truncate`}
+                              className={`text-[10px] font-black py-0.5 px-1 rounded-lg border outline-none cursor-pointer transition-all shadow-xs ${badgeColor} ${isDark ? 'bg-slate-900 text-slate-100' : (isPix ? 'bg-teal-600 text-white' : isTransf ? 'bg-blue-700 text-white' : 'bg-emerald-600 text-white')} w-full max-w-[105px] truncate`}
                             >
-                              <option value="BOLETO" className="bg-slate-900 text-slate-100 font-bold">Boleto</option>
-                              <option value="PIX" className="bg-slate-900 text-slate-100 font-bold">Pix</option>
-                              <option value="TRANSFERÊNCIA BANCÁRIA" className="bg-slate-900 text-slate-100 font-bold">Transf.</option>
+                              <option value="BOLETO" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-emerald-700 text-white font-bold"}>Boleto</option>
+                              <option value="PIX" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-teal-700 text-white font-bold"}>Pix</option>
+                              <option value="TRANSFERÊNCIA BANCÁRIA" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-blue-800 text-white font-bold"}>Transf.</option>
                             </select>
                           </td>
                         );
@@ -1503,15 +1554,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={`${rotaDireta ? rotaDireta + ' • ' : ''}${kmVal}`}
                           >
                             <div className="flex flex-col items-center justify-center leading-tight">
-                              <span className="font-black text-amber-500 text-[11px] whitespace-nowrap">
+                              <span className={`font-black ${isDark ? 'text-amber-500' : 'text-black'} text-[11px] whitespace-nowrap`}>
                                 {kmVal}
                               </span>
                               {rotaDireta && rotaDireta !== kmVal && (
-                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate max-w-[170px]" title={rotaDireta}>
+                                <span className={`text-[9px] ${isDark ? 'text-slate-500' : 'text-slate-900 font-semibold'} font-medium truncate max-w-[170px]`} title={rotaDireta}>
                                   {rotaDireta}
                                 </span>
                               )}
@@ -1530,15 +1581,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={modelo ? `${modelo} • ${eixoVal}` : eixoVal}
                           >
                             <div className="flex flex-col items-center justify-center leading-tight">
-                              <span className="font-bold text-slate-900 dark:text-slate-100 text-[11px] whitespace-nowrap">
+                              <span className={`font-bold ${isDark ? 'text-slate-100' : 'text-black font-black'} text-[11px] whitespace-nowrap`}>
                                 {eixoVal}
                               </span>
                               {modelo && (
-                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate max-w-[95px]" title={modelo}>
+                                <span className={`text-[9px] ${isDark ? 'text-slate-500' : 'text-slate-900 font-semibold'} font-medium truncate max-w-[95px]`} title={modelo}>
                                   {modelo}
                                 </span>
                               )}
@@ -1568,17 +1619,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={hasCiotCode 
                               ? `Nº CIOT: ${finalCiot}${calculatedCiotFee > 0 ? ` • Taxa CIOT 0,20%: ${formatCurrency(calculatedCiotFee)}` : ''}` 
                               : (calculatedCiotFee > 0 ? `Taxa CIOT (0,20%): ${formatCurrency(calculatedCiotFee)}` : 'CIOT não informado')}
                           >
                             {hasCiotCode ? (
-                              <span className="font-mono font-bold text-rose-700 dark:text-rose-300 text-[11px] tracking-tight bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800/60 inline-block">
+                              <span className={`font-mono font-bold ${isDark ? 'text-rose-300 bg-rose-950/40 border-rose-800/60' : 'text-rose-950 bg-rose-200 border-rose-400 font-black shadow-xs'} text-[11px] tracking-tight px-1.5 py-0.5 rounded border inline-block`}>
                                 {finalCiot}
                               </span>
                             ) : (
-                              <span className="text-slate-400 dark:text-slate-500">
+                              <span className={isDark ? "text-slate-500" : "text-slate-900 font-bold"}>
                                 -
                               </span>
                             )}
@@ -1605,10 +1656,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={isNum ? `Saldo Total Lançado: ${displayVal} ton | Carregado: ${carregado.toLocaleString('pt-BR')} ton | Saldo Restante: ${saldoRestante.toLocaleString('pt-BR')} ton` : 'Saldo do pedido'}
                           >
-                            <span className={isNum ? 'font-bold text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={isNum ? (isDark ? 'font-bold text-cyan-400' : 'font-black text-black') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {displayVal}
                             </span>
                           </td>
@@ -1623,10 +1674,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={nfVal !== '-' ? `Nota Fiscal nº ${nfVal}` : 'Sem NF-e informada'}
                           >
-                            <span className={nfVal !== '-' ? 'font-bold text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={nfVal !== '-' ? (isDark ? 'font-bold text-indigo-400' : 'font-black text-blue-950 bg-white/70 px-1 py-0.5 rounded border border-blue-900/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {nfVal}
                             </span>
                           </td>
@@ -1642,10 +1693,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-right font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-right font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={valNum > 0 ? `Valor da NF: ${formatCurrency(valNum)}` : 'Sem NF-e informada'}
                           >
-                            <span className={valNum > 0 ? 'font-bold text-slate-900 dark:text-slate-100 text-[11px]' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={valNum > 0 ? `font-bold ${isDark ? 'text-slate-100' : 'text-black font-black'} text-[11px]` : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {displayVal}
                             </span>
                           </td>
@@ -1661,24 +1712,36 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         const isPresumido = regimeVal.includes('PRESUMIDO');
                         const isMei = regimeVal === 'MEI';
 
-                        const badgeColor = isPf
-                          ? 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10'
-                          : isSimples
-                          ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
-                          : isReal
-                          ? 'border-purple-500/40 text-purple-400 bg-purple-500/10'
-                          : isPresumido
-                          ? 'border-sky-500/40 text-sky-400 bg-sky-500/10'
-                          : isMei
-                          ? 'border-teal-500/40 text-teal-400 bg-teal-500/10'
-                          : 'border-slate-500/40 text-slate-300 bg-slate-500/10';
+                        const badgeColor = isDark
+                          ? (isPf
+                              ? 'border-indigo-500/40 text-indigo-400 bg-indigo-500/10'
+                              : isSimples
+                              ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                              : isReal
+                              ? 'border-purple-500/40 text-purple-400 bg-purple-500/10'
+                              : isPresumido
+                              ? 'border-sky-500/40 text-sky-400 bg-sky-500/10'
+                              : isMei
+                              ? 'border-teal-500/40 text-teal-400 bg-teal-500/10'
+                              : 'border-slate-500/40 text-slate-300 bg-slate-500/10')
+                          : (isPf
+                              ? 'border-blue-600 text-blue-950 bg-blue-100 font-black shadow-xs'
+                              : isSimples
+                              ? 'border-emerald-600 text-emerald-950 bg-emerald-100 font-black shadow-xs'
+                              : isReal
+                              ? 'border-purple-600 text-purple-950 bg-purple-100 font-black shadow-xs'
+                              : isPresumido
+                              ? 'border-sky-600 text-sky-950 bg-sky-100 font-black shadow-xs'
+                              : isMei
+                              ? 'border-teal-600 text-teal-950 bg-teal-100 font-black shadow-xs'
+                              : 'border-slate-500 text-slate-950 bg-slate-100 font-black shadow-xs');
 
                         return (
                           <td 
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={`Enquadramento ANTT / Regime Tributário: ${regimeVal}`}
                           >
                             <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider ${badgeColor}`}>
@@ -1696,10 +1759,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={atuaVal !== '-' ? `Código ATUA: ${atuaVal}` : 'Sem código ATUA informado'}
                           >
-                            <span className={atuaVal !== '-' ? 'font-bold text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={atuaVal !== '-' ? (isDark ? 'font-bold text-sky-400' : 'font-black text-black') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {atuaVal}
                             </span>
                           </td>
@@ -1714,10 +1777,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[10px] text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={dhVal !== '-' ? `Adiantamento liberado em: ${dhVal}` : 'Adiantamento pendente de liberação'}
                           >
-                            <span className={dhVal !== '-' ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={dhVal !== '-' ? (isDark ? 'font-semibold text-emerald-400' : 'font-black text-emerald-950 bg-emerald-300/60 px-1 py-0.5 rounded border border-emerald-600/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {dhVal}
                             </span>
                           </td>
@@ -1732,10 +1795,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[10px] text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={dhVal !== '-' ? `Saldo liberado / finalizado em: ${dhVal}` : 'Saldo pendente de liberação'}
                           >
-                            <span className={dhVal !== '-' ? 'font-semibold text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={dhVal !== '-' ? (isDark ? 'font-semibold text-purple-400' : 'font-black text-purple-950 bg-purple-300/60 px-1 py-0.5 rounded border border-purple-600/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {dhVal}
                             </span>
                           </td>
@@ -1750,7 +1813,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             <button
                               type="button"
@@ -1768,8 +1831,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               }}
                               className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
                                 row.ordemCarregamentoUrl
-                                  ? 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 hover:underline'
-                                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                                  ? (isDark ? 'text-indigo-400 hover:text-indigo-300 hover:underline' : 'text-black font-black bg-white/70 hover:bg-white px-1.5 py-0.5 rounded border border-black/30 shadow-xs')
+                                  : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
                               }`}
                               title={row.ordemCarregamentoUrl ? `Clique para abrir a Ordem de Carregamento TMS (${ocVal})` : `${ocVal} (sem OC TMS anexada)`}
                             >
@@ -1793,7 +1856,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key} 
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-1.5 py-1 border-r border-slate-200 dark:border-slate-800 text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-1.5 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             <button
                               type="button"
@@ -1813,8 +1876,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               }}
                               className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
                                 isSim 
-                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 shadow-xs' 
-                                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                  ? (isDark ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 shadow-xs' : 'bg-emerald-600 border-emerald-700 text-white font-black hover:bg-emerald-700 shadow-xs')
+                                  : (isDark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white/70 border-black/30 text-slate-900 font-bold hover:bg-white')
                               }`}
                               title={ticketUrl ? "Clique para abrir o Comprovante de Descarga anexado" : "Nenhum comprovante de descarga anexado"}
                             >
@@ -1833,10 +1896,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 text-right font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} text-right font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={feeVal > 0 ? `Taxa CIOT (0,20%): ${formatCurrency(feeVal)}` : 'Sem taxa CIOT calculada'}
                           >
-                            <span className={feeVal > 0 ? 'font-bold text-purple-700 dark:text-purple-300' : 'text-slate-400 dark:text-slate-500'}>
+                            <span className={feeVal > 0 ? (isDark ? 'font-bold text-purple-400' : 'font-black text-red-700') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
                               {feeVal > 0 ? formatCurrency(feeVal) : '-'}
                             </span>
                           </td>
@@ -1853,16 +1916,104 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         display = raw > 0 ? raw.toFixed(2) : '-';
                       }
 
+                      // Conteúdo formatado com base na paleta original do Excel em Modo Claro
+                      let cellContent: React.ReactNode = display;
+
+                      if (!isDark) {
+                        const normStr = String(raw || '').toUpperCase().trim();
+                        const isTranscunha = normStr.includes('TRANSCUNHA');
+                        const isRafael = normStr.includes('AGENCIA') || normStr.includes('RAFAEL');
+                        const isFilialSp = normStr.includes('FILIAL SP');
+
+                        if (isTranscunha) {
+                          cellContent = (
+                            <span className="bg-[#005c00] text-yellow-300 font-black px-1.5 py-0.5 rounded inline-block shadow-xs border border-green-800">
+                              {display}
+                            </span>
+                          );
+                        } else if (isRafael) {
+                          cellContent = (
+                            <span className="bg-[#e2d308] text-black font-black px-1.5 py-0.5 rounded inline-block shadow-xs border border-yellow-600">
+                              {display}
+                            </span>
+                          );
+                        } else if (isFilialSp) {
+                          cellContent = (
+                            <span className="bg-[#ea580c] text-white font-black px-1.5 py-0.5 rounded inline-block shadow-xs border border-orange-700">
+                              {display}
+                            </span>
+                          );
+                        } else if (col.key === 'jaFaturado') {
+                          cellContent = normStr === 'SIM' ? (
+                            <span className="bg-[#ffff00] text-black font-black px-2 py-0.5 rounded border border-yellow-600 shadow-xs inline-block">
+                              SIM
+                            </span>
+                          ) : (
+                            <span className="text-red-700 font-black">NÃO</span>
+                          );
+                        } else if (col.key === 'statusRecebimento') {
+                          cellContent = normStr === 'RECEBIDO' ? (
+                            <span className="bg-[#d946ef] text-white font-black px-1.5 py-0.5 rounded shadow-xs inline-block">
+                              RECEBIDO
+                            </span>
+                          ) : (
+                            <span className="bg-[#f59e0b] text-black font-black px-1.5 py-0.5 rounded shadow-xs inline-block">
+                              A RECEBER
+                            </span>
+                          );
+                        } else if (col.key === 'matrizFilial') {
+                          cellContent = normStr === 'MATRIZ' ? (
+                            <span className="font-black italic underline text-black">MATRIZ</span>
+                          ) : (
+                            <span className="font-black italic underline text-blue-950">FILIAL</span>
+                          );
+                        } else if (col.key === 'cadastro' || col.key === 'liberacao') {
+                          cellContent = normStr === 'LIBERADO' ? (
+                            <span className="text-emerald-950 font-black italic underline bg-emerald-200/70 px-1.5 py-0.5 rounded border border-emerald-500/40 shadow-xs">
+                              LIBERADO
+                            </span>
+                          ) : (
+                            <span className="text-red-700 font-black">{display}</span>
+                          );
+                        } else if (['icms', 'debitoPisCofins', 'creditoPisCofins', 'patronal4', 'inssSestSenat', 'totalQuebra', 'valorQuebraCiot'].includes(col.key as string)) {
+                          cellContent = (
+                            <span className="text-red-700 font-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.4)]">
+                              {display}
+                            </span>
+                          );
+                        } else if (col.key === 'freteBrutoEmpresa' || col.key === 'valorFreteMotorista') {
+                          const numV = typeof raw === 'number' ? raw : 0;
+                          cellContent = numV > 8000 ? (
+                            <span className="text-yellow-300 font-black drop-shadow-[0_1px_1px_rgba(0,0,0,0.95)] bg-slate-900/50 px-1.5 py-0.5 rounded inline-block">
+                              {display}
+                            </span>
+                          ) : (
+                            <span className="text-black font-black">{display}</span>
+                          );
+                        } else if (display.startsWith('-')) {
+                          cellContent = <span className="text-red-700 font-black">{display}</span>;
+                        } else {
+                          cellContent = <span className="text-black font-bold">{display}</span>;
+                        }
+                      } else {
+                        // Dark mode
+                        cellContent = (
+                          <span className={col.type === 'currency' ? 'text-amber-300 font-medium' : ''}>
+                            {display}
+                          </span>
+                        );
+                      }
+
                       return (
                         <td 
                           key={col.key}
                           data-cell-coord={cellCoord}
                           onClick={handleCellClick}
-                          className={`px-2 py-1 border-r border-slate-200 dark:border-slate-800 cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''} ${
+                          className={`px-2 py-1 border-r ${borderCol} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''} ${
                             col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
                           }`}
                         >
-                          {display}
+                          {cellContent}
                         </td>
                       );
                     })}
@@ -1875,15 +2026,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       </div>
 
       {/* Rodapé Informativo (Rolagem contínua sem quebra de página) */}
-      <div className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shrink-0 select-none text-xs">
+      <div className={`${isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-[#002b52] border-t-2 border-black text-white'} px-4 py-2 flex flex-wrap items-center justify-between gap-3 shrink-0 select-none text-xs`}>
         <div className="flex items-center gap-2.5">
-          <span className="text-slate-500">
-            Mostrando todos os <span className="font-bold text-slate-900 dark:text-white">{filteredRows.length}</span> embarques
+          <span className={isDark ? 'text-slate-400' : 'text-slate-100 font-bold'}>
+            Mostrando todos os <span className={`font-black ${isDark ? 'text-white' : 'text-yellow-300'}`}>{filteredRows.length}</span> embarques
             {filteredRows.length !== mappedRows.length && (
-              <span className="text-slate-400 font-normal"> (de {mappedRows.length} no total)</span>
+              <span className={isDark ? 'text-slate-500 font-normal' : 'text-slate-300 font-normal'}> (de {mappedRows.length} no total)</span>
             )}
           </span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+            isDark ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' : 'bg-white/20 border-white/40 text-white'
+          }`}>
             {periodFilter === 'week' && '📆 Semana Atual'}
             {periodFilter === 'today' && '📅 Hoje'}
             {periodFilter === 'current_cycle' && '⚡ Ciclo de Fechamento'}
@@ -1894,13 +2047,14 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           </span>
         </div>
 
-        <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+        <div className={`text-[11px] font-medium flex items-center gap-1.5 ${isDark ? 'text-slate-400' : 'text-slate-200'}`}>
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           Rolagem contínua • Sem quebra de página
         </div>
       </div>
     </div>
   );
+  };
 
   return (
     <div className="space-y-3">
@@ -1945,6 +2099,21 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* BOTÃO MODO CLARO / ESCURO INDEPENDENTE (MODO NORMAL) */}
+            <button
+              type="button"
+              onClick={toggleSheetTheme}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border shadow-xs ${
+                isSheetDark
+                  ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-slate-700 hover:border-amber-400/50 shadow-slate-900/30'
+                  : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300 hover:border-indigo-400'
+              }`}
+              title={isSheetDark ? "Alternar planilha para Modo Claro (Paleta Original do Excel)" : "Alternar planilha para Modo Escuro (Navy)"}
+            >
+              {isSheetDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
+              <span>{isSheetDark ? "Modo Claro (Excel)" : "Modo Escuro (Navy)"}</span>
+            </button>
+
             <button
               onClick={() => {
                 setIsWindowOpen(true);
@@ -2274,36 +2443,68 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       </div>
 
       {/* ÁREA DA TABELA NO MODO NORMAL */}
-      <div className="h-[680px] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden bg-white dark:bg-slate-900">
+      <div className={`h-[680px] flex flex-col rounded-2xl border shadow-sm overflow-hidden ${
+        isSheetDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'
+      }`}>
         {renderTable()}
       </div>
 
       {/* MODAL MAXIMIZADO / FULLSCREEN (PORTAL) */}
       {isWindowOpen && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[999999] bg-slate-950/80 backdrop-blur-sm flex p-0">
-          <div className="w-screen h-screen bg-slate-900 text-white flex flex-col overflow-hidden">
-            <div className="px-4 py-2.5 bg-slate-950 border-b border-indigo-500/40 flex items-center justify-between gap-4 select-none shrink-0">
+          <div className={`w-screen h-screen flex flex-col overflow-hidden ${
+            isSheetDark ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-900'
+          }`}>
+            <div className={`px-4 py-2.5 border-b flex items-center justify-between gap-4 select-none shrink-0 ${
+              isSheetDark 
+                ? 'bg-slate-950 border-indigo-500/40 text-white' 
+                : 'bg-white border-slate-200 text-slate-900 shadow-xs'
+            }`}>
               <div className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                 <span className="font-bold text-sm">Controladoria & Planilha de Embarques (Tela Cheia)</span>
-                <span className="text-xs text-slate-400">({filteredRows.length} embarques)</span>
+                <span className={`text-xs ${isSheetDark ? 'text-slate-400' : 'text-slate-500'}`}>({filteredRows.length} embarques)</span>
+                <span className={`ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  isSheetDark 
+                    ? 'bg-slate-800 border-slate-700 text-slate-300' 
+                    : 'bg-[#002b52] border-black/40 text-yellow-300'
+                }`}>
+                  {isSheetDark ? '🌙 Modo Escuro' : '📊 Paleta Excel'}
+                </span>
               </div>
               <div className="flex items-center gap-2">
+                {/* BOTÃO MODO CLARO / ESCURO INDEPENDENTE (TELA CHEIA) */}
+                <button
+                  type="button"
+                  onClick={toggleSheetTheme}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-xs ${
+                    isSheetDark
+                      ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-slate-700 hover:border-amber-400/50'
+                      : 'bg-[#002b52] hover:bg-[#001f3d] text-white border-black/50 hover:border-yellow-400'
+                  }`}
+                  title={isSheetDark ? "Alternar planilha para Modo Claro (Paleta Original do Excel)" : "Alternar planilha para Modo Escuro (Navy)"}
+                >
+                  {isSheetDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-400" />}
+                  <span>{isSheetDark ? "Modo Claro (Excel)" : "Modo Escuro (Navy)"}</span>
+                </button>
+
                 <button
                   onClick={handleExportExcel}
-                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
                 >
                   <Download className="w-3.5 h-3.5" /> Exportar
                 </button>
                 <button
                   onClick={() => setIsWindowOpen(false)}
-                  className="flex items-center gap-1 px-3 py-1 bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  className="flex items-center gap-1 px-3 py-1 bg-rose-600/20 hover:bg-rose-600 text-rose-500 hover:text-white border border-rose-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" /> Fechar
                 </button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-white dark:bg-slate-900">
+            <div className={`flex-1 min-h-0 flex flex-col relative overflow-hidden ${
+              isSheetDark ? 'bg-slate-900' : 'bg-[#00a8e5]'
+            }`}>
               {renderTable()}
             </div>
           </div>

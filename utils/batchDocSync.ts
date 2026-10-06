@@ -86,7 +86,8 @@ export async function syncSingleShipmentDocuments(
             updated.advanceValue = extracted.financeiro.valorAdiantamento;
             hasChanges = true;
           }
-          if (extracted.financeiro?.valorPedagio !== undefined && shipment.tollValue !== extracted.financeiro.valorPedagio) {
+          const tollExplicitlyZero = shipment.tollValue !== undefined && shipment.tollValue !== null && Number(shipment.tollValue) === 0;
+          if (extracted.financeiro?.valorPedagio !== undefined && shipment.tollValue !== extracted.financeiro.valorPedagio && !(tollExplicitlyZero && extracted.financeiro.valorPedagio > 0)) {
             updated.tollValue = extracted.financeiro.valorPedagio;
             hasChanges = true;
           }

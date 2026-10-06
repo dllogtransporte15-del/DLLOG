@@ -20,7 +20,7 @@ import RealProfitReport from '../components/reports/RealProfitReport';
 import OthersReport from '../components/reports/OthersReport';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { getAllToolStays, getToolStays, StayRecord } from '../utils/toolStorage';
-import { getShipmentCte, getShipmentEffectiveDate, getShipmentCteEmissionDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd } from '../utils';
+import { getShipmentCte, getShipmentEffectiveDate, getShipmentCteEmissionDate, getStayEffectiveDate, isCteApplicableForStatus, isStayForShipment, parseDateToYmd, hasCteAttached } from '../utils';
 import { calculateShipmentExpenses } from '../utils/operationalExpensesCalculator';
 
 interface ReportsPageProps {
@@ -132,24 +132,31 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     return getShipmentEffectiveDate(s) || s.scheduledDate;
   };
 
-  // Critério inteligente: considera CTE emission OU data agendada no período.
-  // Garante que embarques cujo CT-e foi emitido na virada do mês (ex: 30/09 para
-  // uma viagem de 01/10) sejam incluídos corretamente no relatório de outubro,
-  // alinhando com o filtro inteligente da Planilha de Controladoria.
+  // O faturamento e os relatórios de embarques com CT-e emitido devem SEMPRE
+  // ser contabilizados estritamente para o dia/período em que o CT-e foi emitido.
+  // Embarques agendados na virada de mês (ex: 30/09) cujo CT-e foi emitido em 01/10
+  // pertencem exclusivamente a outubro (Mês 10), nunca a setembro (Mês 9).
   const isShipmentInPeriod = (s: Shipment, start: string, end: string): boolean => {
-    const cteDate = getShipmentCteEmissionDate(s);
-    const cteDateYmd = cteDate ? parseDateToYmd(cteDate) : null;
-    const scheduledYmd = s.scheduledDate ? parseDateToYmd(s.scheduledDate) ?? s.scheduledDate.substring(0, 10) : null;
-
     const inRange = (d: string | null) => d != null && d >= start && d <= end;
 
-    // Se tem CT-e: inclui se emissão OU agendamento estiver no período
+    const cteDate = getShipmentCteEmissionDate(s);
+    const cteDateYmd = cteDate ? parseDateToYmd(cteDate) : null;
+
+    // Se possui CT-e com data de emissão: contabiliza SEMPRE e EXCLUSIVAMENTE pela data de emissão do CT-e
     if (cteDateYmd) {
-      return inRange(cteDateYmd) || inRange(scheduledYmd);
+      return inRange(cteDateYmd);
     }
-    // Sem CT-e: usa a data efetiva normal (com fallback para scheduledDate)
+
+    // Se possui CT-e anexado/emitido mas sem data de emissão específica extraída,
+    // utiliza a data efetiva vinculada ao CT-e / histórico de emissão
+    if (hasCteAttached(s)) {
+      const effDate = getEffectiveDate(s);
+      return Boolean(effDate && inRange(effDate));
+    }
+
+    // Sem CT-e (embarques programados / aguardando): contabiliza pela data efetiva/agendada
     const effDate = getEffectiveDate(s);
-    return Boolean(effDate && effDate >= start && effDate <= end);
+    return Boolean(effDate && inRange(effDate));
   };
 
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);

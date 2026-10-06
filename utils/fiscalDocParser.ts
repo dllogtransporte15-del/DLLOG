@@ -236,13 +236,15 @@ function getXmlTagValue(doc: Document | Element, ...tagNames: string[]): string 
 
 export function formatFiscalDateTime(val: string | undefined): string | undefined {
   if (!val) return undefined;
-  const matchIso = val.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+  const matchIso = val.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T\s](\d{2}):(\d{2})/);
   if (matchIso) {
-    return `${matchIso[3]}/${matchIso[2]}/${matchIso[1]} ${matchIso[4]}:${matchIso[5]}`;
+    return `${matchIso[3].padStart(2, '0')}/${matchIso[2].padStart(2, '0')}/${matchIso[1]} ${matchIso[4]}:${matchIso[5]}`;
   }
-  const matchPt = val.match(/(\d{2})\/(\d{2})\/(\d{4})\s*(\d{2}:\d{2})?/);
+  const matchPt = val.match(/(?:^|\b)(\d{1,2})\/(\d{1,2})\/(\d{4})\s*(\d{2}:\d{2})?/);
   if (matchPt) {
-    return matchPt[4] ? `${matchPt[1]}/${matchPt[2]}/${matchPt[3]} ${matchPt[4]}` : `${matchPt[1]}/${matchPt[2]}/${matchPt[3]}`;
+    const d = matchPt[1].padStart(2, '0');
+    const m = matchPt[2].padStart(2, '0');
+    return matchPt[4] ? `${d}/${m}/${matchPt[3]} ${matchPt[4]}` : `${d}/${m}/${matchPt[3]}`;
   }
   return val;
 }
@@ -384,11 +386,11 @@ function matchPatterns(text: string, patterns: RegExp[]): string | undefined {
 
 function extractCteEmissionDateFromText(text: string): string | undefined {
   const patterns = [
-    /DATA\s*(?:E|\/)?\s*HORA\s*(?:DA|DE)?\s*EMISS[ÃA]O[^\d]*(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
-    /EMISS[ÃA]O[^\d]*(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
-    /DATA\s*(?:DA|DE)?\s*EMISS[ÃA]O[^\d]*(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
-    /EMISS[ÃA]O[^\d]*(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?)/i,
-    /(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/,
+    /DATA\s*(?:E|\/)?\s*HORA\s*(?:DA|DE)?\s*EMISS[ÃA]O[^\d]*(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
+    /EMISS[ÃA]O[^\d]*(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
+    /DATA\s*(?:DA|DE)?\s*EMISS[ÃA]O[^\d]*(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
+    /EMISS[ÃA]O[^\d]*(\d{4}-\d{1,2}-\d{1,2}[T\s]\d{2}:\d{2}(?::\d{2})?)/i,
+    /(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/,
   ];
   for (const re of patterns) {
     const m = text.match(re);
@@ -416,18 +418,38 @@ export function extractFreightContractValues(text: string): {
   if (!text) return res;
 
   // 1. Vale-Pedágio / Pedágio (Prefixo e Sufixo, ex: 'R$ 358,20 pedágio', 'VALE-PEDÁGIO R$ 68,11')
+  // 1.1 Cláusulas explícitas de ausência de pedágio ("SEM PEDÁGIO", "PEDÁGIO: ISENTO", "VALE-PEDÁGIO: NÃO HÁ", "PEDÁGIO R$ 0,00")
+  const tollExemptPatterns = [
+    /\b(?:SEM|N[ÃA]O\s+H[ÁA]|N[ÃA]O\s+POSSUI|N[ÃA]O\s+INCLUS[OA]|ISENT[OA]\s+DE|DISPENSAD[OA])\s+(?:DE\s+)?(?:VALE[- ]?)?PED[ÁA]GIO/i,
+    /\b(?:VALE[- ]?)?PED[ÁA]GIO\s*[:\-–]?\s*(?:ISENT[OA]|N[ÃA]O\s+H[ÁA]|N[ÃA]O\s+POSSUI|N[ÃA]O\s+INCLUS[OA]|DISPENSAD[OA]|N[ÃA]O\b|INEXISTENTE|NENHUM)/i,
+    /\b(?:VALE[- ]?)?PED[ÁA]GIO[^\d\n]{0,15}?R?\$?\s*0+,00\b/i,
+  ];
+  const isTollExempt = tollExemptPatterns.some(re => re.test(text));
+
+  // Rótulos de outros campos financeiros: se aparecerem entre a palavra "pedágio" e o valor,
+  // o valor capturado pertence a outro campo (frete total, adiantamento, saldo etc.)
+  const foreignFinancialLabel = /(FRETE|TOTAL|ADIANTAMENTO|SALDO|L[ÍI]QUIDO|MERCADORIA|NOTA|NF-?E|ICMS|INSS|SEST|SENAT|IRRF|PRESTA[ÇC][ÃA]O|RECEBER|PARCELA|CARGA|SEGURO)/i;
+
   const tollPatterns = [
-    /VALE[- ]?PED[ÁA]GIO[^\d\n]*?R?\$\s*([\d.,]+)/i,
-    /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO[^\d\n]*?R?\$\s*([\d.,]+)/i,
-    /\bPED[ÁA]GIO[^\d\n]*?R?\$\s*([\d.,]+)/i,
+    /VALE[- ]?PED[ÁA]GIO([^\d\n]{0,30}?)R?\$\s*([\d.,]+)/i,
+    /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO([^\d\n]{0,30}?)R?\$\s*([\d.,]+)/i,
+    /\bPED[ÁA]GIO([^\d\n]{0,30}?)R?\$\s*([\d.,]+)/i,
     /R?\$\s*([\d.,]+)\s*(?:referente\s+(?:a[o]?\s+)?)?ped[áa]gio/i,
     /(?:[\d.]+\s+)?R?\$\s*([\d.,]+)\s*ped[áa]gio/i,
     /R?\$\s*([\d.,]+)\s*(?:em\s+tag|de\s+tag|tag\s+ped[áa]gio|vale[- ]?ped[áa]gio)/i,
   ];
-  for (const re of tollPatterns) {
-    const m = text.match(re);
-    if (m && m[1]) {
-      const val = parseCurrencyPtBr(m[1]);
+  if (isTollExempt) {
+    res.tollValue = 0;
+  } else {
+    for (const re of tollPatterns) {
+      const m = text.match(re);
+      if (!m) continue;
+      // Padrões prefixados têm 2 grupos (gap, valor); padrões sufixados têm 1 grupo (valor)
+      const gap = m.length > 2 ? (m[1] || '') : '';
+      const rawVal = m.length > 2 ? m[2] : m[1];
+      if (!rawVal) continue;
+      if (gap && foreignFinancialLabel.test(gap)) continue;
+      const val = parseCurrencyPtBr(rawVal);
       if (val !== undefined && val >= 0) {
         res.tollValue = val;
         break;
@@ -496,6 +518,14 @@ export function extractFreightContractValues(text: string): {
     const pct = Math.round((res.advanceValue / res.totalFreightValue) * 100);
     if (pct > 0 && pct <= 100) {
       res.advancePercentage = pct;
+    }
+  }
+
+  // 5. Falso positivo: pedágio idêntico ao frete total ou ao adiantamento foi capturado de outro campo
+  if (res.tollValue !== undefined && res.tollValue > 0) {
+    const sameAs = (v?: number) => v !== undefined && Math.abs(v - (res.tollValue as number)) < 0.01;
+    if (sameAs(res.totalFreightValue) || sameAs(res.advanceValue)) {
+      delete res.tollValue;
     }
   }
 

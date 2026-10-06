@@ -30,6 +30,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import { getShipmentEffectiveDate, parseDateToYmd } from '../../utils';
 
 export interface FirstResultTabProps {
   data: FirstLevelFinancialResult;
@@ -180,7 +181,7 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
     if (quickFilter === 'dia' && selectedDate) {
       const targetDate = selectedDate;
       const matched = valid.filter(s => {
-        const sDate = s.scheduledDate || (s.cteEmissionDate ? s.cteEmissionDate.split(' ')[0] : s.createdAt?.split('T')[0]);
+        const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
         return sDate === targetDate;
       });
       // Se houver registros específicos do dia retorna eles, caso contrário traz o conjunto ativo recente
@@ -193,15 +194,15 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
       const maxDate = today.toISOString().split('T')[0];
 
       const matched = valid.filter(s => {
-        const sDate = s.scheduledDate || (s.cteEmissionDate ? s.cteEmissionDate.split(' ')[0] : s.createdAt?.split('T')[0]);
-        return sDate >= minDate && sDate <= maxDate;
+        const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
+        return Boolean(sDate && sDate >= minDate && sDate <= maxDate);
       });
       if (matched.length > 0) return matched;
     } else if (quickFilter === 'mes') {
       const targetMonth = selectedDate ? selectedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
       const matched = valid.filter(s => {
-        const sDate = s.scheduledDate || (s.cteEmissionDate ? s.cteEmissionDate.split(' ')[0] : s.createdAt?.split('T')[0]);
-        return sDate && sDate.startsWith(targetMonth);
+        const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
+        return Boolean(sDate && sDate.startsWith(targetMonth));
       });
       if (matched.length > 0) return matched;
     }

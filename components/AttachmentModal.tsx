@@ -461,7 +461,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         }
         if (Object.keys(urlMap).length > 0) {
           extractFiscalDocNumbersFromUrls(urlMap).then(extracted => {
-            if (extracted.tollValue !== undefined && extracted.tollValue > 0 && (!shipment.tollValue || shipment.tollValue === 0)) {
+            if (extracted.tollValue !== undefined && extracted.tollValue > 0 && (shipment.tollValue === undefined || shipment.tollValue === null)) {
               setTollValue(extracted.tollValue);
             }
             if (extracted.advanceValue !== undefined && extracted.advanceValue > 0 && !shipment.advanceValue) {

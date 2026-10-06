@@ -319,22 +319,57 @@ export function getShipmentCiotNumber(shipment?: { id?: string; ciot?: string; c
 
 export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any } | null): string | null {
   if (!shipment) return null;
-  if (shipment.status && !isCteApplicableForStatus(shipment.status)) return null;
 
-  if (shipment.cteEmissionDate) return shipment.cteEmissionDate;
-  if (shipment.documents?.cte_emission_date) return String(shipment.documents.cte_emission_date);
+  if (shipment.cteEmissionDate && typeof shipment.cteEmissionDate === 'string' && shipment.cteEmissionDate.trim() !== '' && shipment.cteEmissionDate.trim() !== '-') {
+    return shipment.cteEmissionDate.trim();
+  }
 
-  const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
-  if (Array.isArray(cteDocs) && cteDocs.length > 0) {
-    for (const item of cteDocs) {
-      if (typeof item === 'string') {
-        const matchPt = item.match(/(\d{2})[-_.](\d{2})[-_.](\d{4})(?:[-_.\s]*(\d{2})[:_.](\d{2}))?/);
-        if (matchPt) {
-          return matchPt[4] ? `${matchPt[1]}/${matchPt[2]}/${matchPt[3]} ${matchPt[4]}:${matchPt[5]}` : `${matchPt[1]}/${matchPt[2]}/${matchPt[3]}`;
-        }
-        const matchIso = item.match(/(\d{4})[-_.](\d{2})[-_.](\d{2})(?:[T\s_-]*(\d{2})[:_.](\d{2}))?/);
-        if (matchIso) {
-          return matchIso[4] ? `${matchIso[3]}/${matchIso[2]}/${matchIso[1]} ${matchIso[4]}:${matchIso[5]}` : `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    const directFields = [
+      docs.cte_emission_date,
+      docs.cteEmissionDate,
+      docs.data_emissao,
+      docs.dataEmissao,
+      docs.data_hora_emissao,
+      docs.dataHoraEmissao,
+      docs.emission_date,
+      docs.emissionDate,
+      docs.dhEmi,
+      docs.dEmi,
+    ];
+    for (const val of directFields) {
+      if (val && typeof val === 'string' && val.trim() !== '' && val.trim() !== '-') {
+        return val.trim();
+      }
+    }
+  }
+
+  if (shipment.status && !isCteApplicableForStatus(shipment.status) && !hasCteAttached(shipment as any)) return null;
+
+  if (docs && typeof docs === 'object') {
+    for (const [key, val] of Object.entries(docs)) {
+      if (/ct[-_]?e|dacte/i.test(key)) {
+        const items = Array.isArray(val) ? val : [val];
+        for (const item of items) {
+          if (typeof item === 'string') {
+            const matchPt = item.match(/(?:^|\b|_)(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})(?:[-_.\s]*(\d{1,2})[:_.](\d{2}))?/);
+            if (matchPt) {
+              const day = matchPt[1].padStart(2, '0');
+              const month = matchPt[2].padStart(2, '0');
+              const year = matchPt[3];
+              const time = matchPt[4] ? ` ${matchPt[4].padStart(2, '0')}:${matchPt[5]}` : '';
+              return `${day}/${month}/${year}${time}`;
+            }
+            const matchIso = item.match(/(?:^|\b|_)(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?:[T\s_-]*(\d{1,2})[:_.](\d{2}))?/);
+            if (matchIso) {
+              const year = matchIso[1];
+              const month = matchIso[2].padStart(2, '0');
+              const day = matchIso[3].padStart(2, '0');
+              const time = matchIso[4] ? ` ${matchIso[4].padStart(2, '0')}:${matchIso[5]}` : '';
+              return `${day}/${month}/${year}${time}`;
+            }
+          }
         }
       }
     }
@@ -346,18 +381,34 @@ export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissio
 export function parseDateToYmd(dateStr?: string | null): string | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
   const trimmed = dateStr.trim();
-  if (!trimmed) return null;
+  if (!trimmed || trimmed === '-' || trimmed === '0') return null;
 
-  // Match DD/MM/YYYY or DD-MM-YYYY (with optional time)
-  const dmy = trimmed.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  // Match DD/MM/YYYY or DD-MM-YYYY or D/M/YYYY (with optional time)
+  const dmy = trimmed.match(/(?:^|\b)(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (dmy) {
-    return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    const year = dmy[3];
+    return `${year}-${month}-${day}`;
   }
 
-  // Match YYYY-MM-DD (with optional time)
-  const ymd = trimmed.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})/);
+  // Match YYYY-MM-DD or YYYY/M/D (with optional time)
+  const ymd = trimmed.match(/(?:^|\b)(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
   if (ymd) {
-    return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+    const year = ymd[1];
+    const month = ymd[2].padStart(2, '0');
+    const day = ymd[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Match DD/MM/YY (2-digit year)
+  const dmy2 = trimmed.match(/(?:^|\b)(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})\b/);
+  if (dmy2) {
+    const day = dmy2[1].padStart(2, '0');
+    const month = dmy2[2].padStart(2, '0');
+    let year = parseInt(dmy2[3], 10);
+    year = year > 50 ? 1900 + year : 2000 + year;
+    return `${year}-${month}-${day}`;
   }
 
   const parsed = new Date(trimmed);

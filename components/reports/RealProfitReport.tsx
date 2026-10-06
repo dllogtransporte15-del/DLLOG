@@ -385,7 +385,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                        (s.documents ? Object.values(s.documents).flat().find(f => typeof f === 'string' && (f.includes('saldo') || f.includes('comprovante') || f.includes('resumo'))) : undefined);
 
       const attachmentUrl = Array.isArray(saldoDoc) ? saldoDoc[0] : (typeof saldoDoc === 'string' ? saldoDoc : undefined);
-      const toll = s.tollValue || s.realProfitData?.toll || 0;
+      const toll = (s.tollValue !== undefined && s.tollValue !== null) ? Number(s.tollValue) || 0 : (s.realProfitData?.toll || 0);
       const driverFreightNetToll = Math.max(0, driverFreight - toll);
 
       return {

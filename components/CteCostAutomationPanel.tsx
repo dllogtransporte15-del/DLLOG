@@ -1191,9 +1191,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           category.toLowerCase().includes('mdfe') ||
           category.toLowerCase().includes('mdf-e');
 
-        if (isTransportDoc && ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio > 0) {
-          detectedToll = ext.financeiro.valorPedagio;
-          setAutoToll(ext.financeiro.valorPedagio);
+        if (isTransportDoc && ext.financeiro?.valorPedagio !== undefined && ext.financeiro.valorPedagio >= 0) {
+          // Um documento declarando "sem pedágio" (0) prevalece sobre valores positivos de outros documentos
+          if (ext.financeiro.valorPedagio === 0 || detectedToll !== 0) {
+            detectedToll = ext.financeiro.valorPedagio;
+            setAutoToll(ext.financeiro.valorPedagio);
+          }
         }
         if (ext.carga?.valorMercadoria !== undefined && ext.carga.valorMercadoria > 0) {
           detectedInvoiceValue = ext.carga.valorMercadoria;
@@ -1230,7 +1233,18 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         }
       }
 
-      if (detectedToll && detectedToll > 0) {
+      // Pedágio explicitamente zerado no embarque (sem pedágio) nunca é sobrescrito pela leitura automática
+      const isTollExplicitlyZero = shipment.tollValue !== undefined && shipment.tollValue !== null && Number(shipment.tollValue) === 0;
+      if (detectedToll === 0) {
+        const docs: any = shipment.documents || {};
+        if (!isTollExplicitlyZero || Number(shipment.realProfitData?.toll) > 0 || Number(docs.toll_value) > 0 || Number(docs.valor_pedagio) > 0) {
+          patch.tollValue = 0;
+          updatedRealProfit.toll = 0;
+          (updatedDocs as any).toll_value = 0;
+          (updatedDocs as any).valor_pedagio = 0;
+          hasPatch = true;
+        }
+      } else if (detectedToll && detectedToll > 0 && !isTollExplicitlyZero) {
         if (!shipment.tollValue || shipment.tollValue !== detectedToll || !shipment.realProfitData?.toll) {
           patch.tollValue = detectedToll;
           updatedRealProfit.toll = detectedToll;
@@ -1296,12 +1310,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   // 8. Vale-Pedágio (Informativo da Carta Frete / TAG / Formulário / Embarque)
   const parsedPropToll = tollValue !== undefined && tollValue !== '' ? Number(tollValue) : undefined;
+  // Prioridade: valor digitado no formulário > tollValue do embarque (inclusive 0 = sem pedágio) > leitura automática > realProfitData
   const toll = (parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0)
     ? parsedPropToll
-    : (autoToll !== undefined && autoToll > 0
-        ? autoToll
-        : (shipment.tollValue !== undefined && shipment.tollValue > 0
-            ? shipment.tollValue
+    : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
+        ? Number(shipment.tollValue)
+        : (autoToll !== undefined && autoToll > 0
+            ? autoToll
             : (shipment.realProfitData?.toll || 0)));
 
   const isExplicitPj = selectedRegime === 'Lucro Real / Presumido' || selectedRegime === 'Lucro Real' || selectedRegime === 'Lucro Presumido' || selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI' || selectedRegime === 'PJ' || selectedRegime === 'ETC' || shipment.driverFreightType === 'PJ' || shipment.anttModality === 'ETC';
