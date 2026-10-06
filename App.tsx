@@ -1372,10 +1372,17 @@ const App: React.FC = () => {
         phone: data.driverContact || '',
         classification: DriverClassification.Terceiro,
         active: true,
+        codigoAtua: data.codigoAtua ? String(data.codigoAtua).trim() : undefined,
       };
       newDrivers.unshift(driverToUse);
       addedDrivers.push(driverToUse);
       currentNextIds.driver++;
+    } else if (data.codigoAtua && (!driverToUse.codigoAtua || driverToUse.codigoAtua !== data.codigoAtua)) {
+      driverToUse = { ...driverToUse, codigoAtua: String(data.codigoAtua).trim() };
+      newDrivers = newDrivers.map(d => d.id === driverToUse!.id ? driverToUse! : d);
+      if (!addedDrivers.some(d => d.id === driverToUse!.id)) {
+        addedDrivers.push(driverToUse);
+      }
     }
 
     let newVehicles = [...vehicles];
@@ -1569,6 +1576,12 @@ const App: React.FC = () => {
       (documentsUrlMap as any).shipper_commission_rate_per_ton = shipperRateConfigured;
     }
 
+    if (data.codigoAtua) {
+      const cleanAtua = String(data.codigoAtua).trim();
+      (documentsUrlMap as any).codigo_atua = cleanAtua;
+      (documentsUrlMap as any).codg_atua = cleanAtua;
+    }
+
     const newShipment: Shipment = {
       id: newShipmentId,
       orderId: `ord_${newShipmentId}`,
@@ -1576,6 +1589,7 @@ const App: React.FC = () => {
       driverName: data.driverName,
       driverContact: data.driverContact,
       driverCpf: data.driverCpf,
+      codigoAtua: data.codigoAtua ? String(data.codigoAtua).trim() : undefined,
       embarcadorId: data.embarcadorId,
       horsePlate: data.horsePlate,
       trailer1Plate: data.trailer1Plate,
@@ -2414,6 +2428,17 @@ const App: React.FC = () => {
       if (updatedDriverToRestrict) {
         const driverToUpdate = updatedDriverToRestrict;
         setDrivers((prev: Driver[]) => prev.map(d => d.id === driverToUpdate.id ? driverToUpdate : d));
+      }
+      if (codigoAtua !== undefined && codigoAtua !== null && String(codigoAtua).trim() !== '') {
+        const cleanAtua = String(codigoAtua).trim();
+        setDrivers((prev: Driver[]) => prev.map(d => {
+          const matchCpf = originalShipment.driverCpf && d.cpf && d.cpf.replace(/\D/g, '') === originalShipment.driverCpf.replace(/\D/g, '');
+          const matchName = d.name && originalShipment.driverName && d.name.trim().toLowerCase() === originalShipment.driverName.trim().toLowerCase();
+          if (matchCpf || matchName) {
+            return { ...d, codigoAtua: cleanAtua };
+          }
+          return d;
+        }));
       }
       
       let successMsg = 'Embarque atualizado com sucesso!';

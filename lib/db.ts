@@ -229,6 +229,7 @@ export const toDriver = (row: any): Driver => ({
   active: row.active ?? true,
   restrictionReason: row.restriction_reason,
   has_app: row.has_app ?? false,
+  codigoAtua: row.codigo_atua || row.codg_atua || row.codigoAtua || undefined,
 });
 
 export const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({

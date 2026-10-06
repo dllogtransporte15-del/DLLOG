@@ -5,6 +5,7 @@ import { Shipment, Cargo, Client, ShipmentStatus, User, Product } from '../../ty
 import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber } from '../../utils';
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
+import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { fetchProducts } from '../../lib/db';
 import type { ShipmentControlItem } from '../../utils/financialCalculations';
 import { 
@@ -252,6 +253,7 @@ export function getBalanceLiberationDateTime(s: Shipment): string {
 export interface SpreadsheetColDef {
   key: keyof TranscunhaSpreadsheetRow;
   label: string;
+  tooltip?: string;
   category: string;
   categoryColor: string;
   type: 'text' | 'number' | 'currency' | 'percent' | 'select';
@@ -315,11 +317,11 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
 
   // 6. Impostos & Deduções
   { key: 'freteBrutoEmpresa', label: 'FRETE BRUTO EMPRESA', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[95px] max-w-[110px]', isCalculated: true, align: 'right' },
-  { key: 'icms', label: 'ICMS', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[75px] max-w-[85px]', align: 'right' },
-  { key: 'debitoPisCofins', label: 'DÉBITO PIS/COFINS', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
-  { key: 'creditoPisCofins', label: 'CRÉDITO PIS/COFINS', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
-  { key: 'patronal4', label: 'PATRONAL 4%', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
-  { key: 'inssSestSenat', label: 'INSS / SEST SENAT', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
+  { key: 'icms', label: 'ICMS', tooltip: 'ICMS: ICMS Destacado no CT-e / Isento / Cálculo de ICMS', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[75px] max-w-[85px]', align: 'right' },
+  { key: 'debitoPisCofins', label: 'DÉBITO PIS/COFINS', tooltip: 'DÉBITO PIS/COFINS: Imposto Federal (Composição das Deduções)', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
+  { key: 'creditoPisCofins', label: 'CRÉDITO PIS/COFINS', tooltip: 'CRÉDITO PIS/COFINS: Crédito Gerado (Exportação / Ajuste Manual)', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
+  { key: 'patronal4', label: 'PATRONAL 4%', tooltip: 'PATRONAL 4%: INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF)', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
+  { key: 'inssSestSenat', label: 'INSS / SEST SENAT', tooltip: 'INSS / SEST SENAT: 3.5.3 (-) Desconto SEST/SENAT (Carta Frete)', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
   { key: 'valorTaxaCiot', label: 'VL. CIOT', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
 
   // 7. Frete & Acerto Motorista
@@ -379,7 +381,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const [showDatePickerPopup, setShowDatePickerPopup] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [saldoFilter, setSaldoFilter] = useState('all');
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+  const [openFilterColumnKey, setOpenFilterColumnKey] = useState<string | null>(null);
+  const [filterSearchQuery, setFilterSearchQuery] = useState<string>('');
   const [showFilterRow, setShowFilterRow] = useState<boolean>(true);
   const [onlyWithCte, setOnlyWithCte] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'full' | 'summary'>('full');
@@ -435,6 +439,25 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showDatePickerPopup]);
+
+  // Fechamento do popover de filtro de coluna ao clicar fora ou pressionar Escape
+  useEffect(() => {
+    if (!openFilterColumnKey) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-filter-popover="true"]')) return;
+      setOpenFilterColumnKey(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenFilterColumnKey(null);
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openFilterColumnKey]);
 
   // Helper para identificar embarques cancelados
   const isShipmentCancelled = useCallback((s: Shipment): boolean => {
@@ -561,6 +584,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             : Math.max(0, freteMotorista - (s.tollValue || 0) - (s.advanceValue || 0) - (s.discountValue || 0)));
 
       const dateStr = s.scheduledDate ? formatDatePtBr(s.scheduledDate) : formatDatePtBr(s.createdAt);
+      const opExp = calculateShipmentExpenses(s, cargo);
       const realCte = getShipmentCte(s);
       const cteNum = (realCte && realCte !== '-') ? realCte : (s.cteNumber || (s.documents as any)?.cte_number || s.id);
       
@@ -695,25 +719,40 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         pedagio: s.tollValue || 0,
         peso,
 
-        // --- Impostos & Deduções: sincronizados com a lógica do CteCostAutomationPanel ---
+        // --- Impostos & Deduções: sincronizados com a lógica do CteCostAutomationPanel e DocumentExtractedDataModal ---
         freteBrutoEmpresa: (() => {
-          // Prioriza companyFreight salvo no realProfitData (mesma fonte do panel)
+          // Prioriza companyFreight salvo no realProfitData (mesma fonte do painel)
           if (s.realProfitData?.companyFreight !== undefined && s.realProfitData.companyFreight > 0) {
             return s.realProfitData.companyFreight;
+          }
+          if (opExp.companyFreight > 0) {
+            return opExp.companyFreight;
           }
           // Fallback: cálculo local peso × tarifa
           return freteBruto;
         })(),
+
+        // 1. ICMS: ICMS Destacado no CT-e / Isento / Cálculo de ICMS
         icms: (() => {
-          // Mesma hierarquia do panel: icmsBruto (cálculo) > realProfitData.icmsDifference > documents.icms_value > icmsValue
+          // 1. Diferença de ICMS explicitamente registrada no realProfitData
           if (s.realProfitData?.icmsDifference !== undefined && s.realProfitData.icmsDifference > 0) {
             return s.realProfitData.icmsDifference;
           }
-          const icmsDoc = Number((s.documents as any)?.icms_value) || Number((s as any).icmsValue) || 0;
-          return icmsDoc;
+          // 2. ICMS Destacado nos documentos fiscais (CT-e / XML)
+          const icmsDoc = Number((s.documents as any)?.icms_value) || 
+                          Number((s.documents as any)?.vICMS) || 
+                          Number((s.documents as any)?.valor_icms) || 
+                          Number((s.documents as any)?.icms_destacado) || 
+                          Number((s as any).icmsValue) || 
+                          0;
+          if (icmsDoc > 0) return icmsDoc;
+          // 3. Informação do campo "ICMS Destacado" apurada pelo motor operacional
+          return opExp.icms || 0;
         })(),
+
+        // 2. DÉBITO PIS/CONFINS = Imposto Federal (Composição das Deduções)
         debitoPisCofins: (() => {
-          // Respeita edição manual (isFederalTaxManual) — mesma prioridade do panel
+          // 1. Respeita edição manual (isFederalTaxManual) — mesma prioridade do painel
           if (s.isFederalTaxManual === true || s.realProfitData?.isFederalTaxManual === true || (s.documents as any)?.is_federal_tax_manual === true) {
             const manualVal = s.realProfitData?.federalTax !== undefined
               ? s.realProfitData.federalTax
@@ -722,11 +761,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   : (Number((s.documents as any)?.federal_tax) || Number((s.documents as any)?.imposto_federal) || 0));
             return manualVal;
           }
-          // Fallback: valor automático salvo
-          return s.realProfitData?.federalTax || 0;
+          // 2. Se houver valor explicitamente salvo no realProfitData
+          if (s.realProfitData?.federalTax !== undefined && s.realProfitData.federalTax !== null) {
+            return s.realProfitData.federalTax;
+          }
+          // 3. Informação puxada do campo "Imposto Federal" via motor de despesas operacionais (0 em Exportação; Simples/PF/PJ em Mercado Interno)
+          return opExp.impostoFederal || 0;
         })(),
+
+        // 3. CREDITO PIS/CONFINS = Crédito Gerado (Card CRÉDITO GERADO / Exportação / Ajuste Manual)
         creditoPisCofins: (() => {
-          // Respeita edição manual (isGeneratedCreditManual) — mesma prioridade do panel
+          // 1. Respeita edição manual (isGeneratedCreditManual) — card "CRÉDITO GERADO (Manual)"
           if (s.isGeneratedCreditManual === true || s.realProfitData?.isGeneratedCreditManual === true || (s.documents as any)?.is_generated_credit_manual === true) {
             const manualVal = s.realProfitData?.generatedCredit !== undefined
               ? s.realProfitData.generatedCredit
@@ -735,28 +780,72 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   : (Number((s.documents as any)?.generated_credit) || Number((s.documents as any)?.credito_gerado) || 0));
             return manualVal;
           }
-          return s.realProfitData?.generatedCredit || 0;
+          // 2. Valor gravado no realProfitData ou nos dados do embarque
+          if (s.realProfitData?.generatedCredit !== undefined && s.realProfitData.generatedCredit > 0) {
+            return s.realProfitData.generatedCredit;
+          }
+          if ((s as any).generatedCredit !== undefined && Number((s as any).generatedCredit) > 0) {
+            return Number((s as any).generatedCredit);
+          }
+          if ((s.documents as any)?.credito_gerado !== undefined && Number((s.documents as any).credito_gerado) > 0) {
+            return Number((s.documents as any).credito_gerado);
+          }
+          if ((s.documents as any)?.generated_credit !== undefined && Number((s.documents as any).generated_credit) > 0) {
+            return Number((s.documents as any).generated_credit);
+          }
+          // 3. Informação puxada do card "Crédito Gerado" via cálculo operacional de exportação (opExp.generatedCredit)
+          return opExp.generatedCredit || 0;
         })(),
+
+        // 4. PATRONAL = INSS Patronal / CPRB (4% s/ Frete Mot. - Pedágio se PF)
         patronal4: (() => {
-          // Mesma lógica do panel: 4% × (freteMotorista - pedágio) para PF / TAC; PJ = R$ 0
+          // 1. Se gravado explicitamente no realProfitData ou embarque
+          if (s.realProfitData?.inssPatronal !== undefined && s.realProfitData.inssPatronal > 0) {
+            return s.realProfitData.inssPatronal;
+          }
+          if ((s as any).inssPatronal !== undefined && Number((s as any).inssPatronal) > 0) {
+            return Number((s as any).inssPatronal);
+          }
+          // 2. Informação calculada no campo "INSS Patronal / CPRB" via motor de despesas (opExp.inssPatronal)
+          if (opExp.inssPatronal !== undefined && opExp.inssPatronal > 0) {
+            return opExp.inssPatronal;
+          }
+          // 3. Fallback: 4% sobre (Frete Motorista - Pedágio) para PF / TAC; PJ = R$ 0
           const isShipmentPf = (s.driverFreightType === 'PF' || s.anttModality === 'TAC');
           if (!isShipmentPf) return 0;
           const tollVal = s.tollValue || 0;
           const baseInss = Math.max(0, freteMotorista - tollVal);
           return baseInss > 0 ? Number((baseInss * 0.04).toFixed(2)) : 0;
         })(),
+
+        // 5. INSS / SEST SENAT = Desconto SEST/SENAT: (3.5.3 (-) Desconto SEST/SENAT da Carta Frete)
         inssSestSenat: (() => {
           const isShipmentPf = (s.driverFreightType === 'PF' || s.anttModality === 'TAC');
-          // Valor salvo manualmente tem prioridade
-          const savedSest = (s as any).sestSenatValue || 
-            (s.realProfitData as any)?.sestSenat || 
-            (s.documents as any)?.sest_senat || 
-            (s.documents as any)?.sestSenat || 
-            0;
-          if (savedSest > 0) return Number(savedSest);
-          // Cálculo via mesma função usada pelo panel
+          if (!isShipmentPf && s.driverFreightType === 'PJ') return 0;
+
+          // 1. Prioridade máxima: Leitura direta do campo "3.5.3 (-) Desconto SEST/SENAT" extraído da Carta Frete / Documentos
+          const docSest = 
+            (s.documents as any)?.calculoSaldoFrete?.sestSenat ??
+            (s.documents as any)?.calculo_saldo_frete?.sestSenat ??
+            (s.documents as any)?.detailed?.calculoSaldoFrete?.sestSenat ??
+            (s.documents as any)?.carta_frete?.calculoSaldoFrete?.sestSenat ??
+            (s.documents as any)?.sestSenatValue ??
+            (s.documents as any)?.sest_senat ??
+            (s.documents as any)?.sestSenat ??
+            (s as any)?.sestSenatValue ??
+            (s as any)?.sestSenat ??
+            (s.realProfitData as any)?.sestSenat;
+
+          if (docSest !== undefined && docSest !== null && Number(docSest) > 0) {
+            return Number(docSest);
+          }
+
+          // 2. Se for PF e tiver frete motorista, calcula a dedução oficial da cláusula 3.5.3 (2,5% sobre a base fiscal do TAC)
           if (isShipmentPf && freteMotorista > 0) {
-            return calculateTacTaxDeductions(freteMotorista, s.tollValue || 0).sestSenat;
+            const tacTaxes = calculateTacTaxDeductions(freteMotorista, s.tollValue || 0);
+            if (tacTaxes.sestSenat > 0) {
+              return tacTaxes.sestSenat;
+            }
           }
           return 0;
         })(),
@@ -920,11 +1009,47 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     return checkTime(embarqueTime);
   }, []);
 
+  const formatCurrency = (val: number) => {
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
   // Normalização de texto para busca
   const normalize = (val: any): string => {
     if (val === null || val === undefined) return '';
     return String(val).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   };
+
+  // Opções únicas de cada coluna calculadas a partir das linhas disponíveis (mappedRows)
+  const columnUniqueOptions = useMemo<Record<string, string[]>>(() => {
+    const map: Record<string, string[]> = {};
+    for (const col of SPREADSHEET_COLUMNS) {
+      const set = new Set<string>();
+      for (const row of mappedRows) {
+        const val = (row as any)[col.key];
+        if (val === null || val === undefined || val === '' || String(val).trim() === '-' || (typeof val === 'number' && val === 0)) {
+          set.add('(Vazios)');
+          continue;
+        }
+
+        if (col.type === 'currency' && typeof val === 'number') {
+          if (val > 0) set.add(formatCurrency(val));
+        } else if (col.type === 'percent' && typeof val === 'number') {
+          if (val > 0) set.add(`${val}%`);
+        } else if (col.type === 'number' && typeof val === 'number') {
+          if (val > 0) set.add(val.toFixed(2));
+        } else {
+          const s = String(val).trim();
+          if (s && s !== '-') set.add(s);
+        }
+      }
+      map[col.key] = Array.from(set).sort((a, b) => {
+        if (a === '(Vazios)') return 1;
+        if (b === '(Vazios)') return -1;
+        return a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' });
+      });
+    }
+    return map;
+  }, [mappedRows]);
 
   // Filtragem
   const filteredRows = useMemo(() => {
@@ -959,32 +1084,44 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       if (statusFilter !== 'all' && !normalize(row.status).includes(normalize(statusFilter))) return false;
       if (saldoFilter !== 'all' && normalize(row.statusSaldo) !== normalize(saldoFilter)) return false;
 
-      // 4. Filtros Individuais de Coluna
-      for (const [colKey, filterVal] of Object.entries(columnFilters)) {
-        if (!filterVal || filterVal.trim() === '') continue;
-        const normFilter = normalize(filterVal);
+      // 4. Filtros Individuais de Coluna (Múltipla Seleção)
+      for (const [colKey, selectedList] of Object.entries(columnFilters)) {
+        if (!selectedList) continue;
+        if (selectedList.length === 0) return false;
+
         const rawCell = (row as any)[colKey];
-        const normCell = normalize(rawCell);
+        const isEmptyCell = rawCell === null || rawCell === undefined || rawCell === '' || String(rawCell).trim() === '-' || (typeof rawCell === 'number' && rawCell === 0);
 
-        if (typeof rawCell === 'number') {
-          const numRaw = String(rawCell).toLowerCase();
-          const numPtBr = rawCell.toLocaleString('pt-BR');
-          if (normCell.includes(normFilter) || numRaw.includes(normFilter) || numPtBr.includes(normFilter)) {
-            continue;
+        const matchesAny = selectedList.some(filterItem => {
+          if (!filterItem) return false;
+          if (filterItem === '(Vazios)') {
+            return isEmptyCell;
           }
-          return false;
-        }
+          if (isEmptyCell) return false;
 
-        if (colKey === 'saldoOriginalPedido') {
-          const cleanFilter = normFilter.replace(/\./g, '').replace(/,/g, '.');
-          const cleanCell = normCell.replace(/\./g, '').replace(/,/g, '.');
-          if (normCell.includes(normFilter) || cleanCell.includes(cleanFilter)) {
-            continue;
+          const normFilter = normalize(filterItem);
+          const normCell = normalize(rawCell);
+
+          if (typeof rawCell === 'number') {
+            const numRaw = String(rawCell).toLowerCase();
+            const numPtBr = rawCell.toLocaleString('pt-BR');
+            const currencyFmt = normalize(formatCurrency(rawCell));
+            const percentFmt = `${rawCell}%`;
+            return normCell === normFilter || normCell.includes(normFilter) ||
+                   numRaw === normFilter || numPtBr === normFilter ||
+                   currencyFmt === normFilter || percentFmt === normFilter;
           }
-          return false;
-        }
 
-        if (!normCell.includes(normFilter)) return false;
+          if (colKey === 'saldoOriginalPedido') {
+            const cleanFilter = normFilter.replace(/\./g, '').replace(/,/g, '.');
+            const cleanCell = normCell.replace(/\./g, '').replace(/,/g, '.');
+            return normCell.includes(normFilter) || cleanCell.includes(cleanFilter);
+          }
+
+          return normCell === normFilter || normCell.includes(normFilter);
+        });
+
+        if (!matchesAny) return false;
       }
 
       return true;
@@ -1045,7 +1182,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const totalSaldos = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.saldo || 0), 0), [filteredRows]);
 
   const activeColumnFiltersCount = useMemo(() => {
-    let count = Object.values(columnFilters).filter(v => Boolean(v && v.trim())).length;
+    let count = Object.values(columnFilters).filter(v => v !== undefined && v !== null && v.length > 0).length;
     if (periodFilter !== 'all') count += 1;
     if (statusFilter !== 'all') count += 1;
     if (saldoFilter !== 'all') count += 1;
@@ -1071,10 +1208,6 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       }
       return { key, direction: (key === 'dataEmbarque' || key === 'cteHoras' || key === 'cte') ? 'desc' : 'asc' };
     });
-  };
-
-  const formatCurrency = (val: number) => {
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   // Exportação XLSX
@@ -1243,7 +1376,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       className={`px-1.5 py-1.5 border-r ${isDark ? 'border-slate-800 hover:bg-indigo-950/70 hover:text-indigo-300' : 'border-black/30 hover:bg-[#00386b] text-white font-black'} cursor-pointer transition-all select-none whitespace-normal text-center align-middle ${stickyClass} ${
                         isSorted ? (isDark ? 'bg-indigo-900/40 text-indigo-300 ring-1 ring-inset ring-indigo-500/40' : 'bg-[#00386b] text-yellow-300 ring-1 ring-inset ring-yellow-400') : ''
                       }`}
-                      title={col.label}
+                      title={col.tooltip || col.label}
                     >
                       <div className="flex items-center justify-center gap-1 text-center whitespace-normal leading-[1.15]">
                         <span className="break-words font-black tracking-tight">{col.label}</span>
@@ -1307,7 +1440,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   <th className={`sticky left-0 z-40 ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-[#004b87] border-black/40'} px-1 py-1 text-center border-r text-slate-400 w-10 min-w-[40px] max-w-[40px]`}>
                     <Filter className={`w-3.5 h-3.5 mx-auto ${isDark ? 'text-indigo-400' : 'text-yellow-300'}`} />
                   </th>
-                  {SPREADSHEET_COLUMNS.map(col => {
+                  {SPREADSHEET_COLUMNS.map((col, colIdx) => {
                     const isStickyId = col.key === 'idEmbarqueSistema';
                     const isStickyCte = col.key === 'cteHoras';
                     const stickyClass = isStickyId 
@@ -1316,29 +1449,227 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       ? `sticky left-[140px] z-40 ${isDark ? 'bg-slate-950 border-r-2 border-indigo-500/80' : 'bg-[#005a9e] border-r-2 border-black'} w-[75px] min-w-[75px] max-w-[75px]` 
                       : '';
 
+                    const opts = columnUniqueOptions[col.key] || [];
+                    const selectedList = columnFilters[col.key];
+                    const isFiltered = selectedList !== undefined;
+                    const isOpen = openFilterColumnKey === col.key;
+                    const selectedCount = selectedList ? selectedList.length : opts.length;
+                    const isAllSelected = !isFiltered || (opts.length > 0 && selectedCount === opts.length);
+
                     return (
                       <th key={`filter-${col.key}`} className={`px-1 py-1 border-r ${isDark ? 'border-slate-800' : 'border-black/30'} ${stickyClass}`}>
-                        <input
-                          type="text"
-                          placeholder="Filtro..."
-                          value={columnFilters[col.key] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setColumnFilters(prev => {
-                              if (!val) {
-                                const next = { ...prev };
-                                delete next[col.key];
-                                return next;
+                        <div className="relative w-full">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenFilterColumnKey(prev => prev === col.key ? null : col.key);
+                              setFilterSearchQuery('');
+                            }}
+                            className={`w-full flex items-center justify-between gap-1 px-1.5 py-0.5 text-[10px] rounded border outline-none font-bold transition-all shadow-xs cursor-pointer truncate ${
+                              isDark 
+                                ? (isFiltered ? 'border-indigo-400 bg-indigo-950 text-indigo-200 ring-1 ring-indigo-400' : 'border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-500') 
+                                : (isFiltered ? 'border-blue-700 bg-yellow-200 text-black ring-1 ring-blue-700' : 'border-black/40 bg-white text-black font-bold hover:border-black/60')
+                            }`}
+                            title={isFiltered ? `Filtro ativo (${selectedCount} selecionados): ${selectedList.join(', ')}` : `Filtrar ${col.label} (${opts.length} opções)`}
+                          >
+                            <span className="truncate flex-1 text-center">
+                              {!isFiltered
+                                ? `(Todos${opts.length > 0 ? ` - ${opts.length}` : ''})`
+                                : selectedList.length === 0
+                                ? `(Nenhum)`
+                                : selectedList.length === 1
+                                ? selectedList[0]
+                                : `(${selectedList.length} sel.)`
                               }
-                              return { ...prev, [col.key]: val };
-                            });
-                          }}
-                          className={`w-full px-1 py-0.5 text-[10px] text-center rounded border outline-none font-bold transition-all shadow-xs ${
-                            isDark 
-                              ? 'border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus:border-indigo-500' 
-                              : 'border-black/40 bg-white text-black font-bold placeholder:text-slate-400 focus:border-amber-400'
-                          }`}
-                        />
+                            </span>
+                            <span className="text-[8px] opacity-70 shrink-0">▼</span>
+                          </button>
+
+                          {/* Popover de Múltipla Seleção */}
+                          {isOpen && (
+                            <div
+                              data-filter-popover="true"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`absolute top-full mt-1 z-50 min-w-[220px] max-w-[280px] w-max rounded-xl shadow-2xl border p-2.5 text-left font-sans ${
+                                isDark 
+                                  ? 'bg-slate-900 border-slate-700 text-white shadow-black/90' 
+                                  : 'bg-white border-slate-300 text-slate-900 ring-1 ring-black/10 shadow-2xl'
+                              } ${colIdx > 40 ? 'right-0' : 'left-0'}`}
+                            >
+                              {/* Topo do Popover */}
+                              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-200 dark:border-slate-800 gap-2">
+                                <div className="truncate">
+                                  <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate" title={col.label}>
+                                    {col.label}
+                                  </p>
+                                  <p className="text-[9px] text-slate-500 dark:text-slate-400">
+                                    {isFiltered ? `${selectedList.length} de ${opts.length} selecionados` : `${opts.length} opções disponíveis`}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenFilterColumnKey(null)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-xs leading-none"
+                                  title="Fechar"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              {/* Campo de Busca Rápida */}
+                              {opts.length > 5 && (
+                                <div className="mb-2">
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    value={filterSearchQuery}
+                                    onChange={(e) => setFilterSearchQuery(e.target.value)}
+                                    placeholder="Pesquisar opções..."
+                                    className={`w-full px-2 py-1 text-xs rounded-lg border outline-none font-sans ${
+                                      isDark 
+                                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-indigo-500' 
+                                        : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:border-blue-500'
+                                    }`}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Ações Rápidas: Marcar Tudo / Desmarcar Tudo */}
+                              <div className="flex items-center justify-between gap-1 mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800 text-[10px]">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setColumnFilters(prev => {
+                                      const next = { ...prev };
+                                      delete next[col.key];
+                                      return next;
+                                    });
+                                  }}
+                                  className="px-2 py-0.5 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 font-bold transition-colors cursor-pointer"
+                                >
+                                  Marcar Todos
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setColumnFilters(prev => ({
+                                      ...prev,
+                                      [col.key]: []
+                                    }));
+                                  }}
+                                  className="px-2 py-0.5 rounded text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 font-bold transition-colors cursor-pointer"
+                                >
+                                  Desmarcar Todos
+                                </button>
+                              </div>
+
+                              {/* Lista de Checkboxes */}
+                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-0.5 text-xs">
+                                {/* Opção Geral: (Selecionar Tudo) */}
+                                <label className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer font-bold text-slate-700 dark:text-slate-200">
+                                  <input
+                                    type="checkbox"
+                                    checked={isAllSelected}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setColumnFilters(prev => {
+                                          const next = { ...prev };
+                                          delete next[col.key];
+                                          return next;
+                                        });
+                                      } else {
+                                        setColumnFilters(prev => ({ ...prev, [col.key]: [] }));
+                                      }
+                                    }}
+                                    className="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                  />
+                                  <span className="truncate">(Selecionar Tudo)</span>
+                                </label>
+
+                                {(() => {
+                                  const filteredOpts = filterSearchQuery.trim()
+                                    ? opts.filter(o => normalize(o).includes(normalize(filterSearchQuery)))
+                                    : opts;
+
+                                  if (filteredOpts.length === 0) {
+                                    return (
+                                      <p className="text-[11px] text-slate-400 italic py-2 text-center">
+                                        Nenhuma opção encontrada
+                                      </p>
+                                    );
+                                  }
+
+                                  return filteredOpts.map(opt => {
+                                    const isChecked = !isFiltered ? true : selectedList.includes(opt);
+
+                                    return (
+                                      <label 
+                                        key={opt}
+                                        className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer text-slate-800 dark:text-slate-200"
+                                        title={opt}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setColumnFilters(prev => {
+                                              const current = prev[col.key] !== undefined ? prev[col.key] : [...opts];
+                                              let nextList: string[];
+                                              if (checked) {
+                                                nextList = Array.from(new Set([...current, opt]));
+                                              } else {
+                                                nextList = current.filter(item => item !== opt);
+                                              }
+
+                                              // Se marcou todos os itens existentes, remove a chave para não pesar
+                                              if (nextList.length === opts.length) {
+                                                const updated = { ...prev };
+                                                delete updated[col.key];
+                                                return updated;
+                                              }
+
+                                              return { ...prev, [col.key]: nextList };
+                                            });
+                                          }}
+                                          className="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                        />
+                                        <span className="truncate flex-1">{opt}</span>
+                                      </label>
+                                    );
+                                  });
+                                })()}
+                              </div>
+
+                              {/* Rodapé com Reset e Botão OK */}
+                              <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                                {isFiltered ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setColumnFilters(prev => {
+                                        const next = { ...prev };
+                                        delete next[col.key];
+                                        return next;
+                                      });
+                                    }}
+                                    className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline font-semibold cursor-pointer"
+                                  >
+                                    Limpar filtro
+                                  </button>
+                                ) : <span />}
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenFilterColumnKey(null)}
+                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs cursor-pointer"
+                                >
+                                  OK
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </th>
                     );
                   })}

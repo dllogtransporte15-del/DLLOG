@@ -33,6 +33,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
 
   const [driverName, setDriverName] = useState('');
   const [driverCpf, setDriverCpf] = useState('');
+  const [codigoAtua, setCodigoAtua] = useState('');
+  const [hasPreloadedAtua, setHasPreloadedAtua] = useState(false);
   const [ownerName, setOwnerName] = useState('');
   const [ownerAutoFillSource, setOwnerAutoFillSource] = useState('');
   const [ownerContact, setOwnerContact] = useState('');
@@ -123,6 +125,34 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [users]);
 
+  // Helper para buscar código ATUA existente do motorista no cadastro ou histórico de embarques
+  const findDriverExistingAtua = (cpf?: string, name?: string, phone?: string, driverObj?: Driver): string => {
+    if (driverObj?.codigoAtua && String(driverObj.codigoAtua).trim() !== '') {
+      return String(driverObj.codigoAtua).trim();
+    }
+    const cleanCpf = cpf ? cpf.replace(/\D/g, '') : '';
+    const cleanName = name ? name.trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+
+    for (const s of (shipments || [])) {
+      const sCpf = s.driverCpf ? s.driverCpf.replace(/\D/g, '') : '';
+      const sName = s.driverName ? s.driverName.trim().toLowerCase() : '';
+      const sPhone = s.driverContact ? s.driverContact.replace(/\D/g, '') : '';
+
+      const matchesCpf = cleanCpf.length === 11 && sCpf === cleanCpf;
+      const matchesName = cleanName.length > 0 && sName === cleanName;
+      const matchesPhone = cleanPhone.length >= 10 && sPhone === cleanPhone;
+
+      if (matchesCpf || matchesName || matchesPhone) {
+        const atua = s.codigoAtua || (s.documents as any)?.codigo_atua || (s.documents as any)?.codg_atua || (s.documents as any)?.codigoAtua;
+        if (atua && String(atua).trim() !== '' && String(atua).trim() !== '-') {
+          return String(atua).trim();
+        }
+      }
+    }
+    return '';
+  };
+
   const prevIsOpen = React.useRef(isOpen);
 
   useEffect(() => {
@@ -149,6 +179,15 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setDriverName(initialDriverName);
       setDriverCpf(initialDriverCpf);
       setDriverContact(initialDriverContact);
+
+      const existingAtua = findDriverExistingAtua(initialDriverCpf, initialDriverName, initialDriverContact, driverInDb);
+      if (existingAtua) {
+        setCodigoAtua(existingAtua);
+        setHasPreloadedAtua(true);
+      } else {
+        setCodigoAtua('');
+        setHasPreloadedAtua(false);
+      }
 
       // Now search for driver's last shipment across ALL available identifiers
       const cleanTargetCpf = initialDriverCpf.replace(/\D/g, '');
@@ -403,6 +442,15 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     if (selectedDriver.cpf) setDriverCpf(selectedDriver.cpf);
     if (selectedDriver.phone) setDriverContact(selectedDriver.phone);
 
+    const existingAtua = findDriverExistingAtua(selectedDriver.cpf, selectedDriver.name, selectedDriver.phone, selectedDriver);
+    if (existingAtua) {
+      setCodigoAtua(existingAtua);
+      setHasPreloadedAtua(true);
+    } else {
+      setCodigoAtua('');
+      setHasPreloadedAtua(false);
+    }
+
     if (!selectedDriver.active) {
       if (lastAlertedDriverId !== selectedDriver.id) {
         showToast(`ATENÇÃO: Este motorista encontra-se RESTRITO! Motivo: ${selectedDriver.restrictionReason || 'Sem motivo especificado'}. O sistema impedirá a criação desta ordem.`, 'error', 10000);
@@ -530,6 +578,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       const exactDriver = drivers.find(d => d.name.trim().toLowerCase() === clean);
       if (exactDriver) {
         applyDriverAutofill(exactDriver);
+      } else {
+        const atuaFound = findDriverExistingAtua(driverCpf, val, driverContact);
+        if (atuaFound) {
+          setCodigoAtua(atuaFound);
+          setHasPreloadedAtua(true);
+        }
       }
     }
   };
@@ -542,11 +596,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       const exactDriver = drivers.find(d => d.cpf && d.cpf.replace(/\D/g, '') === clean);
       if (exactDriver) {
         applyDriverAutofill(exactDriver);
-      } else if (anttModality === AnttModality.TAC && (!anttOwnerIdentifier || anttOwnerIdentifier === driverCpf)) {
-        setAnttOwnerIdentifier(formatted);
-        if (driverName) {
-          setOwnerName(driverName);
-          setOwnerAutoFillSource('Motorista do Embarque');
+      } else {
+        const atuaFound = findDriverExistingAtua(formatted, driverName, driverContact);
+        if (atuaFound) {
+          setCodigoAtua(atuaFound);
+          setHasPreloadedAtua(true);
+        }
+        if (anttModality === AnttModality.TAC && (!anttOwnerIdentifier || anttOwnerIdentifier === driverCpf)) {
+          setAnttOwnerIdentifier(formatted);
+          if (driverName) {
+            setOwnerName(driverName);
+            setOwnerAutoFillSource('Motorista do Embarque');
+          }
         }
       }
     }
@@ -982,6 +1043,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         return;
     }
 
+    if (!codigoAtua || !codigoAtua.trim()) {
+        showToast('O Código ATUA do motorista é obrigatório para prosseguir com a solicitação de embarque.', 'warning');
+        return;
+    }
+
     const calc = calculateAdvanceAndBalance({
       driverFreightValue: calculatedFreight,
       driverFreightRate: currentFreightRate,
@@ -998,6 +1064,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       driverName,
       driverCpf,
       driverContact,
+      codigoAtua: codigoAtua.trim(),
       ownerName: ownerName.trim() || undefined,
       ownerContact: ownerContact || undefined,
       horsePlate,
@@ -1189,9 +1256,11 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             </div>
 
             {/* Driver info */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">CPF do Motorista</label>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  CPF do Motorista <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   value={driverCpf} 
@@ -1202,7 +1271,9 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 />
               </div>
               <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Contato (WhatsApp)</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Contato (WhatsApp) <span className="text-red-500">*</span>
+                  </label>
                   <input 
                     type="text" 
                     value={driverContact} 
@@ -1211,6 +1282,36 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     className="p-3 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
                     required 
                   />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
+                  <span>Código ATUA <span className="text-red-500">*</span></span>
+                  {hasPreloadedAtua && (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                      ✓ Vinculado
+                    </span>
+                  )}
+                </label>
+                <input 
+                  type="text" 
+                  value={codigoAtua} 
+                  onChange={(e) => {
+                    setCodigoAtua(e.target.value);
+                    setHasPreloadedAtua(false);
+                  }} 
+                  placeholder="Ex: 104523 ou Cód. Cadastro" 
+                  className={`p-3 w-full border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-medium ${
+                    !codigoAtua.trim()
+                      ? 'border-amber-400 dark:border-amber-500 ring-1 ring-amber-300 dark:ring-amber-500/30'
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`} 
+                  required 
+                />
+                {!codigoAtua.trim() && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                    ⚠️ Obrigatório: informe o Código ATUA gerado no cadastro.
+                  </p>
+                )}
               </div>
             </div>
 

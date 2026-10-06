@@ -21,6 +21,83 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_06_v2_70_10',
+    version: 'v2.70.10',
+    date: '06/10/2026',
+    title: 'Filtros com Múltipla Seleção Estilo Excel na Planilha de Controle',
+    summary: 'Os filtros das 61 colunas da planilha de controladoria agora suportam seleção múltipla simultânea com painel interativo no estilo Excel e Google Sheets. É possível filtrar por múltiplos valores, buscar termos no popup, marcar ou desmarcar todos com um clique e identificar rapidamente filtros aplicados pelo contador numérico.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Seleção Múltipla de Valores por Coluna',
+        description: 'Permite selecionar vários valores simultaneamente em cada coluna, com checkboxes individuais, opção "(Selecionar Tudo)", detecção de células vazias/zeradas como "(Vazios)" e filtragem combinada com as demais colunas.'
+      },
+      {
+        category: 'feature',
+        title: 'Painel Popover Interativo com Busca e Ações Rápidas',
+        description: 'Cada coluna conta com um botão disparador que abre um painel com campo de pesquisa para encontrar itens rapidamente em listas extensas, botões "Marcar Todos", "Desmarcar Todos" e "Limpar Filtro".'
+      },
+      {
+        category: 'improvement',
+        title: 'Indicadores Visuais e Usabilidade de Planilha Avançada',
+        description: 'O botão de filtro indica visualmente quando está ativo com badge de contagem de itens selecionados, fechamento automático ao clicar fora ou pressionar ESC, e posicionamento responsivo inteligente para colunas à direita da planilha.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_06_v2_70_9',
+    version: 'v2.70.9',
+    date: '06/10/2026',
+    title: 'Filtros Dinâmicos na Planilha de Controle e Código ATUA Obrigatório no Embarque',
+    summary: 'Os filtros das 61 colunas da planilha de controladoria agora oferecem seleção dinâmica com lista suspensa contendo exatamente os valores presentes nas linhas. Na tela de Embarques e no modal de detalhes, o Código ATUA do motorista é exibido em destaque à frente do seu nome. Além disso, ao solicitar novo embarque para motoristas sem código prévio, o preenchimento do Código ATUA torna-se obrigatório, persistindo a informação no embarque e no perfil do motorista.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Filtros de Colunas Dinâmicos por Opções Selecionáveis',
+        description: 'Cada coluna da planilha de controladoria conta com seletor (dropdown) que lista dinamicamente todos os valores únicos existentes nas linhas da tabela (formatados adequadamente em moedas, percentuais, números e textos), com indicação de contagem de opções e destaque visual quando ativo.'
+      },
+      {
+        category: 'feature',
+        title: 'Código ATUA em Destaque na Frente do Nome do Motorista',
+        description: 'Tanto na tabela desktop de Embarques quanto nos cards mobile e no modal de detalhes do embarque, o Código ATUA cadastrado em Ag. Cadastro é exibido em uma tag destacada [CÓDIGO ATUA] na frente do nome do motorista, permitindo busca rápida pelo código na barra de pesquisa.'
+      },
+      {
+        category: 'improvement',
+        title: 'Código ATUA Obrigatório ao Solicitar Novo Embarque',
+        description: 'Ao cadastrar ou selecionar um motorista na solicitação de novo embarque que ainda não possua o Código ATUA (cadastrado antes da regra), o campo Código ATUA é exigido e destacado. Caso o motorista já possua código no sistema ou histórico de embarques, o campo é preenchido automaticamente com indicador de vínculo.'
+      },
+      {
+        category: 'fix',
+        title: 'Correção de Inicialização do Formatador Monetário nos Filtros',
+        description: 'Corrigida a ordem de inicialização da função formatCurrency na Planilha de Controle, eliminando o ReferenceError durante o cálculo em tempo de execução das opções dos seletores de filtro.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_06_v2_70_8',
+    version: 'v2.70.8',
+    date: '06/10/2026',
+    title: 'Planilha de Controladoria: Refinamento dos Campos de Impostos e Deduções',
+    summary: 'As colunas de ICMS, Débito PIS/COFINS, Crédito PIS/COFINS, Patronal 4% e INSS / SEST SENAT na Planilha de Embarques foram refinadas para sincronização direta e fidedigna com os campos do sistema e documentos: ICMS Destacado no CT-e, Imposto Federal apurado na Composição das Deduções, Crédito Gerado (Exportação / Manual), INSS Patronal / CPRB (4% s/ Frete Motorista líq. pedágio) e Cláusula 3.5.3 (-) Desconto SEST/SENAT lida da Carta Frete.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Sincronização precisa de Imposto Federal e Crédito Gerado',
+        description: 'A coluna DÉBITO PIS/COFINS passa a refletir exatamente o campo Imposto Federal (respeitando isenção de exportação, alíquota Simples de 3,40%, PF de 3,655% e PJ de 9,25%, além de edição manual). A coluna CRÉDITO PIS/COFINS reflete fielmente o card Crédito Gerado (automático ou edição manual).'
+      },
+      {
+        category: 'improvement',
+        title: 'ICMS Destacado e INSS Patronal / CPRB',
+        description: 'A coluna ICMS puxa o ICMS Destacado apurado no CT-e/XML e a coluna PATRONAL 4% extrai a retenção oficial de INSS Patronal / CPRB de 4% sobre o frete motorista sem pedágio para motoristas PF/TAC.'
+      },
+      {
+        category: 'feature',
+        title: 'Leitura direta da Cláusula 3.5.3 (-) Desconto SEST/SENAT',
+        description: 'A coluna INSS / SEST SENAT passa a extrair prioritariamente o campo 3.5.3 (-) Desconto SEST/SENAT identificado na leitura do documento Carta Frete, com fallback automático no cálculo de retenção fiscal de 2,5% sobre a base do TAC.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_05_v2_70_7',
     version: 'v2.70.7',
     date: '05/10/2026',

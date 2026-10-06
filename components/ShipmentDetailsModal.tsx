@@ -516,7 +516,19 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         </>
                     ) : (
                         <>
-                            <DetailItem label="Motorista" value={shipment.driverName} />
+                            <DetailItem label="Motorista">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    {(() => {
+                                        const atua = shipment.codigoAtua || (shipment.documents as any)?.codigo_atua || (shipment.documents as any)?.codg_atua || (shipment.documents as any)?.codigoAtua;
+                                        return atua ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[11px] font-black font-mono bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300 dark:border-blue-700/60 shadow-2xs">
+                                                {atua}
+                                            </span>
+                                        ) : null;
+                                    })()}
+                                    <span className="font-semibold text-gray-800 dark:text-gray-100">{shipment.driverName}</span>
+                                </div>
+                            </DetailItem>
                             <DetailItem label="Documento (CPF)" value={shipment.driverCpf} />
                             <DetailItem label="Contato" value={shipment.driverContact} />
                             

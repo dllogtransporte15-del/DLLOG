@@ -266,6 +266,41 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
 
   const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.nomeFantasia || 'N/A';
 
+  const getDriverCodigoAtua = useCallback((s: Shipment): string => {
+    if (s.codigoAtua && s.codigoAtua.trim() !== '' && s.codigoAtua !== '-') return s.codigoAtua.trim();
+    const docAtua = (s.documents as any)?.codigo_atua || (s.documents as any)?.codg_atua || (s.documents as any)?.codigoAtua;
+    if (docAtua && String(docAtua).trim() !== '' && String(docAtua).trim() !== '-') return String(docAtua).trim();
+
+    // 1. Buscar no cadastro do motorista
+    const driver = drivers?.find(d => 
+      d.name === s.driverName || 
+      normalizeDriverKey(d.name) === normalizeDriverKey(s.driverName) || 
+      (d.cpf && s.driverCpf && d.cpf.replace(/\D/g, '') === s.driverCpf.replace(/\D/g, ''))
+    );
+    if (driver?.codigoAtua && String(driver.codigoAtua).trim() !== '') {
+      return String(driver.codigoAtua).trim();
+    }
+
+    // 2. Buscar em outros embarques desse mesmo motorista onde o código já foi informado
+    const driverCpfClean = (s.driverCpf || driver?.cpf || '').replace(/\D/g, '');
+    const driverNameClean = (s.driverName || '').trim().toLowerCase();
+    const matchShipment = shipments.find(other => {
+      const oCpf = (other.driverCpf || '').replace(/\D/g, '');
+      const oName = (other.driverName || '').trim().toLowerCase();
+      const isMatch = (driverCpfClean !== '' && oCpf === driverCpfClean) || (driverNameClean !== '' && oName === driverNameClean);
+      if (!isMatch) return false;
+      const atua = other.codigoAtua || (other.documents as any)?.codigo_atua || (other.documents as any)?.codg_atua;
+      return Boolean(atua && String(atua).trim() !== '' && String(atua).trim() !== '-');
+    });
+
+    if (matchShipment) {
+      const atua = matchShipment.codigoAtua || (matchShipment.documents as any)?.codigo_atua || (matchShipment.documents as any)?.codg_atua;
+      return String(atua).trim();
+    }
+
+    return '';
+  }, [drivers, shipments]);
+
   // Filter options
   const plateOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.horsePlate))).filter(Boolean).sort(), [shipments]);
   const nameOptions = useMemo(() => Array.from(new Set(shipments.map(s => s.driverName))).filter(Boolean).sort(), [shipments]);
@@ -281,7 +316,8 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
           const q = filterId.trim().toLowerCase();
           const idMatch = shipment.id.toLowerCase().includes(q);
           const cargoSeqMatch = cargo?.sequenceId ? String(cargo.sequenceId).toLowerCase().includes(q) : false;
-          if (!idMatch && !cargoSeqMatch) return false;
+          const atuaMatch = getDriverCodigoAtua(shipment).toLowerCase().includes(q);
+          if (!idMatch && !cargoSeqMatch && !atuaMatch) return false;
         }
         if (filterPlate.length > 0 && !filterPlate.includes(shipment.horsePlate)) return false;
         if (filterName.length > 0 && !filterName.includes(shipment.driverName)) return false;
@@ -649,7 +685,18 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <div className="text-[10px] text-gray-400 uppercase font-bold">Motorista</div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(() => {
+                        const atua = getDriverCodigoAtua(shipment);
+                        return atua ? (
+                          <span 
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300 dark:border-blue-700/60 shadow-2xs shrink-0" 
+                            title={`Código ATUA: ${atua}`}
+                          >
+                            {atua}
+                          </span>
+                        ) : null;
+                      })()}
                       <div className="font-medium dark:text-gray-200">{shipment.driverName}</div>
                       {(() => {
                           const driver = drivers?.find(d => 
@@ -1150,8 +1197,19 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       )}
                     </td>
                     <td className="px-6 py-[11px] whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <div className="text-sm text-gray-900 dark:text-white">{shipment.driverName}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(() => {
+                          const atua = getDriverCodigoAtua(shipment);
+                          return atua ? (
+                            <span 
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black font-mono bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300 dark:border-blue-700/60 shadow-2xs shrink-0" 
+                              title={`Código ATUA: ${atua}`}
+                            >
+                              {atua}
+                            </span>
+                          ) : null;
+                        })()}
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{shipment.driverName}</div>
                         {(() => {
                             const driver = drivers?.find(d => 
                               d.name === shipment.driverName || 

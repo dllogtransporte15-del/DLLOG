@@ -152,6 +152,7 @@ export interface Driver {
   active: boolean;
   restrictionReason?: string;
   has_app?: boolean;
+  codigoAtua?: string;
 }
 
 export interface DriverLocation {
