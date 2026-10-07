@@ -470,9 +470,10 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
     }
 
     const tarifaTonMotorista = parseNumberPtBr(getVal(colIdx.tarifaTonMotorista, 41));
+    const pedagioVal = parseNumberPtBr(getVal(colIdx.pedagio, 33));
     let valorFreteMotorista = parseNumberPtBr(getVal(colIdx.valorFreteMotorista, 42));
     if (valorFreteMotorista === 0 && tarifaTonMotorista > 0 && peso > 0) {
-      valorFreteMotorista = tarifaTonMotorista * peso;
+      valorFreteMotorista = Math.max(0, Number(((tarifaTonMotorista * peso) - pedagioVal).toFixed(2)));
     }
 
     const valorAdiantamento = parseNumberPtBr(getVal(colIdx.valorAdiantamento, 49));
@@ -905,9 +906,10 @@ export function recalculateSpreadsheetRow(row: TranscunhaSpreadsheetRow): Transc
     updated.freteBrutoEmpresa = Number((updated.freteEmpresaUnitario * updated.peso).toFixed(2));
   }
 
-  // 2. Valor Frete Motorista = Tarifa Ton Motorista * Peso
+  // 2. Valor Frete Motorista = (Tarifa Ton Motorista * Peso) - Pedágio (somente conta bancária)
   if (updated.tarifaTonMotorista > 0 && updated.peso > 0) {
-    updated.valorFreteMotorista = Number((updated.tarifaTonMotorista * updated.peso).toFixed(2));
+    const bruto = Number((updated.tarifaTonMotorista * updated.peso).toFixed(2));
+    updated.valorFreteMotorista = Math.max(0, Number((bruto - (updated.pedagio || 0)).toFixed(2)));
   }
 
   // 3. Valor Adiantamento = Valor Frete Motorista * (% Adiantamento / 100)

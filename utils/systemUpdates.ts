@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_06_v2_70_12',
+    version: 'v2.70.12',
+    date: '06/10/2026',
+    title: 'Ajuste do Frete Motorista: Exclusão do Pedágio e Foco em Conta Bancária',
+    summary: 'A coluna e o totalizador do campo "VALOR FRETE MOTORISTA" na Planilha de Controle de Embarques foram reconfigurados para desconsiderar os valores pagos no pedágio (tag/vale-pedágio eletrônico), considerando estritamente os valores creditados e pagos na conta bancária do motorista (adiantamento + saldo em conta).',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Exclusão do Pedágio na Coluna Valor Frete Motorista',
+        description: 'O valor do frete do motorista em cada linha passa a deduzir o valor do pedágio (s.tollValue), refletindo exclusivamente o frete líquido creditado na conta bancária do transportador.'
+      },
+      {
+        category: 'improvement',
+        title: 'Totalizador da Coluna Fiel aos Pagamentos em Conta Bancária',
+        description: 'O totalizador fixo no topo da coluna VALOR FRETE MOTORISTA agora soma exatamente o montante desembolsado em conta bancária (PIX/TED), sem duplicar os custos já computados na coluna individual de PEDÁGIO.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_06_v2_70_11',
     version: 'v2.70.11',
     date: '06/10/2026',

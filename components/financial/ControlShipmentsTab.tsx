@@ -326,7 +326,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
 
   // 7. Frete & Acerto Motorista
   { key: 'tarifaTonMotorista', label: 'TARIFA TON MOTORISTA', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'currency', width: 'min-w-[90px] max-w-[100px]', align: 'right' },
-  { key: 'valorFreteMotorista', label: 'VALOR FRETE MOTORISTA', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'currency', width: 'min-w-[95px] max-w-[105px]', align: 'right' },
+  { key: 'valorFreteMotorista', label: 'VALOR FRETE MOTORISTA', tooltip: 'VALOR FRETE MOTORISTA: Valor em conta bancária (excluindo pedágio pago no tag)', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'currency', width: 'min-w-[95px] max-w-[105px]', align: 'right' },
   { key: 'nfCliente', label: 'NF CLIENTE', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'text', width: 'min-w-[80px] max-w-[90px]', align: 'center' },
   { key: 'valorNf', label: 'VALOR DA NF', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
   { key: 'status', label: 'STATUS EMBARQUE', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'text', width: 'min-w-[90px] max-w-[100px]', align: 'center' },
@@ -574,6 +574,11 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       const freteBruto = Number((peso * tarifaEmpresa).toFixed(2));
       const tarifaMotorista = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (peso > 0 ? Number((s.driverFreightValue / peso).toFixed(2)) : 0);
       const freteMotorista = s.driverFreightValue || Number((peso * tarifaMotorista).toFixed(2));
+      const pedagioMotorista = s.tollValue || 0;
+
+      // Valor do Frete Motorista em Conta Bancária: não considera os valores de pedágio (tag/vale-pedágio),
+      // considerando apenas os valores creditados/pagos na conta bancária do motorista.
+      const freteMotoristaConta = Math.max(0, freteMotorista - pedagioMotorista);
 
       const pesoChegada = s.unloadedTonnage || 0;
       const quebra = (peso > pesoChegada && pesoChegada > 0) ? Number((peso - pesoChegada).toFixed(3)) : 0;
@@ -871,7 +876,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         })(),
 
         tarifaTonMotorista: tarifaMotorista,
-        valorFreteMotorista: freteMotorista,
+        valorFreteMotorista: freteMotoristaConta,
         nfCliente: s.nfeNumber || (s.documents as any)?.nfe_number || (s.documents as any)?.numero_nfe || (s.documents as any)?.nfe || '-',
         valorNf: (s.nfeValue !== undefined && s.nfeValue > 0)
           ? s.nfeValue
