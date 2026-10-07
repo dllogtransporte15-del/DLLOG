@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_06_v2_70_13',
+    version: 'v2.70.13',
+    date: '06/10/2026',
+    title: 'Correção na Exclusão e Persistência de Notas Fiscais no Módulo Financeiro',
+    summary: 'Corrigido comportamento onde notas fiscais excluídas ou a semente de dados de exemplo reapareciam ao recarregar a página. A lista agora preserva estritamente as exclusões do usuário e inicia limpa sem criar lançamentos fictícios indesejados.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Persistência Definitiva de Exclusão de Notas Fiscais',
+        description: 'Ao excluir notas fiscais lançadas, o estado vazio ou filtrado é salvo com sucesso e mantido sem que notas antigas ou de exemplo voltem após o recarregamento (F5).'
+      },
+      {
+        category: 'improvement',
+        title: 'Remoção de Dados Mock e Início Limpo',
+        description: 'Remoção definitiva das notas fiscais mock/exemplos em lote da semente de testes (inv_001 a inv_005), garantindo que apenas as notas efetivamente cadastradas pela operação sejam exibidas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_06_v2_70_12',
     version: 'v2.70.12',
     date: '06/10/2026',

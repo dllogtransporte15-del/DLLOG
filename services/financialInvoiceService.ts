@@ -296,14 +296,14 @@ export const financialInvoiceService = {
   // ----------------------------------------------------
   // NOTAS FISCAIS
   // ----------------------------------------------------
-  getInvoices: async (users: User[] = []): Promise<FinancialInvoice[]> => {
+  getInvoices: async (_users: User[] = []): Promise<FinancialInvoice[]> => {
     try {
       const { data, error } = await supabase
         .from('financial_invoices')
         .select('*')
         .order('issue_date', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         return data.map(d => ({
           id: d.id,
           invoiceNumber: d.invoice_number,
@@ -341,17 +341,24 @@ export const financialInvoiceService = {
 
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      if (local) {
+      if (local !== null) {
         const parsed: FinancialInvoice[] = JSON.parse(local);
-        if (parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Remove automaticamente notas mock antigas de teste/semente (inv_001 a inv_005)
+          const cleaned = parsed.filter(inv => !inv.id.startsWith('inv_00'));
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(cleaned));
+            return cleaned;
+          }
+          return parsed;
+        }
       }
     } catch (e) {
       console.warn('Erro ao ler notas fiscais locais:', e);
     }
 
-    const seed = getInitialInvoicesSeed(users);
-    localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(seed));
-    return seed;
+    localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify([]));
+    return [];
   },
 
   saveInvoice: async (
@@ -418,10 +425,15 @@ export const financialInvoiceService = {
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
       let list: FinancialInvoice[] = local ? JSON.parse(local) : [];
-      if (isEdit) {
-        list = list.map(inv => inv.id === existingId ? completeInvoice : inv);
+      if (Array.isArray(list)) {
+        list = list.filter(inv => !inv.id.startsWith('inv_00'));
+        if (isEdit) {
+          list = list.map(inv => inv.id === existingId ? completeInvoice : inv);
+        } else {
+          list = [completeInvoice, ...list];
+        }
       } else {
-        list = [completeInvoice, ...list];
+        list = [completeInvoice];
       }
       localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
     } catch (e) {
@@ -483,10 +495,12 @@ export const financialInvoiceService = {
 
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      if (local) {
-        let list: FinancialInvoice[] = JSON.parse(local);
-        list = list.filter(inv => inv.id !== id);
+      let list: FinancialInvoice[] = local ? JSON.parse(local) : [];
+      if (Array.isArray(list)) {
+        list = list.filter(inv => inv.id !== id && !inv.id.startsWith('inv_00'));
         localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
+      } else {
+        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify([]));
       }
     } catch (e) {
       console.error(e);
