@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS public.financial_invoices (
     payment_date DATE,
     status TEXT NOT NULL DEFAULT 'Pendente' CHECK (status IN ('Pendente', 'Pago', 'Atrasado', 'Cancelado')),
     payment_method TEXT,
+    payment_details TEXT,
     cost_nature TEXT NOT NULL CHECK (cost_nature IN ('servico', 'produto', 'bem', 'outros')),
     cost_type_id UUID REFERENCES public.financial_cost_types(id) ON DELETE SET NULL,
     cost_type_name TEXT,

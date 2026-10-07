@@ -845,6 +845,7 @@ export interface FinancialInvoice {
   paymentDate?: string;
   status: InvoicePaymentStatus;
   paymentMethod?: 'Boleto' | 'Pix' | 'Transferência' | 'Cartão' | 'Dinheiro' | 'Outro';
+  paymentDetails?: string; // Dados para pagamento (Chave Pix, Linha digitável/código de barras, agência/conta, etc.)
   
   // Categorização e Classificação de Custos
   costNature: InvoiceCostNature;

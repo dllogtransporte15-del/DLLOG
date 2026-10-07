@@ -41,8 +41,11 @@ import {
   Box, 
   Layers, 
   Sparkles,
-  Paperclip
+  Paperclip,
+  Loader2
 } from 'lucide-react';
+import { extractDataFromInvoiceFile } from '../../utils/invoiceExtractionService';
+import { openDocumentInNewTab } from '../../utils/documentViewer';
 
 interface InvoicesManagementTabProps {
   users: User[];
@@ -146,6 +149,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [formPaymentDate, setFormPaymentDate] = useState('');
   const [formStatus, setFormStatus] = useState<InvoicePaymentStatus>('Pendente');
   const [formPaymentMethod, setFormPaymentMethod] = useState<string>('Boleto');
+  const [formPaymentDetails, setFormPaymentDetails] = useState('');
   const [formNature, setFormNature] = useState<InvoiceCostNature>('servico');
   const [formCostTypeId, setFormCostTypeId] = useState('');
   const [formCostCenterId, setFormCostCenterId] = useState('');
@@ -153,12 +157,59 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [formDescription, setFormDescription] = useState('');
   const [formNotes, setFormNotes] = useState('');
 
-  // Form State: Anexo de arquivo
+  // Form State: Anexo de arquivo e Extração Inteligente
   const [formFileUrl, setFormFileUrl] = useState<string | undefined>(undefined);
   const [formFileName, setFormFileName] = useState<string | undefined>(undefined);
   const [formFileType, setFormFileType] = useState<string | undefined>(undefined);
   const [formFileSize, setFormFileSize] = useState<number | undefined>(undefined);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionSuccess, setExtractionSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // State: Blob URL seguro para visualização em iframe sem bloqueio do navegador
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!previewFile?.url) {
+      setPreviewBlobUrl(null);
+      return;
+    }
+
+    let activeBlobUrl: string | null = null;
+    const rawUrl = previewFile.url;
+
+    if (rawUrl.startsWith('data:')) {
+      try {
+        const parts = rawUrl.split(',');
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        let mime = mimeMatch ? mimeMatch[1] : (previewFile.type || 'application/octet-stream');
+        if (previewFile.name.toLowerCase().endsWith('.pdf')) {
+          mime = 'application/pdf';
+        }
+
+        const bstr = atob(parts[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        const blob = new Blob([u8arr], { type: mime });
+        activeBlobUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl(activeBlobUrl);
+      } catch (err) {
+        console.warn('Falha ao converter data URL para blob:', err);
+        setPreviewBlobUrl(rawUrl);
+      }
+    } else {
+      setPreviewBlobUrl(rawUrl);
+    }
+
+    return () => {
+      if (activeBlobUrl && activeBlobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(activeBlobUrl);
+      }
+    };
+  }, [previewFile]);
 
   // Carregamento inicial
   useEffect(() => {
@@ -205,7 +256,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     }
   }, [formNature, availableCostTypesForForm, formCostTypeId]);
 
-  // Tratamento de arquivo anexo (Upload direto com Base64)
+  // Tratamento de arquivo anexo com Leitura e Extração Automática
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -216,12 +267,69 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const base64 = reader.result as string;
+      const detectedType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : undefined);
       setFormFileUrl(base64);
       setFormFileName(file.name);
-      setFormFileType(file.type);
+      setFormFileType(detectedType);
       setFormFileSize(file.size);
+
+      // Inicia leitura e extração automática dos dados fiscais
+      setIsExtracting(true);
+      setExtractionSuccess(null);
+      try {
+        const extracted = await extractDataFromInvoiceFile(file);
+        let count = 0;
+
+        if (extracted.invoiceNumber) {
+          setFormNumber(extracted.invoiceNumber);
+          count++;
+        }
+        if (extracted.series) {
+          setFormSeries(extracted.series);
+          count++;
+        }
+        if (extracted.totalAmount !== undefined && extracted.totalAmount > 0) {
+          setFormAmount(extracted.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          count++;
+        }
+        if (extracted.supplierName) {
+          setFormSupplier(extracted.supplierName);
+          count++;
+        }
+        if (extracted.supplierCnpjCpf) {
+          setFormCnpjCpf(extracted.supplierCnpjCpf);
+          count++;
+        }
+        if (extracted.issueDate) {
+          setFormIssueDate(extracted.issueDate);
+          count++;
+        }
+        if (extracted.dueDate) {
+          setFormDueDate(extracted.dueDate);
+        }
+        if (extracted.accessKey) {
+          setFormAccessKey(extracted.accessKey);
+        }
+        if (extracted.paymentMethod) {
+          setFormPaymentMethod(extracted.paymentMethod);
+        }
+        if (extracted.paymentDetails) {
+          setFormPaymentDetails(extracted.paymentDetails);
+        }
+        if (extracted.description && !formDescription) {
+          setFormDescription(extracted.description);
+        }
+
+        if (count > 0) {
+          setExtractionSuccess(`✨ ${count} campos extraídos automaticamente da Nota Fiscal anexada!`);
+        }
+      } catch (err) {
+        console.warn('Erro ao extrair dados fiscais:', err);
+      } finally {
+        setIsExtracting(false);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -231,6 +339,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormFileName(undefined);
     setFormFileType(undefined);
     setFormFileSize(undefined);
+    setIsExtracting(false);
+    setExtractionSuccess(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -250,6 +360,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormPaymentDate('');
     setFormStatus('Pendente');
     setFormPaymentMethod('Boleto');
+    setFormPaymentDetails('');
     setFormNature('servico');
     setFormDescription('');
     setFormNotes('');
@@ -257,6 +368,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormFileName(undefined);
     setFormFileType(undefined);
     setFormFileSize(undefined);
+    setIsExtracting(false);
+    setExtractionSuccess(null);
 
     // Selecionar o usuário logado ou primeiro usuário disponível
     const selectedUser = users.find(u => u.id === currentUser?.id) || users[0];
@@ -284,6 +397,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormPaymentDate(inv.paymentDate || '');
     setFormStatus(inv.status);
     setFormPaymentMethod(inv.paymentMethod || 'Boleto');
+    setFormPaymentDetails(inv.paymentDetails || '');
     setFormNature(inv.costNature);
     setFormCostTypeId(inv.costTypeId);
     setFormCostCenterId(inv.costCenterId);
@@ -294,6 +408,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormFileName(inv.fileName);
     setFormFileType(inv.fileType);
     setFormFileSize(inv.fileSize);
+    setIsExtracting(false);
+    setExtractionSuccess(null);
 
     setIsFormModalOpen(true);
   };
@@ -322,6 +438,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       paymentDate: formStatus === 'Pago' ? (formPaymentDate || formDueDate) : undefined,
       status: formStatus,
       paymentMethod: formPaymentMethod as any,
+      paymentDetails: formPaymentDetails.trim() || undefined,
       costNature: formNature,
       costTypeId: formCostTypeId,
       costTypeName: selectedType?.name || 'Geral',
@@ -1072,6 +1189,11 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                           {inv.paymentMethod && (
                             <div className="text-[10px] text-slate-400 font-medium">
                               via {inv.paymentMethod}
+                              {inv.paymentDetails && (
+                                <span className="block text-[9px] text-slate-500 dark:text-slate-400 truncate max-w-[140px] font-mono" title={inv.paymentDetails}>
+                                  {inv.paymentDetails}
+                                </span>
+                              )}
                             </div>
                           )}
                         </td>
@@ -1445,7 +1567,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="application/pdf,image/png,image/jpeg,image/webp"
+                  accept=".pdf,.xml,application/pdf,application/xml,text/xml,image/png,image/jpeg,image/webp"
                   onChange={handleFileChange}
                   className="hidden"
                   id="invoice-file-upload"
@@ -1492,12 +1614,37 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   >
                     <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-blue-500 transition-colors mb-2" />
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Clique para anexar o PDF ou imagem da Nota Fiscal
+                      Clique para anexar o PDF, XML ou Imagem da Nota Fiscal
                     </span>
                     <span className="text-[11px] text-slate-400 mt-0.5">
-                      Arquivos suportados: PDF, JPG, PNG e WebP
+                      Arquivos suportados: PDF, XML, JPG, PNG e WebP (Leitura e preenchimento com IA)
                     </span>
                   </label>
+                )}
+
+                {/* Banner de Processamento da Extração Automática */}
+                {isExtracting && (
+                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center gap-2.5 text-blue-600 dark:text-blue-300 text-xs font-semibold animate-pulse">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
+                    <span>Identificando e extraindo dados da Nota Fiscal automaticamente...</span>
+                  </div>
+                )}
+
+                {/* Banner de Sucesso da Extração Automática */}
+                {extractionSuccess && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-2.5 text-emerald-600 dark:text-emerald-400 text-xs font-semibold animate-fade-in">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>{extractionSuccess}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExtractionSuccess(null)}
+                      className="text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-300 p-1 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1538,8 +1685,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     Valor Total (R$) *
                   </label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     required
                     placeholder="0,00"
                     value={formAmount}
@@ -1641,8 +1787,30 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   </select>
                 </div>
 
+                {/* Dados para Pagamento */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Dados para Pagamento
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={
+                      formPaymentMethod === 'Pix'
+                        ? 'Chave Pix (CPF, CNPJ, e-mail, celular...)'
+                        : formPaymentMethod === 'Boleto'
+                        ? 'Linha digitável / Código de barras'
+                        : formPaymentMethod === 'Transferência'
+                        ? 'Banco, Agência e Conta'
+                        : 'Chave Pix, linha digitável ou conta'
+                    }
+                    value={formPaymentDetails}
+                    onChange={(e) => setFormPaymentDetails(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
+
                 {/* Chave de Acesso NFe */}
-                <div className="sm:col-span-2">
+                <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
                     Chave de Acesso NFe (44 dígitos)
                   </label>
@@ -1984,20 +2152,29 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       {/* ========================================================= */}
       {previewFile && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl max-h-[92vh] rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col overflow-hidden">
             {/* Modal Header */}
             <div className="px-6 py-4 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Paperclip className="w-5 h-5 text-blue-500" />
-                <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate max-w-md">
+                <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
                   {previewFile.name}
                 </h4>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openDocumentInNewTab(previewBlobUrl || previewFile.url, previewFile.name)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                  title="Abrir documento em tela cheia em nova aba"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Nova Aba</span>
+                </button>
                 <a
-                  href={previewFile.url}
+                  href={previewBlobUrl || previewFile.url}
                   download={previewFile.name}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Baixar</span>
@@ -2012,20 +2189,78 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             </div>
 
             {/* Modal Content */}
-            <div className="p-4 flex-1 overflow-auto flex items-center justify-center bg-slate-950/20">
-              {previewFile.type === 'application/pdf' || previewFile.url.startsWith('data:application/pdf') ? (
-                <iframe
-                  src={previewFile.url}
-                  title={previewFile.name}
-                  className="w-full h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800"
-                />
-              ) : (
-                <img
-                  src={previewFile.url}
-                  alt={previewFile.name}
-                  className="max-h-[70vh] max-w-full object-contain rounded-xl shadow-lg border border-slate-200 dark:border-slate-800"
-                />
-              )}
+            <div className="p-3 sm:p-4 flex-1 overflow-auto flex flex-col items-center justify-center bg-slate-950/20">
+              {(() => {
+                const isPdf = previewFile.type?.includes('pdf') ||
+                  previewFile.name.toLowerCase().endsWith('.pdf') ||
+                  previewFile.url.startsWith('data:application/pdf') ||
+                  previewFile.url.includes('.pdf');
+
+                const isImage = previewFile.type?.startsWith('image/') ||
+                  ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg'].some(ext => previewFile.name.toLowerCase().endsWith(ext)) ||
+                  previewFile.url.startsWith('data:image/');
+
+                if (isPdf) {
+                  return (
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                      <iframe
+                        src={previewBlobUrl || previewFile.url}
+                        title={previewFile.name}
+                        className="w-full h-[72vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white shadow-inner"
+                      />
+                      <div className="mt-2 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                        <span>Documento carregado. Caso o navegador bloqueie a exibição integrada:</span>
+                        <button
+                          type="button"
+                          onClick={() => openDocumentInNewTab(previewBlobUrl || previewFile.url, previewFile.name)}
+                          className="text-blue-400 hover:text-blue-300 font-bold underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          Abrir em Nova Aba
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (isImage) {
+                  return (
+                    <img
+                      src={previewBlobUrl || previewFile.url}
+                      alt={previewFile.name}
+                      className="max-h-[74vh] max-w-full object-contain rounded-xl shadow-lg border border-slate-200 dark:border-slate-800"
+                    />
+                  );
+                }
+
+                return (
+                  <div className="text-center p-8 bg-slate-900 rounded-2xl border border-slate-700 max-w-md">
+                    <FileText className="w-12 h-12 text-blue-400 mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-white mb-2">{previewFile.name}</p>
+                    <p className="text-xs text-slate-400 mb-4">
+                      Arquivo anexado. Clique abaixo para abrir ou baixar diretamente.
+                    </p>
+                    <div className="flex items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openDocumentInNewTab(previewBlobUrl || previewFile.url, previewFile.name)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Abrir em Nova Aba
+                      </button>
+                      <a
+                        href={previewBlobUrl || previewFile.url}
+                        download={previewFile.name}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow"
+                      >
+                        <Download className="w-4 h-4" />
+                        Baixar Arquivo
+                      </a>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

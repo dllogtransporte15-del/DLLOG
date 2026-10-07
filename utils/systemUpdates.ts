@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_06_v2_70_14',
+    version: 'v2.70.14',
+    date: '06/10/2026',
+    title: 'Visualizador de Notas Fiscais, Leitura Automática de Anexos e Dados para Pagamento',
+    summary: 'Aprimoramento abrangente no módulo de Notas Fiscais: resolução definitiva da visualização de anexos em tela e em nova aba com Blob URLs; criação de campo para dados de pagamento (Pix, código de barras/linha digitável e conta bancária) ao lado da forma de pagamento; e extração automática instantânea dos dados fiscais do documento anexado (número, série, valor total, fornecedor, CNPJ/CPF e data de emissão).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Correção no Visualizador de Documentos e PDFs Anexados',
+        description: 'Implementada conversão automática de Data URLs para Blob URLs protegidos contra bloqueios de segurança do navegador, além de botões integrados para abrir em Nova Aba em tela cheia, imprimir e baixar o documento.'
+      },
+      {
+        category: 'feature',
+        title: 'Leitura e Extração Automática de Dados da NF',
+        description: 'Ao anexar uma Nota Fiscal (PDF, XML ou imagem), o sistema extrai e preenche automaticamente: Número da NF, Série, Valor Total (R$), Razão Social / Nome Fantasia do Fornecedor, CNPJ/CPF, Data de Emissão, Vencimento e dados de pagamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Campo "Dados para Pagamento" no Lançamento de NF',
+        description: 'Novo campo inserido estrategicamente ao lado de "Forma de Pagamento" para registrar a Chave Pix, Linha digitável/Código de barras do boleto ou dados bancários, com exibição resumida na listagem financeira.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_06_v2_70_13',
     version: 'v2.70.13',
     date: '06/10/2026',
