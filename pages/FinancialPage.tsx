@@ -10,11 +10,13 @@ import {
   PieChart, 
   Layers, 
   TrendingUp, 
-  Landmark
+  Landmark,
+  FileText
 } from 'lucide-react';
 
 import { AccountsPayableTab } from '../components/financial/AccountsPayableTab';
 import { AccountsReceivableTab } from '../components/financial/AccountsReceivableTab';
+import { InvoicesManagementTab } from '../components/financial/InvoicesManagementTab';
 import { OfxReconciliationTab } from '../components/financial/OfxReconciliationTab';
 import { FirstResultTab } from '../components/financial/FirstResultTab';
 import { SecondResultTab } from '../components/financial/SecondResultTab';
@@ -93,6 +95,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   const validTabs: FinancialTab[] = [
     'payables', 
     'receivables', 
+    'invoices',
     'ofx', 
     'result-1', 
     'result-2', 
@@ -323,6 +326,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   const tabsConfig: { id: FinancialTab; label: string; icon: React.ElementType; badge?: string; group?: string }[] = [
     { id: 'payables', label: 'Contas a Pagar', icon: ArrowDownCircle },
     { id: 'receivables', label: 'Contas a Receber', icon: ArrowUpCircle },
+    { id: 'invoices', label: 'Notas Fiscais', icon: FileText, badge: 'NFs' },
     { id: 'ofx', label: 'Conciliação Bancária OFX', icon: FileSpreadsheet, badge: 'OFX' },
     { id: 'result-1', label: '1º Resultado', icon: PieChart },
     { id: 'result-2', label: '2º Resultado', icon: Layers },
@@ -432,6 +436,13 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             transactions={transactions}
             onAddTransaction={handleAddTransaction}
             onUpdateStatus={handleUpdateStatus}
+          />
+        )}
+
+        {activeTab === 'invoices' && (
+          <InvoicesManagementTab
+            users={users}
+            currentUser={_currentUser}
           />
         )}
 

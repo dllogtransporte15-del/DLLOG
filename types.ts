@@ -701,6 +701,7 @@ export enum EtcTaxRegime {
 export type FinancialTab = 
   | 'payables' 
   | 'receivables' 
+  | 'invoices'
   | 'ofx' 
   | 'result-1' 
   | 'result-2' 
@@ -800,3 +801,73 @@ export interface OfxImportLog {
   reconciledCount: number;
   transactions: OfxTransaction[];
 }
+
+// ==========================================
+// GESTÃO E CONTROLE DE NOTAS FISCAIS
+// ==========================================
+
+export type InvoiceCostNature = 
+  | 'servico' // Prestação de Serviço
+  | 'produto' // Aquisição de Produto / Insumos
+  | 'bem'     // Compra de Bem / Ativo
+  | 'outros'; // Outros Custos / Despesas em Geral
+
+export type InvoicePaymentStatus = 'Pendente' | 'Pago' | 'Atrasado' | 'Cancelado';
+
+export interface CostType {
+  id: string;
+  name: string;
+  nature: InvoiceCostNature;
+  description?: string;
+  isDefault?: boolean;
+  createdAt: string;
+}
+
+export interface CostCenter {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  createdAt: string;
+}
+
+export interface FinancialInvoice {
+  id: string;
+  invoiceNumber: string;
+  series?: string;
+  accessKey?: string;
+  supplierName: string;
+  supplierCnpjCpf?: string;
+  totalAmount: number;
+  issueDate: string;
+  dueDate: string;
+  paymentDate?: string;
+  status: InvoicePaymentStatus;
+  paymentMethod?: 'Boleto' | 'Pix' | 'Transferência' | 'Cartão' | 'Dinheiro' | 'Outro';
+  
+  // Categorização e Classificação de Custos
+  costNature: InvoiceCostNature;
+  costTypeId: string;
+  costTypeName: string;
+  costCenterId: string;
+  costCenterName: string;
+  
+  // Vinculação de Responsável / Usuário Interno
+  responsibleUserId: string;
+  responsibleUserName: string;
+  responsibleUserProfile?: string;
+  
+  description: string;
+  notes?: string;
+  
+  // Anexo do documento da Nota Fiscal (PDF ou imagem)
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+  
+  createdAt: string;
+  updatedAt?: string;
+}
+

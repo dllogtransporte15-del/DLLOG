@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_06_v2_70_11',
+    version: 'v2.70.11',
+    date: '06/10/2026',
+    title: 'Módulo de Lançamento e Gestão de Notas Fiscais no Financeiro',
+    summary: 'Novo painel completo e integrado dentro da janela Financeiro dedicado ao controle, lançamento e auditoria de Notas Fiscais (serviços, produtos, compras de bens e despesas em geral). O módulo traz anexo direto de arquivos com visualizador integrado, classificação por natureza e centro de custos com cadastro rápido inline, vinculação a usuários/responsáveis internos e relatórios analíticos gerenciais com exportação CSV e impressão.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Lançamento e Anexo Direto de Arquivos de NF',
+        description: 'Upload e visualização instantânea de documentos de Notas Fiscais (PDF ou imagem), com captura de número da NF, série, fornecedor, CNPJ/CPF, valor total, datas de emissão/vencimento/pagamento, chave de acesso e forma de pagamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Classificação por Natureza e Centros de Custo com Cadastro Rápido',
+        description: 'Categorização entre Prestação de Serviço, Aquisição de Produto, Compra de Bem e Outras Despesas. Permite cadastrar novos centros de custo e tipos de despesa em tempo real via modais inline sem interromper o fluxo de preenchimento.'
+      },
+      {
+        category: 'feature',
+        title: 'Vinculação Obrigatória de Responsável / Usuário Interno',
+        description: 'Cada lançamento é obrigatoriamente associado ao colaborador interno (Embarcador, Agenciador, Operador, etc.) que solicitou ou gerou o custo, garantindo rastreabilidade e governança financeira total.'
+      },
+      {
+        category: 'feature',
+        title: 'Relatórios Analíticos Gerenciais e Exportação',
+        description: 'Painel analítico consolidado com distribuição de custos por responsável interno, centros de custo, natureza e fornecedores, acompanhado de KPIs em tempo real, exportação para CSV e impressão formatada de relatórios.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_06_v2_70_10',
     version: 'v2.70.10',
     date: '06/10/2026',

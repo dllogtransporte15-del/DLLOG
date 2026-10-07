@@ -22,7 +22,7 @@ import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -96,6 +96,7 @@ const navItems: NavItem[] = [
     children: [
       { id: 'financial?tab=payables', label: 'Contas a Pagar', icon: ArrowDownCircle },
       { id: 'financial?tab=receivables', label: 'Contas a Receber', icon: ArrowUpCircle },
+      { id: 'financial?tab=invoices', label: 'Notas Fiscais', icon: FileText },
       { id: 'financial?tab=ofx', label: 'Conciliação Bancária OFX', icon: FileSpreadsheet },
       { id: 'financial?tab=result-1', label: '1º Resultado Financeiro', icon: PieChart },
       { id: 'financial?tab=result-2', label: '2º Resultado Financeiro', icon: Layers },
