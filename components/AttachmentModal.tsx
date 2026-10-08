@@ -21,6 +21,8 @@ interface AttachmentModalProps {
     filesToAttach: { [key: string]: File[] },
     bankDetails?: string,
     loadedTonnage?: number,
+    driverFreightValue?: number,
+    icmsValue?: number,
     advancePercentage?: number,
     advanceValue?: number,
     tollValue?: number,
@@ -283,8 +285,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     docName: string;
   } | null>(null);
 
-  // Estado para armazenar o peso extraído do CT-e anexado
+  // Estados para armazenar valores extraídos de documentos fiscais
   const [cteExtractedWeightKg, setCteExtractedWeightKg] = useState<number | undefined>(undefined);
+  const [cartaFreteExtractedFreight, setCartaFreteExtractedFreight] = useState<number | undefined>(undefined);
+  const [cteExtractedIcms, setCteExtractedIcms] = useState<number | undefined>(undefined);
+
+  // Decisões de resolução de divergências fiscais na etapa Aguardando Fiscal
+  const [weightDecision, setWeightDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
+  const [freightDecision, setFreightDecision] = useState<'unresolved' | 'use_carta_frete' | 'keep_system'>('unresolved');
+  const [icmsDecision, setIcmsDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
 
   const ticketFiles: string[] = React.useMemo(() => {
     if (!shipment.documents) return [];
@@ -327,6 +336,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
     if (extracted.financeiro?.chavePix) {
       setBankDetails(prev => prev ? `${prev} | PIX: ${extracted.financeiro?.chavePix}` : (extracted.financeiro?.chavePix || ''));
+    }
+    if (extracted.financeiro?.valorTotalFrete !== undefined && extracted.financeiro.valorTotalFrete > 0) {
+      setCartaFreteExtractedFreight(extracted.financeiro.valorTotalFrete);
+    } else if (extracted.financeiro?.valorLiquido !== undefined && extracted.financeiro.valorLiquido > 0) {
+      setCartaFreteExtractedFreight(extracted.financeiro.valorLiquido);
+    }
+    if (extracted.financeiro?.valorIcms !== undefined && extracted.financeiro.valorIcms > 0) {
+      setCteExtractedIcms(extracted.financeiro.valorIcms);
     }
     if (extracted.carga?.pesoBrutoKg || extracted.carga?.pesoLiquidoKg) {
       const wKg = extracted.carga.pesoBrutoKg || extracted.carga.pesoLiquidoKg;
@@ -392,16 +409,85 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return null;
   }, [ticketLoadedWeightTon, cteWeightTon]);
 
-  // Alerta em tempo real quando houver divergência de peso
+  // Frete Motorista: Comparação entre Sistema e Carta Frete
+  const systemDriverFreight = React.useMemo(() => {
+    return Number(shipment.driverFreightValue) || 0;
+  }, [shipment.driverFreightValue]);
+
+  const freightDivergenceInfo = React.useMemo(() => {
+    if (!cartaFreteExtractedFreight || cartaFreteExtractedFreight <= 0 || systemDriverFreight <= 0) return null;
+    const diff = Math.abs(cartaFreteExtractedFreight - systemDriverFreight);
+    if (diff > 1.00) {
+      return {
+        systemFreight: systemDriverFreight,
+        cartaFreteFreight: cartaFreteExtractedFreight,
+        diff,
+        diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      };
+    }
+    return null;
+  }, [cartaFreteExtractedFreight, systemDriverFreight]);
+
+  // ICMS: Comparação entre Sistema e CT-e
+  const systemIcms = React.useMemo(() => {
+    if (shipment.icmsValue !== undefined && shipment.icmsValue > 0) return shipment.icmsValue;
+    if ((shipment.documents as any)?.icms_value) return Number((shipment.documents as any).icms_value);
+    if (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0) {
+      return shipment.realProfitData.icmsDifference;
+    }
+    if (cargo?.hasIcms && cargo?.icmsPercentage) {
+      const companyFreight = (cargo.companyFreightValuePerTon || 0) * (shipment.shipmentTonnage || 0);
+      return (companyFreight * cargo.icmsPercentage) / 100;
+    }
+    return 0;
+  }, [shipment.icmsValue, shipment.documents, shipment.realProfitData, shipment.shipmentTonnage, cargo]);
+
+  const icmsDivergenceInfo = React.useMemo(() => {
+    if (!cteExtractedIcms || cteExtractedIcms <= 0) return null;
+    const diff = Math.abs((systemIcms || 0) - cteExtractedIcms);
+    if (systemIcms > 0 && diff > 1.00) {
+      return {
+        systemIcms,
+        cteIcms: cteExtractedIcms,
+        diff,
+        diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      };
+    }
+    return null;
+  }, [cteExtractedIcms, systemIcms]);
+
+  const isAguardandoFiscal = shipment.status === ShipmentStatus.AguardandoFiscal;
+  const hasUnresolvedWeightDivergence = isAguardandoFiscal && !!weightDivergenceInfo && weightDecision === 'unresolved';
+  const hasUnresolvedFreightDivergence = isAguardandoFiscal && !!freightDivergenceInfo && freightDecision === 'unresolved';
+  const hasUnresolvedIcmsDivergence = isAguardandoFiscal && !!icmsDivergenceInfo && icmsDecision === 'unresolved';
+  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedIcmsDivergence;
+
+  // Alertas em tempo real quando houver divergências no Aguardando Fiscal
   useEffect(() => {
-    if (isOpen && weightDivergenceInfo) {
+    if (!isOpen || !isAguardandoFiscal) return;
+
+    if (weightDivergenceInfo && weightDecision === 'unresolved') {
       showToast(
-        `⚠️ Divergência de Peso Detectada! Ticket de Carregamento: ${weightDivergenceInfo.ticketTon.toFixed(2)}t (${weightDivergenceInfo.ticketKg}kg) vs CT-e: ${weightDivergenceInfo.cteTon.toFixed(2)}t (${weightDivergenceInfo.cteKg}kg). Diferença: ${weightDivergenceInfo.diffKg}kg.`,
+        `⚠️ Divergência de Peso: Ticket (${weightDivergenceInfo.ticketTon.toFixed(2)}t) vs CT-e (${weightDivergenceInfo.cteTon.toFixed(2)}t). Diferença: ${weightDivergenceInfo.diffKgFormatted}. Confirme qual valor é o correto.`,
         'warning',
         7000
       );
     }
-  }, [weightDivergenceInfo, isOpen]);
+    if (freightDivergenceInfo && freightDecision === 'unresolved') {
+      showToast(
+        `⚠️ Divergência de Frete Motorista: Sistema (R$ ${freightDivergenceInfo.systemFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) vs Carta Frete (R$ ${freightDivergenceInfo.cartaFreteFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Diferença: ${freightDivergenceInfo.diffFormatted}. Confirme qual valor é o correto.`,
+        'warning',
+        7000
+      );
+    }
+    if (icmsDivergenceInfo && icmsDecision === 'unresolved') {
+      showToast(
+        `⚠️ Divergência de ICMS: Sistema (R$ ${icmsDivergenceInfo.systemIcms.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) vs CT-e (R$ ${icmsDivergenceInfo.cteIcms.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Diferença: ${icmsDivergenceInfo.diffFormatted}. Confirme qual valor é o correto.`,
+        'warning',
+        7000
+      );
+    }
+  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!icmsDivergenceInfo]);
 
   useEffect(() => {
     if (isOpen) {
@@ -412,6 +498,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setBankDetails(shipment.bankDetails || '');
       setLoadedTonnage(shipment.shipmentTonnage || '');
       setCteExtractedWeightKg(undefined);
+      setCartaFreteExtractedFreight(undefined);
+      setCteExtractedIcms(undefined);
+      setWeightDecision('unresolved');
+      setFreightDecision('unresolved');
+      setIcmsDecision('unresolved');
 
       const initialAdvPct = shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70;
       const initialToll = shipment.tollValue || 0;
@@ -472,6 +563,21 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             }
             if (extracted.cteWeightKg !== undefined && extracted.cteWeightKg > 0) {
               setCteExtractedWeightKg(extracted.cteWeightKg);
+            }
+            if (extracted.driverFreightValue !== undefined && extracted.driverFreightValue > 0) {
+              setCartaFreteExtractedFreight(extracted.driverFreightValue);
+            }
+            if (extracted.icmsValue !== undefined && extracted.icmsValue > 0) {
+              setCteExtractedIcms(extracted.icmsValue);
+            }
+            if (extracted.ordemCarregamentoNumero && !shipment.documents?.ordem_carregamento_numero && onUpdateShipmentData) {
+              onUpdateShipmentData(shipment.id, {
+                documents: {
+                  ...shipment.documents,
+                  ordem_carregamento_numero: extracted.ordemCarregamentoNumero,
+                  oc_number: extracted.ordemCarregamentoNumero
+                }
+              }, { silent: true });
             }
           }).catch(err => console.warn('[AttachmentModal] Auto extract from URLs error:', err));
         }
@@ -546,6 +652,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           }
           if (parsed.cteWeightKg !== undefined && parsed.cteWeightKg > 0) {
             setCteExtractedWeightKg(parsed.cteWeightKg);
+          }
+          if (parsed.driverFreightValue !== undefined && parsed.driverFreightValue > 0) {
+            setCartaFreteExtractedFreight(parsed.driverFreightValue);
+            extractedAny = true;
+          }
+          if (parsed.icmsValue !== undefined && parsed.icmsValue > 0) {
+            setCteExtractedIcms(parsed.icmsValue);
+            extractedAny = true;
           }
           if (extractedAny) {
             showToast('Informações de frete extraídas do documento com sucesso!', 'success');
@@ -989,7 +1103,23 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         setError('Dados bancários são obrigatórios.');
         return;
       }
-      if (weightDivergenceInfo) {
+      if (isAguardandoFiscal) {
+        if (hasUnresolvedWeightDivergence) {
+          showToast(`⚠️ Divergência de Peso pendente: Confirme se o peso correto é o do Ticket (${weightDivergenceInfo?.ticketTon.toFixed(2)}t) ou do CT-e (${weightDivergenceInfo?.cteTon.toFixed(2)}t) antes de avançar.`, 'warning');
+          setError('É obrigatório confirmar qual valor de Toneladas é o correto antes de avançar.');
+          return;
+        }
+        if (hasUnresolvedFreightDivergence) {
+          showToast(`⚠️ Divergência de Frete Motorista pendente: Confirme se o valor correto é o do Sistema ou o da Carta Frete antes de avançar.`, 'warning');
+          setError('É obrigatório confirmar qual valor de Frete Motorista é o correto antes de avançar.');
+          return;
+        }
+        if (hasUnresolvedIcmsDivergence) {
+          showToast(`⚠️ Divergência de ICMS pendente: Confirme se o valor correto é o do Sistema ou o do CT-e antes de avançar.`, 'warning');
+          setError('É obrigatório confirmar qual valor de ICMS é o correto antes de avançar.');
+          return;
+        }
+      } else if (weightDivergenceInfo) {
         const confirmMsg = `⚠️ ATENÇÃO: DIVERGÊNCIA DE PESO DETECTADA!\n\n` +
           `• Peso no Ticket de Carregamento: ${weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton (${(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
           `• Peso no CT-e: ${weightDivergenceInfo.cteWeightTon.toFixed(2)} ton (${(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
@@ -1055,6 +1185,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       }
     }
 
+    if (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) {
+      showToast('O campo CODG. ATUA (Código de Atualização Cadastral) é obrigatório para salvar e avançar o cadastro.', 'warning');
+      return;
+    }
+
     if (shipment.status === ShipmentStatus.AguardandoDescarga && (!unloadedTonnage || Number(unloadedTonnage) <= 0)) {
       showToast('O peso descarregado é obrigatório para informar a entrega.', 'warning');
       return;
@@ -1093,7 +1228,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       await onSave({
         filesToAttach,
         bankDetails: bankDetails || undefined,
-        loadedTonnage: shipment.status === ShipmentStatus.AguardandoCarregamento ? Number(loadedTonnage) : undefined,
+        loadedTonnage: shipment.status === ShipmentStatus.AguardandoCarregamento 
+          ? Number(loadedTonnage) 
+          : (isAguardandoFiscal && weightDecision === 'use_cte' && weightDivergenceInfo ? weightDivergenceInfo.cteTon : undefined),
+        driverFreightValue: (isAguardandoFiscal && freightDecision === 'use_carta_frete' && freightDivergenceInfo) ? freightDivergenceInfo.cartaFreteFreight : undefined,
+        icmsValue: (isAguardandoFiscal && icmsDecision === 'use_cte' && icmsDivergenceInfo) 
+          ? icmsDivergenceInfo.cteIcms 
+          : (isAguardandoFiscal && cteExtractedIcms !== undefined && !icmsDivergenceInfo ? cteExtractedIcms : undefined),
         advancePercentage: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advancePercentage) : undefined,
         advanceValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advanceValue) : undefined,
         tollValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(tollValue || 0) : undefined,
@@ -1184,22 +1325,38 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {validDocs.map(([docType, files]) => {
-          const fileList = (Array.isArray(files) ? files : (typeof files === 'string' ? [files] : [])).filter(f => typeof f === 'string' && f.trim() !== '');
+          const rawList = (Array.isArray(files) ? files : (typeof files === 'string' ? [files] : [])).filter(f => typeof f === 'string' && f.trim() !== '');
+          const fileList = Array.from(new Set(rawList));
           if (fileList.length === 0) return null;
 
           return (
             <div key={docType} className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200/90 dark:border-slate-700/80 flex flex-col justify-between gap-2 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate" title={docType}>
-                  {docType}:
-                </span>
+              <div className="flex items-center justify-between gap-1.5 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 truncate">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                  <span className="font-bold text-xs text-slate-700 dark:text-slate-200 truncate" title={docType}>
+                    {docType}:
+                  </span>
+                </div>
+                {fileList.length > 1 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded border border-blue-200 dark:border-blue-800 shrink-0">
+                    {fileList.length} arquivos
+                  </span>
+                )}
               </div>
               <div className="flex flex-col gap-1.5">
                 {fileList.map((file, index) => {
                   const fileName = typeof file === 'string' ? (file.split('/').pop()?.split('?')[0] || '') : '';
                   const rawDecoded = decodeURIComponent(fileName);
                   const cleanFileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') || rawDecoded : (rawDecoded || `Anexo ${index + 1}`);
+
+                  const extMatch = cleanFileName.match(/\.([a-zA-Z0-9]+)$/i) || fileName.match(/\.([a-zA-Z0-9]+)$/i);
+                  const ext = extMatch ? extMatch[1].toUpperCase() : '';
+
+                  let badgeColor = 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border-gray-300';
+                  if (ext === 'XML') badgeColor = 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border-amber-300 dark:border-amber-700';
+                  else if (ext === 'PDF') badgeColor = 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border-rose-300 dark:border-rose-700';
+                  else if (['PNG', 'JPG', 'JPEG', 'WEBP'].includes(ext)) badgeColor = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700';
 
                   return (
                     <div
@@ -1210,10 +1367,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         type="button"
                         onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
                         className="inline-flex items-center gap-1.5 px-2 py-1 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 rounded text-xs font-semibold transition-colors cursor-pointer truncate min-w-0 flex-1"
-                        title="Visualizar documento em nova janela (com opções de Baixar e Imprimir)"
+                        title={`Visualizar ${cleanFileName} (com opções de Baixar e Imprimir)`}
                       >
                         <PaperclipIcon className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{cleanFileName || 'Visualizar Anexo'}</span>
+                        {ext && (
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase shrink-0 ${badgeColor}`}>
+                            {ext}
+                          </span>
+                        )}
                       </button>
 
                       <button
@@ -1272,7 +1434,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const canViewCompanyFreight = currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Embarcador;
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (shipment.shipmentTonnage ? shipment.driverFreightValue / shipment.shipmentTonnage : 0);
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+  const effectiveToll = tollValue !== '' && tollValue !== undefined
+    ? Number(tollValue)
+    : (shipment.tollValue || Number((shipment.documents as any)?.valor_pedagio || (shipment.documents as any)?.toll_value || 0));
+
   const totalDriverFreight = shipment.driverFreightValue || (driverRate * (shipment.shipmentTonnage || 0));
+  const driverFreightNetOfToll = Math.max(0, totalDriverFreight - effectiveToll);
   const totalCompanyFreight = shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
     ? shipment.realProfitData.companyFreight
     : (companyRate * (shipment.shipmentTonnage || 0));
@@ -1363,15 +1530,28 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               </div>
             )}
 
-            {/* Total Frete Motorista */}
+            {/* Total Frete Motorista (Abatendo Pedágio) */}
             {!isClientUser && (
               <div className="bg-slate-800/90 p-2.5 rounded-xl border border-slate-700/70">
-                <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Total Frete Mtr
+                <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center justify-between gap-1 mb-1">
+                  <span className="flex items-center gap-1">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Total Frete Mtr
+                  </span>
+                  {effectiveToll > 0 && (
+                    <span className="text-[9px] font-bold text-amber-300 bg-amber-500/20 px-1 py-0.2 rounded border border-amber-500/40" title={`Pedágio abatido: ${formatCurrency(effectiveToll)}`}>
+                      - Pedágio
+                    </span>
+                  )}
                 </div>
                 <div className="font-black text-white text-xs">
-                  {formatCurrency(totalDriverFreight)}
+                  {formatCurrency(driverFreightNetOfToll)}
                 </div>
+                {effectiveToll > 0 && (
+                  <div className="text-[10px] text-slate-400 mt-0.5 truncate" title={`Bruto: ${formatCurrency(totalDriverFreight)} | Pedágio Abatido: ${formatCurrency(effectiveToll)}`}>
+                    <span className="text-slate-500 line-through mr-1">{formatCurrency(totalDriverFreight)}</span>
+                    <span className="text-amber-400/90 font-medium">(-{formatCurrency(effectiveToll)})</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1649,6 +1829,299 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
                     />
                   ))}
+                </div>
+
+                {/* Painel de Validação e Conciliação Fiscal (CT-e e Carta Frete) */}
+                <div className="mt-4 space-y-3">
+                  {/* Divergência 1: Peso / Toneladas Efetivadas (Ticket vs CT-e) */}
+                  {weightDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      weightDecision === 'unresolved'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          weightDecision === 'unresolved'
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {weightDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              ⚖️ Validação de Peso: Ticket de Carregamento vs CT-e
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              Diferença: {weightDivergenceInfo.diffFormatted} ({weightDivergenceInfo.diffKgFormatted})
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            O peso cadastrado no sistema difere do peso lido no CT-e emitido. Escolha qual valor deve ser considerado para a efetivação das toneladas:
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Ticket de Carregamento (Sistema):</span>
+                              <span className="text-base font-bold text-gray-900 dark:text-white">
+                                {weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton{' '}
+                                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                                  ({(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)
+                                </span>
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">CT-e Emitido (Documento):</span>
+                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                                {weightDivergenceInfo.cteWeightTon.toFixed(2)} ton{' '}
+                                <span className="text-xs font-normal text-indigo-500 dark:text-indigo-300">
+                                  ({(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação para o Operador Confirmar */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWeightDecision('use_cte');
+                                showToast(`✓ Confirmado: Peso das toneladas efetivadas corrigido para ${weightDivergenceInfo.cteWeightTon.toFixed(2)} ton (CT-e).`, 'success');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                weightDecision === 'use_cte'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>✓ Corrigir para Peso do CT-e ({weightDivergenceInfo.cteWeightTon.toFixed(2)}t)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWeightDecision('keep_system');
+                                showToast(`✓ Confirmado: Mantido o peso do Ticket de Carregamento (${weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton).`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                weightDecision === 'keep_system'
+                                  ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                              }`}
+                            >
+                              <span>Manter Peso do Ticket ({weightDivergenceInfo.ticketWeightTon.toFixed(2)}t)</span>
+                            </button>
+                          </div>
+
+                          {weightDecision === 'use_cte' && (
+                            <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ O peso efetivado será atualizado automaticamente para {weightDivergenceInfo.cteWeightTon.toFixed(2)} ton ao salvar.
+                            </p>
+                          )}
+                          {weightDecision === 'keep_system' && (
+                            <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                              ✓ O peso original do sistema ({weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton) será preservado.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Divergência 2: Frete Motorista (Sistema vs Carta Frete) */}
+                  {freightDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      freightDecision === 'unresolved'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          freightDecision === 'unresolved'
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {freightDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              🚚 Validação de Frete Motorista: Sistema vs Carta Frete
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              Diferença: {freightDivergenceInfo.diffFormatted}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            O valor de frete motorista cadastrado no sistema difere do valor lido na Carta Frete anexada. Escolha qual valor deve ser considerado:
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Frete Motorista no Sistema:</span>
+                              <span className="text-base font-bold text-gray-900 dark:text-white">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)}
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Carta Frete Anexada:</span>
+                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação para o Operador Confirmar */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFreightDecision('use_carta_frete');
+                                showToast(`✓ Confirmado: Frete motorista corrigido para ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)} (Carta Frete).`, 'success');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                freightDecision === 'use_carta_frete'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>✓ Atualizar para Frete da Carta Frete ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFreightDecision('keep_system');
+                                showToast(`✓ Confirmado: Mantido o frete motorista do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)}).`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                freightDecision === 'keep_system'
+                                  ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                              }`}
+                            >
+                              <span>Manter Frete do Sistema ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)})</span>
+                            </button>
+                          </div>
+
+                          {freightDecision === 'use_carta_frete' && (
+                            <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ O frete motorista será atualizado automaticamente ao salvar.
+                            </p>
+                          )}
+                          {freightDecision === 'keep_system' && (
+                            <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                              ✓ O valor de frete motorista do sistema será mantido.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Divergência 3: ICMS (Sistema vs CT-e) */}
+                  {icmsDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      icmsDecision === 'unresolved'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          icmsDecision === 'unresolved'
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {icmsDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              🏛️ Validação de ICMS: Sistema vs CT-e
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              Diferença: {icmsDivergenceInfo.diffFormatted}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            O valor de ICMS informado/calculado no sistema difere do valor destacado no CT-e anexado. Escolha qual valor deve ser considerado:
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">ICMS no Sistema:</span>
+                              <span className="text-base font-bold text-gray-900 dark:text-white">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsDivergenceInfo.systemIcms)}
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">ICMS Destacado no CT-e:</span>
+                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsDivergenceInfo.cteIcms)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação para o Operador Confirmar */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIcmsDecision('use_cte');
+                                showToast(`✓ Confirmado: ICMS corrigido para ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsDivergenceInfo.cteIcms)} (CT-e).`, 'success');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                icmsDecision === 'use_cte'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>✓ Atualizar para ICMS do CT-e ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsDivergenceInfo.cteIcms)})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIcmsDecision('keep_system');
+                                showToast(`✓ Confirmado: Mantido o ICMS do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsDivergenceInfo.systemIcms)}).`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                icmsDecision === 'keep_system'
+                                  ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                              }`}
+                            >
+                              <span>Manter ICMS do Sistema ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsDivergenceInfo.systemIcms)})</span>
+                            </button>
+                          </div>
+
+                          {icmsDecision === 'use_cte' && (
+                            <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ O ICMS será atualizado automaticamente ao salvar.
+                            </p>
+                          )}
+                          {icmsDecision === 'keep_system' && (
+                            <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                              ✓ O valor de ICMS do sistema será mantido.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback positivo se houver documentos e nenhuma divergência pendente */}
+                  {((cteWeightTon > 0 && !weightDivergenceInfo) || (weightDivergenceInfo && weightDecision !== 'unresolved')) &&
+                   ((cartaFreteExtractedFreight && !freightDivergenceInfo) || (freightDivergenceInfo && freightDecision !== 'unresolved')) && (
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="font-medium">
+                        ✓ Conferência de documentos fiscais concluída: dados validados com sucesso.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : shipment.status === ShipmentStatus.AguardandoCarregamento ? (
@@ -2405,19 +2878,41 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
                     onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
                   />
-                  <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">
-                      CODG. ATUA <span className="text-xs font-normal text-gray-500">(Código de Atualização Cadastral)</span>
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    !codigoAtua.trim()
+                      ? 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700/60 ring-2 ring-amber-400/20'
+                      : 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-700/60'
+                  }`}>
+                    <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span>CODG. ATUA</span>
+                        <span className="text-xs font-normal text-gray-500 dark:text-gray-400">(Código de Atualização Cadastral)</span>
+                      </span>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                        !codigoAtua.trim()
+                          ? 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 border-amber-300 dark:border-amber-700'
+                          : 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 border-emerald-300 dark:border-emerald-700'
+                      }`}>
+                        {!codigoAtua.trim() ? '* Obrigatório' : '✓ Preenchido'}
+                      </span>
                     </label>
                     <input
                       type="text"
                       value={codigoAtua}
                       onChange={(e) => setCodigoAtua(e.target.value)}
                       placeholder="Ex: ATUA-123456 ou Cód. do Cadastro"
-                      className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-primary/20"
+                      className={`p-2.5 w-full border rounded-lg font-mono text-sm focus:ring-2 focus:ring-primary/20 transition-all ${
+                        !codigoAtua.trim()
+                          ? 'border-amber-400 dark:border-amber-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-amber-400/70'
+                          : 'border-emerald-500 dark:border-emerald-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white'
+                      }`}
                     />
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                      Código informativo vinculado à coluna <strong>CODG. ATUA</strong> da planilha de controle.
+                    <p className={`text-[11px] mt-1.5 font-medium ${
+                      !codigoAtua.trim() ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {!codigoAtua.trim() 
+                        ? '⚠️ Campo obrigatório para liberar o salvamento e avanço do cadastro do motorista.' 
+                        : 'Código vinculado à coluna CODG. ATUA e ao cadastro permanente do motorista.'}
                     </p>
                   </div>
                 </div>
@@ -2564,8 +3059,20 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 <div className="relative group">
                   <button
                     onClick={handleSave}
-                    disabled={isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated))}
-                    className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(isSaving || (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)))
+                    disabled={
+                      isSaving || 
+                      (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || 
+                      (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
+                      (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
+                      hasUnresolvedFiscalDivergence
+                    }
+                    className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(
+                      isSaving || 
+                      (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || 
+                      (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
+                      (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
+                      hasUnresolvedFiscalDivergence
+                    )
                         ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-none'
                         : 'bg-primary hover:bg-primary-dark shadow-primary/20'
                       }`}
@@ -2576,6 +3083,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       </>
                     ) : 'Salvar e Avançar'}
                   </button>
+                  {hasUnresolvedFiscalDivergence && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-amber-950 text-amber-200 border border-amber-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⚠️ Confirme e valide as divergências apontadas acima para liberar o avanço
+                    </div>
+                  )}
+                  {shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim()) && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-amber-950 text-amber-200 border border-amber-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⚠️ Preencha o CODG. ATUA para liberar o salvamento e avançar
+                    </div>
+                  )}
                   {shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated) && (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-gray-900 text-white text-[11px] font-semibold py-1 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
                       {!canValidateTicket 

@@ -275,30 +275,52 @@ export function getShipmentCiotNumber(shipment?: { id?: string; ciot?: string; c
     return false;
   };
 
-  // 1. Campo explícito no objeto do embarque
-  if (!isInvalid(shipment.ciotNumber)) return String(shipment.ciotNumber).trim();
-  if (!isInvalid(shipment.ciot)) return String(shipment.ciot).trim();
-  if (!isInvalid((shipment as any).ciot_number)) return String((shipment as any).ciot_number).trim();
+  // Normalização do CIOT para o padrão oficial do MDF-e (DAMDFE SEFAZ: estritamente 12 dígitos)
+  const normalizeToMdfeCiot = (val: any): string => {
+    if (isInvalid(val)) return '-';
+    const clean = String(val).trim();
+    const digits = clean.replace(/\D/g, '');
+    // Quando o código possui 16 dígitos (gerado por e-Frete com os 4 dígitos finais da operação),
+    // o número do CIOT impresso no MDF-e e exibido em "Detalhes da Leitura do Documento MDF-e"
+    // corresponde exatamente aos primeiros 12 dígitos.
+    if (digits.length >= 16) {
+      return digits.slice(0, 12);
+    }
+    return clean;
+  };
 
-  // 2. Campo em documents
   const docs = shipment.documents;
+
+  // 1. CIOT explícito do MDF-e (prioridade máxima)
   if (docs && typeof docs === 'object') {
-    if (!isInvalid(docs.ciot_number)) return String(docs.ciot_number).trim();
-    if (!isInvalid(docs.ciotNumber)) return String(docs.ciotNumber).trim();
-    if (!isInvalid(docs.ciot)) return String(docs.ciot).trim();
-    if (!isInvalid(docs.CIOT)) return String(docs.CIOT).trim();
+    if (!isInvalid(docs.mdfe_ciot)) return normalizeToMdfeCiot(docs.mdfe_ciot);
+    if (!isInvalid(docs.ciot_mdfe)) return normalizeToMdfeCiot(docs.ciot_mdfe);
+    if (!isInvalid(docs.mdfeCiot)) return normalizeToMdfeCiot(docs.mdfeCiot);
+  }
+
+  // 2. Campo explícito no objeto do embarque
+  if (!isInvalid(shipment.ciotNumber)) return normalizeToMdfeCiot(shipment.ciotNumber);
+  if (!isInvalid(shipment.ciot)) return normalizeToMdfeCiot(shipment.ciot);
+  if (!isInvalid((shipment as any).ciot_number)) return normalizeToMdfeCiot((shipment as any).ciot_number);
+
+  // 3. Campo em documents
+  if (docs && typeof docs === 'object') {
+    if (!isInvalid(docs.ciot_number)) return normalizeToMdfeCiot(docs.ciot_number);
+    if (!isInvalid(docs.ciotNumber)) return normalizeToMdfeCiot(docs.ciotNumber);
+    if (!isInvalid(docs.ciot)) return normalizeToMdfeCiot(docs.ciot);
+    if (!isInvalid(docs.CIOT)) return normalizeToMdfeCiot(docs.CIOT);
 
     // Buscar em chaves com nome ciot
     for (const [key, val] of Object.entries(docs)) {
       if (/ciot/i.test(key)) {
         if (!isInvalid(val)) {
-          return String(val).trim();
+          return normalizeToMdfeCiot(val);
         }
         if (Array.isArray(val) && val.length > 0) {
           for (const item of val) {
             if (typeof item === 'string') {
               const m = item.match(/\b(?:ciot)?[^\d\n]*?(\d{8,20})/i);
-              if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return m[1];
+              if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return normalizeToMdfeCiot(m[1]);
             }
           }
         }
@@ -309,7 +331,7 @@ export function getShipmentCiotNumber(shipment?: { id?: string; ciot?: string; c
     for (const [key, val] of Object.entries(docs)) {
       if (/carta|contrato|pef/i.test(key) && typeof val === 'string') {
         const m = val.match(/\bciot[^\d\n]*?(\d{8,20})/i);
-        if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return m[1];
+        if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return normalizeToMdfeCiot(m[1]);
       }
     }
   }

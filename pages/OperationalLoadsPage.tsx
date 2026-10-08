@@ -50,6 +50,8 @@ interface OperationalLoadsPageProps {
     filesToAttach: { [key: string]: File[] }, 
     bankDetails?: string, 
     loadedTonnage?: number, 
+    driverFreightValue?: number,
+    icmsValue?: number,
     advancePercentage?: number, 
     advanceValue?: number,
     tollValue?: number, 
@@ -63,6 +65,8 @@ interface OperationalLoadsPageProps {
     riskReleaseCode?: string,
     riskQueryType?: string,
     riskQueryCost?: number,
+    realProfitData?: any,
+    codigoAtua?: string,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdateShipmentData?: (shipmentId: string, data: Partial<Shipment>, options?: { silent?: boolean }) => void;

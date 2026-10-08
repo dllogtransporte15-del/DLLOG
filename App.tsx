@@ -276,6 +276,53 @@ const App: React.FC = () => {
     }
   }, [currentUser?.id, isLoading]);
 
+  // Sincronizar o Código ATUA histórico dos motoristas cadastrados
+  useEffect(() => {
+    if (isLoading || drivers.length === 0 || shipments.length === 0) return;
+    let hasChanges = false;
+    const updatedDrivers = drivers.map(driver => {
+      if (driver.codigoAtua && String(driver.codigoAtua).trim() !== '') return driver;
+      const cleanCpf = (driver.cpf || '').replace(/\D/g, '');
+      const cleanName = (driver.name || '').trim().toLowerCase();
+
+      // Checar cache local
+      const cached = cleanCpf ? localStorage.getItem(`transcunha_driver_atua_${cleanCpf}`) : null;
+      if (cached && cached.trim()) {
+        hasChanges = true;
+        return { ...driver, codigoAtua: cached.trim() };
+      }
+
+      // Checar histórico de embarques existentes
+      const matchedShipment = shipments.find(s => {
+        const sCpf = (s.driverCpf || '').replace(/\D/g, '');
+        const sName = (s.driverName || '').trim().toLowerCase();
+        const match = (cleanCpf && sCpf === cleanCpf) || (cleanName && sName === cleanName);
+        if (!match) return false;
+        const code = s.codigoAtua || (s.documents as any)?.codigo_atua || (s.documents as any)?.codg_atua || (s.documents as any)?.codigoAtua;
+        return typeof code === 'string' && code.trim() !== '';
+      });
+
+      if (matchedShipment) {
+        const foundCode = String(
+          matchedShipment.codigoAtua || 
+          (matchedShipment.documents as any)?.codigo_atua || 
+          (matchedShipment.documents as any)?.codg_atua || 
+          (matchedShipment.documents as any)?.codigoAtua
+        ).trim();
+        if (cleanCpf) {
+          try { localStorage.setItem(`transcunha_driver_atua_${cleanCpf}`, foundCode); } catch {}
+        }
+        hasChanges = true;
+        return { ...driver, codigoAtua: foundCode };
+      }
+      return driver;
+    });
+
+    if (hasChanges) {
+      setDrivers(updatedDrivers);
+    }
+  }, [isLoading, shipments.length]);
+
   const handleSaveRiskQueryOption = async (optionData: RiskQueryOption | Omit<RiskQueryOption, 'id'>) => {
     if (isDemoUser(currentUser)) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
@@ -1331,6 +1378,44 @@ const App: React.FC = () => {
       return s.status !== ShipmentStatus.Cancelado;
     });
 
+    // 1. Verificar se o motorista já possui Código do ATUA informado no cadastro do motorista, no formulário de criação, em embarques anteriores ou em cache local
+    const atuaFromDriver = driverToUse?.codigoAtua ? String(driverToUse.codigoAtua).trim() : '';
+    const atuaFromForm = data.codigoAtua ? String(data.codigoAtua).trim() : '';
+    const atuaFromCache = driverCpfClean ? (localStorage.getItem(`transcunha_driver_atua_${driverCpfClean}`) || '').trim() : '';
+
+    let atuaFromShipments = '';
+    if (!atuaFromDriver && !atuaFromForm && !atuaFromCache) {
+      const prevShipmentWithAtua = shipments.find(s => {
+        const sCpfClean = (s.driverCpf || '').replace(/\D/g, '');
+        const sNameClean = (s.driverName || '').trim().toLowerCase();
+        const isDriverMatch = (driverCpfClean !== '' && sCpfClean === driverCpfClean) ||
+                              (driverNameClean !== '' && sNameClean === driverNameClean);
+        if (!isDriverMatch) return false;
+
+        const code = s.codigoAtua || 
+                     (s.documents as any)?.codigo_atua || 
+                     (s.documents as any)?.codg_atua || 
+                     (s.documents as any)?.codigoAtua;
+        return typeof code === 'string' && code.trim() !== '';
+      });
+      if (prevShipmentWithAtua) {
+        atuaFromShipments = String(
+          prevShipmentWithAtua.codigoAtua || 
+          (prevShipmentWithAtua.documents as any)?.codigo_atua || 
+          (prevShipmentWithAtua.documents as any)?.codg_atua || 
+          (prevShipmentWithAtua.documents as any)?.codigoAtua
+        ).trim();
+      }
+    }
+
+    const resolvedCodigoAtua = atuaFromForm || atuaFromDriver || atuaFromCache || atuaFromShipments;
+    const driverHasAtua = Boolean(resolvedCodigoAtua && resolvedCodigoAtua !== '');
+
+    // Salvar em cache imediato caso tenhamos o código resolvido e o CPF
+    if (driverCpfClean && resolvedCodigoAtua) {
+      try { localStorage.setItem(`transcunha_driver_atua_${driverCpfClean}`, resolvedCodigoAtua); } catch {}
+    }
+
     const relatedCargo = findCargoById(cargos, data.cargoId);
     if (relatedCargo) {
       const cargoBalance = calculateCargoBalance(relatedCargo, shipments);
@@ -1342,22 +1427,28 @@ const App: React.FC = () => {
     const relatedProduct = findProductForCargo(products, relatedCargo);
     const productRequiresRisk = checkRequiresRiskManagement(relatedCargo, relatedProduct);
 
+    // REGRA DE NEGÓCIO:
+    // Todos os motoristas cadastrados que ainda NÃO tiveram o código do ATUA informado
+    // DEVEM parar obrigatoriamente na etapa "1 - Ag. Cadastro" para poder informar esse código.
+    // Somente se já possuir histórico de viagem concluída E já possuir o código do ATUA informado é que pode pular essa etapa.
+    const canSkipCadastro = hasCompletedTrip && driverHasAtua;
+
     let initialStatus: ShipmentStatus;
     if (!productRequiresRisk) {
       // Produto não necessita de Gerenciamento de Risco (GR):
-      // Se motorista com histórico de viagem concluída: pula Ag. Cadastro E Ag. Seguradora -> vai direto para "3 - Ag. Carregamento"
-      // Se motorista sem histórico prévio: inicia em "1 - Ag. Cadastro" (e ao avançar do cadastro pulará Ag. Seguradora)
-      if (hasCompletedTrip) {
+      // Se motorista com histórico de viagem concluída E código do ATUA informado: pula Ag. Cadastro E Ag. Seguradora -> vai direto para "3 - Ag. Carregamento"
+      // Se motorista sem histórico OU sem código do ATUA: para em "1 - Ag. Cadastro"
+      if (canSkipCadastro) {
         initialStatus = ShipmentStatus.AguardandoCarregamento;
       } else {
         initialStatus = ShipmentStatus.PreCadastro;
       }
     } else {
-      if (hasCompletedTrip) {
-        // Motorista com histórico de embarque efetivado: pula "1 - Ag. Cadastro" e inicia em "2 - Ag. Seguradora"
+      if (canSkipCadastro) {
+        // Motorista com histórico de viagem concluída E código do ATUA informado: pula "1 - Ag. Cadastro" e inicia em "2 - Ag. Seguradora"
         initialStatus = ShipmentStatus.AguardandoSeguradora;
       } else {
-        // Motorista sem histórico prévio: inicia em "1 - Ag. Cadastro"
+        // Motorista sem histórico prévio OU sem código do ATUA: inicia em "1 - Ag. Cadastro"
         initialStatus = ShipmentStatus.PreCadastro;
       }
     }
@@ -1372,13 +1463,13 @@ const App: React.FC = () => {
         phone: data.driverContact || '',
         classification: DriverClassification.Terceiro,
         active: true,
-        codigoAtua: data.codigoAtua ? String(data.codigoAtua).trim() : undefined,
+        codigoAtua: resolvedCodigoAtua || undefined,
       };
       newDrivers.unshift(driverToUse);
       addedDrivers.push(driverToUse);
       currentNextIds.driver++;
-    } else if (data.codigoAtua && (!driverToUse.codigoAtua || driverToUse.codigoAtua !== data.codigoAtua)) {
-      driverToUse = { ...driverToUse, codigoAtua: String(data.codigoAtua).trim() };
+    } else if (resolvedCodigoAtua && (!driverToUse.codigoAtua || driverToUse.codigoAtua !== resolvedCodigoAtua)) {
+      driverToUse = { ...driverToUse, codigoAtua: resolvedCodigoAtua };
       newDrivers = newDrivers.map(d => d.id === driverToUse!.id ? driverToUse! : d);
       if (!addedDrivers.some(d => d.id === driverToUse!.id)) {
         addedDrivers.push(driverToUse);
@@ -1576,10 +1667,9 @@ const App: React.FC = () => {
       (documentsUrlMap as any).shipper_commission_rate_per_ton = shipperRateConfigured;
     }
 
-    if (data.codigoAtua) {
-      const cleanAtua = String(data.codigoAtua).trim();
-      (documentsUrlMap as any).codigo_atua = cleanAtua;
-      (documentsUrlMap as any).codg_atua = cleanAtua;
+    if (resolvedCodigoAtua) {
+      (documentsUrlMap as any).codigo_atua = resolvedCodigoAtua;
+      (documentsUrlMap as any).codg_atua = resolvedCodigoAtua;
     }
 
     const newShipment: Shipment = {
@@ -1589,7 +1679,7 @@ const App: React.FC = () => {
       driverName: data.driverName,
       driverContact: data.driverContact,
       driverCpf: data.driverCpf,
-      codigoAtua: data.codigoAtua ? String(data.codigoAtua).trim() : undefined,
+      codigoAtua: resolvedCodigoAtua || undefined,
       embarcadorId: data.embarcadorId,
       horsePlate: data.horsePlate,
       trailer1Plate: data.trailer1Plate,
@@ -1855,6 +1945,8 @@ const App: React.FC = () => {
     filesToAttach: { [key: string]: File[] }, 
     bankDetails?: string, 
     loadedTonnage?: number, 
+    driverFreightValue?: number,
+    icmsValue?: number,
     advancePercentage?: number, 
     advanceValue?: number,
     tollValue?: number, 
@@ -1871,7 +1963,7 @@ const App: React.FC = () => {
     realProfitData?: RealProfitData,
     codigoAtua?: string,
   }) => {
-    const { filesToAttach, bankDetails, loadedTonnage, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, isBreakageWaived, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost, realProfitData, codigoAtua } = data;
+    const { filesToAttach, bankDetails, loadedTonnage, driverFreightValue, icmsValue, advancePercentage, advanceValue, tollValue, balanceToReceiveValue, discountValue, isBreakageWaived, netBalanceValue, unloadedTonnage, route, grStatus, riskReleaseCode, riskQueryType, riskQueryCost, realProfitData, codigoAtua } = data;
     
     if (!currentUser) {
       showToast('Usuário não autenticado.', 'error');
@@ -2064,7 +2156,7 @@ const App: React.FC = () => {
           attachedFileNames.push(file.name);
         }
         const existingDocs = updatedDocuments[docType] || [];
-        updatedDocuments[docType] = [...existingDocs, ...newDocUrls];
+        updatedDocuments[docType] = Array.from(new Set([...existingDocs, ...newDocUrls]));
       }
 
       if (codigoAtua !== undefined && codigoAtua !== null && String(codigoAtua).trim() !== '') {
@@ -2195,12 +2287,26 @@ const App: React.FC = () => {
     
     if (loadedTonnage !== undefined && loadedTonnage > 0) {
         updatedTonnage = loadedTonnage;
-        const rateToUse = originalShipment.driverFreightRateSnapshot || cargos.find(c => c.id === originalShipment.cargoId)?.driverFreightValuePerTon || 0;
-        updatedDriverFreight = rateToUse * loadedTonnage;
+        if (driverFreightValue === undefined) {
+          const rateToUse = originalShipment.driverFreightRateSnapshot || cargos.find(c => c.id === originalShipment.cargoId)?.driverFreightValuePerTon || 0;
+          updatedDriverFreight = rateToUse * loadedTonnage;
+        }
         const formattedVal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(updatedDriverFreight);
         if (loadedTonnage !== originalShipment.shipmentTonnage) {
-          historyLogs.push(`Peso carregado informado: ${loadedTonnage.toLocaleString('pt-BR')} ton (Frete Motorista atualizado para ${formattedVal}).`);
+          historyLogs.push(`Peso/Toneladas efetivadas atualizadas: ${loadedTonnage.toLocaleString('pt-BR')} ton (Frete Motorista: ${formattedVal}).`);
         }
+    }
+
+    if (driverFreightValue !== undefined && driverFreightValue > 0) {
+        updatedDriverFreight = driverFreightValue;
+        const formattedVal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(driverFreightValue);
+        historyLogs.push(`Frete Motorista atualizado conforme Carta Frete: ${formattedVal}.`);
+    }
+
+    if (icmsValue !== undefined) {
+        const formattedVal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsValue);
+        historyLogs.push(`ICMS atualizado conforme CT-e: ${formattedVal}.`);
+        updatedDocuments.icms_value = icmsValue;
     }
     
     let calculatedAdvanceValue = originalShipment.advanceValue;
@@ -2309,13 +2415,15 @@ const App: React.FC = () => {
         ciot: extractedCiotNumber,
         nfeNumber: extractedNfeNumber,
         mdfeNumber: extractedMdfeNumber,
+        icmsValue: icmsValue !== undefined ? icmsValue : originalShipment.icmsValue,
         codigoAtua: (codigoAtua !== undefined && codigoAtua !== null && String(codigoAtua).trim() !== '') ? String(codigoAtua).trim() : originalShipment.codigoAtua,
-        realProfitData: (realProfitData || originalShipment.realProfitData || extractedFiscalNums?.sestSenatValue !== undefined)
+        realProfitData: (realProfitData || originalShipment.realProfitData || extractedFiscalNums?.sestSenatValue !== undefined || icmsValue !== undefined)
           ? {
               ...(originalShipment.realProfitData || {}),
               ...(realProfitData || {}),
               ...(extractedFiscalNums?.sestSenatValue !== undefined ? { sestSenat: extractedFiscalNums.sestSenatValue } : {}),
               ...(extractedFiscalNums?.inssRetidoValue !== undefined ? { inssRetido: extractedFiscalNums.inssRetidoValue } : {}),
+              ...(icmsValue !== undefined ? { icmsDifference: icmsValue } : {}),
             } as any
           : undefined,
         history: [...originalShipment.history, statusChangeLog],
@@ -2439,6 +2547,14 @@ const App: React.FC = () => {
           }
           return d;
         }));
+        if (originalShipment.driverCpf) {
+          const cleanCpf = originalShipment.driverCpf.replace(/\D/g, '');
+          if (cleanCpf) {
+            try {
+              localStorage.setItem(`transcunha_driver_atua_${cleanCpf}`, cleanAtua);
+            } catch { }
+          }
+        }
       }
       
       let successMsg = 'Embarque atualizado com sucesso!';
@@ -3860,7 +3976,7 @@ const App: React.FC = () => {
           <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
           <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
           <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
-          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} products={products} />} />
+          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} products={products} vehicles={vehicles} owners={owners} />} />
           <Route path="/commissions" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
           <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
           <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />

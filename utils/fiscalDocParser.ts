@@ -1,5 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { FreightBalanceCalculation, calculateFreightBalance } from './freightBalanceCalculator';
+import { extractOcNumberFromText } from './ocParser';
 
 export type { FreightBalanceCalculation };
 export { calculateFreightBalance };
@@ -592,7 +593,11 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
 
   // 5. CIOT
   const mCiot = text.match(/\bCIOT[^\d\n]*?([\d.\-\/]{8,20})/i);
-  if (mCiot && mCiot[1]) res.ciot = mCiot[1].trim();
+  if (mCiot && mCiot[1]) {
+    const rawVal = mCiot[1].trim();
+    const digitsOnly = rawVal.replace(/\D/g, '');
+    res.ciot = digitsOnly.length >= 16 ? digitsOnly.slice(0, 12) : rawVal;
+  }
 
   // 6. CFOP e Natureza da Operação
   const mCfop = text.match(/\bCFOP[^\d\n]*?(\d{4})/i) || text.match(/\b(\d{4})\s*-\s*SERV/i);
@@ -1169,9 +1174,12 @@ export interface FiscalDocNumbers {
   advanceValue?: number;
   tollValue?: number;
   totalFreightValue?: number;
+  driverFreightValue?: number;
+  icmsValue?: number;
   sestSenatValue?: number;
   inssRetidoValue?: number;
   subtotalSaldoValue?: number;
+  ordemCarregamentoNumero?: string;
 }
 
 export async function extractFiscalDocNumbers(
@@ -1196,20 +1204,46 @@ export async function extractFiscalDocNumbers(
           } else if (detailed.carga?.pesoLiquidoKg !== undefined && !result.cteWeightKg) {
             result.cteWeightKg = detailed.carga.pesoLiquidoKg;
           }
+          if (detailed.financeiro?.valorIcms !== undefined && result.icmsValue === undefined) {
+            result.icmsValue = detailed.financeiro.valorIcms;
+          }
+        }
+        if (detailed.documentType === 'Carta Frete' || isCartaFreteDocType(docType)) {
+          if (detailed.financeiro?.valorTotalFrete !== undefined && result.driverFreightValue === undefined) {
+            result.driverFreightValue = detailed.financeiro.valorTotalFrete;
+          } else if (detailed.financeiro?.valorLiquido !== undefined && result.driverFreightValue === undefined) {
+            result.driverFreightValue = detailed.financeiro.valorLiquido;
+          }
         }
         if (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) {
           if (detailed.docNumber && !result.nfeNumber) result.nfeNumber = detailed.docNumber;
         }
-        if (detailed.documentType === 'MDF-e' || isMdfeDocType(docType)) {
+        const isMdfe = detailed.documentType === 'MDF-e' || isMdfeDocType(docType);
+        if (isMdfe) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
+          if (detailed.ciot) {
+            // Prioridade máxima ao CIOT do MDF-e (conforme SEFAZ DAMDFE de 12 dígitos)
+            const cleanDigits = detailed.ciot.replace(/\D/g, '');
+            result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
+          }
         }
         if (detailed.ciot && !result.ciotNumber) {
-          result.ciotNumber = detailed.ciot;
+          const cleanDigits = detailed.ciot.replace(/\D/g, '');
+          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
         } else if ((detailed.documentType === 'CIOT' || docType.toUpperCase().includes('CIOT')) && detailed.docNumber && !result.ciotNumber) {
-          result.ciotNumber = detailed.docNumber;
+          const cleanDigits = detailed.docNumber.replace(/\D/g, '');
+          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.docNumber;
         }
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
+        }
+        if (docType.toLowerCase().includes('ordem') || docType.toLowerCase().includes('oc')) {
+          if (detailed.rawText) {
+            const ocNum = extractOcNumberFromText(detailed.rawText);
+            if (ocNum && !result.ordemCarregamentoNumero) {
+              result.ordemCarregamentoNumero = ocNum;
+            }
+          }
         }
         const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType) || docType.toLowerCase().includes('ticket') || docType.toLowerCase().includes('carregamento') || docType.toLowerCase().includes('comprovante')) && !isCteDocType(docType) && !isMdfeDocType(docType) && !isCartaFreteDocType(docType);
         if (!isPureNfe) {
@@ -1264,20 +1298,46 @@ export async function extractFiscalDocNumbersFromUrls(
           } else if (detailed.carga?.pesoLiquidoKg !== undefined && !result.cteWeightKg) {
             result.cteWeightKg = detailed.carga.pesoLiquidoKg;
           }
+          if (detailed.financeiro?.valorIcms !== undefined && result.icmsValue === undefined) {
+            result.icmsValue = detailed.financeiro.valorIcms;
+          }
+        }
+        if (detailed.documentType === 'Carta Frete' || isCartaFreteDocType(docType)) {
+          if (detailed.financeiro?.valorTotalFrete !== undefined && result.driverFreightValue === undefined) {
+            result.driverFreightValue = detailed.financeiro.valorTotalFrete;
+          } else if (detailed.financeiro?.valorLiquido !== undefined && result.driverFreightValue === undefined) {
+            result.driverFreightValue = detailed.financeiro.valorLiquido;
+          }
         }
         if (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) {
           if (detailed.docNumber && !result.nfeNumber) result.nfeNumber = detailed.docNumber;
         }
-        if (detailed.documentType === 'MDF-e' || isMdfeDocType(docType)) {
+        const isMdfe = detailed.documentType === 'MDF-e' || isMdfeDocType(docType);
+        if (isMdfe) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
+          if (detailed.ciot) {
+            // Prioridade máxima ao CIOT do MDF-e (conforme SEFAZ DAMDFE de 12 dígitos)
+            const cleanDigits = detailed.ciot.replace(/\D/g, '');
+            result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
+          }
         }
         if (detailed.ciot && !result.ciotNumber) {
-          result.ciotNumber = detailed.ciot;
+          const cleanDigits = detailed.ciot.replace(/\D/g, '');
+          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
         } else if ((detailed.documentType === 'CIOT' || docType.toUpperCase().includes('CIOT')) && detailed.docNumber && !result.ciotNumber) {
-          result.ciotNumber = detailed.docNumber;
+          const cleanDigits = detailed.docNumber.replace(/\D/g, '');
+          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.docNumber;
         }
         if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
           result.nfeValue = detailed.carga.valorMercadoria;
+        }
+        if (docType.toLowerCase().includes('ordem') || docType.toLowerCase().includes('oc')) {
+          if (detailed.rawText) {
+            const ocNum = extractOcNumberFromText(detailed.rawText);
+            if (ocNum && !result.ordemCarregamentoNumero) {
+              result.ordemCarregamentoNumero = ocNum;
+            }
+          }
         }
         const isPureNfe = (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType) || docType.toLowerCase().includes('ticket') || docType.toLowerCase().includes('carregamento') || docType.toLowerCase().includes('comprovante')) && !isCteDocType(docType) && !isMdfeDocType(docType) && !isCartaFreteDocType(docType);
         if (!isPureNfe) {

@@ -21,6 +21,145 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_08_v2_70_22',
+    version: 'v2.70.22',
+    date: '08/10/2026',
+    title: 'Fidelidade do Número de CIOT na Coluna CIOT da Planilha de Controle',
+    summary: 'A coluna CIOT da planilha de Controle de Embarques agora exibe com prioridade absoluta o número do CIOT lido do MDF-e (conforme exibido em "Detalhes da Leitura do Documento MDF-e", padrão SEFAZ DAMDFE de 12 dígitos), normalizando códigos de 16 dígitos gerados por contratos/e-Frete.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Fidelidade ao Número do CIOT do MDF-e',
+        description: 'A coluna CIOT exibe exatamente o número de 12 dígitos registrado e lido do MDF-e, idêntico ao card de Detalhes da Leitura do Documento MDF-e.'
+      },
+      {
+        category: 'fix',
+        title: 'Normalização de Códigos e-Frete de 16 Dígitos',
+        description: 'Códigos com sufixo de 4 dígitos de suboperação gerados por administradoras de frete são automaticamente ajustados para os 12 dígitos oficiais da SEFAZ.'
+      },
+      {
+        category: 'improvement',
+        title: 'Prioridade no Processamento de Documentos Fiscais',
+        description: 'Ao anexar múltiplos documentos ao embarque, a leitura do CIOT oriunda do MDF-e possui prioridade máxima para alimentar o sistema e o banco de dados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_08_v2_70_21',
+    version: 'v2.70.21',
+    date: '08/10/2026',
+    title: 'Exibição do Número da Ordem de Carregamento na Coluna "ORDEM DE CARREG"',
+    summary: 'A coluna ORDEM DE CARREG da planilha de Controle de Embarques agora informa o número sequencial oficial da Ordem de Carregamento (ex: 1593, 1592, etc.) extraído diretamente do PDF anexado, substituindo os códigos internos (OC-ord_RAF-xxx).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Número Real da Ordem de Carregamento (OC TMS)',
+        description: 'A coluna exibe com fidelidade o número impresso no documento no campo "Nº" da Autorização/Ordem de Carregamento anexada, mantendo o link direto para visualização do PDF.'
+      },
+      {
+        category: 'improvement',
+        title: 'Extração Automática e Persistência no Banco',
+        description: 'Os números de ordens de carregamento foram extraídos e persistidos diretamente nos documentos de cada embarque, com suporte a extração automática em novos uploads de ordens.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtros e Busca por Nº de Ordem',
+        description: 'A busca global e os filtros da coluna ORDEM DE CARREG agora encontram os registros diretamente pelo número da ordem.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_08_v2_70_20',
+    version: 'v2.70.20',
+    date: '08/10/2026',
+    title: 'Exibição do Nome do Proprietário na Coluna ANTT / PIX da Planilha de Controle',
+    summary: 'A coluna ANTT / PIX da planilha de Controle de Embarques agora informa diretamente o Nome do Proprietário do veículo (resolvido por dados do embarque, documentos, cadastro de proprietários e veículos), mantendo os dados de documento (CNPJ/CPF/PIX) acessíveis via tooltip.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Nome do Proprietário na Coluna ANTT / PIX',
+        description: 'Em vez de apresentar apenas o número do documento/chave Pix, a coluna passa a exibir a Razão Social ou Nome do Proprietário correspondente, facilitando a identificação imediata na planilha.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtro e Busca por Nome de Proprietário',
+        description: 'Os filtros por coluna e a pesquisa rápida da planilha de controle agora listam e encontram os embarques pelos nomes dos proprietários dos veículos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Tooltip com CNPJ/CPF e Chave PIX Original',
+        description: 'Ao passar o cursor sobre o nome do proprietário na célula, um tooltip informa os detalhes cadastrais (CNPJ/CPF da ANTT e chave Pix) para consulta e auditoria rápidas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_08_v2_70_19',
+    version: 'v2.70.19',
+    date: '08/10/2026',
+    title: 'Conferência e Validação Fiscal Automática de CT-e e Carta Frete em Aguardando Fiscal',
+    summary: 'Na etapa "5 - Aguardando Fiscal", o sistema agora realiza a leitura e validação automática de dados ao anexar o CT-e e a Carta Frete. Se houver qualquer divergência no peso efetivado (toneladas), no frete do motorista ou no valor do ICMS, o sistema emite alerta imediato e exige validação com opções interativas, bloqueando o botão "Salvar e Avançar" até a resolução.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Validação e Correção Automática de Toneladas Efetivadas (CT-e)',
+        description: 'Ao anexar o CT-e na etapa Aguardando Fiscal, o sistema lê o peso em kg/toneladas e compara com as toneladas registradas no sistema. Se houver divergência, avisa imediatamente e oferece opção de corrigir automaticamente as toneladas efetivadas para o valor do CT-e com um clique.'
+      },
+      {
+        category: 'feature',
+        title: 'Conferência de Frete Motorista com a Carta Frete',
+        description: 'Ao anexar a Carta Frete, o sistema compara o frete bruto do motorista contra o valor contratual do sistema. Havendo discrepância, apresenta painel comparativo para confirmação antes de avançar.'
+      },
+      {
+        category: 'feature',
+        title: 'Conferência e Validação de ICMS Destacado do CT-e',
+        description: 'Verificação do valor de ICMS destacado no CT-e em relação ao informado no sistema, possibilitando conciliar e sincronizar os dados fiscais e relatórios com exatidão.'
+      },
+      {
+        category: 'security',
+        title: 'Bloqueio Inteligente de "Salvar e Avançar" para Divergências Fiscais',
+        description: 'O botão "Salvar e Avançar" na etapa Aguardando Fiscal fica protegido e desabilitado com aviso em tooltip enquanto houver divergências de peso, frete ou ICMS não confirmadas pelo operador.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_08_v2_70_18',
+    version: 'v2.70.18',
+    date: '08/10/2026',
+    title: 'Exibição do Frete Motorista com Abatimento do Pedágio no Cabeçalho de Anexos',
+    summary: 'O card "TOTAL FRETE MTR" no cabeçalho do modal Gerenciar Anexos agora exibe o valor do frete motorista líquido com o abatimento do pedágio, acompanhado de tag indicativa e detalhamento do valor bruto original.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Abatimento do Pedágio no Total Frete Motorista',
+        description: 'No cabeçalho do modal Gerenciar Anexos, o campo TOTAL FRETE MTR passou a refletir o valor efetivo abatendo o pedágio (Frete Bruto - Tag Pedágio), espelhando com precisão a base real de pagamento do motorista.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_08_v2_70_17',
+    version: 'v2.70.17',
+    date: '08/10/2026',
+    title: 'Obrigatoriedade do CODG. ATUA em "Ag. Cadastro" e Retenção Automática de Motoristas Sem Código',
+    summary: 'O campo CODG. ATUA agora é obrigatório para liberar o avanço da etapa "1 - Ag. Cadastro". Além disso, todos os motoristas cadastrados que ainda não possuem o código do ATUA registrado passam a parar compulsoriamente em "Ag. Cadastro" na solicitação de seus embarques até que o código seja informado, liberando a passagem direta nos embarques subsequentes.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Campo CODG. ATUA Obrigatório no Modal de Ag. Cadastro',
+        description: 'O botão "Salvar e Avançar" na etapa "1 - Ag. Cadastro" agora permanece bloqueado com aviso explicativo até que o CODG. ATUA (Código de Atualização Cadastral) seja preenchido. O formulário conta com destaque visual e validação estrita.'
+      },
+      {
+        category: 'feature',
+        title: 'Parada Obrigatória em "Ag. Cadastro" para Motoristas sem Código do ATUA',
+        description: 'Motoristas cadastrados que ainda não tiveram o código do ATUA informado agora param obrigatoriamente em "1 - Ag. Cadastro" ao terem um novo embarque solicitado (mesmo que já possuam viagens concluídas no histórico). Uma vez inserido e salvo o código no cadastro, o registro do motorista é enriquecido e as próximas viagens do motorista voltam a pular automaticamente a etapa de cadastro.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização e Persistência do Código do ATUA no Cadastro do Motorista',
+        description: 'Ao informar e avançar o CODG. ATUA em um embarque, o código é gravado nos documentos do embarque, atualizado imediatamente no registro permanente do motorista e replicado para o cache local, garantindo reconhecimento instantâneo em todas as telas operacionais.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_07_v2_70_16',
     version: 'v2.70.16',
     date: '07/10/2026',

@@ -27,6 +27,8 @@ import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
 
 import { getShipmentTmsOrderUrl, getShipmentCteFileUrl, getShipmentDischargeTicketUrl } from '../utils/documentViewer';
+import { extractDetailedDocData } from '../utils/fiscalDocParser';
+import { extractOcNumberFromText } from '../utils/ocParser';
 export { getShipmentTmsOrderUrl, getShipmentCteFileUrl, getShipmentDischargeTicketUrl };
 
 interface ShipmentTableProps {
@@ -108,11 +110,26 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       const path = await uploadShipmentAttachment(shipmentId, 'Ordem de Carregamento TMS', file);
       const publicUrl = getShipmentAttachmentUrl(path);
 
+      let extractedOcNumber: string | undefined;
+      try {
+        const detailed = await extractDetailedDocData(file, 'Ordem de Carregamento TMS');
+        if (detailed.rawText) {
+          const num = extractOcNumberFromText(detailed.rawText);
+          if (num) extractedOcNumber = num;
+        }
+      } catch (err) {
+        console.warn('Não foi possível extrair número da OC:', err);
+      }
+
       const latestShipment = shipments.find(s => s.id === shipmentId) || targetShipmentForTmsUpload;
       const currentDocs = latestShipment.documents || {};
       const updatedDocuments = {
         ...currentDocs,
-        'Ordem de Carregamento TMS': [publicUrl]
+        'Ordem de Carregamento TMS': [publicUrl],
+        ...(extractedOcNumber ? {
+          ordem_carregamento_numero: extractedOcNumber,
+          oc_number: extractedOcNumber
+        } : {})
       };
 
       const newLog = {

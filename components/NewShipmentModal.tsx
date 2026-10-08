@@ -1043,10 +1043,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
         return;
     }
 
-    if (!codigoAtua || !codigoAtua.trim()) {
-        showToast('O Código ATUA do motorista é obrigatório para prosseguir com a solicitação de embarque.', 'warning');
-        return;
-    }
+
 
     const calc = calculateAdvanceAndBalance({
       driverFreightValue: calculatedFreight,
@@ -1064,7 +1061,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       driverName,
       driverCpf,
       driverContact,
-      codigoAtua: codigoAtua.trim(),
+      codigoAtua: codigoAtua ? codigoAtua.trim() : undefined,
       ownerName: ownerName.trim() || undefined,
       ownerContact: ownerContact || undefined,
       horsePlate,
@@ -1285,10 +1282,17 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
-                  <span>Código ATUA <span className="text-red-500">*</span></span>
-                  {hasPreloadedAtua && (
+                  <span className="flex items-center gap-1.5">
+                    <span>Código ATUA</span>
+                    <span className="text-xs font-normal text-gray-500">(Cadastro ATUA)</span>
+                  </span>
+                  {hasPreloadedAtua ? (
                     <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
                       ✓ Vinculado
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                      Obrigatório em Ag. Cadastro
                     </span>
                   )}
                 </label>
@@ -1302,14 +1306,13 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                   placeholder="Ex: 104523 ou Cód. Cadastro" 
                   className={`p-3 w-full border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-medium ${
                     !codigoAtua.trim()
-                      ? 'border-amber-400 dark:border-amber-500 ring-1 ring-amber-300 dark:ring-amber-500/30'
-                      : 'border-gray-300 dark:border-gray-600'
+                      ? 'border-amber-300 dark:border-amber-600'
+                      : 'border-emerald-400 dark:border-emerald-500'
                   }`} 
-                  required 
                 />
                 {!codigoAtua.trim() && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
-                    ⚠️ Obrigatório: informe o Código ATUA gerado no cadastro.
+                    ℹ️ Se não informado agora, o embarque parará em "Ag. Cadastro" para inclusão obrigatória do código.
                   </p>
                 )}
               </div>

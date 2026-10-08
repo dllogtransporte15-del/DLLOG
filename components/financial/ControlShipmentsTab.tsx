@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
-import { Shipment, Cargo, Client, ShipmentStatus, User, Product } from '../../types';
+import { Shipment, Cargo, Client, ShipmentStatus, User, Product, Owner, Vehicle } from '../../types';
 import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber, normalizeWeightTonnage } from '../../utils';
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { fetchProducts } from '../../lib/db';
+import { fetchProducts, fetchOwners, fetchVehicles } from '../../lib/db';
 import type { ShipmentControlItem } from '../../utils/financialCalculations';
 import { 
   TranscunhaSpreadsheetRow, 
@@ -56,6 +56,7 @@ import {
   getShipmentDischargeTicketUrl, 
   getShipmentTmsOrderUrl 
 } from '../../utils/documentViewer';
+import { getShipmentOcNumber } from '../../utils/ocParser';
 
 interface ControlShipmentsTabProps {
   items: ShipmentControlItem[];
@@ -65,6 +66,8 @@ interface ControlShipmentsTabProps {
   users?: User[];
   currentUser?: User | null;
   products?: Product[];
+  vehicles?: Vehicle[];
+  owners?: Owner[];
 }
 
 /**
@@ -291,7 +294,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
 
   // 3. Carga, Pedido & Logística
   { key: 'proprietario', label: 'PROPRIETÁRIO VEÍCULO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[130px] max-w-[160px]' },
-  { key: 'anttContratoPix', label: 'ANTT / PIX 🔄', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', isSynchronized: true, width: 'min-w-[110px] max-w-[125px]', align: 'center' },
+  { key: 'anttContratoPix', label: 'ANTT / PIX 🔄', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', isSynchronized: true, width: 'min-w-[130px] max-w-[160px]' },
   { key: 'telefone', label: 'TELEFONE 🔄', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', isSynchronized: true, width: 'min-w-[95px] max-w-[110px]', align: 'center' },
   { key: 'solicitante', label: 'SOLICITANTE', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[110px] max-w-[130px]' },
   { key: 'carregarEmpresa', label: 'REMETENTE', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[125px] max-w-[155px]' },
@@ -358,7 +361,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   clients = [],
   users = [],
   currentUser,
-  products = []
+  products = [],
+  vehicles: propVehicles = [],
+  owners: propOwners = [],
 }) => {
   // Estado de dados mapeados e carregamento
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -536,6 +541,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
   // Mapeamento em tempo de execução dos embarques operacionais para as 61 colunas
   const [loadedProducts, setLoadedProducts] = useState<Product[]>([]);
+  const [loadedOwners, setLoadedOwners] = useState<Owner[]>([]);
+  const [loadedVehicles, setLoadedVehicles] = useState<Vehicle[]>([]);
 
   useEffect(() => {
     if (!products || products.length === 0) {
@@ -545,15 +552,129 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     }
   }, [products]);
 
+  useEffect(() => {
+    if (!propOwners || propOwners.length === 0) {
+      fetchOwners().then(res => {
+        if (res && res.length > 0) setLoadedOwners(res);
+      }).catch(err => console.warn('[ControlShipmentsTab] Erro ao carregar proprietários:', err));
+    }
+  }, [propOwners]);
+
+  useEffect(() => {
+    if (!propVehicles || propVehicles.length === 0) {
+      fetchVehicles().then(res => {
+        if (res && res.length > 0) setLoadedVehicles(res);
+      }).catch(err => console.warn('[ControlShipmentsTab] Erro ao carregar veículos:', err));
+    }
+  }, [propVehicles]);
+
   const effectiveProducts = useMemo(() => {
     return (products && products.length > 0) ? products : loadedProducts;
   }, [products, loadedProducts]);
+
+  const effectiveOwners = useMemo(() => {
+    return (propOwners && propOwners.length > 0) ? propOwners : loadedOwners;
+  }, [propOwners, loadedOwners]);
+
+  const effectiveVehicles = useMemo(() => {
+    return (propVehicles && propVehicles.length > 0) ? propVehicles : loadedVehicles;
+  }, [propVehicles, loadedVehicles]);
 
   const productMap = useMemo(() => new Map(effectiveProducts.map(p => [p.id, p])), [effectiveProducts]);
   const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.razaoSocial || c.nomeFantasia || ''])), [clients]);
   const clientObjMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u.name])), [users]);
+
+  // Função para resolver o Nome do Proprietário do Veículo
+  const resolveOwnerName = useCallback((s: Shipment): string => {
+    // 1. ownerName direto no embarque
+    if (s.ownerName && s.ownerName.trim()) {
+      return s.ownerName.trim().toUpperCase();
+    }
+
+    // 2. Campo nos documentos do embarque
+    const docOwner = (s.documents as any)?.owner_name || 
+                     (s.documents as any)?.ownerName || 
+                     (s.documents as any)?.nome_proprietario || 
+                     (s.documents as any)?.proprietario || 
+                     (s.documents as any)?.favorecido ||
+                     (s.documents as any)?.antt_owner_name ||
+                     (s.documents as any)?.nomeFavorecido ||
+                     (s.documents as any)?.razao_social ||
+                     (s as any).favorecido;
+    if (docOwner && typeof docOwner === 'string' && docOwner.trim()) {
+      return docOwner.trim().toUpperCase();
+    }
+
+    // Identificador (CNPJ/CPF do proprietário da ANTT ou Chave PIX)
+    const identifierClean = (s.anttOwnerIdentifier || s.pixKey || '').replace(/\D/g, '');
+
+    // 3. Busca na lista de Proprietários cadastrados (Owner) por documento
+    if (identifierClean && effectiveOwners && effectiveOwners.length > 0) {
+      const matched = effectiveOwners.find(o => {
+        const oDoc = (o.cpfCnpj || (o as any).cpf_cnpj || (o as any).document || '').replace(/\D/g, '');
+        return oDoc && oDoc === identifierClean;
+      });
+      if (matched && matched.name && matched.name.trim()) {
+        return matched.name.trim().toUpperCase();
+      }
+    }
+
+    // 4. Busca no veículo cadastrado pela placa
+    const horsePlateClean = (s.horsePlate || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (horsePlateClean && effectiveVehicles && effectiveVehicles.length > 0) {
+      const vMatched = effectiveVehicles.find(v => {
+        const vPlate = (v.plate || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        return vPlate && vPlate === horsePlateClean;
+      });
+      if (vMatched) {
+        if ((vMatched as any).ownerName && typeof (vMatched as any).ownerName === 'string' && (vMatched as any).ownerName.trim()) {
+          return (vMatched as any).ownerName.trim().toUpperCase();
+        }
+        if (vMatched.ownerId && effectiveOwners && effectiveOwners.length > 0) {
+          const oById = effectiveOwners.find(o => o.id === vMatched.ownerId);
+          if (oById && oById.name && oById.name.trim()) {
+            return oById.name.trim().toUpperCase();
+          }
+        }
+      }
+    }
+
+    // 5. Busca cruzada em outros embarques com o mesmo CNPJ/CPF ou placa que tenham o nome preenchido
+    if (shipments && shipments.length > 0) {
+      if (identifierClean) {
+        const otherWithSameDoc = shipments.find(other => {
+          const otherDoc = (other.anttOwnerIdentifier || other.pixKey || '').replace(/\D/g, '');
+          const otherName = other.ownerName || (other.documents as any)?.owner_name || (other.documents as any)?.ownerName;
+          return otherDoc === identifierClean && otherName && typeof otherName === 'string' && otherName.trim();
+        });
+        if (otherWithSameDoc) {
+          const name = otherWithSameDoc.ownerName || (otherWithSameDoc.documents as any)?.owner_name || (otherWithSameDoc.documents as any)?.ownerName;
+          if (name && typeof name === 'string' && name.trim()) return name.trim().toUpperCase();
+        }
+      }
+
+      if (horsePlateClean) {
+        const otherWithSamePlate = shipments.find(other => {
+          const otherPlate = (other.horsePlate || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          const otherName = other.ownerName || (other.documents as any)?.owner_name || (other.documents as any)?.ownerName;
+          return otherPlate === horsePlateClean && otherName && typeof otherName === 'string' && otherName.trim();
+        });
+        if (otherWithSamePlate) {
+          const name = otherWithSamePlate.ownerName || (otherWithSamePlate.documents as any)?.owner_name || (otherWithSamePlate.documents as any)?.ownerName;
+          if (name && typeof name === 'string' && name.trim()) return name.trim().toUpperCase();
+        }
+      }
+    }
+
+    // 6. Se for autônomo (TAC / PF) ou motorista proprietário
+    if (s.driverName && s.driverName.trim()) {
+      return s.driverName.trim().toUpperCase();
+    }
+
+    return '-';
+  }, [effectiveOwners, effectiveVehicles, shipments]);
 
   const mappedRows = useMemo<TranscunhaSpreadsheetRow[]>(() => {
     return shipmentsFiltered.map((s, index) => {
@@ -699,8 +820,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         motorista: s.driverName || 'NÃO ATRIBUÍDO',
         cpfMotorista: s.driverCpf || '-',
 
-        proprietario: s.ownerName || s.driverName || '-',
-        anttContratoPix: s.pixKey || s.anttOwnerIdentifier || '-',
+        proprietario: resolveOwnerName(s),
+        anttContratoPix: resolveOwnerName(s),
         telefone: s.driverContact || '-',
         solicitante: solicitanteName,
         carregarEmpresa: (cargo as any)?.loadingCompany || (cargo as any)?.remetente || clientName || '-',
@@ -731,7 +852,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         matrizFilial: 'MATRIZ',
         liberacao: s.riskReleaseCode || 'LIB-001',
         gr: s.riskQueryType ? String(s.riskQueryType).toUpperCase() : 'BUONNY OK',
-        ordemCarregamento: `OC-${s.orderId || s.id.slice(0, 6)}`,
+        ordemCarregamento: getShipmentOcNumber(s),
 
         clienteTomadorPagador: clientName || 'CLIENTE GERAL',
         freteEmpresaUnitario: tarifaEmpresa,
@@ -920,15 +1041,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         horaDataLiberacaoSaldo: getBalanceLiberationDateTime(s),
         tipoPagamentoSaldo: s.paymentMethod ? String(s.paymentMethod).toUpperCase() : 'PIX - E-FRETE',
         statusSaldo: s.status === ShipmentStatus.Finalizado ? 'PAGO' : 'PENDENTE',
-        ciot: (() => {
-          const ciotCode = getShipmentCiotNumber(s);
-          if (ciotCode && ciotCode !== '-') return ciotCode;
-          if (s.ciotNumber) return String(s.ciotNumber).trim();
-          if (s.ciot && !String(s.ciot).startsWith('FEL-')) return String(s.ciot).trim();
-          if ((s.documents as any)?.ciot_number) return String((s.documents as any).ciot_number).trim();
-          if ((s.documents as any)?.ciot) return String((s.documents as any).ciot).trim();
-          return '-';
-        })(),
+        ciot: getShipmentCiotNumber(s),
         totalQuebra: quebra,
         valorQuebraCiot: s.discountValue || 0,
 
@@ -2317,6 +2430,26 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         );
                       }
 
+                      // Coluna Especial: ANTT / PIX (Exibe Nome do Proprietário com Doc/PIX em tooltip)
+                      if (col.key === 'anttContratoPix') {
+                        const ownerVal = String(raw || '-');
+                        const sOrig = shipments.find(s => s.id === row.id);
+                        const docVal = sOrig?.anttOwnerIdentifier || sOrig?.pixKey || '';
+                        return (
+                          <td 
+                            key={col.key}
+                            data-cell-coord={cellCoord}
+                            onClick={handleCellClick}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            title={docVal ? `Proprietário: ${ownerVal} • Doc/PIX: ${docVal}` : `Proprietário: ${ownerVal}`}
+                          >
+                            <span className={ownerVal !== '-' ? (isDark ? 'font-medium text-cyan-300' : 'text-black font-black') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
+                              {ownerVal}
+                            </span>
+                          </td>
+                        );
+                      }
+
                       // Coluna Especial: HORA/DATA LIBER. ADIANT (Data/Hora de Liberação do Adiantamento)
                       if (col.key === 'horaDataLiberacaoAdiantamento') {
                         const dhVal = String(raw || '-');
@@ -2382,7 +2515,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   ? (isDark ? 'text-indigo-400 hover:text-indigo-300 hover:underline' : 'text-black font-black bg-white/70 hover:bg-white px-1.5 py-0.5 rounded border border-black/30 shadow-xs')
                                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
                               }`}
-                              title={row.ordemCarregamentoUrl ? `Clique para abrir a Ordem de Carregamento TMS (${ocVal})` : `${ocVal} (sem OC TMS anexada)`}
+                              title={row.ordemCarregamentoUrl ? `Clique para abrir a Ordem de Carregamento TMS (Nº ${ocVal})` : `Nº ${ocVal} (sem OC TMS anexada)`}
                             >
                               <span>{ocVal}</span>
                               {row.ordemCarregamentoUrl && <ExternalLink className="w-2.5 h-2.5 opacity-70" />}

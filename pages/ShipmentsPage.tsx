@@ -35,6 +35,8 @@ interface ShipmentsPageProps {
     filesToAttach: { [key: string]: File[] }, 
     bankDetails?: string, 
     loadedTonnage?: number, 
+    driverFreightValue?: number,
+    icmsValue?: number,
     advancePercentage?: number, 
     advanceValue?: number,
     tollValue?: number, 
@@ -48,6 +50,8 @@ interface ShipmentsPageProps {
     riskReleaseCode?: string,
     riskQueryType?: string,
     riskQueryCost?: number,
+    realProfitData?: any,
+    codigoAtua?: string,
   }) => Promise<void>;
   onAddAttachments?: (shipmentId: string, files: File[]) => Promise<void>;
   onUpdatePrice: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
