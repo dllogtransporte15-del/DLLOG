@@ -2225,6 +2225,18 @@ const App: React.FC = () => {
         if (fiscalNums.subtotalSaldoValue !== undefined) {
           updatedDocuments.saldo_liquido = fiscalNums.subtotalSaldoValue;
         }
+        if (fiscalNums.cteRemetente) {
+          updatedDocuments.cte_remetente = fiscalNums.cteRemetente;
+          updatedDocuments.cteRemetente = fiscalNums.cteRemetente;
+        }
+        if (fiscalNums.cteTomadorNome) {
+          updatedDocuments.cte_tomador = fiscalNums.cteTomadorNome;
+          updatedDocuments.cteTomadorNome = fiscalNums.cteTomadorNome;
+        }
+        if (fiscalNums.cteTomadorCnpj) {
+          updatedDocuments.cte_tomador_cnpj = fiscalNums.cteTomadorCnpj;
+          updatedDocuments.cteTomadorCnpj = fiscalNums.cteTomadorCnpj;
+        }
         if (fiscalNums.nfeNumber) extractedNfeNumber = fiscalNums.nfeNumber;
         if (fiscalNums.mdfeNumber) extractedMdfeNumber = fiscalNums.mdfeNumber;
         if (fiscalNums.tollValue !== undefined) extractedTollValue = fiscalNums.tollValue;

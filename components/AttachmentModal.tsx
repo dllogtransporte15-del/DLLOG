@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, ClientBranchCnpj, PaymentMethod, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData } from '../types';
+import { upsertClient, upsertCargo } from '../lib/db';
 import { isDemoUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
@@ -289,11 +290,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [cteExtractedWeightKg, setCteExtractedWeightKg] = useState<number | undefined>(undefined);
   const [cartaFreteExtractedFreight, setCartaFreteExtractedFreight] = useState<number | undefined>(undefined);
   const [cteExtractedIcms, setCteExtractedIcms] = useState<number | undefined>(undefined);
+  const [cteExtractedTomadorNome, setCteExtractedTomadorNome] = useState<string | undefined>(undefined);
+  const [cteExtractedTomadorCnpj, setCteExtractedTomadorCnpj] = useState<string | undefined>(undefined);
+  const [isResolvingTomador, setIsResolvingTomador] = useState(false);
 
   // Decisões de resolução de divergências fiscais na etapa Aguardando Fiscal
   const [weightDecision, setWeightDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
   const [freightDecision, setFreightDecision] = useState<'unresolved' | 'use_carta_frete' | 'keep_system'>('unresolved');
   const [icmsDecision, setIcmsDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
+  const [tomadorDecision, setTomadorDecision] = useState<'unresolved' | 'adjust_to_cte' | 'link_branch' | 'keep_system'>('unresolved');
 
   const ticketFiles: string[] = React.useMemo(() => {
     if (!shipment.documents) return [];
@@ -456,11 +461,52 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return null;
   }, [cteExtractedIcms, systemIcms]);
 
+  // Tomador (Pagador): Validação entre Cadastro da Carga (Sistema) e Tomador do CT-e
+  const currentClient = React.useMemo(() => {
+    if (!cargo?.clientId || !clients) return null;
+    return clients.find(c => c.id === cargo.clientId) || null;
+  }, [cargo?.clientId, clients]);
+
+  const currentClientCnpj = React.useMemo(() => {
+    return (cargo?.clientCnpj || currentClient?.cnpj || '').trim();
+  }, [cargo?.clientCnpj, currentClient]);
+
+  const cleanSystemCnpj = React.useMemo(() => {
+    return currentClientCnpj.replace(/\D/g, '');
+  }, [currentClientCnpj]);
+
+  const cleanCteTomadorCnpj = React.useMemo(() => {
+    return (cteExtractedTomadorCnpj || '').replace(/\D/g, '');
+  }, [cteExtractedTomadorCnpj]);
+
+  const tomadorDivergenceInfo = React.useMemo(() => {
+    if (!cleanCteTomadorCnpj || cleanCteTomadorCnpj.length < 11) return null;
+    if (!cleanSystemCnpj && !currentClient) return null;
+
+    // Se bater com o CNPJ principal do cliente/carga, não há divergência
+    if (cleanSystemCnpj && cleanSystemCnpj === cleanCteTomadorCnpj) return null;
+
+    // Se já constar cadastrado em secondaryCnpjs (filiais) do cliente, não há divergência
+    if (currentClient?.secondaryCnpjs?.some(b => (b.cnpj || '').replace(/\D/g, '') === cleanCteTomadorCnpj)) {
+      return null;
+    }
+
+    return {
+      systemClientName: currentClient?.razaoSocial || currentClient?.nomeFantasia || 'Tomador da Carga',
+      systemCnpj: currentClientCnpj || 'Não informado',
+      systemCleanCnpj: cleanSystemCnpj,
+      cteTomadorNome: cteExtractedTomadorNome || 'Tomador no CT-e',
+      cteTomadorCnpj: cteExtractedTomadorCnpj || '',
+      cteCleanCnpj: cleanCteTomadorCnpj,
+    };
+  }, [cleanCteTomadorCnpj, cleanSystemCnpj, currentClient, currentClientCnpj, cteExtractedTomadorNome, cteExtractedTomadorCnpj]);
+
   const isAguardandoFiscal = shipment.status === ShipmentStatus.AguardandoFiscal;
   const hasUnresolvedWeightDivergence = isAguardandoFiscal && !!weightDivergenceInfo && weightDecision === 'unresolved';
   const hasUnresolvedFreightDivergence = isAguardandoFiscal && !!freightDivergenceInfo && freightDecision === 'unresolved';
   const hasUnresolvedIcmsDivergence = isAguardandoFiscal && !!icmsDivergenceInfo && icmsDecision === 'unresolved';
-  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedIcmsDivergence;
+  const hasUnresolvedTomadorDivergence = !!tomadorDivergenceInfo && tomadorDecision === 'unresolved';
+  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTomadorDivergence;
 
   // Alertas em tempo real quando houver divergências no Aguardando Fiscal
   useEffect(() => {
@@ -487,7 +533,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         7000
       );
     }
-  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!icmsDivergenceInfo]);
+    if (tomadorDivergenceInfo && tomadorDecision === 'unresolved') {
+      showToast(
+        `⚠️ Divergência de Tomador: Carga (${tomadorDivergenceInfo.systemCnpj}) vs CT-e (${tomadorDivergenceInfo.cteTomadorCnpj}). Confirme se deseja ajustar para o Tomador do CT-e ou vincular como Filial.`,
+        'warning',
+        7000
+      );
+    }
+  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!icmsDivergenceInfo, !!tomadorDivergenceInfo]);
 
   useEffect(() => {
     if (isOpen) {
@@ -503,6 +556,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setWeightDecision('unresolved');
       setFreightDecision('unresolved');
       setIcmsDecision('unresolved');
+      setTomadorDecision('unresolved');
+      setCteExtractedTomadorNome(
+        (shipment.documents as any)?.cte_tomador || 
+        (shipment.documents as any)?.cteTomadorNome || 
+        (shipment.documents as any)?.tomador_nome || 
+        undefined
+      );
+      setCteExtractedTomadorCnpj(
+        (shipment.documents as any)?.cte_tomador_cnpj || 
+        (shipment.documents as any)?.cteTomadorCnpj || 
+        (shipment.documents as any)?.tomador_cnpj || 
+        undefined
+      );
 
       const initialAdvPct = shipment.advancePercentage !== undefined ? shipment.advancePercentage : 70;
       const initialToll = shipment.tollValue || 0;
@@ -569,6 +635,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             }
             if (extracted.icmsValue !== undefined && extracted.icmsValue > 0) {
               setCteExtractedIcms(extracted.icmsValue);
+            }
+            if (extracted.cteTomadorCnpj) {
+              setCteExtractedTomadorCnpj(extracted.cteTomadorCnpj);
+            }
+            if (extracted.cteTomadorNome) {
+              setCteExtractedTomadorNome(extracted.cteTomadorNome);
             }
             if (extracted.ordemCarregamentoNumero && !shipment.documents?.ordem_carregamento_numero && onUpdateShipmentData) {
               onUpdateShipmentData(shipment.id, {
@@ -659,6 +731,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           }
           if (parsed.icmsValue !== undefined && parsed.icmsValue > 0) {
             setCteExtractedIcms(parsed.icmsValue);
+            extractedAny = true;
+          }
+          if (parsed.cteTomadorCnpj) {
+            setCteExtractedTomadorCnpj(parsed.cteTomadorCnpj);
+            extractedAny = true;
+          }
+          if (parsed.cteTomadorNome) {
+            setCteExtractedTomadorNome(parsed.cteTomadorNome);
             extractedAny = true;
           }
           if (extractedAny) {
@@ -1087,6 +1167,103 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     drawRouteOnMap();
   };
 
+  const handleLinkBranchToCurrentClient = async () => {
+    if (!tomadorDivergenceInfo || !currentClient) return;
+    setIsResolvingTomador(true);
+    try {
+      const newBranch: ClientBranchCnpj = {
+        id: 'br_' + Date.now(),
+        cnpj: tomadorDivergenceInfo.cteTomadorCnpj,
+        razaoSocial: tomadorDivergenceInfo.cteTomadorNome || currentClient.razaoSocial,
+        nomeFantasia: tomadorDivergenceInfo.cteTomadorNome || currentClient.nomeFantasia,
+      };
+      const updatedClient: Client = {
+        ...currentClient,
+        secondaryCnpjs: [...(currentClient.secondaryCnpjs || []), newBranch],
+      };
+      await upsertClient(updatedClient);
+      if (cargo) {
+        const updatedCargo: Cargo = {
+          ...cargo,
+          clientBranchId: newBranch.id,
+          clientCnpj: tomadorDivergenceInfo.cteTomadorCnpj,
+        };
+        await upsertCargo(updatedCargo);
+      }
+      setTomadorDecision('link_branch');
+      showToast(`✓ CNPJ ${tomadorDivergenceInfo.cteTomadorCnpj} vinculado com sucesso como filial de ${currentClient.razaoSocial}!`, 'success');
+    } catch (err: any) {
+      console.error('[AttachmentModal] Erro ao vincular filial:', err);
+      showToast('Erro ao vincular CNPJ como filial: ' + (err?.message || 'Falha ao salvar'), 'error');
+    } finally {
+      setIsResolvingTomador(false);
+    }
+  };
+
+  const handleAdjustToCteTomador = async () => {
+    if (!tomadorDivergenceInfo || !cargo) return;
+    setIsResolvingTomador(true);
+    try {
+      const cleanCte = tomadorDivergenceInfo.cteCleanCnpj;
+      let targetClient = clients?.find(c => (c.cnpj || '').replace(/\D/g, '') === cleanCte);
+      let targetBranchId: string | undefined = undefined;
+
+      if (!targetClient) {
+        for (const cl of (clients || [])) {
+          const br = cl.secondaryCnpjs?.find(b => (b.cnpj || '').replace(/\D/g, '') === cleanCte);
+          if (br) {
+            targetClient = cl;
+            targetBranchId = br.id;
+            break;
+          }
+        }
+      }
+
+      if (targetClient) {
+        const updatedCargo: Cargo = {
+          ...cargo,
+          clientId: targetClient.id,
+          clientCnpj: tomadorDivergenceInfo.cteTomadorCnpj,
+          clientBranchId: targetBranchId,
+        };
+        await upsertCargo(updatedCargo);
+        showToast(`✓ Tomador da carga ajustado para ${targetClient.razaoSocial || targetClient.nomeFantasia}!`, 'success');
+      } else {
+        const newClient: Client = {
+          id: 'cli_' + Date.now(),
+          razaoSocial: tomadorDivergenceInfo.cteTomadorNome || 'Tomador CT-e',
+          nomeFantasia: tomadorDivergenceInfo.cteTomadorNome || 'Tomador CT-e',
+          cnpj: tomadorDivergenceInfo.cteTomadorCnpj,
+          phone: '',
+          email: '',
+          address: '',
+          city: '',
+          state: '',
+          paymentMethod: currentClient?.paymentMethod || PaymentMethod.Boleto,
+          paymentTerm: currentClient?.paymentTerm || 30,
+          requiresExternalOrder: false,
+          requiresScheduling: false,
+          secondaryCnpjs: [],
+        };
+        await upsertClient(newClient);
+        const updatedCargo: Cargo = {
+          ...cargo,
+          clientId: newClient.id,
+          clientCnpj: tomadorDivergenceInfo.cteTomadorCnpj,
+          clientBranchId: undefined,
+        };
+        await upsertCargo(updatedCargo);
+        showToast(`✓ Novo cliente cadastrado e tomador da carga ajustado para ${newClient.razaoSocial}!`, 'success');
+      }
+      setTomadorDecision('adjust_to_cte');
+    } catch (err: any) {
+      console.error('[AttachmentModal] Erro ao ajustar tomador:', err);
+      showToast('Erro ao ajustar tomador da carga: ' + (err?.message || 'Falha ao salvar'), 'error');
+    } finally {
+      setIsResolvingTomador(false);
+    }
+  };
+
   const handleSave = async () => {
     if (isDemo) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
@@ -1117,6 +1294,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         if (hasUnresolvedIcmsDivergence) {
           showToast(`⚠️ Divergência de ICMS pendente: Confirme se o valor correto é o do Sistema ou o do CT-e antes de avançar.`, 'warning');
           setError('É obrigatório confirmar qual valor de ICMS é o correto antes de avançar.');
+          return;
+        }
+        if (hasUnresolvedTomadorDivergence) {
+          showToast(`⚠️ Divergência de Tomador (Pagador) pendente: Confirme se deseja Ajustar para o Tomador do CT-e (${tomadorDivergenceInfo?.cteTomadorCnpj}) ou Vincular como Filial antes de avançar.`, 'warning');
+          setError('É obrigatório confirmar a resolução da divergência de Tomador do CT-e antes de avançar.');
           return;
         }
       } else if (weightDivergenceInfo) {
@@ -1669,6 +1851,103 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           </div>
         )}
 
+        {/* Alerta de Divergência de Tomador fora da etapa Aguardando Fiscal */}
+        {!isAguardandoFiscal && !isClientUser && tomadorDivergenceInfo && (
+          <div className={`mb-6 p-4 rounded-xl border-2 transition-all ${
+            tomadorDecision === 'unresolved'
+              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+              : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-lg shrink-0 ${
+                tomadorDecision === 'unresolved'
+                  ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                  : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+              }`}>
+                {tomadorDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    🏢 Validação de Tomador (Pagador): Carga vs CT-e
+                  </h4>
+                  <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                    CNPJ Divergente
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                  O CPF ou CNPJ do Tomador (Pagador) da carga não confere com o Tomador informado no CT-e do embarque:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                  <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <span className="text-gray-500 dark:text-gray-400 block font-medium">Tomador no Cadastro da Carga:</span>
+                    <div className="font-bold text-gray-900 dark:text-white mt-0.5 truncate">
+                      {tomadorDivergenceInfo.systemClientName}
+                    </div>
+                    <div className="text-xs font-mono text-gray-600 dark:text-gray-300 mt-0.5">
+                      CNPJ/CPF: {tomadorDivergenceInfo.systemCnpj}
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <span className="text-gray-500 dark:text-gray-400 block font-medium">Tomador Lido no CT-e:</span>
+                    <div className="font-bold text-indigo-700 dark:text-indigo-400 mt-0.5 truncate">
+                      {tomadorDivergenceInfo.cteTomadorNome}
+                    </div>
+                    <div className="text-xs font-mono text-indigo-600 dark:text-indigo-300 mt-0.5">
+                      CNPJ/CPF: {tomadorDivergenceInfo.cteTomadorCnpj}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isResolvingTomador}
+                    onClick={handleAdjustToCteTomador}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                      tomadorDecision === 'adjust_to_cte'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                        : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                    }`}
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{isResolvingTomador ? 'Ajustando...' : '✓ Ajustar para Tomador do CT-e'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isResolvingTomador}
+                    onClick={handleLinkBranchToCurrentClient}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                      tomadorDecision === 'link_branch'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-500'
+                        : 'bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+                    }`}
+                  >
+                    <Building className="w-4 h-4" />
+                    <span>{isResolvingTomador ? 'Vinculando...' : '✓ Vincular como Filial do Tomador'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isResolvingTomador}
+                    onClick={() => {
+                      setTomadorDecision('keep_system');
+                      showToast(`✓ Confirmado: Mantido o tomador do cadastro da carga (${tomadorDivergenceInfo.systemClientName}).`, 'info');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                      tomadorDecision === 'keep_system'
+                        ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                        : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                    }`}
+                  >
+                    <span>Manter Tomador da Carga</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Documentos Consolidados & Painel de Automação de Custos */}
         <>
             {/* Bloco 1: Documentos Anexados (Linha Horizontal) */}
@@ -2112,9 +2391,125 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     </div>
                   )}
 
+                  {/* Divergência 4: Tomador / Pagador da Carga vs CT-e */}
+                  {tomadorDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      tomadorDecision === 'unresolved'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          tomadorDecision === 'unresolved'
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {tomadorDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              🏢 Validação de Tomador (Pagador): Carga vs CT-e
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              CNPJ Divergente
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            O CPF ou CNPJ do Tomador (Pagador) cadastrado na carga não confere com o Tomador indicado no CT-e anexado. Escolha como deseja tratar esta divergência:
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Tomador no Cadastro da Carga:</span>
+                              <div className="font-bold text-gray-900 dark:text-white mt-0.5 truncate" title={tomadorDivergenceInfo.systemClientName}>
+                                {tomadorDivergenceInfo.systemClientName}
+                              </div>
+                              <div className="text-xs font-mono text-gray-600 dark:text-gray-300 mt-0.5">
+                                CNPJ/CPF: {tomadorDivergenceInfo.systemCnpj}
+                              </div>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Tomador Informado no CT-e:</span>
+                              <div className="font-bold text-indigo-700 dark:text-indigo-400 mt-0.5 truncate" title={tomadorDivergenceInfo.cteTomadorNome}>
+                                {tomadorDivergenceInfo.cteTomadorNome}
+                              </div>
+                              <div className="text-xs font-mono text-indigo-600 dark:text-indigo-300 mt-0.5">
+                                CNPJ/CPF: {tomadorDivergenceInfo.cteTomadorCnpj}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação para o Operador Escolher */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isResolvingTomador}
+                              onClick={handleAdjustToCteTomador}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                                tomadorDecision === 'adjust_to_cte'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>{isResolvingTomador ? 'Ajustando...' : '✓ Ajustar para Tomador do CT-e'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isResolvingTomador}
+                              onClick={handleLinkBranchToCurrentClient}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                                tomadorDecision === 'link_branch'
+                                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
+                              }`}
+                            >
+                              <Building className="w-4 h-4" />
+                              <span>{isResolvingTomador ? 'Vinculando...' : '✓ Vincular como Filial do Tomador'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isResolvingTomador}
+                              onClick={() => {
+                                setTomadorDecision('keep_system');
+                                showToast(`✓ Confirmado: Mantido o tomador do cadastro da carga (${tomadorDivergenceInfo.systemClientName}).`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                                tomadorDecision === 'keep_system'
+                                  ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                              }`}
+                            >
+                              <span>Manter Tomador da Carga</span>
+                            </button>
+                          </div>
+
+                          {tomadorDecision === 'adjust_to_cte' && (
+                            <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ O tomador da carga foi ajustado com sucesso para o tomador indicado no CT-e ({tomadorDivergenceInfo.cteTomadorNome}).
+                            </p>
+                          )}
+                          {tomadorDecision === 'link_branch' && (
+                            <p className="mt-2 text-[11px] font-semibold text-blue-700 dark:text-blue-400">
+                              ✓ O CNPJ {tomadorDivergenceInfo.cteTomadorCnpj} foi adicionado como filial vinculada a {tomadorDivergenceInfo.systemClientName}.
+                            </p>
+                          )}
+                          {tomadorDecision === 'keep_system' && (
+                            <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                              ✓ Tomador original mantido conforme informado na carga.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Feedback positivo se houver documentos e nenhuma divergência pendente */}
                   {((cteWeightTon > 0 && !weightDivergenceInfo) || (weightDivergenceInfo && weightDecision !== 'unresolved')) &&
-                   ((cartaFreteExtractedFreight && !freightDivergenceInfo) || (freightDivergenceInfo && freightDecision !== 'unresolved')) && (
+                   ((cartaFreteExtractedFreight && !freightDivergenceInfo) || (freightDivergenceInfo && freightDecision !== 'unresolved')) &&
+                   ((cteExtractedIcms && !icmsDivergenceInfo) || (icmsDivergenceInfo && icmsDecision !== 'unresolved')) &&
+                   (!tomadorDivergenceInfo || tomadorDecision !== 'unresolved') && (
                     <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span className="font-medium">

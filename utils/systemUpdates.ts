@@ -21,6 +21,45 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_08_v2_70_23',
+    version: 'v2.70.23',
+    date: '08/10/2026',
+    title: 'Ajustes na Planilha de Controladoria e Validação de Tomador no CT-e',
+    summary: 'Configuração aprimorada das colunas da planilha de controladoria (NºPEDIDO, Remetente do CT-e, Tipo de Embalagem, Código de Liberação da Seguradora, Atalhos diretos para Comprovante de Adiantamento e Comprovante de Saldo) e nova validação inteligente de divergência de Tomador (Pagador) entre Carga e CT-e com opções de ajuste automático ou vinculação de filial.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Coluna "NºPEDIDO"',
+        description: 'Apresenta com precisão o "Nº do Pedido" cadastrado na carga do embarque, mantendo o campo estritamente em branco quando não informado.'
+      },
+      {
+        category: 'feature',
+        title: 'Coluna "Remetente" do CT-e',
+        description: 'Prioriza e exibe sempre a razão social/nome do remetente extraído diretamente do Conhecimento de Transporte (CT-e) anexado ao embarque.'
+      },
+      {
+        category: 'improvement',
+        title: 'Coluna "TIPO" de Embalagem Padronizada',
+        description: 'Padroniza a exibição da embalagem estritamente entre as opções homologadas: Granel, Bigbag, Sacos ou Pallet.'
+      },
+      {
+        category: 'improvement',
+        title: 'Coluna "LIBERAÇÃO" com Código da Seguradora',
+        description: 'Exibe o código de liberação fornecido pela seguradora durante o avanço do status "Ag. Seguradora", com formatação visual destacada.'
+      },
+      {
+        category: 'feature',
+        title: 'Atalhos de Acesso Rápido aos Comprovantes',
+        description: 'As células das colunas "HORA/DATA LIBER. ADIANTA" e "SALDO RESTANTE" tornaram-se botões interativos de clique rápido que abrem instantaneamente o Comprovante de Adiantamento e o Comprovante de Pagamento de Saldo anexados.'
+      },
+      {
+        category: 'security',
+        title: 'Validação de CPF/CNPJ do Tomador (Pagador) vs CT-e',
+        description: 'Ao anexar ou processar o CT-e, o sistema confere se o Tomador (Pagador) é o mesmo cadastrado na carga. Havendo divergência, oferece ao operador as opções imediatas de ajustar a carga para o tomador do CT-e ou vincular o novo CNPJ como filial da empresa cadastrada.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_08_v2_70_22',
     version: 'v2.70.22',
     date: '08/10/2026',

@@ -773,3 +773,145 @@ export function getShipmentTmsOrderUrl(shipment?: { documents?: any; tmsOrderUrl
 
   return null;
 }
+
+/**
+ * Retorna a URL do arquivo de Comprovante de Adiantamento anexado ao embarque, se disponível.
+ */
+export function getShipmentAdvanceProofUrl(shipment?: { documents?: any; [key: string]: any } | null): string | null {
+  if (!shipment) return null;
+
+  // 1. Campos diretos no objeto do embarque
+  const directFields = [
+    (shipment as any).advanceProofUrl,
+    (shipment as any).comprovanteAdiantamentoUrl,
+    (shipment as any).advanceUrl,
+    (shipment as any).comprovante_adiantamento_url,
+  ];
+  for (const f of directFields) {
+    if (typeof f === 'string' && f.trim()) {
+      const u = normalizeDocumentUrl(f.trim());
+      if (u) return u;
+    }
+  }
+
+  const docs = shipment.documents;
+  if (!docs || typeof docs !== 'object') return null;
+
+  // 2. Chaves exatas do sistema para Comprovante de Adiantamento
+  const exactKeys = [
+    'Comprovante de Adiantamento',
+    'comprovante de adiantamento',
+    'Comprovante de adiantamento',
+    'comprovante_adiantamento',
+    'comprovante_de_adiantamento',
+    'comprovanteAdiantamento',
+    'adiantamento',
+    'Adiantamento',
+  ];
+
+  for (const k of exactKeys) {
+    const val = docs[k];
+    if (Array.isArray(val) && val.length > 0) {
+      for (let i = val.length - 1; i >= 0; i--) {
+        const u = normalizeDocumentUrl(val[i]);
+        if (u) return u;
+      }
+    } else if (val) {
+      const u = normalizeDocumentUrl(val);
+      if (u) return u;
+    }
+  }
+
+  // 3. Varredura ampla em docs: qualquer anexo cujo nome da chave ou URL contenha 'adiant'
+  for (const [k, val] of Object.entries(docs)) {
+    const kl = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (kl.includes('adiant')) {
+      if (Array.isArray(val) && val.length > 0) {
+        for (let i = val.length - 1; i >= 0; i--) {
+          const u = normalizeDocumentUrl(val[i]);
+          if (u) return u;
+        }
+      } else if (val) {
+        const u = normalizeDocumentUrl(val);
+        if (u) return u;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Retorna a URL do arquivo de Comprovante de Pagamento de Saldo anexado ao embarque, se disponível.
+ */
+export function getShipmentBalanceProofUrl(shipment?: { documents?: any; [key: string]: any } | null): string | null {
+  if (!shipment) return null;
+
+  // 1. Campos diretos no objeto do embarque
+  const directFields = [
+    (shipment as any).balanceProofUrl,
+    (shipment as any).comprovanteSaldoUrl,
+    (shipment as any).comprovantePagamentoSaldoUrl,
+    (shipment as any).balanceUrl,
+    (shipment as any).comprovante_saldo_url,
+  ];
+  for (const f of directFields) {
+    if (typeof f === 'string' && f.trim()) {
+      const u = normalizeDocumentUrl(f.trim());
+      if (u) return u;
+    }
+  }
+
+  const docs = shipment.documents;
+  if (!docs || typeof docs !== 'object') return null;
+
+  // 2. Chaves exatas do sistema para Comprovante de Saldo
+  const exactKeys = [
+    'Comprovante de Pagamento de Saldo',
+    'comprovante de pagamento de saldo',
+    'Comprovante de Pagamento de saldo',
+    'Comprovante de Saldo',
+    'comprovante de saldo',
+    'comprovante_saldo',
+    'comprovante_pagamento_saldo',
+    'comprovante_de_saldo',
+    'comprovanteSaldo',
+    'saldo',
+    'Saldo',
+    'quitacao',
+    'Quitacao',
+    'recibo_saldo',
+  ];
+
+  for (const k of exactKeys) {
+    const val = docs[k];
+    if (Array.isArray(val) && val.length > 0) {
+      for (let i = val.length - 1; i >= 0; i--) {
+        const u = normalizeDocumentUrl(val[i]);
+        if (u) return u;
+      }
+    } else if (val) {
+      const u = normalizeDocumentUrl(val);
+      if (u) return u;
+    }
+  }
+
+  // 3. Varredura ampla em docs: qualquer anexo cujo nome da chave ou URL contenha 'saldo' ou 'quitacao'
+  for (const [k, val] of Object.entries(docs)) {
+    const kl = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (kl.includes('saldo') || kl.includes('quitacao')) {
+      if (Array.isArray(val) && val.length > 0) {
+        for (let i = val.length - 1; i >= 0; i--) {
+          const u = normalizeDocumentUrl(val[i]);
+          if (u) return u;
+        }
+      } else if (val) {
+        const u = normalizeDocumentUrl(val);
+        if (u) return u;
+      }
+    }
+  }
+
+  return null;
+}
+

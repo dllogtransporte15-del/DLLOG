@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { Shipment, Cargo, Client, ShipmentStatus, User, Product, Owner, Vehicle } from '../../types';
-import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber, normalizeWeightTonnage } from '../../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber, normalizeWeightTonnage, getShipmentCteRemetente } from '../../utils';
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
@@ -54,7 +54,9 @@ import {
   openDocumentInNewTab, 
   getShipmentCteFileUrl, 
   getShipmentDischargeTicketUrl, 
-  getShipmentTmsOrderUrl 
+  getShipmentTmsOrderUrl,
+  getShipmentAdvanceProofUrl,
+  getShipmentBalanceProofUrl
 } from '../../utils/documentViewer';
 import { getShipmentOcNumber } from '../../utils/ocParser';
 
@@ -298,7 +300,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'telefone', label: 'TELEFONE 🔄', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', isSynchronized: true, width: 'min-w-[95px] max-w-[110px]', align: 'center' },
   { key: 'solicitante', label: 'SOLICITANTE', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[110px] max-w-[130px]' },
   { key: 'carregarEmpresa', label: 'REMETENTE', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[125px] max-w-[155px]' },
-  { key: 'numeroPedido', label: 'Nº PEDIDO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[85px] max-w-[110px]', align: 'center' },
+  { key: 'numeroPedido', label: 'NºPEDIDO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[85px] max-w-[110px]', align: 'center' },
   { key: 'saldoOriginalPedido', label: 'SALDO PEDIDO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[85px] max-w-[105px]', align: 'center' },
   { key: 'produto', label: 'PRODUTO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[110px] max-w-[140px]' },
   { key: 'tipoCarga', label: 'TIPO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[80px] max-w-[105px]', align: 'center' },
@@ -340,7 +342,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   // 8. Adiantamentos & Saldo
   { key: 'percentualAdiantamento', label: '% ADIANT', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'percent', width: 'min-w-[65px] max-w-[75px]', align: 'right' },
   { key: 'valorAdiantamento', label: 'VALOR ADIANTAMENTO', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'currency', width: 'min-w-[90px] max-w-[100px]', align: 'right' },
-  { key: 'horaDataLiberacaoAdiantamento', label: 'HORA/DATA LIBER. ADIANT', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'text', width: 'min-w-[110px] max-w-[130px]', align: 'center' },
+  { key: 'horaDataLiberacaoAdiantamento', label: 'HORA/DATA LIBER. ADIANTA', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'text', width: 'min-w-[120px] max-w-[140px]', align: 'center' },
   { key: 'ticketDescarga', label: 'TICKET DESCARGA', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'select', options: ['SIM', 'NÃO'], width: 'min-w-[75px] max-w-[85px]', align: 'center' },
   { key: 'pesoChegada', label: 'PESO CHEGADA', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'number', width: 'min-w-[75px] max-w-[85px]', align: 'right' },
   { key: 'saldo', label: 'SALDO RESTANTE', category: 'Adiantamentos & Saldo', categoryColor: 'bg-emerald-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', isCalculated: true, align: 'right' },
@@ -824,8 +826,20 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         anttContratoPix: resolveOwnerName(s),
         telefone: s.driverContact || '-',
         solicitante: solicitanteName,
-        carregarEmpresa: (cargo as any)?.loadingCompany || (cargo as any)?.remetente || clientName || '-',
-        numeroPedido: cargo?.orderNumber || (cargo as any)?.numeroPedido || cargo?.tmsLoteNumber || (cargo?.sequenceId ? String(cargo.sequenceId) : (s.orderId || '-')),
+        carregarEmpresa: getShipmentCteRemetente(s, cargo),
+        numeroPedido: (() => {
+          const raw = (cargo?.orderNumber && cargo.orderNumber.trim() !== '')
+            ? cargo.orderNumber.trim()
+            : ((cargo as any)?.numeroPedido && String((cargo as any).numeroPedido).trim() !== '')
+              ? String((cargo as any).numeroPedido).trim()
+              : ((s as any)?.orderNumber && String((s as any).orderNumber).trim() !== '')
+                ? String((s as any).orderNumber).trim()
+                : ((s as any)?.numeroPedido && String((s as any).numeroPedido).trim() !== '')
+                  ? String((s as any).numeroPedido).trim()
+                  : '';
+          if (!raw || raw === '-' || raw.toLowerCase() === 'não informado' || raw.toLowerCase() === 'n/a') return '';
+          return raw;
+        })(),
         saldoOriginalPedido: (() => {
           if (!cargo) return '-';
           const totalLancado = Number(cargo.totalVolume ?? (cargo as any).scheduledVolume ?? 0);
@@ -840,17 +854,70 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           return 'SOJA EM GRÃOS';
         })(),
         tipoCarga: (() => {
-          if (cargo?.packaging) return String(cargo.packaging).toUpperCase();
-          if ((cargo as any)?.tipoEmbalagem) return String((cargo as any).tipoEmbalagem).toUpperCase();
-          const p = cargo?.productId ? productMap.get(cargo.productId) : undefined;
-          if ((p as any)?.packaging) return String((p as any).packaging).toUpperCase();
-          return 'GRANEL';
+          const rawCandidates = [
+            cargo?.packaging,
+            (cargo as any)?.tipoEmbalagem,
+            (cargo as any)?.embalagem,
+            (s as any)?.packaging,
+            (s as any)?.tipoEmbalagem,
+            (s as any)?.tipoCarga,
+            (s.documents as any)?.packaging,
+            (s.documents as any)?.tipo_embalagem,
+            cargo?.productId ? (productMap.get(cargo.productId) as any)?.packaging : undefined,
+            cargo?.productId ? productMap.get(cargo.productId)?.name : undefined,
+          ];
+          for (const raw of rawCandidates) {
+            if (!raw) continue;
+            const norm = String(raw).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            if (!norm) continue;
+            if (norm.includes('bigbag') || norm.includes('big bag') || norm.includes('bag') || norm.includes('fibc')) {
+              return 'Bigbag';
+            }
+            if (norm.includes('saco') || norm.includes('sacaria') || norm.includes('saca')) {
+              return 'Sacos';
+            }
+            if (norm.includes('pallet') || norm.includes('palete') || norm.includes('palet') || norm.includes('paletizado')) {
+              return 'Pallet';
+            }
+            if (norm.includes('granel') || norm.includes('cacamba') || norm.includes('graneleiro') || norm.includes('basculante')) {
+              return 'Granel';
+            }
+          }
+          return 'Granel';
         })(),
 
         transportadora: 'TRANSCUNHA LOGISTICA LTDA',
         cadastro: 'LIBERADO',
         matrizFilial: 'MATRIZ',
-        liberacao: s.riskReleaseCode || 'LIB-001',
+        liberacao: (() => {
+          if (s.riskReleaseCode && s.riskReleaseCode.trim() && s.riskReleaseCode !== '-') {
+            return s.riskReleaseCode.trim();
+          }
+          const directCode = (s as any).risk_release_code || (s as any).codigoLiberacao || (s as any).codigo_liberacao;
+          if (directCode && String(directCode).trim() && String(directCode).trim() !== '-') {
+            return String(directCode).trim();
+          }
+          const docCode = (s.documents as any)?.riskReleaseCode || 
+                          (s.documents as any)?.risk_release_code || 
+                          (s.documents as any)?.codigo_liberacao || 
+                          (s.documents as any)?.cod_liberacao ||
+                          (s.documents as any)?.codigoLiberacao ||
+                          (s.documents as any)?.liberacao;
+          if (docCode && String(docCode).trim() && String(docCode).trim() !== '-') {
+            return String(docCode).trim();
+          }
+          if (s.history && s.history.length > 0) {
+            for (const h of [...s.history].reverse()) {
+              const desc = h.description || '';
+              const match = desc.match(/Liberação de Seguradora:\s*(?:Cód|Código)?\s*([^\(\n\r]+?)(?:\s*\(|$)/i) ||
+                            desc.match(/Cód(?:igo)?\s+(?:de\s+)?Libera[çc][ãa]o[:\s]*([^\(\n\r]+?)(?:\s*\(|$)/i);
+              if (match && match[1] && match[1].trim() && match[1].trim() !== '-') {
+                return match[1].trim();
+              }
+            }
+          }
+          return '-';
+        })(),
         gr: s.riskQueryType ? String(s.riskQueryType).toUpperCase() : 'BUONNY OK',
         ordemCarregamento: getShipmentOcNumber(s),
 
@@ -1050,6 +1117,8 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         cteFileUrl: getShipmentCteFileUrl(s),
         ticketDescargaUrl: getShipmentDischargeTicketUrl(s),
         ordemCarregamentoUrl: getShipmentTmsOrderUrl(s),
+        advanceProofUrl: getShipmentAdvanceProofUrl(s),
+        balanceProofUrl: getShipmentBalanceProofUrl(s),
       };
     });
   }, [shipmentsFiltered, cargoMap, clientMap, clientObjMap, userMap, users, clientPaymentMethodOverrides, productMap]);
@@ -2450,20 +2519,46 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         );
                       }
 
-                      // Coluna Especial: HORA/DATA LIBER. ADIANT (Data/Hora de Liberação do Adiantamento)
+                      // Coluna Especial: HORA/DATA LIBER. ADIANT (Atalho para abrir Comprovante de Adiantamento)
                       if (col.key === 'horaDataLiberacaoAdiantamento') {
                         const dhVal = String(raw || '-');
+                        const sOrig = shipments.find(s => s.id === row.id);
+                        const advanceUrl = row.advanceProofUrl || (sOrig ? getShipmentAdvanceProofUrl(sOrig) : null);
+                        const hasDoc = Boolean(advanceUrl);
+
                         return (
                           <td 
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
-                            title={dhVal !== '-' ? `Adiantamento liberado em: ${dhVal}` : 'Adiantamento pendente de liberação'}
+                            className={`px-1.5 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[10px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            title={hasDoc ? `Clique para abrir o Comprovante de Adiantamento (${dhVal})` : (dhVal !== '-' ? `Adiantamento liberado em: ${dhVal} (sem comprovante)` : 'Adiantamento pendente de liberação')}
                           >
-                            <span className={dhVal !== '-' ? (isDark ? 'font-semibold text-emerald-400' : 'font-black text-emerald-950 bg-emerald-300/60 px-1 py-0.5 rounded border border-emerald-600/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
-                              {dhVal}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCellClick();
+                                if (advanceUrl) {
+                                  openDocumentInNewTab(advanceUrl, `Comprovante_Adiantamento_${row.cte || row.id}`);
+                                } else {
+                                  setNotification({
+                                    type: 'info',
+                                    message: `Nenhum Comprovante de Adiantamento anexado para o embarque ${row.cte || row.id}.`
+                                  });
+                                }
+                              }}
+                              className={`inline-flex items-center ${btnJustifyClass} gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                hasDoc
+                                  ? (isDark ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300 hover:bg-emerald-500/40 shadow-xs' : 'bg-emerald-600 border-emerald-700 text-white font-black hover:bg-emerald-700 shadow-xs')
+                                  : (dhVal !== '-' 
+                                      ? (isDark ? 'bg-slate-800/80 border-slate-700 text-emerald-400 hover:bg-slate-700' : 'bg-emerald-100 border-emerald-300 text-emerald-950 font-black hover:bg-emerald-200')
+                                      : (isDark ? 'bg-transparent border-transparent text-slate-500 hover:text-slate-300' : 'bg-transparent border-transparent text-slate-900 font-bold hover:text-black'))
+                              }`}
+                            >
+                              <span>{dhVal}</span>
+                              {hasDoc && <ExternalLink className="w-2.5 h-2.5 opacity-80 shrink-0" />}
+                            </button>
                           </td>
                         );
                       }
@@ -2587,6 +2682,69 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         );
                       }
 
+                      // Coluna Especial: Nº PEDIDO (Em branco caso não informado na carga)
+                      if (col.key === 'numeroPedido') {
+                        const pedidoVal = (raw && String(raw).trim() !== '-' && String(raw).trim() !== 'Não informado') ? String(raw).trim() : '';
+                        return (
+                          <td 
+                            key={col.key}
+                            data-cell-coord={cellCoord}
+                            onClick={handleCellClick}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            title={pedidoVal ? `Nº Pedido: ${pedidoVal}` : 'Nenhum pedido informado'}
+                          >
+                            <span className={pedidoVal ? (isDark ? 'font-medium text-cyan-300' : 'text-black font-black') : ''}>
+                              {pedidoVal}
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      // Coluna Especial: SALDO RESTANTE (Atalho para abrir Comprovante de Pagamento de Saldo)
+                      if (col.key === 'saldo') {
+                        const sOrig = shipments.find(s => s.id === row.id);
+                        const balanceUrl = row.balanceProofUrl || (sOrig ? getShipmentBalanceProofUrl(sOrig) : null);
+                        const hasDoc = Boolean(balanceUrl);
+                        const numVal = typeof raw === 'number' ? raw : 0;
+                        const formattedSaldo = numVal > 0 ? formatCurrency(numVal) : (numVal === 0 ? 'R$ 0,00' : '-');
+
+                        return (
+                          <td 
+                            key={col.key}
+                            data-cell-coord={cellCoord}
+                            onClick={handleCellClick}
+                            className={`px-1.5 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            title={hasDoc ? `Clique para abrir o Comprovante de Pagamento de Saldo (${formattedSaldo})` : `Saldo Restante: ${formattedSaldo}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCellClick();
+                                if (balanceUrl) {
+                                  openDocumentInNewTab(balanceUrl, `Comprovante_Pagamento_Saldo_${row.cte || row.id}`);
+                                } else {
+                                  setNotification({
+                                    type: 'info',
+                                    message: `Nenhum Comprovante de Pagamento de Saldo anexado para o embarque ${row.cte || row.id}.`
+                                  });
+                                }
+                              }}
+                              className={`inline-flex items-center ${btnJustifyClass} gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                hasDoc
+                                  ? (isDark ? 'bg-purple-500/25 border-purple-400 text-purple-200 hover:bg-purple-500/40 shadow-xs' : 'bg-purple-600 border-purple-700 text-white font-black hover:bg-purple-700 shadow-xs')
+                                  : (numVal > 0
+                                      ? (isDark ? 'bg-slate-800/80 border-slate-700 text-emerald-400 font-bold hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-emerald-950 font-black hover:bg-slate-200')
+                                      : (isDark ? 'text-slate-400 border-transparent hover:text-slate-200' : 'text-slate-900 font-bold border-transparent hover:text-black'))
+                              }`}
+                            >
+                              <span>{formattedSaldo}</span>
+                              {hasDoc && <ExternalLink className="w-2.5 h-2.5 opacity-80 shrink-0" />}
+                            </button>
+                          </td>
+                        );
+                      }
+
                       let display = raw !== null && raw !== undefined ? String(raw) : '-';
 
                       if (col.type === 'currency' && typeof raw === 'number') {
@@ -2648,13 +2806,21 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                           ) : (
                             <span className="font-black italic underline text-blue-950">FILIAL</span>
                           );
-                        } else if (col.key === 'cadastro' || col.key === 'liberacao') {
+                        } else if (col.key === 'cadastro') {
                           cellContent = normStr === 'LIBERADO' ? (
                             <span className="text-emerald-950 font-black italic underline bg-emerald-200/70 px-1.5 py-0.5 rounded border border-emerald-500/40 shadow-xs">
                               LIBERADO
                             </span>
                           ) : (
                             <span className="text-red-700 font-black">{display}</span>
+                          );
+                        } else if (col.key === 'liberacao') {
+                          cellContent = display && display !== '-' ? (
+                            <span className="font-mono text-emerald-950 font-black bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-400 shadow-xs inline-block">
+                              {display}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 font-bold">-</span>
                           );
                         } else if (['icms', 'debitoPisCofins', 'creditoPisCofins', 'patronal4', 'inssSestSenat', 'totalQuebra', 'valorQuebraCiot'].includes(col.key as string)) {
                           cellContent = (
@@ -2678,11 +2844,21 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         }
                       } else {
                         // Dark mode
-                        cellContent = (
-                          <span className={col.type === 'currency' ? 'text-amber-300 font-medium' : ''}>
-                            {display}
-                          </span>
-                        );
+                        if (col.key === 'liberacao') {
+                          cellContent = display && display !== '-' ? (
+                            <span className="font-mono text-emerald-300 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/60 shadow-xs inline-block">
+                              {display}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">-</span>
+                          );
+                        } else {
+                          cellContent = (
+                            <span className={col.type === 'currency' ? 'text-amber-300 font-medium' : ''}>
+                              {display}
+                            </span>
+                          );
+                        }
                       }
 
                       return (

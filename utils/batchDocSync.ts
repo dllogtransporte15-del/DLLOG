@@ -49,6 +49,16 @@ export async function syncSingleShipmentDocuments(
             updated.cteEmissionDate = extracted.emissionDate;
             hasChanges = true;
           }
+          if (extracted.remetente?.razaoSocial || extracted.tomador?.razaoSocial || extracted.tomador?.cnpjCpf) {
+            const currentDocs = (updated.documents || shipment.documents || {}) as any;
+            updated.documents = {
+              ...currentDocs,
+              ...(extracted.remetente?.razaoSocial ? { cte_remetente: extracted.remetente.razaoSocial } : {}),
+              ...(extracted.tomador?.razaoSocial ? { cte_tomador: extracted.tomador.razaoSocial } : {}),
+              ...(extracted.tomador?.cnpjCpf ? { cte_tomador_cnpj: extracted.tomador.cnpjCpf } : {}),
+            };
+            hasChanges = true;
+          }
         }
 
         // 2. Sincronização Nota Fiscal

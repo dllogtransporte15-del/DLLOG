@@ -258,6 +258,46 @@ export function hasCteAttached(shipment?: { cteNumber?: string; documents?: any;
 export const getShipmentCteNumber = getShipmentCte;
 
 /**
+ * Retorna o Remetente informado no CT-e do embarque.
+ * Prioriza com máxima exatidão os dados fiscais extraídos do CT-e (DACTE / XML).
+ */
+export function getShipmentCteRemetente(shipment?: { documents?: any; [key: string]: any } | null, cargo?: any): string {
+  if (!shipment) return '-';
+
+  const docs = shipment.documents;
+  if (docs && typeof docs === 'object') {
+    const docRem = 
+      docs.cte_remetente || 
+      docs.remetente_cte || 
+      docs.cte_remetente_nome ||
+      docs.remetente_nome || 
+      docs.remetente?.razaoSocial || 
+      docs.remetente?.xNome ||
+      docs.remetente || 
+      docs.cteRemetente ||
+      docs.senderName;
+    if (docRem && typeof docRem === 'string' && docRem.trim() && docRem !== '-') {
+      return docRem.trim().toUpperCase();
+    }
+  }
+
+  const directRem = (shipment as any).cteRemetente || (shipment as any).cte_remetente || (shipment as any).remetente;
+  if (directRem && typeof directRem === 'string' && directRem.trim() && directRem !== '-') {
+    return directRem.trim().toUpperCase();
+  }
+
+  // Fallback: empresa de carregamento / remetente cadastrado na carga
+  if (cargo) {
+    const cargoRem = cargo.loadingCompany || cargo.remetente || cargo.sender;
+    if (cargoRem && typeof cargoRem === 'string' && cargoRem.trim()) {
+      return cargoRem.trim().toUpperCase();
+    }
+  }
+
+  return '-';
+}
+
+/**
  * Retorna o número do CIOT informado ou extraído no embarque.
  * Se não houver CIOT cadastrado, retorna '-'.
  * Garante que o ID do embarque (ex: CEL-665) não seja erroneamente retornado como CIOT.

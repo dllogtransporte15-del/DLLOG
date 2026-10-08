@@ -91,6 +91,8 @@ export interface TranscunhaSpreadsheetRow {
   cteFileUrl?: string | null;
   ticketDescargaUrl?: string | null;
   ordemCarregamentoUrl?: string | null;
+  advanceProofUrl?: string | null;
+  balanceProofUrl?: string | null;
 }
 
 export interface ParseResult {
@@ -392,8 +394,8 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
     anttContratoPix: getColIdx(['ANTT / PIX', 'ANTT/PIX', 'ANTT + CONTRATO/////PIX PAGO PRA ESSA ANTT', 'ANTT + CONTRATO', 'PIX PAGO PRA ESSA ANTT', 'PIX PAGO', 'CHAVE PIX', 'PIX', 'ANTT']),
     telefone: getColIdx(['TELEFONE', 'FONE', 'CELULAR', 'TEL', 'CONTATO']),
     solicitante: getColIdx(['SOLICITANTE', 'AGENCIADOR', 'RESPONSAVEL']),
-    carregarEmpresa: getColIdx(['CARREGAR EMPRESA', 'EMPRESA CARREGAR', 'COLETA']),
-    numeroPedido: getColIdx(['Nº DO PEDIDO', 'NUMERO DO PEDIDO', 'N PEDIDO', 'PEDIDO']),
+    carregarEmpresa: getColIdx(['REMETENTE', 'CARREGAR EMPRESA', 'EMPRESA CARREGAR', 'COLETA', 'REMETENTE CTE']),
+    numeroPedido: getColIdx(['NºPEDIDO', 'Nº DO PEDIDO', 'NUMERO DO PEDIDO', 'N PEDIDO', 'PEDIDO', 'Nº PEDIDO']),
     saldoOriginalPedido: getColIdx(['SALDO ORIGINAL DO PEDIDO', 'SALDO ORIGINAL']),
     produto: getColIdx(['PRODUTO', 'MERCADORIA']),
     tipoCarga: getColIdx(['TIPO', 'TIPO CARGA', 'EMBALAGEM']),
@@ -426,10 +428,10 @@ export function parseTranscunhaWorkbook(buffer: ArrayBuffer | Uint8Array, sheetN
     status: getColIdx(['STATUS', 'STATUS VIAGEM']),
     percentualAdiantamento: getColIdx(['% ADIANT', 'PERC ADIANTAMENTO']),
     valorAdiantamento: getColIdx(['ADIANTAMENT', 'ADIANTAMENTO', 'VALOR ADIANTAMENTO']),
-    horaDataLiberacaoAdiantamento: getColIdx(['HORA-DATA LIBER ADIANT', 'HORA DATA LIBER ADIANT', 'DATA LIBER ADIANT', 'LIBERACAO ADIANTAMENTO', 'LIBER ADIANT']),
+    horaDataLiberacaoAdiantamento: getColIdx(['HORA/DATA LIBER. ADIANTA', 'HORA/DATA LIBER. ADIANT', 'HORA-DATA LIBER ADIANT', 'HORA DATA LIBER ADIANT', 'DATA LIBER ADIANT', 'LIBERACAO ADIANTAMENTO', 'LIBER ADIANT']),
     ticketDescarga: getColIdx(['TIKIT DESCARGA', 'TICKET DESCARGA', 'TIQUET']),
     pesoChegada: getColIdx(['PESO CHEGADA', 'PESO DESCARGA']),
-    saldo: getColIdx(['SALDO', 'VALOR SALDO']),
+    saldo: getColIdx(['SALDO RESTANTE', 'SALDO', 'VALOR SALDO']),
     horaDataLiberacaoSaldo: getColIdx(['HORA-DATA LIBER SALD', 'HORA DATA LIBER SALD', 'DATA LIBER SALDO', 'LIBERACAO SALDO', 'LIBER SALD']),
     tipoPagamentoSaldo: getColIdx(['TIPO DE PAGAMENTO', 'TIPO PAGAMENTO']),
     statusSaldo: getColIdx(['STATUS DO SALDC', 'STATUS DO SALDO', 'STATUS SALDO']),

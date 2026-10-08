@@ -792,11 +792,28 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     };
   }
 
-  const mTomador = text.match(/TOMADOR\s+(?:DO\s+)?SERVI[ÇC]O[:\s]*([A-ZÀ-Ú0-9\s.,&/-]{4,50})/i);
+  const mTomador = text.match(/TOMADOR\s+(?:DO\s+)?SERVI[ÇC]O[:\s]*([A-ZÀ-Ú0-9\s.,&/-]{4,50})/i) ||
+                   text.match(/TOMADOR[:\s]*([A-ZÀ-Ú0-9\s.,&/-]{4,50})/i);
+  const mTomadorCnpj = text.match(/(?:TOMADOR|PAGADOR)[\s\S]{0,120}?(?:CNPJ|CPF)[:\s]*([\d./-]{11,18})/i) ||
+                       text.match(/(?:CNPJ|CPF)[\s\S]{0,40}?(?:TOMADOR|PAGADOR)[:\s]*([\d./-]{11,18})/i);
   const cleanTomador = cleanLegalEntityName(mTomador?.[1]);
-  if (cleanTomador) {
+
+  if (upper.includes('TOMADOR: REMETENTE') || upper.includes('TOMADOR DO SERVIÇO: REMETENTE') || upper.includes('TOMADOR: 0 - REMETENTE') || upper.includes('0-REMETENTE')) {
     res.tomador = {
-      razaoSocial: cleanTomador
+      razaoSocial: res.remetente?.razaoSocial || cleanTomador,
+      cnpjCpf: res.remetente?.cnpjCpf || mTomadorCnpj?.[1]?.trim(),
+      papel: 'Remetente'
+    };
+  } else if (upper.includes('TOMADOR: DESTINATÁRIO') || upper.includes('TOMADOR: DESTINATARIO') || upper.includes('TOMADOR DO SERVIÇO: DESTINATÁRIO') || upper.includes('3-DESTINATÁRIO')) {
+    res.tomador = {
+      razaoSocial: res.destinatario?.razaoSocial || cleanTomador,
+      cnpjCpf: res.destinatario?.cnpjCpf || mTomadorCnpj?.[1]?.trim(),
+      papel: 'Destinatário'
+    };
+  } else if (cleanTomador || mTomadorCnpj) {
+    res.tomador = {
+      razaoSocial: cleanTomador,
+      cnpjCpf: mTomadorCnpj?.[1]?.trim()
     };
   }
 
@@ -956,6 +973,49 @@ function parseDetailedXml(xmlText: string): DetailedDocumentData | null {
           getXmlTagValue(doc, 'xObs')
         ].filter(Boolean).join(' | ') || undefined,
       };
+
+      // Identificação oficial do Tomador do Serviço no CT-e XML
+      const tomaTag = getXmlTagValue(doc, 'toma');
+      const toma4El = doc.getElementsByTagName('toma4')[0] || doc.getElementsByTagName('toma04')[0];
+      if (toma4El) {
+        res.tomador = {
+          razaoSocial: getXmlTagValue(toma4El, 'xNome'),
+          cnpjCpf: getXmlTagValue(toma4El, 'CNPJ', 'CPF'),
+          papel: 'Outros'
+        };
+      } else if (tomaTag === '0') {
+        res.tomador = {
+          razaoSocial: res.remetente?.razaoSocial,
+          cnpjCpf: res.remetente?.cnpjCpf,
+          papel: 'Remetente'
+        };
+      } else if (tomaTag === '3') {
+        res.tomador = {
+          razaoSocial: res.destinatario?.razaoSocial,
+          cnpjCpf: res.destinatario?.cnpjCpf,
+          papel: 'Destinatário'
+        };
+      } else if (tomaTag === '1') {
+        const expedEl = doc.getElementsByTagName('exped')[0];
+        res.tomador = {
+          razaoSocial: expedEl ? getXmlTagValue(expedEl, 'xNome') : undefined,
+          cnpjCpf: expedEl ? getXmlTagValue(expedEl, 'CNPJ', 'CPF') : undefined,
+          papel: 'Expedidor'
+        };
+      } else if (tomaTag === '2') {
+        const recebEl = doc.getElementsByTagName('receb')[0];
+        res.tomador = {
+          razaoSocial: recebEl ? getXmlTagValue(recebEl, 'xNome') : undefined,
+          cnpjCpf: recebEl ? getXmlTagValue(recebEl, 'CNPJ', 'CPF') : undefined,
+          papel: 'Recebedor'
+        };
+      } else if (res.remetente?.cnpjCpf) {
+        res.tomador = {
+          razaoSocial: res.remetente.razaoSocial,
+          cnpjCpf: res.remetente.cnpjCpf,
+          papel: 'Remetente'
+        };
+      }
 
       const allObsText = res.observacoesFiscais || '';
       const matchSusp = allObsText.match(/(?:impostos?\s+suspensos?|suspens[aã]o(?:\s+tribut[aá]ria)?)\s*:\s*(\d+(?:[.,]\d+)?)\s*%/i);
@@ -1180,6 +1240,9 @@ export interface FiscalDocNumbers {
   inssRetidoValue?: number;
   subtotalSaldoValue?: number;
   ordemCarregamentoNumero?: string;
+  cteTomadorNome?: string;
+  cteTomadorCnpj?: string;
+  cteRemetente?: string;
 }
 
 export async function extractFiscalDocNumbers(
@@ -1206,6 +1269,13 @@ export async function extractFiscalDocNumbers(
           }
           if (detailed.financeiro?.valorIcms !== undefined && result.icmsValue === undefined) {
             result.icmsValue = detailed.financeiro.valorIcms;
+          }
+          if (detailed.tomador) {
+            if (detailed.tomador.razaoSocial && !result.cteTomadorNome) result.cteTomadorNome = detailed.tomador.razaoSocial;
+            if (detailed.tomador.cnpjCpf && !result.cteTomadorCnpj) result.cteTomadorCnpj = detailed.tomador.cnpjCpf;
+          }
+          if (detailed.remetente && !result.cteRemetente) {
+            result.cteRemetente = detailed.remetente.razaoSocial || detailed.remetente.cnpjCpf || '';
           }
         }
         if (detailed.documentType === 'Carta Frete' || isCartaFreteDocType(docType)) {
@@ -1300,6 +1370,13 @@ export async function extractFiscalDocNumbersFromUrls(
           }
           if (detailed.financeiro?.valorIcms !== undefined && result.icmsValue === undefined) {
             result.icmsValue = detailed.financeiro.valorIcms;
+          }
+          if (detailed.tomador) {
+            if (detailed.tomador.razaoSocial && !result.cteTomadorNome) result.cteTomadorNome = detailed.tomador.razaoSocial;
+            if (detailed.tomador.cnpjCpf && !result.cteTomadorCnpj) result.cteTomadorCnpj = detailed.tomador.cnpjCpf;
+          }
+          if (detailed.remetente && !result.cteRemetente) {
+            result.cteRemetente = detailed.remetente.razaoSocial || detailed.remetente.cnpjCpf || '';
           }
         }
         if (detailed.documentType === 'Carta Frete' || isCartaFreteDocType(docType)) {
