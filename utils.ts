@@ -665,6 +665,21 @@ export function getCargoMapUrl(
   return null;
 }
 
-
-
-
+/**
+ * Normaliza o peso/tonelagem para Toneladas (t).
+ * Corrige automaticamente casos onde o peso foi inserido em kg (ex: 46150 kg -> 46.15 t)
+ * ou com pontuações/zeros adicionais de balança/gramas (ex: 46150000 -> 46.15 t).
+ */
+export function normalizeWeightTonnage(raw: number | string | undefined | null): number {
+  if (raw === undefined || raw === null || raw === '') return 0;
+  const num = typeof raw === 'string' ? parseFloat(raw.replace(/[^\d.,]/g, '').replace(',', '.')) : Number(raw);
+  if (isNaN(num) || num <= 0) return 0;
+  
+  let val = num;
+  if (val >= 1000000) {
+    val = val / 1000000;
+  } else if (val >= 1000) {
+    val = val / 1000;
+  }
+  return Number(val.toFixed(2));
+}

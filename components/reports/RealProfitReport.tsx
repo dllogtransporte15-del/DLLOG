@@ -24,7 +24,7 @@ import autoTable from 'jspdf-autotable';
 import MultiSelectDropdown from '../MultiSelectDropdown';
 import AttachmentModal from '../AttachmentModal';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached, normalizeWeightTonnage } from '../../utils';
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
@@ -413,6 +413,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         hasOcr: Boolean(s.realProfitData),
         attachmentUrl,
         calculatedExpenses,
+        weight: normalizeWeightTonnage(s.unloadedTonnage || s.loadedTonnage || s.shipmentTonnage || cargo?.totalVolume || 0),
+        icms: Number((calculatedExpenses.icms || (s.documents as any)?.icms_value || s.icmsValue || s.realProfitData?.icmsDifference || 0).toFixed(2)),
+        federalTax: (s.realProfitData?.federalTax !== undefined && s.realProfitData.federalTax !== null)
+          ? Number(s.realProfitData.federalTax)
+          : Number(calculatedExpenses.impostoFederal || 0),
         demurrageRevenue,
         demurrageDriverPaid,
         demurrageProfit,
@@ -424,12 +429,16 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   // Totais Gerais
   const totals = useMemo(() => {
     const totalShipments = enrichedRows.length;
+    const sumWeight = enrichedRows.reduce((acc, r) => acc + (r.weight || 0), 0);
     const sumCompanyFreight = enrichedRows.reduce((acc, r) => acc + r.companyFreight, 0);
     const sumDriverFreight = enrichedRows.reduce((acc, r) => acc + r.driverFreight, 0);
     const sumToll = enrichedRows.reduce((acc, r) => acc + r.toll, 0);
     const sumDriverFreightNetToll = enrichedRows.reduce((acc, r) => acc + r.driverFreightNetToll, 0);
     const sumFreightDiff = enrichedRows.reduce((acc, r) => acc + r.freightDifference, 0);
     const sumExpenses = enrichedRows.reduce((acc, r) => acc + r.totalExpenses, 0);
+    const sumIcms = enrichedRows.reduce((acc, r) => acc + (r.icms || 0), 0);
+    const sumFederalTax = enrichedRows.reduce((acc, r) => acc + (r.federalTax || 0), 0);
+    const sumOtherExpenses = Math.max(0, sumExpenses - sumFederalTax);
     const sumGeneratedCredit = enrichedRows.reduce((acc, r) => acc + r.generatedCredit, 0);
     const sumNetProfit = enrichedRows.reduce((acc, r) => acc + r.netProfit, 0);
     const sumShipperCommission = enrichedRows.reduce((acc, r) => acc + r.shipperCommission, 0);
@@ -444,12 +453,16 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
     return {
       totalShipments,
+      sumWeight,
       sumCompanyFreight,
       sumDriverFreight,
       sumToll,
       sumDriverFreightNetToll,
       sumFreightDiff,
       sumExpenses,
+      sumIcms,
+      sumFederalTax,
+      sumOtherExpenses,
       sumGeneratedCredit,
       sumNetProfit,
       sumShipperCommission,
@@ -493,6 +506,28 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       return (Boolean(cteVal && cteVal !== '-' && cteVal !== '---' && cteVal.trim() !== '')) || (r.shipment ? hasCteAttached(r.shipment) : false);
     });
 
+    const pdfTotals = {
+      totalShipments: validRows.length,
+      sumWeight: validRows.reduce((acc, r) => acc + (r.weight || 0), 0),
+      sumCompanyFreight: validRows.reduce((acc, r) => acc + (r.companyFreight || 0), 0),
+      sumDriverFreight: validRows.reduce((acc, r) => acc + (r.driverFreight || 0), 0),
+      sumToll: validRows.reduce((acc, r) => acc + (r.toll || 0), 0),
+      sumFreightDiff: validRows.reduce((acc, r) => acc + (r.freightDifference || 0), 0),
+      sumIcms: validRows.reduce((acc, r) => acc + (r.icms || 0), 0),
+      sumFederalTax: validRows.reduce((acc, r) => acc + (r.federalTax || 0), 0),
+      sumExpenses: validRows.reduce((acc, r) => acc + (r.totalExpenses || 0), 0),
+      sumGeneratedCredit: validRows.reduce((acc, r) => acc + (r.generatedCredit || 0), 0),
+      sumNetProfit: validRows.reduce((acc, r) => acc + (r.netProfit || 0), 0),
+      sumNetProfitWithCommissions: validRows.reduce((acc, r) => acc + (r.netProfitWithCommissions || 0), 0),
+      countOcr: validRows.filter(r => r.hasOcr).length,
+      consolidatedMargin: 0,
+      consolidatedMarginWithCommissions: 0,
+    };
+    if (pdfTotals.sumCompanyFreight > 0) {
+      pdfTotals.consolidatedMargin = (pdfTotals.sumNetProfit / pdfTotals.sumCompanyFreight) * 100;
+      pdfTotals.consolidatedMarginWithCommissions = (pdfTotals.sumNetProfitWithCommissions / pdfTotals.sumCompanyFreight) * 100;
+    }
+
     const tableData = validRows.map(r => {
       const rowArr = [
         r.shipment.id,
@@ -500,15 +535,19 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         r.shipment.scheduledDate || '---',
         r.clientName,
         `${r.shipment.driverName} (${r.shipment.horsePlate})`,
-        `R$ ${r.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
-        `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-        r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '---',
-        `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
+        r.weight > 0 ? `${r.weight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t` : '---',
+        `R$ ${r.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        r.toll > 0 ? `R$ ${r.toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
+        `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
+        r.icms > 0 ? `R$ ${r.icms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
+        r.federalTax > 0 ? `R$ ${r.federalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
+        `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---',
+        `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
       ];
       if (canViewFinalNetProfit) {
-        rowArr.push(`R$ ${r.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${r.marginWithCommissionsPercent.toFixed(1)}%)`);
+        rowArr.push(`R$ ${r.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.marginWithCommissionsPercent.toFixed(1)}%)`);
       }
       rowArr.push(r.hasOcr ? 'Sim (IA)' : 'Estimado');
       return rowArr;
@@ -516,13 +555,17 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
     const headRow = [
       'ID Embarque', 
-      'CT-e',
+      'CT-e', 
       'Data', 
       'Cliente', 
       'Motorista / Placa', 
+      'Peso Efetivado',
       'Frete Empresa (+)', 
       'Frete Motorista (-)', 
+      'Pedágio',
       'Dif. Frete', 
+      'ICMS',
+      'Imp. Federal',
       'Despesas (-)', 
       'Créd. Exp. (Info)',
       'Lucro Real (=)', 
@@ -532,33 +575,45 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     }
     headRow.push('OCR');
 
-    const footRow = [
-      'TOTAL CONSOLIDADO',
+    const totalsHeadRow = [
+      '∑ TOTAIS',
       '---',
-      `${totals.totalShipments} emb.`,
+      `${pdfTotals.totalShipments} emb.`,
       '---',
       '---',
-      `R$ ${totals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${totals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${totals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${totals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      `R$ ${totals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${totals.consolidatedMargin.toFixed(1)}%)`,
+      `${pdfTotals.sumWeight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t`,
+      `R$ ${pdfTotals.sumCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumFreightDiff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumIcms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumFederalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumGeneratedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `R$ ${pdfTotals.sumNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pdfTotals.consolidatedMargin.toFixed(1)}%)`,
     ];
     if (canViewFinalNetProfit) {
-      footRow.push(`R$ ${totals.sumNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${totals.consolidatedMarginWithCommissions.toFixed(1)}%)`);
+      totalsHeadRow.push(`R$ ${pdfTotals.sumNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pdfTotals.consolidatedMarginWithCommissions.toFixed(1)}%)`);
     }
-    footRow.push(`${totals.countOcr} lidos`);
+    totalsHeadRow.push(`${pdfTotals.countOcr} lidos`);
 
     autoTable(doc, {
-      head: [headRow],
+      head: [headRow, totalsHeadRow],
       body: tableData,
-      startY: 26,
-      styles: { fontSize: 7, cellPadding: 2 },
+      startY: 25,
+      margin: { left: 8, right: 8 },
+      styles: { fontSize: 5.8, cellPadding: 1.2, halign: 'center', valign: 'middle' },
       headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
-      foot: [footRow],
-      footStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: 'bold' }
+      foot: [totalsHeadRow],
+      footStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 5.8 },
+      didParseCell: (data) => {
+        if (data.section === 'head' && data.row.index === 1) {
+          data.cell.styles.fillColor = [15, 23, 42];
+          data.cell.styles.textColor = [253, 224, 71];
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
     });
 
     doc.save(`relatorio_lucro_real_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -576,10 +631,14 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       'Destino',
       'Motorista',
       'Placa',
+      'Peso Efetivado (t)',
       'Frete Empresa (R$)',
       'Frete Motorista (R$)',
+      'Pedagio (R$)',
       'Diferenca de Frete (R$)',
       'Margem Frete (%)',
+      'ICMS (R$)',
+      'Imposto Federal (R$)',
       'Despesas Operacionais (R$)',
       'Credito Gerado Exportacao (R$)',
       'Lucro Real Operacional (R$)',
@@ -607,10 +666,14 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         `"${(r.cargo?.destination || '').replace(/"/g, '""')}"`,
         `"${r.shipment.driverName.replace(/"/g, '""')}"`,
         r.shipment.horsePlate,
+        r.weight.toFixed(2),
         r.companyFreight.toFixed(2),
         r.driverFreight.toFixed(2),
+        r.toll.toFixed(2),
         r.freightDifference.toFixed(2),
         r.freightDifferenceMarginPercent.toFixed(2),
+        r.icms.toFixed(2),
+        r.federalTax.toFixed(2),
         r.totalExpenses.toFixed(2),
         r.generatedCredit.toFixed(2),
         r.netProfit.toFixed(2),
@@ -733,19 +796,35 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         </div>
 
         {/* Total de Despesas Operacionais */}
-        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-              Despesas Operac.
-            </span>
-            <div className="p-1 rounded-md bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
-              <TrendingDown className="w-3.5 h-3.5" />
+        <div className="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                Despesas Operac.
+              </span>
+              <div className="p-1 rounded-md bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">
+                <TrendingDown className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <p className="text-base sm:text-lg font-mono font-black text-rose-600 dark:text-rose-400 truncate" title={`Total Geral de Despesas Operacionais: R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+              R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+
+          <div className="mt-2 pt-1.5 border-t border-rose-100 dark:border-gray-700/60 flex flex-col gap-0.5 text-[10px]">
+            <div className="flex items-center justify-between font-bold text-rose-700 dark:text-rose-300" title={`Soma do Imposto Federal dos embarques filtrados: R$ ${totals.sumFederalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+              <span className="truncate">Imp. Federal:</span>
+              <span className="font-mono shrink-0 font-extrabold">
+                R$ {totals.sumFederalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 text-[9px] font-medium" title={`Demais deduções (Taxas, Risco, Seguros, Custo Fixo): R$ ${totals.sumOtherExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+              <span className="truncate">Taxas + Risco:</span>
+              <span className="font-mono shrink-0">
+                R$ {totals.sumOtherExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
             </div>
           </div>
-          <p className="text-base sm:text-lg font-mono font-black text-rose-600 dark:text-rose-400 truncate" title={`R$ ${totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
-            R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-[10px] text-rose-600/80 dark:text-rose-400/80 mt-0.5 font-medium">Impostos + Taxas + Risco</p>
         </div>
 
         {/* Lucro Real Consolidado */}
@@ -1289,6 +1368,9 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                   </td>
                   <td className="py-2.5 px-2 text-center font-mono text-xs text-red-600 dark:text-red-400">
                     - R$ {totals.sumExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <p className="text-[9px] font-bold text-rose-700 dark:text-rose-300 truncate" title={`Soma do Imposto Federal: R$ ${totals.sumFederalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}>
+                      Fed: R$ {totals.sumFederalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
                   </td>
                   {!isAgenciador && (
                     <td className="py-2.5 px-2 text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">

@@ -21,6 +21,69 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_07_v2_70_16',
+    version: 'v2.70.16',
+    date: '07/10/2026',
+    title: 'Correção Crítica no Filtro de CT-e e Nova Paleta de Cores de Alto Contraste no Popover',
+    summary: 'Corrigido problema em que a filtragem por CT-e não retornava as viagens correspondentes devido a bloqueio do filtro de período e formatações divergentes de numeração. Atualizada a paleta de cores do popover de filtros para garantir contraste nítido e legibilidade perfeita dos números e opções em tema claro e escuro.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Mecanismo de Filtragem de CT-e e ID Estritamente Exatos',
+        description: 'Implementada correspondência 100% exata nos filtros de coluna: ao selecionar o CT-e "1", exibe única e exclusivamente o CT-e de número 1 (eliminando falsos positivos de números que continham o dígito 1, como 2019 ou 13). Suporta também equivalência numérica estrita (ex: "0001" com "1") e ignora restrições temporais de período quando CT-es específicos são selecionados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Contraste e Legibilidade no Popover de Filtros',
+        description: 'Eliminadas classes conflitantes de tema que deixavam os números e textos ofuscados e esbranquiçados sobre o fundo branco. As opções agora são exibidas em cor preta/escura destacada e nítida no tema claro e branca no tema escuro.'
+      },
+      {
+        category: 'feature',
+        title: 'Discriminação do Imposto Federal no Card de Despesas Operacionais',
+        description: 'O card de "Despesas Operac." do Relatório de Lucro Real agora exibe o valor total das despesas operacionais e, separadamente, a soma do Imposto Federal dos embarques filtrados (junto com o saldo das demais taxas/risco), com exibição idêntica no totalizador do rodapé.'
+      },
+      {
+        category: 'feature',
+        title: 'Exportação PDF/CSV com Peso Efetivado, Pedágio, ICMS, Imposto Federal e Totais no Cabeçalho',
+        description: 'O relatório em PDF e CSV de Lucro Real agora conta com colunas dedicadas para Peso Efetivado, Pedágio, ICMS e Imposto Federal. No PDF, o cabeçalho superior exibe uma linha consolidada com a somatória total exata de cada coluna com destaque dourado de alto contraste, espelhada também no rodapé.'
+      },
+      {
+        category: 'fix',
+        title: 'Normalização Automática de Tonelagem e Correção de Peso Descarregado (t)',
+        description: 'Implementada a função normalizeWeightTonnage para tratar e converter automaticamente pesos preenchidos acidentalmente em gramas ou quilogramas de balança (ex: 46.150.000 ou 46.150 kg para 46,15 t), corrigindo o peso do embarque FEL-560 e protegendo os relatórios em PDF/CSV e planilha de controladoria contra distorções.'
+      },
+      {
+        category: 'fix',
+        title: 'Sincronização e Correção do ICMS Destacado nos CT-es e Relatórios',
+        description: 'Corrigida a apuração de ICMS nos relatórios CSV/PDF e banco de dados para os CT-es 1944, 1971, 1972, 1973, 1986, 1992, 1996, 2008, 2015 e 33 com base nos valores oficiais do relatório XLS. A prioridade de cálculo em operationalExpensesCalculator foi reestruturada para respeitar sempre o ICMS lançado/destacado do documento oficial sobre a estimativa teórica da carga.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ações Dinâmicas de Busca nos Filtros',
+        description: 'Ao pesquisar termos no campo de busca do popover, os botões "Marcar Filtrados" e "Desmarcar Filtrados" e a caixa de seleção passam a atuar exclusivamente sobre os itens pesquisados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_06_v2_70_15',
+    version: 'v2.70.15',
+    date: '06/10/2026',
+    title: 'Alinhamento Configurável das Linhas na Planilha de Controladoria (Esquerda, Centro e Direita)',
+    summary: 'Implementado grupo de botões de alinhamento de texto (Esquerda, Centralizado e Direita) na Planilha de Controladoria de Embarques do Módulo Financeiro, com padrão inicial centralizado e persistência da preferência do usuário.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Controle de Alinhamento na Planilha de Controladoria',
+        description: 'Adicionado grupo de botões na barra de ferramentas e no modo tela cheia permitindo alternar instantaneamente o alinhamento das linhas entre Centralizado (padrão), Alinhar à Esquerda e Alinhar à Direita.'
+      },
+      {
+        category: 'improvement',
+        title: 'Centralização Padrão e Persistência de Preferência',
+        description: 'A planilha agora abre por padrão no modo centralizado para melhor leitura visual das células, salvando a configuração selecionada no navegador para os próximos acessos.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_06_v2_70_14',
     version: 'v2.70.14',
     date: '06/10/2026',

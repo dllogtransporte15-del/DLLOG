@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { Shipment, Cargo, Client, ShipmentStatus, User, Product } from '../../types';
-import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber } from '../../utils';
+import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber, normalizeWeightTonnage } from '../../utils';
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
@@ -45,7 +45,10 @@ import {
   FileText,
   ExternalLink,
   Sun,
-  Moon
+  Moon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight
 } from 'lucide-react';
 import { 
   openDocumentInNewTab, 
@@ -410,6 +413,22 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     });
   }, []);
 
+  // Alinhamento do conteúdo das linhas da planilha (Esquerda, Centralizado por padrão, Direita)
+  const [tableAlignment, setTableAlignment] = useState<'left' | 'center' | 'right'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('control_shipments_text_align');
+      if (saved === 'left' || saved === 'center' || saved === 'right') return saved;
+    }
+    return 'center'; // Padrão: Centralizado conforme solicitado
+  });
+
+  const handleAlignmentChange = useCallback((align: 'left' | 'center' | 'right') => {
+    setTableAlignment(align);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('control_shipments_text_align', align);
+    }
+  }, []);
+
   // Seleção e Navegação Ativa por Célula (Estilo Excel / Planilha com Setas)
   const [selectedCell, setSelectedCell] = useState<{ rowIdx: number; colIdx: number } | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -569,7 +588,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       }
       solicitanteName = solicitanteName.trim();
 
-      const peso = s.loadedTonnage || s.shipmentTonnage || 0;
+      const peso = normalizeWeightTonnage(s.loadedTonnage || s.shipmentTonnage || 0);
       const tarifaEmpresa = s.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
       const freteBruto = Number((peso * tarifaEmpresa).toFixed(2));
       const tarifaMotorista = s.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (peso > 0 ? Number((s.driverFreightValue / peso).toFixed(2)) : 0);
@@ -580,7 +599,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       // considerando apenas os valores creditados/pagos na conta bancária do motorista.
       const freteMotoristaConta = Math.max(0, freteMotorista - pedagioMotorista);
 
-      const pesoChegada = s.unloadedTonnage || 0;
+      const pesoChegada = normalizeWeightTonnage(s.unloadedTonnage || 0);
       const quebra = (peso > pesoChegada && pesoChegada > 0) ? Number((peso - pesoChegada).toFixed(3)) : 0;
       const calculatedSaldo = (s.netBalanceValue !== undefined && s.netBalanceValue !== null)
         ? s.netBalanceValue
@@ -1080,9 +1099,16 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         if (!matchesSearch) return false;
       }
 
+      const hasSpecificCteFilter = Boolean(columnFilters['cteHoras'] && columnFilters['cteHoras'].length > 0);
+      const hasSpecificIdFilter = Boolean(columnFilters['idEmbarqueSistema'] && columnFilters['idEmbarqueSistema'].length > 0);
+
       // 2. Filtro de Período Temporal Inteligente
-      if (dateRangeBounds.start !== null || dateRangeBounds.end !== null) {
-        if (!isRowInPeriod(row, dateRangeBounds, dateFilterBasis)) return false;
+      // Se o usuário selecionou explicitamente CT-es específicos ou IDs específicos nas colunas, 
+      // não deve ser descartado pelo filtro temporal da toolbar.
+      if (!hasSpecificCteFilter && !hasSpecificIdFilter) {
+        if (dateRangeBounds.start !== null || dateRangeBounds.end !== null) {
+          if (!isRowInPeriod(row, dateRangeBounds, dateFilterBasis)) return false;
+        }
       }
 
       // 3. Filtros Toolbar
@@ -1096,6 +1122,76 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
         const rawCell = (row as any)[colKey];
         const isEmptyCell = rawCell === null || rawCell === undefined || rawCell === '' || String(rawCell).trim() === '-' || (typeof rawCell === 'number' && rawCell === 0);
+
+        // Tratamento dedicado para CT-e (suporta múltiplos números, zeros à esquerda e correspondência EXATA)
+        if (colKey === 'cteHoras') {
+          const cteCandidates = [
+            String(rawCell || '').trim(),
+            String((row as any).cteNumber || '').trim(),
+            String((row as any).cte || '').trim()
+          ].filter(c => c && c !== '-');
+
+          const matchesCte = selectedList.some(filterItem => {
+            if (!filterItem) return false;
+            if (filterItem === '(Vazios)') return isEmptyCell;
+            if (isEmptyCell) return false;
+
+            const normFilter = normalize(filterItem);
+            const digitsFilter = filterItem.replace(/\D/g, '');
+
+            return cteCandidates.some(candidate => {
+              const normCandidate = normalize(candidate);
+              if (normCandidate === normFilter) return true;
+
+              // Múltiplos CT-es na mesma viagem separados por vírgula, ponto-e-vírgula ou barra (ex: "1, 2019")
+              const parts = candidate.split(/[,;\/]+/).map(p => normalize(p)).filter(Boolean);
+              if (parts.includes(normFilter)) return true;
+
+              // Comparação numérica estrita (ex: "0001" bate com "1", mas "2019" ou "13" NÃO bate com "1")
+              const candidateDigits = candidate.replace(/\D/g, '');
+              if (digitsFilter && candidateDigits) {
+                if (parseInt(digitsFilter, 10) === parseInt(candidateDigits, 10)) return true;
+                if (parts.some(p => {
+                  const pDigits = p.replace(/\D/g, '');
+                  return pDigits && parseInt(digitsFilter, 10) === parseInt(pDigits, 10);
+                })) return true;
+              }
+
+              return false;
+            });
+          });
+
+          if (!matchesCte) return false;
+          continue;
+        }
+
+        // Tratamento dedicado para ID do Embarque (correspondência estrita)
+        if (colKey === 'idEmbarqueSistema') {
+          const idCandidates = [
+            String(rawCell || '').trim(),
+            String((row as any).id || '').trim()
+          ].filter(Boolean);
+
+          const matchesId = selectedList.some(filterItem => {
+            if (!filterItem) return false;
+            if (filterItem === '(Vazios)') return isEmptyCell;
+            if (isEmptyCell) return false;
+
+            const normFilter = normalize(filterItem);
+            const digitsFilter = filterItem.replace(/\D/g, '');
+
+            return idCandidates.some(candidate => {
+              const normCandidate = normalize(candidate);
+              if (normCandidate === normFilter) return true;
+              const candidateDigits = candidate.replace(/\D/g, '');
+              if (digitsFilter && candidateDigits && parseInt(digitsFilter, 10) === parseInt(candidateDigits, 10)) return true;
+              return false;
+            });
+          });
+
+          if (!matchesId) return false;
+          continue;
+        }
 
         const matchesAny = selectedList.some(filterItem => {
           if (!filterItem) return false;
@@ -1112,7 +1208,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             const numPtBr = rawCell.toLocaleString('pt-BR');
             const currencyFmt = normalize(formatCurrency(rawCell));
             const percentFmt = `${rawCell}%`;
-            return normCell === normFilter || normCell.includes(normFilter) ||
+            return normCell === normFilter ||
                    numRaw === normFilter || numPtBr === normFilter ||
                    currencyFmt === normFilter || percentFmt === normFilter;
           }
@@ -1120,10 +1216,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           if (colKey === 'saldoOriginalPedido') {
             const cleanFilter = normFilter.replace(/\./g, '').replace(/,/g, '.');
             const cleanCell = normCell.replace(/\./g, '').replace(/,/g, '.');
-            return normCell.includes(normFilter) || cleanCell.includes(cleanFilter);
+            return normCell === normFilter || cleanCell === cleanFilter;
           }
 
-          return normCell === normFilter || normCell.includes(normFilter);
+          return normCell === normFilter;
         });
 
         if (!matchesAny) return false;
@@ -1335,6 +1431,28 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     const isDark = isSheetDark;
     const borderCol = isDark ? 'border-slate-800' : 'border-black/35';
 
+    // Classes de alinhamento dinâmico das linhas (Esquerda, Centralizado, Direita)
+    const textAlignClass = 
+      tableAlignment === 'center' 
+        ? 'text-center' 
+        : tableAlignment === 'right' 
+        ? 'text-right' 
+        : 'text-left';
+
+    const justifyAlignClass = 
+      tableAlignment === 'center' 
+        ? 'items-center justify-center text-center' 
+        : tableAlignment === 'right' 
+        ? 'items-end justify-end text-right' 
+        : 'items-start justify-start text-left';
+
+    const btnJustifyClass = 
+      tableAlignment === 'center' 
+        ? 'justify-center' 
+        : tableAlignment === 'right' 
+        ? 'justify-end' 
+        : 'justify-start';
+
     return (
       <div className={`flex-1 flex flex-col min-h-0 overflow-hidden w-full h-full ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-[#00a8e5] text-black'}`}>
         <div 
@@ -1429,9 +1547,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   return (
                     <th
                       key={`top-total-${col.key}`}
-                      className={`px-2 py-2 border-r ${isDark ? 'border-slate-800' : 'border-black/30'} font-black ${stickyClass} ${
-                        col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                      } ${totalDisplay ? (isDark ? 'bg-slate-900 text-amber-300 font-bold' : 'bg-[#001c38] text-amber-300 font-black') : (isDark ? 'text-slate-600' : 'text-slate-400')}`}
+                      className={`px-2 py-2 border-r ${isDark ? 'border-slate-800' : 'border-black/30'} font-black ${stickyClass} ${textAlignClass} ${totalDisplay ? (isDark ? 'bg-slate-900 text-amber-300 font-bold' : 'bg-[#001c38] text-amber-300 font-black') : (isDark ? 'text-slate-600' : 'text-slate-400')}`}
                     >
                       {totalDisplay || '-'}
                     </th>
@@ -1496,26 +1612,30 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             <div
                               data-filter-popover="true"
                               onClick={(e) => e.stopPropagation()}
-                              className={`absolute top-full mt-1 z-50 min-w-[220px] max-w-[280px] w-max rounded-xl shadow-2xl border p-2.5 text-left font-sans ${
+                              className={`absolute top-full mt-1 z-50 min-w-[230px] max-w-[290px] w-max rounded-xl shadow-2xl border p-2.5 text-left font-sans ${
                                 isDark 
-                                  ? 'bg-slate-900 border-slate-700 text-white shadow-black/90' 
-                                  : 'bg-white border-slate-300 text-slate-900 ring-1 ring-black/10 shadow-2xl'
+                                  ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-2xl ring-1 ring-white/10' 
+                                  : 'bg-white border-slate-300 text-slate-900 shadow-2xl ring-1 ring-black/15'
                               } ${colIdx > 40 ? 'right-0' : 'left-0'}`}
                             >
                               {/* Topo do Popover */}
-                              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-200 dark:border-slate-800 gap-2">
+                              <div className={`flex items-center justify-between pb-1.5 mb-1.5 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} gap-2`}>
                                 <div className="truncate">
-                                  <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate" title={col.label}>
+                                  <p className={`text-[11px] font-extrabold truncate ${isDark ? 'text-white' : 'text-slate-900'}`} title={col.label}>
                                     {col.label}
                                   </p>
-                                  <p className="text-[9px] text-slate-500 dark:text-slate-400">
+                                  <p className={`text-[10px] font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                                     {isFiltered ? `${selectedList.length} de ${opts.length} selecionados` : `${opts.length} opções disponíveis`}
                                   </p>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => setOpenFilterColumnKey(null)}
-                                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-xs leading-none"
+                                  className={`p-1 rounded-lg transition-colors cursor-pointer text-xs leading-none font-bold ${
+                                    isDark 
+                                      ? 'text-slate-400 hover:text-white hover:bg-slate-800' 
+                                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                                  }`}
                                   title="Fechar"
                                 >
                                   ✕
@@ -1531,124 +1651,206 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                     value={filterSearchQuery}
                                     onChange={(e) => setFilterSearchQuery(e.target.value)}
                                     placeholder="Pesquisar opções..."
-                                    className={`w-full px-2 py-1 text-xs rounded-lg border outline-none font-sans ${
+                                    className={`w-full px-2 py-1 text-xs rounded-lg border outline-none font-sans font-medium ${
                                       isDark 
                                         ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-indigo-500' 
-                                        : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400 focus:border-blue-500'
+                                        : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-500 focus:border-blue-600 focus:bg-white'
                                     }`}
                                   />
                                 </div>
                               )}
 
                               {/* Ações Rápidas: Marcar Tudo / Desmarcar Tudo */}
-                              <div className="flex items-center justify-between gap-1 mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800 text-[10px]">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setColumnFilters(prev => {
-                                      const next = { ...prev };
-                                      delete next[col.key];
-                                      return next;
-                                    });
-                                  }}
-                                  className="px-2 py-0.5 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 font-bold transition-colors cursor-pointer"
-                                >
-                                  Marcar Todos
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setColumnFilters(prev => ({
-                                      ...prev,
-                                      [col.key]: []
-                                    }));
-                                  }}
-                                  className="px-2 py-0.5 rounded text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 font-bold transition-colors cursor-pointer"
-                                >
-                                  Desmarcar Todos
-                                </button>
-                              </div>
+                              {(() => {
+                                const activeSearch = filterSearchQuery.trim();
+                                const currentFilteredOpts = activeSearch
+                                  ? opts.filter(o => normalize(o).includes(normalize(activeSearch)))
+                                  : opts;
+
+                                return (
+                                  <div className={`flex items-center justify-between gap-1 mb-2 pb-1.5 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} text-[10px]`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (activeSearch) {
+                                          setColumnFilters(prev => {
+                                            const current = prev[col.key] !== undefined ? prev[col.key] : [...opts];
+                                            const combined = Array.from(new Set([...current, ...currentFilteredOpts]));
+                                            if (combined.length === opts.length) {
+                                              const next = { ...prev };
+                                              delete next[col.key];
+                                              return next;
+                                            }
+                                            return { ...prev, [col.key]: combined };
+                                          });
+                                        } else {
+                                          setColumnFilters(prev => {
+                                            const next = { ...prev };
+                                            delete next[col.key];
+                                            return next;
+                                          });
+                                        }
+                                      }}
+                                      className={`px-2 py-0.5 rounded font-bold transition-colors cursor-pointer ${
+                                        isDark 
+                                          ? 'text-blue-400 hover:bg-blue-950/60' 
+                                          : 'text-blue-600 hover:bg-blue-50'
+                                      }`}
+                                    >
+                                      {activeSearch ? 'Marcar Filtrados' : 'Marcar Todos'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (activeSearch) {
+                                          setColumnFilters(prev => {
+                                            const current = prev[col.key] !== undefined ? prev[col.key] : [...opts];
+                                            const remaining = current.filter(item => !currentFilteredOpts.includes(item));
+                                            return { ...prev, [col.key]: remaining };
+                                          });
+                                        } else {
+                                          setColumnFilters(prev => ({
+                                            ...prev,
+                                            [col.key]: []
+                                          }));
+                                        }
+                                      }}
+                                      className={`px-2 py-0.5 rounded font-bold transition-colors cursor-pointer ${
+                                        isDark 
+                                          ? 'text-rose-400 hover:bg-rose-950/60' 
+                                          : 'text-rose-600 hover:bg-rose-50'
+                                      }`}
+                                    >
+                                      {activeSearch ? 'Desmarcar Filtrados' : 'Desmarcar Todos'}
+                                    </button>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Lista de Checkboxes */}
-                              <div className="max-h-48 overflow-y-auto space-y-0.5 pr-0.5 text-xs">
-                                {/* Opção Geral: (Selecionar Tudo) */}
-                                <label className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer font-bold text-slate-700 dark:text-slate-200">
-                                  <input
-                                    type="checkbox"
-                                    checked={isAllSelected}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setColumnFilters(prev => {
-                                          const next = { ...prev };
-                                          delete next[col.key];
-                                          return next;
-                                        });
-                                      } else {
-                                        setColumnFilters(prev => ({ ...prev, [col.key]: [] }));
-                                      }
-                                    }}
-                                    className="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
-                                  />
-                                  <span className="truncate">(Selecionar Tudo)</span>
-                                </label>
-
+                              <div className="max-h-52 overflow-y-auto space-y-0.5 pr-0.5 text-xs">
                                 {(() => {
-                                  const filteredOpts = filterSearchQuery.trim()
-                                    ? opts.filter(o => normalize(o).includes(normalize(filterSearchQuery)))
+                                  const activeSearch = filterSearchQuery.trim();
+                                  const filteredOpts = activeSearch
+                                    ? opts.filter(o => normalize(o).includes(normalize(activeSearch)))
                                     : opts;
 
-                                  if (filteredOpts.length === 0) {
-                                    return (
-                                      <p className="text-[11px] text-slate-400 italic py-2 text-center">
-                                        Nenhuma opção encontrada
-                                      </p>
-                                    );
-                                  }
+                                  const allFilteredChecked = filteredOpts.length > 0 && filteredOpts.every(o => !isFiltered || selectedList.includes(o));
 
-                                  return filteredOpts.map(opt => {
-                                    const isChecked = !isFiltered ? true : selectedList.includes(opt);
-
-                                    return (
-                                      <label 
-                                        key={opt}
-                                        className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer text-slate-800 dark:text-slate-200"
-                                        title={opt}
-                                      >
+                                  return (
+                                    <>
+                                      {/* Opção Geral: (Selecionar Tudo) */}
+                                      <label className={`flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer font-bold ${
+                                        isDark 
+                                          ? 'text-slate-100 hover:bg-slate-800/80' 
+                                          : 'text-slate-900 hover:bg-slate-100'
+                                      }`}>
                                         <input
                                           type="checkbox"
-                                          checked={isChecked}
+                                          checked={activeSearch ? allFilteredChecked : isAllSelected}
                                           onChange={(e) => {
                                             const checked = e.target.checked;
-                                            setColumnFilters(prev => {
-                                              const current = prev[col.key] !== undefined ? prev[col.key] : [...opts];
-                                              let nextList: string[];
+                                            if (activeSearch) {
+                                              setColumnFilters(prev => {
+                                                const current = prev[col.key] !== undefined ? prev[col.key] : [...opts];
+                                                let nextList: string[];
+                                                if (checked) {
+                                                  nextList = Array.from(new Set([...current, ...filteredOpts]));
+                                                } else {
+                                                  nextList = current.filter(item => !filteredOpts.includes(item));
+                                                }
+                                                if (nextList.length === opts.length) {
+                                                  const next = { ...prev };
+                                                  delete next[col.key];
+                                                  return next;
+                                                }
+                                                return { ...prev, [col.key]: nextList };
+                                              });
+                                            } else {
                                               if (checked) {
-                                                nextList = Array.from(new Set([...current, opt]));
+                                                setColumnFilters(prev => {
+                                                  const next = { ...prev };
+                                                  delete next[col.key];
+                                                  return next;
+                                                });
                                               } else {
-                                                nextList = current.filter(item => item !== opt);
+                                                setColumnFilters(prev => ({ ...prev, [col.key]: [] }));
                                               }
-
-                                              // Se marcou todos os itens existentes, remove a chave para não pesar
-                                              if (nextList.length === opts.length) {
-                                                const updated = { ...prev };
-                                                delete updated[col.key];
-                                                return updated;
-                                              }
-
-                                              return { ...prev, [col.key]: nextList };
-                                            });
+                                            }
                                           }}
-                                          className="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
+                                          className={`rounded w-3.5 h-3.5 cursor-pointer shrink-0 ${
+                                            isDark 
+                                              ? 'border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500' 
+                                              : 'border-slate-400 bg-white text-blue-600 focus:ring-blue-500'
+                                          }`}
                                         />
-                                        <span className="truncate flex-1">{opt}</span>
+                                        <span className="truncate">
+                                          {activeSearch ? '(Selecionar Filtrados)' : '(Selecionar Tudo)'}
+                                        </span>
                                       </label>
-                                    );
-                                  });
+
+                                      {filteredOpts.length === 0 ? (
+                                        <p className={`text-[11px] italic py-2 text-center ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+                                          Nenhuma opção encontrada
+                                        </p>
+                                      ) : (
+                                        filteredOpts.map(opt => {
+                                          const isChecked = !isFiltered ? true : selectedList.includes(opt);
+
+                                          return (
+                                            <label 
+                                              key={opt}
+                                              className={`flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer transition-colors ${
+                                                isDark 
+                                                  ? 'text-slate-100 hover:bg-slate-800/80' 
+                                                  : 'text-slate-900 hover:bg-slate-100'
+                                              }`}
+                                              title={opt}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={(e) => {
+                                                  const checked = e.target.checked;
+                                                  setColumnFilters(prev => {
+                                                    const current = prev[col.key] !== undefined ? prev[col.key] : [...opts];
+                                                    let nextList: string[];
+                                                    if (checked) {
+                                                      nextList = Array.from(new Set([...current, opt]));
+                                                    } else {
+                                                      nextList = current.filter(item => item !== opt);
+                                                    }
+
+                                                    // Se marcou todos os itens existentes, remove a chave para não pesar
+                                                    if (nextList.length === opts.length) {
+                                                      const updated = { ...prev };
+                                                      delete updated[col.key];
+                                                      return updated;
+                                                    }
+
+                                                    return { ...prev, [col.key]: nextList };
+                                                  });
+                                                }}
+                                                className={`rounded w-3.5 h-3.5 cursor-pointer shrink-0 ${
+                                                  isDark 
+                                                    ? 'border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500' 
+                                                    : 'border-slate-400 bg-white text-blue-600 focus:ring-blue-500'
+                                                }`}
+                                              />
+                                              <span className={`truncate flex-1 font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                                                {opt}
+                                              </span>
+                                            </label>
+                                          );
+                                        })
+                                      )}
+                                    </>
+                                  );
                                 })()}
                               </div>
 
                               {/* Rodapé com Reset e Botão OK */}
-                              <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                              <div className={`mt-2 pt-2 border-t flex items-center justify-between gap-2 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
                                 {isFiltered ? (
                                   <button
                                     type="button"
@@ -1659,7 +1861,11 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                         return next;
                                       });
                                     }}
-                                    className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline font-semibold cursor-pointer"
+                                    className={`text-[10px] underline font-bold cursor-pointer transition-colors ${
+                                      isDark 
+                                        ? 'text-slate-400 hover:text-white' 
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
                                   >
                                     Limpar filtro
                                   </button>
@@ -1667,7 +1873,11 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setOpenFilterColumnKey(null)}
-                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs cursor-pointer"
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors shadow-xs cursor-pointer ${
+                                    isDark 
+                                      ? 'bg-indigo-600 hover:bg-indigo-500 text-white' 
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                  }`}
                                 >
                                   OK
                                 </button>
@@ -1756,7 +1966,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
                           >
                             <button
                               type="button"
@@ -1772,7 +1982,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   });
                                 }
                               }}
-                              className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
+                              className={`inline-flex items-center ${btnJustifyClass} gap-1 font-bold cursor-pointer transition-colors ${
                                 row.ordemCarregamentoUrl
                                   ? (isDark ? 'text-emerald-400 hover:text-emerald-300 hover:underline' : 'text-emerald-950 font-black hover:underline bg-emerald-300/40 px-1 py-0.5 rounded border border-emerald-600/50')
                                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
@@ -1794,7 +2004,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 ${isDark ? 'border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'border-r-2 border-black'} text-center font-bold font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
+                            className={`px-2 py-1 ${isDark ? 'border-r-2 border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'border-r-2 border-black'} ${textAlignClass} font-bold font-mono text-[11px] cursor-pointer select-none ${stickyClass} ${cellFocusRing}`}
                           >
                             <button
                               type="button"
@@ -1810,7 +2020,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   });
                                 }
                               }}
-                              className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
+                              className={`inline-flex items-center ${btnJustifyClass} gap-1 font-bold cursor-pointer transition-colors ${
                                 row.cteFileUrl
                                   ? (isDark ? 'text-sky-400 hover:text-sky-300 hover:underline' : 'text-blue-950 font-black hover:underline bg-white/70 px-1.5 py-0.5 rounded border border-blue-900/40 shadow-xs')
                                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
@@ -1832,7 +2042,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             {dhVal}
                           </td>
@@ -1863,17 +2073,19 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-1.5 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-1.5 py-1 border-r ${borderCol} ${textAlignClass} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
-                            <select
-                              value={isPix ? 'PIX' : isTransf ? 'TRANSFERÊNCIA BANCÁRIA' : 'BOLETO'}
-                              onChange={(e) => handlePaymentMethodChange(row.id, e.target.value)}
-                              className={`text-[10px] font-black py-0.5 px-1 rounded-lg border outline-none cursor-pointer transition-all shadow-xs ${badgeColor} ${isDark ? 'bg-slate-900 text-slate-100' : (isPix ? 'bg-teal-600 text-white' : isTransf ? 'bg-blue-700 text-white' : 'bg-emerald-600 text-white')} w-full max-w-[105px] truncate`}
-                            >
-                              <option value="BOLETO" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-emerald-700 text-white font-bold"}>Boleto</option>
-                              <option value="PIX" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-teal-700 text-white font-bold"}>Pix</option>
-                              <option value="TRANSFERÊNCIA BANCÁRIA" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-blue-800 text-white font-bold"}>Transf.</option>
-                            </select>
+                            <div className={`flex items-center ${btnJustifyClass}`}>
+                              <select
+                                value={isPix ? 'PIX' : isTransf ? 'TRANSFERÊNCIA BANCÁRIA' : 'BOLETO'}
+                                onChange={(e) => handlePaymentMethodChange(row.id, e.target.value)}
+                                className={`text-[10px] font-black py-0.5 px-1 rounded-lg border outline-none cursor-pointer transition-all shadow-xs ${badgeColor} ${isDark ? 'bg-slate-900 text-slate-100' : (isPix ? 'bg-teal-600 text-white' : isTransf ? 'bg-blue-700 text-white' : 'bg-emerald-600 text-white')} w-full max-w-[105px] truncate`}
+                              >
+                                <option value="BOLETO" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-emerald-700 text-white font-bold"}>Boleto</option>
+                                <option value="PIX" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-teal-700 text-white font-bold"}>Pix</option>
+                                <option value="TRANSFERÊNCIA BANCÁRIA" className={isDark ? "bg-slate-900 text-slate-100 font-bold" : "bg-blue-800 text-white font-bold"}>Transf.</option>
+                              </select>
+                            </div>
                           </td>
                         );
                       }
@@ -1890,10 +2102,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={`${rotaDireta ? rotaDireta + ' • ' : ''}${kmVal}`}
                           >
-                            <div className="flex flex-col items-center justify-center leading-tight">
+                            <div className={`flex flex-col ${justifyAlignClass} leading-tight`}>
                               <span className={`font-black ${isDark ? 'text-amber-500' : 'text-black'} text-[11px] whitespace-nowrap`}>
                                 {kmVal}
                               </span>
@@ -1917,10 +2129,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={modelo ? `${modelo} • ${eixoVal}` : eixoVal}
                           >
-                            <div className="flex flex-col items-center justify-center leading-tight">
+                            <div className={`flex flex-col ${justifyAlignClass} leading-tight`}>
                               <span className={`font-bold ${isDark ? 'text-slate-100' : 'text-black font-black'} text-[11px] whitespace-nowrap`}>
                                 {eixoVal}
                               </span>
@@ -1955,7 +2167,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={hasCiotCode 
                               ? `Nº CIOT: ${finalCiot}${calculatedCiotFee > 0 ? ` • Taxa CIOT 0,20%: ${formatCurrency(calculatedCiotFee)}` : ''}` 
                               : (calculatedCiotFee > 0 ? `Taxa CIOT (0,20%): ${formatCurrency(calculatedCiotFee)}` : 'CIOT não informado')}
@@ -1992,7 +2204,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={isNum ? `Saldo Total Lançado: ${displayVal} ton | Carregado: ${carregado.toLocaleString('pt-BR')} ton | Saldo Restante: ${saldoRestante.toLocaleString('pt-BR')} ton` : 'Saldo do pedido'}
                           >
                             <span className={isNum ? (isDark ? 'font-bold text-cyan-400' : 'font-black text-black') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2010,7 +2222,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={nfVal !== '-' ? `Nota Fiscal nº ${nfVal}` : 'Sem NF-e informada'}
                           >
                             <span className={nfVal !== '-' ? (isDark ? 'font-bold text-indigo-400' : 'font-black text-blue-950 bg-white/70 px-1 py-0.5 rounded border border-blue-900/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2029,7 +2241,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-right font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={valNum > 0 ? `Valor da NF: ${formatCurrency(valNum)}` : 'Sem NF-e informada'}
                           >
                             <span className={valNum > 0 ? `font-bold ${isDark ? 'text-slate-100' : 'text-black font-black'} text-[11px]` : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2077,7 +2289,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={`Enquadramento ANTT / Regime Tributário: ${regimeVal}`}
                           >
                             <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider ${badgeColor}`}>
@@ -2095,7 +2307,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={atuaVal !== '-' ? `Código ATUA: ${atuaVal}` : 'Sem código ATUA informado'}
                           >
                             <span className={atuaVal !== '-' ? (isDark ? 'font-bold text-sky-400' : 'font-black text-black') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2113,7 +2325,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={dhVal !== '-' ? `Adiantamento liberado em: ${dhVal}` : 'Adiantamento pendente de liberação'}
                           >
                             <span className={dhVal !== '-' ? (isDark ? 'font-semibold text-emerald-400' : 'font-black text-emerald-950 bg-emerald-300/60 px-1 py-0.5 rounded border border-emerald-600/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2131,7 +2343,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[10px] ${isDark ? 'text-slate-300' : 'text-black font-bold'} whitespace-nowrap cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={dhVal !== '-' ? `Saldo liberado / finalizado em: ${dhVal}` : 'Saldo pendente de liberação'}
                           >
                             <span className={dhVal !== '-' ? (isDark ? 'font-semibold text-purple-400' : 'font-black text-purple-950 bg-purple-300/60 px-1 py-0.5 rounded border border-purple-600/40 shadow-xs') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2149,7 +2361,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-center font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             <button
                               type="button"
@@ -2165,7 +2377,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   });
                                 }
                               }}
-                              className={`inline-flex items-center justify-center gap-1 font-bold cursor-pointer transition-colors ${
+                              className={`inline-flex items-center ${btnJustifyClass} gap-1 font-bold cursor-pointer transition-colors ${
                                 row.ordemCarregamentoUrl
                                   ? (isDark ? 'text-indigo-400 hover:text-indigo-300 hover:underline' : 'text-black font-black bg-white/70 hover:bg-white px-1.5 py-0.5 rounded border border-black/30 shadow-xs')
                                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
@@ -2192,7 +2404,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key} 
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-1.5 py-1 border-r ${borderCol} text-center cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-1.5 py-1 border-r ${borderCol} ${textAlignClass} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                           >
                             <button
                               type="button"
@@ -2210,7 +2422,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   });
                                 }
                               }}
-                              className={`inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                              className={`inline-flex items-center ${btnJustifyClass} gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
                                 isSim 
                                   ? (isDark ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 shadow-xs' : 'bg-emerald-600 border-emerald-700 text-white font-black hover:bg-emerald-700 shadow-xs')
                                   : (isDark ? 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700' : 'bg-white/70 border-black/30 text-slate-900 font-bold hover:bg-white')
@@ -2232,7 +2444,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                             key={col.key}
                             data-cell-coord={cellCoord}
                             onClick={handleCellClick}
-                            className={`px-2 py-1 border-r ${borderCol} text-right font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
                             title={feeVal > 0 ? `Taxa CIOT (0,20%): ${formatCurrency(feeVal)}` : 'Sem taxa CIOT calculada'}
                           >
                             <span className={feeVal > 0 ? (isDark ? 'font-bold text-purple-400' : 'font-black text-red-700') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
@@ -2345,9 +2557,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                           key={col.key}
                           data-cell-coord={cellCoord}
                           onClick={handleCellClick}
-                          className={`px-2 py-1 border-r ${borderCol} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''} ${
-                            col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                          }`}
+                          className={`px-2 py-1 border-r ${borderCol} cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''} ${textAlignClass}`}
                         >
                           {cellContent}
                         </td>
@@ -2449,6 +2659,72 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               {isSheetDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-600" />}
               <span>{isSheetDark ? "Modo Claro (Excel)" : "Modo Escuro (Navy)"}</span>
             </button>
+
+            {/* GRUPO DE ALINHAMENTO DAS LINHAS DA PLANILHA (ESQUERDA, CENTRALIZAR, DIREITA) */}
+            <div 
+              className={`inline-flex items-center rounded-xl p-0.5 border shadow-xs ${
+                isSheetDark 
+                  ? 'bg-slate-800/90 border-slate-700 text-slate-300' 
+                  : 'bg-slate-100 border-slate-300 text-slate-700'
+              }`}
+              role="group"
+              aria-label="Alinhamento das linhas da planilha"
+              title="Alinhamento das linhas da planilha"
+            >
+              <button
+                type="button"
+                onClick={() => handleAlignmentChange('left')}
+                className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center justify-center ${
+                  tableAlignment === 'left'
+                    ? (isSheetDark 
+                        ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400 font-bold' 
+                        : 'bg-white text-indigo-700 shadow-sm border border-slate-300 font-bold')
+                    : (isSheetDark 
+                        ? 'hover:text-white hover:bg-slate-700/80 text-slate-400' 
+                        : 'hover:text-slate-900 hover:bg-slate-200/80 text-slate-600')
+                }`}
+                title="Alinhar à Esquerda"
+              >
+                <AlignLeft className="w-4 h-4" />
+                <span className="sr-only">Alinhar à Esquerda</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleAlignmentChange('center')}
+                className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center justify-center ${
+                  tableAlignment === 'center'
+                    ? (isSheetDark 
+                        ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400 font-bold' 
+                        : 'bg-white text-indigo-700 shadow-sm border border-slate-300 font-bold')
+                    : (isSheetDark 
+                        ? 'hover:text-white hover:bg-slate-700/80 text-slate-400' 
+                        : 'hover:text-slate-900 hover:bg-slate-200/80 text-slate-600')
+                }`}
+                title="Centralizar (Padrão)"
+              >
+                <AlignCenter className="w-4 h-4" />
+                <span className="sr-only">Centralizar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleAlignmentChange('right')}
+                className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer flex items-center justify-center ${
+                  tableAlignment === 'right'
+                    ? (isSheetDark 
+                        ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400 font-bold' 
+                        : 'bg-white text-indigo-700 shadow-sm border border-slate-300 font-bold')
+                    : (isSheetDark 
+                        ? 'hover:text-white hover:bg-slate-700/80 text-slate-400' 
+                        : 'hover:text-slate-900 hover:bg-slate-200/80 text-slate-600')
+                }`}
+                title="Alinhar à Direita"
+              >
+                <AlignRight className="w-4 h-4" />
+                <span className="sr-only">Alinhar à Direita</span>
+              </button>
+            </div>
 
             <button
               onClick={() => {
@@ -2823,6 +3099,60 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                   {isSheetDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-indigo-400" />}
                   <span>{isSheetDark ? "Modo Claro (Excel)" : "Modo Escuro (Navy)"}</span>
                 </button>
+
+                {/* GRUPO DE ALINHAMENTO DAS LINHAS DA PLANILHA (TELA CHEIA) */}
+                <div 
+                  className={`inline-flex items-center rounded-lg p-0.5 border shadow-xs ${
+                    isSheetDark 
+                      ? 'bg-slate-900 border-slate-700 text-slate-300' 
+                      : 'bg-white border-slate-300 text-slate-700'
+                  }`}
+                  role="group"
+                  aria-label="Alinhamento das linhas da planilha"
+                  title="Alinhamento das linhas da planilha"
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleAlignmentChange('left')}
+                    className={`p-1 rounded text-xs transition-all cursor-pointer flex items-center justify-center ${
+                      tableAlignment === 'left'
+                        ? (isSheetDark ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400' : 'bg-slate-100 text-indigo-700 shadow-sm border border-slate-300 font-bold')
+                        : (isSheetDark ? 'hover:text-white hover:bg-slate-800 text-slate-400' : 'hover:text-slate-900 hover:bg-slate-200 text-slate-600')
+                    }`}
+                    title="Alinhar à Esquerda"
+                  >
+                    <AlignLeft className="w-3.5 h-3.5" />
+                    <span className="sr-only">Alinhar à Esquerda</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAlignmentChange('center')}
+                    className={`p-1 rounded text-xs transition-all cursor-pointer flex items-center justify-center ${
+                      tableAlignment === 'center'
+                        ? (isSheetDark ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400' : 'bg-slate-100 text-indigo-700 shadow-sm border border-slate-300 font-bold')
+                        : (isSheetDark ? 'hover:text-white hover:bg-slate-800 text-slate-400' : 'hover:text-slate-900 hover:bg-slate-200 text-slate-600')
+                    }`}
+                    title="Centralizar (Padrão)"
+                  >
+                    <AlignCenter className="w-3.5 h-3.5" />
+                    <span className="sr-only">Centralizar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAlignmentChange('right')}
+                    className={`p-1 rounded text-xs transition-all cursor-pointer flex items-center justify-center ${
+                      tableAlignment === 'right'
+                        ? (isSheetDark ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400' : 'bg-slate-100 text-indigo-700 shadow-sm border border-slate-300 font-bold')
+                        : (isSheetDark ? 'hover:text-white hover:bg-slate-800 text-slate-400' : 'hover:text-slate-900 hover:bg-slate-200 text-slate-600')
+                    }`}
+                    title="Alinhar à Direita"
+                  >
+                    <AlignRight className="w-3.5 h-3.5" />
+                    <span className="sr-only">Alinhar à Direita</span>
+                  </button>
+                </div>
 
                 <button
                   onClick={handleExportExcel}
