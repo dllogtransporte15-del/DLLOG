@@ -840,6 +840,7 @@ export interface FinancialInvoice {
   supplierName: string;
   supplierCnpjCpf?: string;
   totalAmount: number;
+  payableAmount?: number; // Valor a pagar efetivo (pode diferir do valor total da NF por retenções ou acordos)
   issueDate: string;
   dueDate: string;
   paymentDate?: string;

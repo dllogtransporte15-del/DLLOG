@@ -114,7 +114,7 @@ export function isImageSource(urlOrFile: string | File, fileName?: string): bool
  *   Inclui ferramentas interativas de GIRAR 90° (fotos tiradas de lado por motoristas), ZOOM e IMPRESSÃO.
  * - Para PDFs: exibe visualizador de alta resolução sem disparar download involuntário.
  */
-export async function openDocumentInNewTab(urlOrFile: string | File, rawFileName?: string) {
+export async function openDocumentInNewTab(urlOrFile?: string | File | null, rawFileName?: string) {
   if (!urlOrFile) return;
 
   const isFile = typeof urlOrFile !== 'string';

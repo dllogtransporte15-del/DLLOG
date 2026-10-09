@@ -311,7 +311,8 @@ export const financialInvoiceService = {
           accessKey: d.access_key,
           supplierName: d.supplier_name,
           supplierCnpjCpf: d.supplier_cnpj_cpf,
-          totalAmount: Number(d.total_amount),
+          totalAmount: Number(d.total_amount) || 0,
+          payableAmount: d.payable_amount !== undefined && d.payable_amount !== null ? Number(d.payable_amount) : (Number(d.total_amount) || 0),
           issueDate: d.issue_date,
           dueDate: d.due_date,
           paymentDate: d.payment_date,
@@ -345,13 +346,17 @@ export const financialInvoiceService = {
       if (local !== null) {
         const parsed: FinancialInvoice[] = JSON.parse(local);
         if (Array.isArray(parsed)) {
-          // Remove automaticamente notas mock antigas de teste/semente (inv_001 a inv_005)
-          const cleaned = parsed.filter(inv => !inv.id.startsWith('inv_00'));
+          // Normaliza valores e remove automaticamente notas mock antigas de teste/semente
+          const cleaned = parsed.map(inv => ({
+            ...inv,
+            totalAmount: typeof inv.totalAmount === 'number' && !isNaN(inv.totalAmount) ? inv.totalAmount : 0,
+            payableAmount: typeof inv.payableAmount === 'number' && !isNaN(inv.payableAmount) ? inv.payableAmount : (inv.totalAmount || 0)
+          })).filter(inv => !inv.id.startsWith('inv_00'));
           if (cleaned.length !== parsed.length) {
             localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(cleaned));
             return cleaned;
           }
-          return parsed;
+          return cleaned;
         }
       }
     } catch (e) {
@@ -373,6 +378,8 @@ export const financialInvoiceService = {
     const completeInvoice: FinancialInvoice = {
       ...item,
       id: invoiceId,
+      totalAmount: Number(item.totalAmount) || 0,
+      payableAmount: item.payableAmount !== undefined && !isNaN(item.payableAmount) ? Number(item.payableAmount) : (Number(item.totalAmount) || 0),
       createdAt: isEdit ? (item as any).createdAt || nowIso : nowIso,
       updatedAt: nowIso
     };
@@ -385,7 +392,8 @@ export const financialInvoiceService = {
         access_key: item.accessKey,
         supplier_name: item.supplierName,
         supplier_cnpj_cpf: item.supplierCnpjCpf,
-        total_amount: item.totalAmount,
+        total_amount: completeInvoice.totalAmount,
+        payable_amount: completeInvoice.payableAmount,
         issue_date: item.issueDate,
         due_date: item.dueDate,
         payment_date: item.paymentDate || null,

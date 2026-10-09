@@ -272,3 +272,55 @@ export function buildShipmentControlSheet(
     })
     .sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
 }
+
+/**
+ * Converte com robustez strings monetárias no padrão brasileiro (ex: "6.000,00", "6.000", "R$ 6.000", "6000,50")
+ * em números válidos sem truncar milhares para números inteiros minúsculos.
+ */
+export function parseBrazilianCurrency(value: string | number | undefined | null): number {
+  if (value === undefined || value === null) return 0;
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  let str = String(value).trim();
+  if (!str) return 0;
+
+  // Remove caracteres que não são números, ponto, vírgula ou hífen
+  str = str.replace(/[^\d.,-]/g, '');
+  if (!str) return 0;
+
+  // Caso 1: Possui ponto e vírgula (ex: 6.000,00 ou 1.250.340,50)
+  if (str.includes('.') && str.includes(',')) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+      // Padrão Brasil: 6.000,00 -> 6000.00
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // Padrão EUA: 6,000.00 -> 6000.00
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    // Apenas vírgula decimal: 6000,50 -> 6000.50
+    str = str.replace(',', '.');
+  } else if (str.includes('.')) {
+    // Apenas ponto(s)
+    const parts = str.split('.');
+    if (parts.length > 2) {
+      // Vários pontos (ex: 1.000.000 -> 1000000)
+      str = str.replace(/\./g, '');
+    } else if (parts.length === 2) {
+      // Um único ponto: se houver exatamente 3 dígitos após o ponto (ex: "6.000", "25.000"),
+      // na digitação de valores no Brasil isso indica milhar! Evita que "6.000" vire 6.
+      if (parts[1].length === 3) {
+        str = parts[0] + parts[1];
+      } else {
+        str = parts[0] + '.' + parts[1];
+      }
+    }
+  }
+
+  const result = parseFloat(str);
+  return isNaN(result) ? 0 : result;
+}
+
+export function formatBrl(val: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+}
+

@@ -21,6 +21,49 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_08_v2_70_25',
+    version: 'v2.70.25',
+    date: '08/10/2026',
+    title: 'Refinamento do Lançamento de NFs, Campo "Valor a Pagar" e Integração com Contas a Pagar',
+    summary: 'Correção e blindagem completa da digitação de valores monetários no padrão brasileiro (impedindo truncamento de milhares como 6.000 para 6), adição do campo "Valor a Pagar" independente do valor total da nota, e integração nativa das Notas Fiscais e CT-es por Cliente na tela de Contas a Pagar com filtros completos por período, cliente e número de CT-e.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Correção de Parsing Monetário Brasileiro',
+        description: 'Implementado parser monetário robusto com máscara automática no blur, garantindo que valores como "6.000", "6.000,00" ou "6000" sejam salvos e exibidos com precisão decimal sem truncamento indevido.'
+      },
+      {
+        category: 'feature',
+        title: 'Campo "Valor a Pagar" na Nota Fiscal',
+        description: 'Adicionado campo específico de Valor a Pagar no cadastro e edição de NFs, permitindo informar o valor líquido efetivo da quitação quando houver retenções tributárias, descontos ou pagamentos acordados.'
+      },
+      {
+        category: 'feature',
+        title: 'Integração de Notas Fiscais no Contas a Pagar',
+        description: 'Todas as notas fiscais cadastradas agora alimentam automaticamente o Contas a Pagar, com exibição de fornecedor, centro de custo, vencimento, valor total, valor a pagar, visualizador do anexo (PDF/imagem) e dar baixa instantânea.'
+      },
+      {
+        category: 'feature',
+        title: 'CT-e como Contas a Pagar por Cliente',
+        description: 'Todos os CT-es emitidos/anexados no sistema agora geram contas a pagar organizadas por cliente/tomador, incluindo filtros avançados por período, cliente específico, número de CT-e, status e acesso direto ao PDF do CT-e.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_08_v2_70_24',
+    version: 'v2.70.24',
+    date: '08/10/2026',
+    title: 'Disponibilização da Ação "Trocar Carga" em Ag. Carregamento',
+    summary: 'A opção "Trocar Carga" no menu de ações rápidas da listagem de embarques foi habilitada também para embarques com status "Ag. Carregamento".',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Troca de Carga em "Ag. Carregamento"',
+        description: 'Permite alterar a carga vinculada a um embarque que esteja aguardando carregamento, facilitando realocações operacionais e ajustes de saldo.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_08_v2_70_23',
     version: 'v2.70.23',
     date: '08/10/2026',

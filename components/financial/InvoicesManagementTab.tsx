@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import { extractDataFromInvoiceFile } from '../../utils/invoiceExtractionService';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
+import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
 
 interface InvoicesManagementTabProps {
   users: User[];
@@ -144,6 +145,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [formSupplier, setFormSupplier] = useState('');
   const [formCnpjCpf, setFormCnpjCpf] = useState('');
   const [formAmount, setFormAmount] = useState('');
+  const [formPayableAmount, setFormPayableAmount] = useState('');
   const [formIssueDate, setFormIssueDate] = useState(new Date().toISOString().split('T')[0]);
   const [formDueDate, setFormDueDate] = useState(new Date().toISOString().split('T')[0]);
   const [formPaymentDate, setFormPaymentDate] = useState('');
@@ -291,7 +293,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
           count++;
         }
         if (extracted.totalAmount !== undefined && extracted.totalAmount > 0) {
-          setFormAmount(extracted.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          const formatted = extracted.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          setFormAmount(formatted);
+          setFormPayableAmount(formatted);
           count++;
         }
         if (extracted.supplierName) {
@@ -355,6 +359,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormSupplier('');
     setFormCnpjCpf('');
     setFormAmount('');
+    setFormPayableAmount('');
     setFormIssueDate(new Date().toISOString().split('T')[0]);
     setFormDueDate(new Date().toISOString().split('T')[0]);
     setFormPaymentDate('');
@@ -383,6 +388,23 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setIsFormModalOpen(true);
   };
 
+  // Função utilitária para formatar máscara monetária ao sair do campo (onBlur)
+  const handleFormatAmountBlur = (
+    val: string,
+    setter: (v: string) => void,
+    mirrorSetter?: (v: string) => void
+  ) => {
+    if (!val || !val.trim()) return;
+    const num = parseBrazilianCurrency(val);
+    if (!isNaN(num) && num > 0) {
+      const formatted = num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      setter(formatted);
+      if (mirrorSetter) {
+        mirrorSetter((prev) => (!prev || prev === val ? formatted : prev));
+      }
+    }
+  };
+
   // Abrir modal de edição
   const handleOpenEditModal = (inv: FinancialInvoice) => {
     setEditingInvoiceId(inv.id);
@@ -391,7 +413,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormAccessKey(inv.accessKey || '');
     setFormSupplier(inv.supplierName);
     setFormCnpjCpf(inv.supplierCnpjCpf || '');
-    setFormAmount(String(inv.totalAmount));
+    setFormAmount(inv.totalAmount ? inv.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
+    setFormPayableAmount((inv.payableAmount ?? inv.totalAmount) ? (inv.payableAmount ?? inv.totalAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
     setFormIssueDate(inv.issueDate);
     setFormDueDate(inv.dueDate);
     setFormPaymentDate(inv.paymentDate || '');
@@ -422,6 +445,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       return;
     }
 
+    const totalNum = parseBrazilianCurrency(formAmount);
+    const payableNum = formPayableAmount ? parseBrazilianCurrency(formPayableAmount) : totalNum;
+
+    if (totalNum <= 0) {
+      alert('Por favor, informe um Valor Total válido para a Nota Fiscal.');
+      return;
+    }
+
     const selectedResponsible = users.find(u => u.id === formResponsibleUserId);
     const selectedCenter = costCenters.find(c => c.id === formCostCenterId);
     const selectedType = costTypes.find(t => t.id === formCostTypeId);
@@ -432,7 +463,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       accessKey: formAccessKey.replace(/\s+/g, '') || undefined,
       supplierName: formSupplier.trim(),
       supplierCnpjCpf: formCnpjCpf.trim() || undefined,
-      totalAmount: parseFloat(formAmount.replace(',', '.')) || 0,
+      totalAmount: totalNum,
+      payableAmount: payableNum > 0 ? payableNum : totalNum,
       issueDate: formIssueDate,
       dueDate: formDueDate,
       paymentDate: formStatus === 'Pago' ? (formPaymentDate || formDueDate) : undefined,
@@ -605,12 +637,13 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
   // KPIs
   const totalAmount = useMemo(() => filteredInvoices.reduce((acc, i) => acc + i.totalAmount, 0), [filteredInvoices]);
+  const totalPayable = useMemo(() => filteredInvoices.reduce((acc, i) => acc + (i.payableAmount ?? i.totalAmount), 0), [filteredInvoices]);
   const pendingInvoices = useMemo(() => filteredInvoices.filter(i => i.status === 'Pendente'), [filteredInvoices]);
-  const totalPending = useMemo(() => pendingInvoices.reduce((acc, i) => acc + i.totalAmount, 0), [pendingInvoices]);
+  const totalPending = useMemo(() => pendingInvoices.reduce((acc, i) => acc + (i.payableAmount ?? i.totalAmount), 0), [pendingInvoices]);
   const paidInvoices = useMemo(() => filteredInvoices.filter(i => i.status === 'Pago'), [filteredInvoices]);
-  const totalPaid = useMemo(() => paidInvoices.reduce((acc, i) => acc + i.totalAmount, 0), [paidInvoices]);
+  const totalPaid = useMemo(() => paidInvoices.reduce((acc, i) => acc + (i.payableAmount ?? i.totalAmount), 0), [paidInvoices]);
   const overdueInvoices = useMemo(() => filteredInvoices.filter(i => i.status === 'Atrasado' || (i.status === 'Pendente' && i.dueDate < new Date().toISOString().split('T')[0])), [filteredInvoices]);
-  const totalOverdue = useMemo(() => overdueInvoices.reduce((acc, i) => acc + i.totalAmount, 0), [overdueInvoices]);
+  const totalOverdue = useMemo(() => overdueInvoices.reduce((acc, i) => acc + (i.payableAmount ?? i.totalAmount), 0), [overdueInvoices]);
 
   // Relatórios Analíticos: Agrupamento por Responsável Interno
   const analyticsByUser = useMemo(() => {
@@ -1080,7 +1113,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     <th className="py-3 px-4">Centro de Custo</th>
                     <th className="py-3 px-4">Responsável Interno</th>
                     <th className="py-3 px-4">Datas (Emissão / Venc.)</th>
-                    <th className="py-3 px-4 text-right">Valor Total</th>
+                    <th className="py-3 px-4 text-right">Valor a Pagar / Total</th>
                     <th className="py-3 px-4 text-center">Status</th>
                     <th className="py-3 px-4 text-center">Anexo</th>
                     <th className="py-3 px-4 text-center">Ações</th>
@@ -1181,13 +1214,18 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                           </div>
                         </td>
 
-                        {/* 7. Valor Total */}
+                        {/* 7. Valor a Pagar / Total */}
                         <td className="py-3 px-4 text-right whitespace-nowrap">
-                          <div className="font-black text-sm text-slate-900 dark:text-white tracking-tight">
-                            {formatCurrency(inv.totalAmount)}
+                          <div className="font-black text-sm text-emerald-600 dark:text-emerald-400 tracking-tight">
+                            {formatCurrency(inv.payableAmount ?? inv.totalAmount)}
                           </div>
+                          {inv.payableAmount !== undefined && inv.payableAmount !== inv.totalAmount && (
+                            <div className="text-[10px] text-slate-400 font-medium line-through" title="Valor Total Bruto da NF">
+                              Total: {formatCurrency(inv.totalAmount)}
+                            </div>
+                          )}
                           {inv.paymentMethod && (
-                            <div className="text-[10px] text-slate-400 font-medium">
+                            <div className="text-[10px] text-slate-400 font-medium mt-0.5">
                               via {inv.paymentMethod}
                               {inv.paymentDetails && (
                                 <span className="block text-[9px] text-slate-500 dark:text-slate-400 truncate max-w-[140px] font-mono" title={inv.paymentDetails}>
@@ -1679,19 +1717,45 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   />
                 </div>
 
-                {/* Valor Total */}
+                {/* Valor Total da NF */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Valor Total (R$) *
+                    Valor Total da NF (R$) *
                   </label>
                   <input
                     type="text"
                     required
                     placeholder="0,00"
                     value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-bold text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setFormAmount(v);
+                      if (!formPayableAmount || formPayableAmount === formAmount) {
+                        setFormPayableAmount(v);
+                      }
+                    }}
+                    onBlur={() => handleFormatAmountBlur(formAmount, setFormAmount, setFormPayableAmount)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">Valor bruto cheio da nota</span>
+                </div>
+
+                {/* Valor a Pagar */}
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
+                    <span>Valor a Pagar (R$) *</span>
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Líquido</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="0,00"
+                    value={formPayableAmount}
+                    onChange={(e) => setFormPayableAmount(e.target.value)}
+                    onBlur={() => handleFormatAmountBlur(formPayableAmount, setFormPayableAmount)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">Valor efetivo (com retenções/acordos)</span>
                 </div>
 
                 {/* Fornecedor / Prestador */}

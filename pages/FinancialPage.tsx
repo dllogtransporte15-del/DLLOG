@@ -432,6 +432,12 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             transactions={transactions}
             onAddTransaction={handleAddTransaction}
             onUpdateStatus={handleUpdateStatus}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            users={users}
+            currentUser={_currentUser}
+            onNavigateToInvoices={() => handleTabChange('invoices')}
           />
         )}
 
@@ -440,6 +446,11 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             transactions={transactions}
             onAddTransaction={handleAddTransaction}
             onUpdateStatus={handleUpdateStatus}
+            shipments={shipments}
+            cargos={cargos}
+            clients={clients}
+            users={users}
+            currentUser={_currentUser}
           />
         )}
 
