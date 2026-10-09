@@ -281,7 +281,33 @@ export function parseCurrencyPtBr(str: string | undefined | null): number | unde
 
 export function parseWeightKg(str: string | undefined | null): number | undefined {
   if (!str) return undefined;
-  const val = parseCurrencyPtBr(str);
+  const clean = String(str).replace(/[^\d.,]/g, '').trim();
+  if (!clean) return undefined;
+
+  let val: number | undefined;
+  if (clean.includes(',') && clean.includes('.')) {
+    const num = parseFloat(clean.replace(/\./g, '').replace(',', '.'));
+    val = isNaN(num) ? undefined : num;
+  } else if (clean.includes(',')) {
+    const num = parseFloat(clean.replace(',', '.'));
+    val = isNaN(num) ? undefined : num;
+  } else if (clean.includes('.')) {
+    // Se tiver ponto decimal (ex: SEFAZ XML "45.9600" ou "45.960" ou "45.96"):
+    const valFloat = parseFloat(clean);
+    if (!isNaN(valFloat) && valFloat > 0 && valFloat < 500) {
+      val = Math.round(valFloat * 1000);
+    } else {
+      const numNorm = parseFloat(clean.replace(/\./g, ''));
+      val = isNaN(numNorm) ? undefined : numNorm;
+    }
+  } else {
+    const num = parseFloat(clean);
+    val = isNaN(num) ? undefined : num;
+  }
+
+  if (val !== undefined && val > 0 && val <= 500) {
+    return Math.round(val * 1000);
+  }
   return val;
 }
 
@@ -680,7 +706,7 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     for (const re of pesoBrutoPatterns) {
       const m = text.match(re);
       if (m && m[1]) {
-        const val = parseCurrencyPtBr(m[1]);
+        const val = parseWeightKg(m[1]);
         if (val !== undefined && val > 0) {
           extractedPesoBruto = val;
           break;
@@ -938,12 +964,47 @@ function parseDetailedXml(xmlText: string): DetailedDocumentData | null {
           nome: getXmlTagValue(doc.getElementsByTagName('moto')[0] || doc, 'xNome'),
           cpf: getXmlTagValue(doc.getElementsByTagName('moto')[0] || doc, 'CPF'),
         },
-        carga: {
-          produtoPredominante: getXmlTagValue(doc, 'proPred', 'xOutCat'),
-          valorMercadoria: parseCurrencyPtBr(getXmlTagValue(doc, 'vCarga')),
-          pesoBrutoKg: parseWeightKg(getXmlTagValue(doc, 'qCarga', 'pesoB')),
-          quantidadeVolumes: parseCurrencyPtBr(getXmlTagValue(doc, 'qVol')),
-        },
+        carga: (() => {
+          // Extração precisa do peso do CT-e XML priorizando PESO BRUTO / PESO AFERIDO sobre peso base de cálculo
+          let extractedCteWeight: number | undefined;
+          const infQEls = doc.getElementsByTagName('infQ');
+          let fallbackWeight: number | undefined;
+
+          for (let i = 0; i < infQEls.length; i++) {
+            const el = infQEls[i];
+            const tpMed = (getXmlTagValue(el, 'tpMed') || '').toUpperCase();
+            const cUnid = getXmlTagValue(el, 'cUnid')?.trim();
+            const qCargaStr = getXmlTagValue(el, 'qCarga');
+            if (!qCargaStr) continue;
+
+            const val = parseFloat(qCargaStr.replace(',', '.'));
+            if (isNaN(val) || val <= 0) continue;
+
+            const wKg = (cUnid === '02' || val <= 500) ? Math.round(val * 1000) : val;
+
+            if (tpMed.includes('BRUTO')) {
+              extractedCteWeight = wKg;
+              break;
+            } else if (tpMed.includes('AFERIDO') || tpMed.includes('REAL') || tpMed.includes('LIQUIDO')) {
+              if (!extractedCteWeight) extractedCteWeight = wKg;
+            } else if (!fallbackWeight && !tpMed.includes('BASE') && !tpMed.includes('BC')) {
+              fallbackWeight = wKg;
+            } else if (!fallbackWeight) {
+              fallbackWeight = wKg;
+            }
+          }
+
+          if (!extractedCteWeight) {
+            extractedCteWeight = fallbackWeight || parseWeightKg(getXmlTagValue(doc, 'pesoB', 'qCarga'));
+          }
+
+          return {
+            produtoPredominante: getXmlTagValue(doc, 'proPred', 'xOutCat'),
+            valorMercadoria: parseCurrencyPtBr(getXmlTagValue(doc, 'vCarga')),
+            pesoBrutoKg: extractedCteWeight,
+            quantidadeVolumes: parseCurrencyPtBr(getXmlTagValue(doc, 'qVol')),
+          };
+        })(),
         financeiro: {
           valorTotalFrete: parseCurrencyPtBr(getXmlTagValue(doc, 'vTPrest', 'vRec')),
           valorReceber: parseCurrencyPtBr(getXmlTagValue(doc, 'vRec')),
@@ -1259,7 +1320,8 @@ export async function extractFiscalDocNumbers(
       try {
         const detailed = await extractDetailedDocData(file, docType);
         
-        if (detailed.documentType === 'CT-e' || isCteDocType(docType)) {
+        const isCteDoc = detailed.documentType === 'CT-e' || (isCteDocType(docType) && detailed.documentType !== 'MDF-e' && detailed.documentType !== 'Carta Frete');
+        if (isCteDoc) {
           if (detailed.docNumber && !result.cteNumber) result.cteNumber = detailed.docNumber;
           if (detailed.emissionDate && !result.cteEmissionDate) result.cteEmissionDate = detailed.emissionDate;
           if (detailed.carga?.pesoBrutoKg !== undefined && !result.cteWeightKg) {
@@ -1360,7 +1422,8 @@ export async function extractFiscalDocNumbersFromUrls(
     for (const url of urls) {
       try {
         const detailed = await extractDetailedDocData(url, docType);
-        if (detailed.documentType === 'CT-e' || isCteDocType(docType)) {
+        const isCteDoc = detailed.documentType === 'CT-e' || (isCteDocType(docType) && detailed.documentType !== 'MDF-e' && detailed.documentType !== 'Carta Frete');
+        if (isCteDoc) {
           if (detailed.docNumber && !result.cteNumber) result.cteNumber = detailed.docNumber;
           if (detailed.emissionDate && !result.cteEmissionDate) result.cteEmissionDate = detailed.emissionDate;
           if (detailed.carga?.pesoBrutoKg !== undefined && !result.cteWeightKg) {

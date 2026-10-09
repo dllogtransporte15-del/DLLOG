@@ -5,10 +5,10 @@ import { isDemoUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
-import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData } from '../utils/fiscalDocParser';
+import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData, parseWeightKg } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2 } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3 } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
@@ -288,6 +288,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
   // Estados para armazenar valores extraídos de documentos fiscais
   const [cteExtractedWeightKg, setCteExtractedWeightKg] = useState<number | undefined>(undefined);
+  const [isEditingCteWeight, setIsEditingCteWeight] = useState(false);
+  const [manualCteWeightInput, setManualCteWeightInput] = useState('');
   const [cartaFreteExtractedFreight, setCartaFreteExtractedFreight] = useState<number | undefined>(undefined);
   const [cteExtractedIcms, setCteExtractedIcms] = useState<number | undefined>(undefined);
   const [cteExtractedTomadorNome, setCteExtractedTomadorNome] = useState<string | undefined>(undefined);
@@ -407,7 +409,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         cteWeightTon,
         diffKg,
         diffTon,
-        diffFormatted: `${diffTon.toFixed(2)} ton`,
+        diffFormatted: `${diffTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton`,
         diffKgFormatted: `${diffKg.toLocaleString('pt-BR')} kg`,
       };
     }
@@ -514,7 +516,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
     if (weightDivergenceInfo && weightDecision === 'unresolved') {
       showToast(
-        `⚠️ Divergência de Peso: Ticket (${weightDivergenceInfo.ticketTon.toFixed(2)}t) vs CT-e (${weightDivergenceInfo.cteTon.toFixed(2)}t). Diferença: ${weightDivergenceInfo.diffKgFormatted}. Confirme qual valor é o correto.`,
+        `⚠️ Divergência de Peso: Ticket (${weightDivergenceInfo.ticketTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) vs CT-e (${weightDivergenceInfo.cteTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t). Diferença: ${weightDivergenceInfo.diffKgFormatted}. Confirme qual valor é o correto.`,
         'warning',
         7000
       );
@@ -1282,7 +1284,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       }
       if (isAguardandoFiscal) {
         if (hasUnresolvedWeightDivergence) {
-          showToast(`⚠️ Divergência de Peso pendente: Confirme se o peso correto é o do Ticket (${weightDivergenceInfo?.ticketTon.toFixed(2)}t) ou do CT-e (${weightDivergenceInfo?.cteTon.toFixed(2)}t) antes de avançar.`, 'warning');
+          showToast(`⚠️ Divergência de Peso pendente: Confirme se o peso correto é o do Ticket (${weightDivergenceInfo?.ticketTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) ou do CT-e (${weightDivergenceInfo?.cteTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) antes de avançar.`, 'warning');
           setError('É obrigatório confirmar qual valor de Toneladas é o correto antes de avançar.');
           return;
         }
@@ -1303,8 +1305,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         }
       } else if (weightDivergenceInfo) {
         const confirmMsg = `⚠️ ATENÇÃO: DIVERGÊNCIA DE PESO DETECTADA!\n\n` +
-          `• Peso no Ticket de Carregamento: ${weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton (${(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
-          `• Peso no CT-e: ${weightDivergenceInfo.cteWeightTon.toFixed(2)} ton (${(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
+          `• Peso no Ticket de Carregamento: ${weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton (${(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
+          `• Peso no CT-e: ${weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton (${(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)\n` +
           `• Diferença: ${weightDivergenceInfo.diffFormatted} (${weightDivergenceInfo.diffKgFormatted})\n\n` +
           `Deseja prosseguir e salvar mesmo com a divergência de peso informada?`;
         if (!window.confirm(confirmMsg)) {
@@ -2052,7 +2054,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       <div className="bg-white/90 dark:bg-gray-800/90 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
                         <span className="text-gray-500 dark:text-gray-400 block font-medium">Ticket de Carregamento:</span>
                         <span className="text-base font-bold text-gray-900 dark:text-white">
-                          {weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton{' '}
+                          {weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton{' '}
                           <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                             ({(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)
                           </span>
@@ -2061,16 +2063,65 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       <div className="bg-white/90 dark:bg-gray-800/90 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
                         <span className="text-gray-500 dark:text-gray-400 block font-medium">CT-e Emitido:</span>
                         <span className="text-base font-bold text-amber-700 dark:text-amber-400">
-                          {weightDivergenceInfo.cteWeightTon.toFixed(2)} ton{' '}
+                          {weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton{' '}
                           <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
                             ({(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)
                           </span>
                         </span>
                       </div>
                     </div>
-                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2 italic">
-                      * Verifique se houve erro de digitação no ticket ou se o CT-e foi emitido com peso divergente antes de concluir o envio.
-                    </p>
+                    <div className="mt-2.5 pt-2 border-t border-amber-200/80 dark:border-amber-800/60 flex items-center justify-between flex-wrap gap-2">
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400 italic">
+                        * O peso no sistema é exibido com 3 casas decimais ({weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton). Se o peso do CT-e foi lido incorretamente, ajuste ao lado.
+                      </p>
+                      {!isEditingCteWeight ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualCteWeightInput(weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }));
+                            setIsEditingCteWeight(true);
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold bg-amber-200 hover:bg-amber-300 dark:bg-amber-800 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 rounded-lg flex items-center gap-1 transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Corrigir Peso do CT-e</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5 animate-fade-in">
+                          <input
+                            type="text"
+                            value={manualCteWeightInput}
+                            onChange={(e) => setManualCteWeightInput(e.target.value)}
+                            placeholder="ex: 45,960"
+                            className="px-2 py-1 text-xs border border-amber-400 dark:border-amber-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white w-24 font-bold"
+                          />
+                          <span className="text-[10px] text-amber-800 dark:text-amber-200 font-semibold">ton</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const num = parseWeightKg(manualCteWeightInput);
+                              if (num && num > 0) {
+                                setCteExtractedWeightKg(num);
+                                setIsEditingCteWeight(false);
+                                showToast(`Peso do CT-e atualizado para ${(num / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton!`, 'success');
+                              } else {
+                                showToast('Informe um peso válido.', 'warning');
+                              }
+                            }}
+                            className="px-2 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors"
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingCteWeight(false)}
+                            className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:underline"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2144,7 +2195,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
                               <span className="text-gray-500 dark:text-gray-400 block font-medium">Ticket de Carregamento (Sistema):</span>
                               <span className="text-base font-bold text-gray-900 dark:text-white">
-                                {weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton{' '}
+                                {weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton{' '}
                                 <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                                   ({(weightDivergenceInfo.ticketWeightTon * 1000).toLocaleString('pt-BR')} kg)
                                 </span>
@@ -2153,7 +2204,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
                               <span className="text-gray-500 dark:text-gray-400 block font-medium">CT-e Emitido (Documento):</span>
                               <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
-                                {weightDivergenceInfo.cteWeightTon.toFixed(2)} ton{' '}
+                                {weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton{' '}
                                 <span className="text-xs font-normal text-indigo-500 dark:text-indigo-300">
                                   ({(weightDivergenceInfo.cteWeightTon * 1000).toLocaleString('pt-BR')} kg)
                                 </span>
@@ -2167,7 +2218,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                               type="button"
                               onClick={() => {
                                 setWeightDecision('use_cte');
-                                showToast(`✓ Confirmado: Peso das toneladas efetivadas corrigido para ${weightDivergenceInfo.cteWeightTon.toFixed(2)} ton (CT-e).`, 'success');
+                                showToast(`✓ Confirmado: Peso das toneladas efetivadas corrigido para ${weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton (CT-e).`, 'success');
                               }}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                 weightDecision === 'use_cte'
@@ -2176,13 +2227,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                               }`}
                             >
                               <Check className="w-4 h-4" />
-                              <span>✓ Corrigir para Peso do CT-e ({weightDivergenceInfo.cteWeightTon.toFixed(2)}t)</span>
+                              <span>✓ Corrigir para Peso do CT-e ({weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t)</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => {
                                 setWeightDecision('keep_system');
-                                showToast(`✓ Confirmado: Mantido o peso do Ticket de Carregamento (${weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton).`, 'info');
+                                showToast(`✓ Confirmado: Mantido o peso do Ticket de Carregamento (${weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton).`, 'info');
                               }}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                 weightDecision === 'keep_system'
@@ -2190,18 +2241,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                   : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
                               }`}
                             >
-                              <span>Manter Peso do Ticket ({weightDivergenceInfo.ticketWeightTon.toFixed(2)}t)</span>
+                              <span>Manter Peso do Ticket ({weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t)</span>
                             </button>
                           </div>
 
                           {weightDecision === 'use_cte' && (
                             <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                              ✓ O peso efetivado será atualizado automaticamente para {weightDivergenceInfo.cteWeightTon.toFixed(2)} ton ao salvar.
+                              ✓ O peso efetivado será atualizado automaticamente para {weightDivergenceInfo.cteWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton ao salvar.
                             </p>
                           )}
                           {weightDecision === 'keep_system' && (
                             <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
-                              ✓ O peso original do sistema ({weightDivergenceInfo.ticketWeightTon.toFixed(2)} ton) será preservado.
+                              ✓ O peso original do sistema ({weightDivergenceInfo.ticketWeightTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ton) será preservado.
                             </p>
                           )}
                         </div>

@@ -6,7 +6,7 @@ import { useToast } from '../hooks/useToast';
 import { toCargo } from '../lib/db';
 import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
 import { autoFormatInput } from '../utils/formatters';
-import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap, Building2, User as UserIcon, Search, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, X, RefreshCw, ShieldCheck, Zap, Building2, User as UserIcon, Search, Loader2, Edit3 } from 'lucide-react';
 import { calculateCargoBalance } from '../utils/cargoBalance';
 
 
@@ -59,6 +59,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
   const [anttModality, setAnttModality] = useState<AnttModality | ''>('');
   const [anttOwnerIdentifier, setAnttOwnerIdentifier] = useState('');
   const [etcTaxRegime, setEtcTaxRegime] = useState<EtcTaxRegime | ''>('');
+  const [isManualEtcRegime, setIsManualEtcRegime] = useState(false);
   const [driverFreightType, setDriverFreightType] = useState<'PJ' | 'PF'>('PJ');
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
   const [cnpjSearchResult, setCnpjSearchResult] = useState<{ razaoSocial?: string; status?: string; regimeFound?: string } | null>(null);
@@ -707,6 +708,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       setAnttModality(AnttModality.ETC);
       setEtcTaxRegime(detectedRegime);
       setDriverFreightType('PJ');
+      setIsManualEtcRegime(false);
 
       const companyName = data.razao_social || data.nome_fantasia || '';
       setCnpjSearchResult({
@@ -723,9 +725,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       showToast(`CNPJ Identificado: ${companyName} (${desc})`, 'success');
     } catch (err: any) {
       console.warn('Erro na busca do CNPJ:', err);
-      setEtcTaxRegime('');
-      setCnpjSearchResult(null);
-      showToast(`CNPJ não localizado na Receita Federal: ${err.message || 'Verifique o CNPJ digitado e tente novamente'}.`, 'error');
+      setIsManualEtcRegime(true);
+      showToast(`CNPJ não localizado na Receita Federal: ${err.message || 'Verifique o CNPJ digitado'}. Você pode selecionar o regime tributário manualmente abaixo.`, 'warning');
     } finally {
       setIsSearchingCnpj(false);
     }
@@ -1034,7 +1035,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
 
     if (anttModality === AnttModality.ETC && !etcTaxRegime) {
-        showToast('Para a modalidade ETC (Pessoa Jurídica), realize a consulta do CNPJ na Receita Federal para identificar o Regime Tributário.', 'warning');
+        showToast('Para a modalidade ETC (Pessoa Jurídica), realize a consulta do CNPJ ou selecione o Regime Tributário manualmente.', 'warning');
         return;
     }
 
@@ -1732,6 +1733,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                               onClick={() => {
                                 setAnttModality(AnttModality.TAC);
                                 setEtcTaxRegime('');
+                                setIsManualEtcRegime(false);
                                 setCnpjSearchResult(null);
                                 if (!anttOwnerIdentifier || anttOwnerIdentifier.replace(/\D/g, '').length > 11) {
                                   setAnttOwnerIdentifier(driverCpf || '');
@@ -1771,6 +1773,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                 if (anttOwnerIdentifier.replace(/\D/g, '').length === 11) {
                                   setAnttOwnerIdentifier('');
                                   setEtcTaxRegime('');
+                                  setIsManualEtcRegime(false);
                                   setCnpjSearchResult(null);
                                 }
                               }}
@@ -1919,13 +1922,54 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                     />
                                 </div>
 
-                                {/* Regime Tributário (ETC) - Definido exclusivamente pela consulta */}
+                                {/* Regime Tributário (ETC) - Consulta ou Informação Manual */}
                                 <div className="space-y-1.5 animate-fade-in">
-                                    <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                                        Regime Tributário (ETC) <span className="text-red-500">*</span>
-                                    </label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                                            Regime Tributário (ETC) <span className="text-red-500">*</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsManualEtcRegime(!isManualEtcRegime)}
+                                            className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
+                                        >
+                                            {isManualEtcRegime ? '🔍 Consultar CNPJ' : '✏️ Informar Manualmente'}
+                                        </button>
+                                    </div>
 
-                                    {etcTaxRegime ? (
+                                    {isManualEtcRegime ? (
+                                        <div className="space-y-2 p-3 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl">
+                                            <p className="text-[11px] font-bold text-amber-900 dark:text-amber-200">
+                                                Selecione o Regime Tributário da transportadora:
+                                            </p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {[
+                                                    { regime: EtcTaxRegime.SimplesNacional, label: 'Simples Nacional' },
+                                                    { regime: EtcTaxRegime.LucroPresumido, label: 'Lucro Presumido' },
+                                                    { regime: EtcTaxRegime.LucroReal, label: 'Lucro Real' },
+                                                    { regime: EtcTaxRegime.MEI, label: 'MEI' },
+                                                ].map((item) => (
+                                                    <button
+                                                        key={item.regime}
+                                                        type="button"
+                                                        onClick={() => setEtcTaxRegime(item.regime)}
+                                                        className={`p-2 rounded-lg border text-center transition-all ${
+                                                            etcTaxRegime === item.regime
+                                                                ? 'border-emerald-600 bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-500/20'
+                                                                : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-400 font-semibold'
+                                                        }`}
+                                                    >
+                                                        <div className="text-xs leading-tight">{item.label}</div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {etcTaxRegime && (
+                                                <p className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                                                    ✓ Regime selecionado: <strong>{etcTaxRegime}</strong> (Informado Manualmente)
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : etcTaxRegime ? (
                                         <div className="p-3 bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-700/60 rounded-xl flex items-center justify-between shadow-sm">
                                             <div className="flex items-center gap-2.5">
                                                 <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
@@ -1940,19 +1984,38 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200">
-                                                Confirmado
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-200">
+                                                    Confirmado
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsManualEtcRegime(true)}
+                                                    className="text-[10px] text-emerald-700 dark:text-emerald-300 hover:underline font-semibold"
+                                                >
+                                                    Alterar
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl flex items-start gap-2 text-amber-800 dark:text-amber-200 text-xs">
-                                            <span className="text-sm shrink-0">ℹ️</span>
-                                            <div>
-                                                <p className="font-semibold text-[11px]">Identificação Automática Obrigatória</p>
-                                                <p className="text-[10px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
-                                                    Informe o CNPJ acima e clique em <strong>Consultar</strong> para obter o regime tributário oficial da empresa.
-                                                </p>
+                                        <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-xl space-y-2 text-xs">
+                                            <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+                                                <span className="text-sm shrink-0">ℹ️</span>
+                                                <div>
+                                                    <p className="font-semibold text-[11px]">Identificação do Regime Tributário</p>
+                                                    <p className="text-[10px] text-amber-700/90 dark:text-amber-300/80 mt-0.5">
+                                                        Informe o CNPJ acima e clique em <strong>Consultar</strong>. Se o serviço da Receita estiver fora do ar ou o CNPJ não for localizado, você pode informar manualmente.
+                                                    </p>
+                                                </div>
                                             </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsManualEtcRegime(true)}
+                                                className="w-full py-2 px-3 bg-amber-200 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-950 dark:text-amber-100 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                                            >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                                <span>Não localizou na Receita? Informar Regime Manualmente</span>
+                                            </button>
                                         </div>
                                     )}
                                 </div>

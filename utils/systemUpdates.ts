@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_09_v2_70_27',
+    version: 'v2.70.27',
+    date: '09/10/2026',
+    title: 'Preenchimento Manual de Regime na ANTT e Ajuste de Precisão nas Casas Decimais de Peso (CT-e)',
+    summary: 'Inclusão da opção de informar o Regime Tributário manualmente na modalidade ETC da ANTT caso a consulta do CNPJ na Receita Federal falhe ou fique indisponível, além da padronização de exibição em 3 casas decimais para pesagens em toneladas (45,960 ton) e correção no leitor de CT-e XML priorizando o peso bruto real da carga sobre o peso base de cálculo e MDF-e.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Informar Regime Tributário da ANTT Manualmente',
+        description: 'Na Solicitação de Embarque (modalidade ETC), caso o botão "Consultar" não localize o CNPJ ou a Receita Federal esteja fora do ar, agora é possível selecionar manualmente o Regime Tributário (Simples Nacional, Lucro Presumido, Lucro Real ou MEI) sem travar o cadastro.'
+      },
+      {
+        category: 'improvement',
+        title: 'Casas Decimais de Toneladas Padronizadas (3 Decimais)',
+        description: 'Padronizada a visualização de pesagens em toneladas para 3 casas decimais (ex: 45,960 ton), alinhando a visão do sistema com a pesagem de balança e o CT-e sem cortes indevidos de zeros à direita.'
+      },
+      {
+        category: 'fix',
+        title: 'Blindagem da Leitura de Peso do CT-e vs MDF-e',
+        description: 'Aprimorado o parser fiscal do CT-e XML para priorizar o Peso Bruto/Aferido da carga sobre o peso de base de cálculo tarifária e impedindo que o peso do MDF-e anexado substitua o peso do CT-e.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ajuste Inline de Peso no Card de Divergência',
+        description: 'Adicionado botão rápido "Corrigir Peso do CT-e" no alerta de divergência de peso para permitir ao operador informar ou ajustar o valor correto imediatamente em caso de leituras divergentes de documentos.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_09_v2_70_26',
     version: 'v2.70.26',
     date: '09/10/2026',
