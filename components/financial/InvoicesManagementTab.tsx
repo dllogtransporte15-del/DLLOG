@@ -391,8 +391,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   // Função utilitária para formatar máscara monetária ao sair do campo (onBlur)
   const handleFormatAmountBlur = (
     val: string,
-    setter: (v: string) => void,
-    mirrorSetter?: (v: string) => void
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    mirrorSetter?: React.Dispatch<React.SetStateAction<string>>
   ) => {
     if (!val || !val.trim()) return;
     const num = parseBrazilianCurrency(val);

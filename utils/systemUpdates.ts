@@ -21,6 +21,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_09_v2_70_26',
+    version: 'v2.70.26',
+    date: '09/10/2026',
+    title: 'Correção de Tipagem no Formulário de Notas Fiscais',
+    summary: 'Ajuste de tipagem TypeScript nos setters de formatação de valores monetários das notas fiscais.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Tipagem de Atualizadores de Estado (onBlur)',
+        description: 'Corrigida a assinatura dos setters na função utilitária handleFormatAmountBlur para aceitar callbacks de estado funcional (SetStateAction), resolvendo o erro de compilação TypeScript.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_08_v2_70_25',
     version: 'v2.70.25',
     date: '08/10/2026',
