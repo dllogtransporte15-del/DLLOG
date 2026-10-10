@@ -111,6 +111,7 @@ export interface DetailedDocumentData {
     aliquotaCofins?: number;
     valorPisCofinsFederal?: number;
     valorTributosFederais?: number;
+    valorTotalNfe?: number;
     formaPagamento?: string;
     dadosBancarios?: string;
     chavePix?: string;
@@ -133,6 +134,12 @@ export interface DetailedDocumentData {
     tipo: string;
     chaveAcesso?: string;
     numero?: string;
+    serie?: string;
+  }>;
+  notasFiscais?: Array<{
+    numero?: string;
+    chaveAcesso?: string;
+    valor?: number;
     serie?: string;
   }>;
 }
@@ -622,7 +629,7 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
   if (mCiot && mCiot[1]) {
     const rawVal = mCiot[1].trim();
     const digitsOnly = rawVal.replace(/\D/g, '');
-    res.ciot = digitsOnly.length >= 16 ? digitsOnly.slice(0, 12) : rawVal;
+    res.ciot = digitsOnly || rawVal;
   }
 
   // 6. CFOP e Natureza da Operação
@@ -1348,26 +1355,34 @@ export async function extractFiscalDocNumbers(
           }
         }
         if (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) {
-          if (detailed.docNumber && !result.nfeNumber) result.nfeNumber = detailed.docNumber;
+          if (detailed.docNumber) {
+            if (!result.nfeNumber) {
+              result.nfeNumber = detailed.docNumber;
+            } else if (!result.nfeNumber.includes(detailed.docNumber)) {
+              result.nfeNumber = `${result.nfeNumber}, ${detailed.docNumber}`;
+            }
+          }
         }
         const isMdfe = detailed.documentType === 'MDF-e' || isMdfeDocType(docType);
         if (isMdfe) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
           if (detailed.ciot) {
-            // Prioridade máxima ao CIOT do MDF-e (conforme SEFAZ DAMDFE de 12 dígitos)
-            const cleanDigits = detailed.ciot.replace(/\D/g, '');
-            result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
+            result.ciotNumber = detailed.ciot.replace(/\D/g, '') || detailed.ciot;
           }
         }
         if (detailed.ciot && !result.ciotNumber) {
-          const cleanDigits = detailed.ciot.replace(/\D/g, '');
-          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
+          result.ciotNumber = detailed.ciot.replace(/\D/g, '') || detailed.ciot;
         } else if ((detailed.documentType === 'CIOT' || docType.toUpperCase().includes('CIOT')) && detailed.docNumber && !result.ciotNumber) {
-          const cleanDigits = detailed.docNumber.replace(/\D/g, '');
-          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.docNumber;
+          result.ciotNumber = detailed.docNumber.replace(/\D/g, '') || detailed.docNumber;
         }
-        if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
-          result.nfeValue = detailed.carga.valorMercadoria;
+        if (detailed.carga?.valorMercadoria !== undefined && detailed.carga.valorMercadoria > 0) {
+          if (detailed.documentType === 'CT-e' || detailed.documentType === 'MDF-e') {
+            result.nfeValue = detailed.carga.valorMercadoria;
+          } else if (result.nfeValue === undefined) {
+            result.nfeValue = detailed.carga.valorMercadoria;
+          } else {
+            result.nfeValue = Number((result.nfeValue + detailed.carga.valorMercadoria).toFixed(2));
+          }
         }
         if (docType.toLowerCase().includes('ordem') || docType.toLowerCase().includes('oc')) {
           if (detailed.rawText) {
@@ -1450,26 +1465,34 @@ export async function extractFiscalDocNumbersFromUrls(
           }
         }
         if (detailed.documentType === 'Nota Fiscal' || isNfeDocType(docType)) {
-          if (detailed.docNumber && !result.nfeNumber) result.nfeNumber = detailed.docNumber;
+          if (detailed.docNumber) {
+            if (!result.nfeNumber) {
+              result.nfeNumber = detailed.docNumber;
+            } else if (!result.nfeNumber.includes(detailed.docNumber)) {
+              result.nfeNumber = `${result.nfeNumber}, ${detailed.docNumber}`;
+            }
+          }
         }
         const isMdfe = detailed.documentType === 'MDF-e' || isMdfeDocType(docType);
         if (isMdfe) {
           if (detailed.docNumber && !result.mdfeNumber) result.mdfeNumber = detailed.docNumber;
           if (detailed.ciot) {
-            // Prioridade máxima ao CIOT do MDF-e (conforme SEFAZ DAMDFE de 12 dígitos)
-            const cleanDigits = detailed.ciot.replace(/\D/g, '');
-            result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
+            result.ciotNumber = detailed.ciot.replace(/\D/g, '') || detailed.ciot;
           }
         }
         if (detailed.ciot && !result.ciotNumber) {
-          const cleanDigits = detailed.ciot.replace(/\D/g, '');
-          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.ciot;
+          result.ciotNumber = detailed.ciot.replace(/\D/g, '') || detailed.ciot;
         } else if ((detailed.documentType === 'CIOT' || docType.toUpperCase().includes('CIOT')) && detailed.docNumber && !result.ciotNumber) {
-          const cleanDigits = detailed.docNumber.replace(/\D/g, '');
-          result.ciotNumber = cleanDigits.length >= 16 ? cleanDigits.slice(0, 12) : detailed.docNumber;
+          result.ciotNumber = detailed.docNumber.replace(/\D/g, '') || detailed.docNumber;
         }
-        if (detailed.carga?.valorMercadoria !== undefined && result.nfeValue === undefined) {
-          result.nfeValue = detailed.carga.valorMercadoria;
+        if (detailed.carga?.valorMercadoria !== undefined && detailed.carga.valorMercadoria > 0) {
+          if (detailed.documentType === 'CT-e' || detailed.documentType === 'MDF-e') {
+            result.nfeValue = detailed.carga.valorMercadoria;
+          } else if (result.nfeValue === undefined) {
+            result.nfeValue = detailed.carga.valorMercadoria;
+          } else {
+            result.nfeValue = Number((result.nfeValue + detailed.carga.valorMercadoria).toFixed(2));
+          }
         }
         if (docType.toLowerCase().includes('ordem') || docType.toLowerCase().includes('oc')) {
           if (detailed.rawText) {

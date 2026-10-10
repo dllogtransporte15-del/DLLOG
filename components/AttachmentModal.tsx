@@ -332,6 +332,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const { showToast } = useToast();
 
   const handleApplyExtractedData = (extracted: DetailedDocumentData) => {
+    // 1. Atualiza estados locais do modal/etapa
     if (extracted.financeiro?.valorPedagio !== undefined) {
       setTollValue(extracted.financeiro.valorPedagio);
     }
@@ -362,7 +363,96 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         }
       }
     }
-    showToast('Dados lidos do documento aplicados no formulário!', 'success');
+
+    // 2. Persistência direta no Embarque via onUpdateShipmentData (garante que não perca os dados)
+    const patch: Partial<Shipment> = {};
+    const updatedDocs: Record<string, any> = { ...(shipment.documents || {}) };
+    const updatedRealProfit: Record<string, any> = { ...(shipment.realProfitData || {}) };
+    let hasShipmentChanges = false;
+
+    // Valor da NF-e / Mercadoria
+    const detectedNfeValue = extracted.financeiro?.valorTotalNfe || extracted.carga?.valorMercadoria;
+    if (detectedNfeValue !== undefined && detectedNfeValue > 0) {
+      patch.nfeValue = detectedNfeValue;
+      updatedRealProfit.invoiceValue = detectedNfeValue;
+      updatedRealProfit.isInvoiceValueManual = true; // Trava contra sobrescrita por outros anexos
+      updatedDocs.nfe_value = detectedNfeValue;
+      updatedDocs.valor_mercadoria = detectedNfeValue;
+      hasShipmentChanges = true;
+    }
+
+    // Número da NF-e
+    const detectedNfeNumber = (extracted.documentType === 'Nota Fiscal' || selectedDocForDetails?.docType?.toLowerCase().includes('nota'))
+      ? (extracted.docNumber || extracted.notasFiscais?.[0]?.numero)
+      : (extracted.notasFiscais?.[0]?.numero);
+    if (detectedNfeNumber) {
+      patch.nfeNumber = String(detectedNfeNumber);
+      updatedDocs.nfe_number = String(detectedNfeNumber);
+      hasShipmentChanges = true;
+    }
+
+    // CT-e
+    const isCteDoc = extracted.documentType === 'CT-e' || selectedDocForDetails?.docType?.toLowerCase().includes('ct-e') || selectedDocForDetails?.docType?.toLowerCase().includes('cte');
+    if (isCteDoc) {
+      if (extracted.docNumber) {
+        patch.cteNumber = extracted.docNumber;
+        updatedDocs.cte_number = extracted.docNumber;
+        hasShipmentChanges = true;
+      }
+      if (extracted.emissionDate) {
+        patch.cteEmissionDate = extracted.emissionDate;
+        updatedDocs.cte_emission_date = extracted.emissionDate;
+        hasShipmentChanges = true;
+      }
+      if (extracted.ciot) {
+        patch.ciotNumber = extracted.ciot;
+        patch.ciot = extracted.ciot;
+        updatedDocs.ciot = extracted.ciot;
+        updatedDocs.ciot_number = extracted.ciot;
+        hasShipmentChanges = true;
+      }
+    }
+
+    // MDF-e
+    const isMdfeDoc = extracted.documentType === 'MDF-e' || selectedDocForDetails?.docType?.toLowerCase().includes('mdf-e') || selectedDocForDetails?.docType?.toLowerCase().includes('mdfe');
+    if (isMdfeDoc) {
+      if (extracted.docNumber) {
+        patch.mdfeNumber = extracted.docNumber;
+        updatedDocs.mdfe_number = extracted.docNumber;
+        hasShipmentChanges = true;
+      }
+      if (extracted.ciot) {
+        patch.ciotNumber = extracted.ciot;
+        patch.ciot = extracted.ciot;
+        updatedDocs.ciot = extracted.ciot;
+        updatedDocs.ciot_number = extracted.ciot;
+        hasShipmentChanges = true;
+      }
+    }
+
+    // Pedágio
+    if (extracted.financeiro?.valorPedagio !== undefined && extracted.financeiro.valorPedagio >= 0) {
+      patch.tollValue = extracted.financeiro.valorPedagio;
+      updatedDocs.toll_value = extracted.financeiro.valorPedagio;
+      updatedDocs.valor_pedagio = extracted.financeiro.valorPedagio;
+      updatedRealProfit.toll = extracted.financeiro.valorPedagio;
+      hasShipmentChanges = true;
+    }
+
+    // Chave PIX
+    if (extracted.financeiro?.chavePix) {
+      patch.pixKey = extracted.financeiro.chavePix;
+      updatedDocs.pix_key = extracted.financeiro.chavePix;
+      hasShipmentChanges = true;
+    }
+
+    if (hasShipmentChanges && onUpdateShipmentData) {
+      patch.documents = updatedDocs;
+      patch.realProfitData = updatedRealProfit as any;
+      onUpdateShipmentData(shipment.id, patch);
+    }
+
+    showToast('Dados lidos do documento aplicados e salvos no embarque!', 'success');
   };
 
   const mapRef = useRef<any>(null);
@@ -774,8 +864,26 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       let parsedToll: number | undefined;
       let parsedSuspensionPercent: number | undefined;
 
+      const isExcludedDocCategory = (cat: string) => {
+        const lower = (cat || '').toLowerCase();
+        return (
+          lower.includes('cadastro') ||
+          lower.includes('cnh') ||
+          lower.includes('adiantamento') ||
+          lower.includes('agendamento') ||
+          lower.includes('descarga') ||
+          lower.includes('saldo') ||
+          lower.includes('seguradora') ||
+          lower.includes('liberação') ||
+          lower.includes('liberacao') ||
+          lower.includes('ordem') ||
+          lower.includes('veículo') ||
+          lower.includes('veiculo')
+        );
+      };
+
       for (const [docType, files] of Object.entries(filesToProcess)) {
-        if (!Array.isArray(files)) continue;
+        if (!Array.isArray(files) || isExcludedDocCategory(docType)) continue;
         for (const file of files) {
           try {
             const ext = await extractDetailedDocData(file, docType);
@@ -790,10 +898,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               docType.toLowerCase().includes('ct-e') ||
               docType.toLowerCase().includes('mdfe');
 
+            // Se for CT-e de outro número que não do embarque, não usar
+            if (ext.documentType === 'CT-e' && shipment.cteNumber && ext.docNumber && String(ext.docNumber) !== String(shipment.cteNumber)) {
+              continue;
+            }
+
             if (ext.financeiro?.valorPisCofinsFederal) parsedFederalTax = ext.financeiro.valorPisCofinsFederal;
             if (ext.financeiro?.valorPis) parsedPis = ext.financeiro.valorPis;
             if (ext.financeiro?.valorCofins) parsedCofins = ext.financeiro.valorCofins;
-            if (ext.carga?.valorMercadoria) parsedNfeValue = ext.carga.valorMercadoria;
+            const docNfeVal = ext.financeiro?.valorTotalNfe || ext.carga?.valorMercadoria;
+            if (docNfeVal) parsedNfeValue = docNfeVal;
             if (isTransport && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
           } catch {
             // ignore
@@ -803,6 +917,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
       if (shipment.documents) {
         for (const [key, val] of Object.entries(shipment.documents)) {
+          if (isExcludedDocCategory(key)) continue;
           const urls = Array.isArray(val) ? val : [val];
           for (const u of urls) {
             if (typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) {
@@ -819,10 +934,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   key.toLowerCase().includes('ct-e') ||
                   key.toLowerCase().includes('mdfe');
 
+                // Se for CT-e de outro número que não do embarque, ignorar
+                if (ext.documentType === 'CT-e' && shipment.cteNumber && ext.docNumber && String(ext.docNumber) !== String(shipment.cteNumber)) {
+                  continue;
+                }
+
                 if (!parsedFederalTax && ext.financeiro?.valorPisCofinsFederal) parsedFederalTax = ext.financeiro.valorPisCofinsFederal;
                 if (!parsedPis && ext.financeiro?.valorPis) parsedPis = ext.financeiro.valorPis;
                 if (!parsedCofins && ext.financeiro?.valorCofins) parsedCofins = ext.financeiro.valorCofins;
-                if (!parsedNfeValue && ext.carga?.valorMercadoria) parsedNfeValue = ext.carga.valorMercadoria;
+                const docNfeVal = ext.financeiro?.valorTotalNfe || ext.carga?.valorMercadoria;
+                if (!parsedNfeValue && docNfeVal) parsedNfeValue = docNfeVal;
                 if (isTransport && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
                 if (ext.suspensaoPercentual && ext.suspensaoPercentual > 0) parsedSuspensionPercent = ext.suspensaoPercentual;
               } catch {

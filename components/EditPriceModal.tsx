@@ -21,8 +21,11 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
 
   useEffect(() => {
     if (shipment && isOpen) {
-      const total = shipment.driverFreightValue;
-      const perTon = shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? total / shipment.shipmentTonnage : 0);
+      const ton = shipment.shipmentTonnage || 0;
+      const perTon = shipment.driverFreightRateSnapshot || (ton > 0 ? shipment.driverFreightValue / ton : 0);
+      const total = (ton > 0 && perTon > 0)
+        ? Number((perTon * ton).toFixed(2))
+        : shipment.driverFreightValue;
       const companyRate = shipment.companyFreightRateSnapshot || 0;
       setTotalPrice(total);
       setPricePerTon(perTon);
@@ -33,14 +36,14 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
   const handleTotalPriceChange = (newTotal: number) => {
     setTotalPrice(newTotal);
     if (shipment && shipment.shipmentTonnage > 0) {
-      setPricePerTon(newTotal / shipment.shipmentTonnage);
+      setPricePerTon(Number((newTotal / shipment.shipmentTonnage).toFixed(2)));
     }
   };
 
   const handlePricePerTonChange = (newPerTon: number) => {
     setPricePerTon(newPerTon);
-    if (shipment) {
-      setTotalPrice(newPerTon * shipment.shipmentTonnage);
+    if (shipment && shipment.shipmentTonnage > 0) {
+      setTotalPrice(Number((newPerTon * shipment.shipmentTonnage).toFixed(2)));
     }
   };
 
@@ -50,8 +53,12 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
 
   const handleSave = () => {
     if (!isAdmin) return;
+    const computedTotal = (shipment && shipment.shipmentTonnage > 0 && pricePerTon > 0)
+      ? Number((pricePerTon * shipment.shipmentTonnage).toFixed(2))
+      : totalPrice;
+
     onSave({ 
-      newTotal: totalPrice, 
+      newTotal: computedTotal, 
       newRate: pricePerTon, 
       newCompanyRate: canEditCompanyPrice ? companyPricePerTon : undefined 
     });

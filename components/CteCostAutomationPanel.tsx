@@ -726,6 +726,110 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     }
   };
 
+  // Valor da NF (Mercadoria) editável
+  const initialCustomInvoiceValue = shipment.nfeValue !== undefined 
+    ? shipment.nfeValue 
+    : (shipment.realProfitData?.invoiceValue !== undefined 
+        ? shipment.realProfitData.invoiceValue 
+        : ((shipment.documents as any)?.nfe_value !== undefined 
+            ? Number((shipment.documents as any).nfe_value) 
+            : ((shipment.documents as any)?.valor_mercadoria !== undefined 
+                ? Number((shipment.documents as any).valor_mercadoria) 
+                : undefined)));
+
+  const [customInvoiceValue, setCustomInvoiceValue] = React.useState<number | undefined>(initialCustomInvoiceValue);
+  const [isEditingInvoiceValue, setIsEditingInvoiceValue] = React.useState(false);
+  const [invoiceValueInput, setInvoiceValueInput] = React.useState<string>('');
+  const [isSavingInvoiceValue, setIsSavingInvoiceValue] = React.useState(false);
+  const [justSavedInvoiceValue, setJustSavedInvoiceValue] = React.useState(false);
+
+  React.useEffect(() => {
+    const currentVal = shipment.nfeValue !== undefined 
+      ? shipment.nfeValue 
+      : (shipment.realProfitData?.invoiceValue !== undefined 
+          ? shipment.realProfitData.invoiceValue 
+          : ((shipment.documents as any)?.nfe_value !== undefined 
+              ? Number((shipment.documents as any).nfe_value) 
+              : ((shipment.documents as any)?.valor_mercadoria !== undefined 
+                  ? Number((shipment.documents as any).valor_mercadoria) 
+                  : undefined)));
+    setCustomInvoiceValue(currentVal);
+  }, [shipment.nfeValue, shipment.realProfitData?.invoiceValue, shipment.documents]);
+
+  const handleStartEditInvoiceValue = () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    const currentNum = customInvoiceValue !== undefined ? customInvoiceValue : (autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0);
+    setInvoiceValueInput(currentNum > 0 ? String(currentNum) : '');
+    setIsEditingInvoiceValue(true);
+  };
+
+  const handleSaveInvoiceValue = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setIsSavingInvoiceValue(true);
+    try {
+      const parsedVal = parseCurrencyInput(invoiceValueInput);
+      const validNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : Number(parsedVal.toFixed(2));
+      
+      setCustomInvoiceValue(validNum);
+      setIsEditingInvoiceValue(false);
+      setJustSavedInvoiceValue(true);
+      setTimeout(() => setJustSavedInvoiceValue(false), 3000);
+
+      const oldVal = customInvoiceValue || shipment.nfeValue || 0;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: currentUser?.id || 'system',
+        timestamp: new Date().toISOString(),
+        description: `Valor da NF-e editado manualmente: de "${formatBrl(oldVal)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        invoiceValue: validNum,
+        isInvoiceValueManual: true,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        nfe_value: validNum,
+        valor_mercadoria: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        nfeValue: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          nfeValue: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Valor da NF-e atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar Valor da NF-e:', err);
+      showToast('Erro ao salvar Valor da NF-e.', 'error');
+    } finally {
+      setIsSavingInvoiceValue(false);
+    }
+  };
+
   // 1. CTe Frete Bruto / Frete Empresa
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const parsedPropTonnage = loadedTonnage !== undefined && loadedTonnage !== '' ? Number(loadedTonnage) : undefined;
@@ -1159,8 +1263,28 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   const syncDocs = React.useCallback(async () => {
     if (!shipment.documents) return;
+
+    const isExcludedDocCategory = (cat: string) => {
+      const lower = (cat || '').toLowerCase();
+      return (
+        lower.includes('cadastro') ||
+        lower.includes('cnh') ||
+        lower.includes('adiantamento') ||
+        lower.includes('agendamento') ||
+        lower.includes('descarga') ||
+        lower.includes('saldo') ||
+        lower.includes('seguradora') ||
+        lower.includes('liberação') ||
+        lower.includes('liberacao') ||
+        lower.includes('ordem') ||
+        lower.includes('veículo') ||
+        lower.includes('veiculo')
+      );
+    };
+
     const docEntries: Array<{ url: string; category: string }> = [];
     for (const [key, val] of Object.entries(shipment.documents)) {
+      if (isExcludedDocCategory(key)) continue;
       if (Array.isArray(val)) {
         for (const u of val) {
           if (typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) {
@@ -1179,6 +1303,16 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     for (const { url, category } of docEntries) {
       try {
         const ext = await extractDetailedDocData(url, category);
+
+        // Se for CT-e de outro número que não do embarque (ex: anexo de outro transporte), ignorar
+        if (ext.documentType === 'CT-e' && shipment.cteNumber && ext.docNumber && String(ext.docNumber) !== String(shipment.cteNumber)) {
+          continue;
+        }
+        // Se for MDF-e de outro número que não do embarque, ignorar
+        if (ext.documentType === 'MDF-e' && shipment.mdfeNumber && ext.docNumber && String(ext.docNumber) !== String(shipment.mdfeNumber)) {
+          continue;
+        }
+
         const isTransportDoc = 
           ext.documentType === 'Carta Frete' || 
           ext.documentType === 'CT-e' || 
@@ -1198,10 +1332,24 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             setAutoToll(ext.financeiro.valorPedagio);
           }
         }
-        if (ext.carga?.valorMercadoria !== undefined && ext.carga.valorMercadoria > 0) {
-          detectedInvoiceValue = ext.carga.valorMercadoria;
-          setAutoInvoiceValue(ext.carga.valorMercadoria);
+
+        const docNfeVal = ext.financeiro?.valorTotalNfe || ext.carga?.valorMercadoria;
+        if (docNfeVal !== undefined && docNfeVal > 0) {
+          if (ext.documentType === 'Nota Fiscal' || category.toLowerCase().includes('nota')) {
+            // Nota fiscal direta tem prioridade máxima
+            detectedInvoiceValue = docNfeVal;
+          } else if (ext.documentType === 'CT-e' || ext.documentType === 'MDF-e') {
+            if (detectedInvoiceValue === undefined) {
+              detectedInvoiceValue = docNfeVal;
+            }
+          } else if (detectedInvoiceValue === undefined) {
+            detectedInvoiceValue = docNfeVal;
+          } else {
+            detectedInvoiceValue = Number((detectedInvoiceValue + docNfeVal).toFixed(2));
+          }
+          setAutoInvoiceValue(detectedInvoiceValue);
         }
+
         if (ext.financeiro?.valorPisCofinsFederal !== undefined && ext.financeiro.valorPisCofinsFederal > 0) {
           detectedFederalTax = ext.financeiro.valorPisCofinsFederal;
           setAutoFederalTax(ext.financeiro.valorPisCofinsFederal);
@@ -1224,7 +1372,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       const updatedDocs = { ...(shipment.documents || {}) };
 
       if (detectedInvoiceValue && detectedInvoiceValue > 0) {
-        if (!shipment.nfeValue || shipment.nfeValue !== detectedInvoiceValue || !shipment.realProfitData?.invoiceValue) {
+        const isManualInvoice = Boolean((shipment.realProfitData as any)?.isInvoiceValueManual);
+        if (!isManualInvoice && !shipment.nfeValue && !shipment.realProfitData?.invoiceValue) {
           patch.nfeValue = detectedInvoiceValue;
           updatedRealProfit.invoiceValue = detectedInvoiceValue;
           (updatedDocs as any).nfe_value = detectedInvoiceValue;
@@ -1292,7 +1441,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const isExportSuspended = isExportCargo;
 
   // 3. Valor NF (Valor da Mercadoria / Carga informado no CT-e / NF-e)
-  const invoiceValue = autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0;
+  const invoiceValue = customInvoiceValue !== undefined 
+    ? customInvoiceValue 
+    : (autoInvoiceValue || shipment.nfeValue || shipment.realProfitData?.invoiceValue || 0);
   // Base de Seguro: Acréscimo de +18% somente em carga de exportação (NF * 1.18); Mercado Interno: Base = Valor da NF
   const insuranceBaseValue = invoiceValue > 0 
     ? Number((invoiceValue * (isExportCargo ? 1.18 : 1.00)).toFixed(2)) 
@@ -1515,11 +1666,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const inssRetidoPf = tacDeductions?.inss || 0;
   const sestSenatRetidoPf = tacDeductions?.sestSenat || 0;
 
-  // 11. CIOT (0,20% s/ Frete do Motorista abatido Pedágio; se PF deduz também INSS e SEST/SENAT)
+  // 11. CIOT (0,20% s/ Frete do Motorista abatido Pedágio em TAC/PF; Isento para PJ)
+  const isCiotManual = Boolean((shipment.realProfitData as any)?.isCiotManual);
+  const manualCiotValue = (shipment.realProfitData as any)?.ciot;
   const baseCiotFreight = isShipmentPf
     ? Math.max(0, driverFreight - toll - inssRetidoPf - sestSenatRetidoPf)
-    : Math.max(0, driverFreight - toll);
-  const ciotValue = Number((baseCiotFreight * 0.0020).toFixed(2));
+    : 0;
+  const ciotValue = isCiotManual && manualCiotValue !== undefined
+    ? Number(manualCiotValue)
+    : (isShipmentPf && baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0);
 
   // 13. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixoValue = Number((cteGrossFreight * 0.0035).toFixed(2));
@@ -1866,15 +2021,83 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
         </div>
 
         {/* Box 2: Valor NF (Valor da Mercadoria / Carga do CT-e) & Base de Seguro (+18%) */}
-        <div className="bg-white dark:bg-slate-800/90 rounded-xl border border-indigo-100 dark:border-indigo-900/40 p-2.5 shadow-2xs flex flex-col justify-between">
+        <div className={`p-2.5 bg-white dark:bg-slate-800/90 rounded-xl border ${
+          isEditingInvoiceValue
+            ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
+            : 'border-indigo-100 dark:border-indigo-900/40 shadow-2xs'
+        } flex flex-col justify-between transition-all`}>
           <div>
             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
               <span className="uppercase tracking-wider">Valor NF</span>
-              <ShieldCheck className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="flex items-center gap-1">
+                {justSavedInvoiceValue && (
+                  <span className="text-[7px] font-bold px-1 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 animate-pulse">
+                    ✔ Salvo!
+                  </span>
+                )}
+                <ShieldCheck className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                {!isEditingInvoiceValue && !isDemo && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditInvoiceValue}
+                    className="p-0.5 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded transition-all cursor-pointer"
+                    title="Editar valor da NF manualmente"
+                  >
+                    <Pencil className="w-2.5 h-2.5" />
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono leading-tight">
-              {formatBrl(invoiceValue)}
-            </div>
+
+            {isEditingInvoiceValue ? (
+              <div className="space-y-1 py-0.5">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">R$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    placeholder="0,00"
+                    value={invoiceValueInput}
+                    onChange={(e) => setInvoiceValueInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveInvoiceValue();
+                      if (e.key === 'Escape') setIsEditingInvoiceValue(false);
+                    }}
+                    disabled={isSavingInvoiceValue}
+                    className="w-full text-xs font-bold font-mono px-1.5 py-0.5 rounded border border-indigo-400 bg-indigo-50/40 dark:bg-slate-700 dark:border-indigo-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-indigo-500/40"
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between gap-1 pt-0.5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveInvoiceValue}
+                      disabled={isSavingInvoiceValue}
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                      title="Salvar valor da NF"
+                    >
+                      {isSavingInvoiceValue ? <RefreshCw className="w-2 h-2 animate-spin" /> : <Check className="w-2 h-2" />}
+                      <span>Salvar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingInvoiceValue(false)}
+                      disabled={isSavingInvoiceValue}
+                      className="px-1 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono leading-tight">
+                {formatBrl(invoiceValue)}
+              </div>
+            )}
           </div>
           <div className="mt-1 pt-1 border-t border-indigo-50 dark:border-indigo-950/60" title={`Base de cálculo do seguro averbado: Valor da NF (${formatBrl(invoiceValue)})${isExportCargo ? ' + 18% (Exportação)' : ' (Mercado Interno)'} = ${formatBrl(insuranceBaseValue)}`}>
             <div className="text-[9px] text-slate-400 dark:text-slate-500 leading-tight">
@@ -2367,19 +2590,27 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               )}
             </div>
 
-            {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; se PF deduz também INSS e SEST/SENAT) */}
-            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; Isento para PJ) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
                 <span 
-                  className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0" 
-                  title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete do motorista abatido o valor do pedágio (PJ)"}
+                  className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
+                    isShipmentPf 
+                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
+                      : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                  }`}
+                  title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "Isento para PJ (ETC)"}
                 >
-                  {isShipmentPf ? '0,20% Mot. (PF)' : '0,20% Mot.'}
+                  {isShipmentPf ? '0,20% Mot. (PF)' : 'Isento (PJ)'}
                 </span>
               </div>
-              <div className="text-xs font-bold font-mono text-rose-600 dark:text-rose-400">
-                - {formatBrl(ciotValue)}
+              <div className={`text-xs font-bold font-mono ${
+                isShipmentPf && ciotValue > 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-emerald-600 dark:text-emerald-400'
+              }`}>
+                {isShipmentPf && ciotValue > 0 ? `- ${formatBrl(ciotValue)}` : 'R$ 0,00'}
               </div>
               {driverFreight > 0 && (
                 <div 
@@ -2387,12 +2618,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   title={
                     isShipmentPf
                       ? `0,20% sobre frete (${formatBrl(driverFreight)}) - pedágio (${formatBrl(toll)}) - INSS (${formatBrl(inssRetidoPf)}) - SEST/SENAT (${formatBrl(sestSenatRetidoPf)}) = Base ${formatBrl(baseCiotFreight)}`
-                      : `0,20% sobre o frete do motorista ${toll > 0 ? `abatido pedágio (${formatBrl(baseCiotFreight)})` : `(${formatBrl(driverFreight)})`}`
+                      : 'Transportador PJ (ETC): Isento de taxa CIOT'
                   }
                 >
                   {isShipmentPf 
                     ? `0,20% s/ Líq. (Mot-Ped-INSS-SEST)` 
-                    : (toll > 0 ? `0,20% s/ Mot.-Ped.` : `0,20% s/ Mot.`)}
+                    : 'Isenção ANTT / PJ (R$ 0,00)'}
                 </div>
               )}
             </div>

@@ -21,6 +21,88 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_10_v2_70_30',
+    version: 'v2.70.30',
+    date: '10/10/2026',
+    title: 'Persistência do Botão "Aplicar Dados no Embarque", Isolamento de Documentos Não Fiscais e Correção da NF de RAF-695',
+    summary: 'Correção no botão "Aplicar Dados no Embarque" para persistir imediatamente no banco de dados e no embarque o valor e número da NF-e lida, proteção contra sobrescrita indevida por arquivos em pastas de cadastro/comprovantes, validação de número de CT-e e ajuste definitivo do valor da NF-e no embarque RAF-695 para R$ 6.906,51.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Persistência Efetiva do Botão "Aplicar Dados no Embarque"',
+        description: 'Ao inspecionar uma Nota Fiscal ou documento e clicar em "Aplicar Dados no Embarque", o sistema agora grava diretamente no banco de dados o valor total da NF, número da NF e trava o valor com prioridade manual (isInvoiceValueManual), impedindo que retorne a valores incorretos.'
+      },
+      {
+        category: 'security',
+        title: 'Isolamento de Categorias Não Fiscais no Leitor Automático',
+        description: 'Pastas de anexos administrativos (Comprovante de Cadastro, CNH, Comprovante de Adiantamento/Agendamento/Saldo) não são mais lidas para extração de tributos ou valor de mercadoria, evitando contaminação cruzada por documentos de terceiros anexados como cadastro.'
+      },
+      {
+        category: 'fix',
+        title: 'Validação de Numeração de CT-e e MDF-e',
+        description: 'O sincronizador de documentos agora valida se o número do CT-e ou MDF-e lido corresponde estritamente ao número registrado no embarque antes de considerar seus dados fiscais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Valor da NF Corrigido no Embarque RAF-695',
+        description: 'O embarque RAF-695 foi corrigido no banco de dados para o valor correto de R$ 6.906,51 (NF-e 93232 / CT-e 2076) e travado contra regressões.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_29',
+    version: 'v2.70.29',
+    date: '10/10/2026',
+    title: 'Consolidação de Múltiplas NF-es, CIOT Completo de 16 Dígitos e Isenção de CIOT para Transportador PJ',
+    summary: 'Ajuste no parser e no DRE para somar automaticamente o valor de todas as NF-es vinculadas ao CT-e/MDF-e (ex: R$ 12.045,77 no CT-e 2078), preservação dos 16 dígitos do CIOT e aplicação da isenção da taxa de CIOT para transportadoras PJ (ETC).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Soma Automática de Múltiplas NF-es no CT-e',
+        description: 'Quando o CT-e possui múltiplas notas fiscais anexadas, o sistema agora consolida os valores somando o valor total de todas as NFs (e concatenando os números das notas) em vez de capturar apenas a primeira nota individualmente.'
+      },
+      {
+        category: 'fix',
+        title: 'Preservação do Número Completo do CIOT (16 dígitos)',
+        description: 'Removido o corte indevido de 12 dígitos que truncava códigos CIOT de 16 dígitos emitidos por operadoras de frete (ex: e-Frete), preservando o número integral em documentos e no painel fiscal.'
+      },
+      {
+        category: 'improvement',
+        title: 'Isenção de Taxa CIOT para Transportadoras PJ / ETC',
+        description: 'A dedução de CIOT na DRE agora aplica taxa 0% e status Isento (PJ) para empresas PJ/ETC, aplicando dedução apenas para motoristas autônomos (TAC/PF) conforme regulamentação da ANTT.'
+      },
+      {
+        category: 'feature',
+        title: 'Edição Manual e Persistência do Valor da NF',
+        description: 'Adicionada possibilidade de edição inline com persistência no banco de dados para o card de Valor NF na DRE do CT-e, evitando que sincronizações automáticas sobrescrevam conferências manuais.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_28',
+    version: 'v2.70.28',
+    date: '10/10/2026',
+    title: 'Sincronização de Frete Motorista / Tonelada e Correção de Reajuste de Tarifas no Embarque',
+    summary: 'Correção na exibição da taxa por tonelada (MTR) na tabela de embarques e cálculo de margem para priorizar a tarifa reajustada (driverFreightRateSnapshot) em vez de dividir incorretamente o frete líquido pela tonelagem. Sincronização automática entre o valor total do frete e a tarifa unitária no modal de alteração de preço e atualização imediata do embarque RAF-695 no banco de dados para R$ 125,00/ton.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Exibição Correta do Frete Motorista (MTR) e Margem',
+        description: 'A tabela de embarques agora prioriza o valor do frete por tonelada snapshot/reajustado do motorista (driverFreightRateSnapshot), evitando que o valor exibido fique divergente da tarifa acordada.'
+      },
+      {
+        category: 'fix',
+        title: 'Sincronização de Total e Taxa no Modal de Alterar Preço',
+        description: 'Ao reajustar o preço por tonelada ou salvar alterações, o total do frete agora é recalculado automaticamente multiplicando a tarifa pela tonelagem carregada, mantendo o total bruto, adiantamento e saldo rigorosamente consistentes.'
+      },
+      {
+        category: 'improvement',
+        title: 'Correção do Embarque RAF-695',
+        description: 'Embarque RAF-695 atualizado no banco de dados com tarifa de R$ 125,00/ton (Total de R$ 5.745,00 para 45,96 ton), com adiantamento e saldo ajustados proporcionalmente.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_09_v2_70_27',
     version: 'v2.70.27',
     date: '09/10/2026',

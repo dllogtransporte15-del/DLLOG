@@ -819,7 +819,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                     <div className="font-bold dark:text-gray-200">
                       {isClient 
                         ? formatCurrency(cargo?.companyFreightValuePerTon || 0)
-                        : formatCurrency(shipment.driverFreightValue / (shipment.shipmentTonnage || 1))
+                        : formatCurrency(shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0))
                       }
                     </div>
                   </div>
@@ -831,7 +831,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           <div className="flex items-center gap-1.5">
                             <span className="text-[9px] text-gray-500 font-bold">MTR:</span>
                             <span className="text-xs font-bold dark:text-white">
-                              {formatCurrency(shipment.driverFreightValue / (shipment.shipmentTonnage || 1))}
+                              {formatCurrency(shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0))}
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5">
@@ -844,7 +844,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             <span className="text-[9px] text-gray-500 font-bold">MARGEM:</span>
                             {(() => {
                                const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-                               const driverRate = shipment.driverFreightValue / (shipment.shipmentTonnage || 1);
+                               const driverRate = shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0);
                                const commissionRate = cargo?.salespersonCommissionPerTon || 0;
                                const demurrageProfit = stays.filter(s => s.shipmentId === shipment.id).reduce((sum, s) => sum + ((s.approvedValue || 0) - (s.driverPaidValue || 0)), 0);
                                const perTonProfit = companyRate - driverRate - commissionRate + (demurrageProfit / (shipment.shipmentTonnage || 1));
@@ -1516,7 +1516,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       <td className="px-6 py-[11px] whitespace-nowrap text-sm">
                         {(() => {
                           const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
-                          const driverRate = shipment.driverFreightValue / (shipment.shipmentTonnage || 1);
+                          const driverRate = shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0);
                           const commissionRate = cargo?.salespersonCommissionPerTon || 0;
                           const perTonProfit = companyRate - driverRate - commissionRate;
                           const marginPercent = companyRate > 0 ? (perTonProfit / companyRate) * 100 : 0;
@@ -1541,7 +1541,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-gray-400 font-bold uppercase">Mtr:</span>
                             <span className="font-bold text-gray-900 dark:text-white">
-                              {formatCurrency(shipment.driverFreightValue / (shipment.shipmentTonnage || 1))}
+                              {formatCurrency(shipment.driverFreightRateSnapshot || (shipment.shipmentTonnage > 0 ? shipment.driverFreightValue / shipment.shipmentTonnage : cargo?.driverFreightValuePerTon || 0))}
                             </span>
                           </div>
                         )}

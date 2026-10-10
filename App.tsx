@@ -2890,11 +2890,17 @@ const App: React.FC = () => {
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
     if (!shipmentToUpdate) return;
 
+    const ton = shipmentToUpdate.shipmentTonnage || 0;
+    const resolvedRate = data.newRate !== undefined ? data.newRate : shipmentToUpdate.driverFreightRateSnapshot;
+    const finalTotal = (resolvedRate !== undefined && resolvedRate > 0 && ton > 0)
+      ? Number((resolvedRate * ton).toFixed(2))
+      : data.newTotal;
+
     const oldPriceFormatted = shipmentToUpdate.driverFreightValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const newPriceFormatted = data.newTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const newPriceFormatted = finalTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const historyMsgParts = [`${FIELD_TRANSLATIONS['driverFreightValue']} alterado de "${oldPriceFormatted}" para "${newPriceFormatted}".`];
 
-    const updateObj: Partial<Shipment> = { driverFreightValue: data.newTotal };
+    const updateObj: Partial<Shipment> = { driverFreightValue: finalTotal };
     
     if (data.newRate !== undefined) {
       const oldRateFormatted = (shipmentToUpdate.driverFreightRateSnapshot || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -2913,9 +2919,9 @@ const App: React.FC = () => {
     if (ADVANCE_ELIGIBLE_STATUSES.includes(shipmentToUpdate.status)) {
       const isPfCalc = (shipmentToUpdate.driverFreightType === 'PF' || shipmentToUpdate.anttModality === 'TAC');
       const calc = calculateAdvanceAndBalance({
-        driverFreightValue: data.newTotal,
-        driverFreightRate: data.newRate ?? shipmentToUpdate.driverFreightRateSnapshot,
-        tonnage: shipmentToUpdate.shipmentTonnage,
+        driverFreightValue: finalTotal,
+        driverFreightRate: resolvedRate,
+        tonnage: ton,
         tollValue: shipmentToUpdate.tollValue || 0,
         advancePercentage: shipmentToUpdate.advancePercentage !== undefined ? shipmentToUpdate.advancePercentage : 70,
         driverFreightType: isPfCalc ? 'PF' : 'PJ',
