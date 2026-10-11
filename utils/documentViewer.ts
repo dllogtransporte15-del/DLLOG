@@ -43,7 +43,7 @@ export function normalizeDocumentUrl(rawVal: any): string | null {
     }
 
     // Se tiver extensão típica de arquivo ou foto
-    const fileExts = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.heic', '.gif', '.bmp'];
+    const fileExts = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.heic', '.gif', '.bmp', '.xml', '.txt', '.csv', '.xlsx'];
     if (fileExts.some(ext => lower.endsWith(ext) || lower.includes(ext + '?'))) {
       try {
         const { data } = supabase.storage.from('shipment_attachments').getPublicUrl(trimmed);
@@ -69,6 +69,37 @@ export function normalizeDocumentUrl(rawVal: any): string | null {
   }
 
   return null;
+}
+
+export const DOCUMENT_METADATA_KEYS_SET = new Set([
+  'pix_key', 'chave_pix', 'cte_number', 'payment_method', 'risk_query_cost', 
+  'risk_query_type', 'cte_emission_date', 'risk_release_code', 
+  'advance_percentage', 'toll_value', 'advance_value', 'balance_value', 
+  'balance_to_receive_value', 'discount_value', 'net_balance_value', 
+  'unloaded_tonnage', 'loaded_tonnage', 'codg_atua', 'codigo_atua', 'codigoatua',
+  'nfe_number', 'nfe_numbers', 'owner_name', 'owner_contact', 'ciot_number',
+  'mdfe_number', 'antt_modality', 'etc_tax_regime', 'driver_freight_type',
+  'cte_tomador', 'cte_tomador_cnpj', 'tomador_nome', 'tomador_cnpj',
+  'ordem_carregamento_numero', 'oc_number', 'chave_nfe', 'chave_cte', 'chave_mdfe',
+  'valor_pedagio', 'valor_adiantamento', 'valor_saldo'
+]);
+
+/**
+ * Retorna verdadeiro se a chave de shipment.documents for apenas um campo de metadado (e não um tipo de anexo)
+ */
+export function isDocumentMetadataKey(key: string): boolean {
+  if (!key) return true;
+  const clean = key.toLowerCase().trim();
+  if (clean.startsWith('_') || clean.startsWith('val_') || clean.startsWith('num_') || clean.startsWith('cod_')) return true;
+  return DOCUMENT_METADATA_KEYS_SET.has(clean);
+}
+
+/**
+ * Retorna verdadeiro se o valor informado for uma URL ou arquivo navegável real
+ */
+export function isActualDocumentUrl(val: any): boolean {
+  if (!val) return false;
+  return normalizeDocumentUrl(val) !== null;
 }
 
 /**

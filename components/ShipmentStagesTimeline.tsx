@@ -7,7 +7,7 @@ import {
   ChevronUp, Check, Info, ArrowRight, Sparkles, AlertTriangle, FileCheck,
   MessageCircle, Send
 } from 'lucide-react';
-import { openDocumentInNewTab } from '../utils/documentViewer';
+import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { findProductForCargo, checkRequiresRiskManagement } from '../utils';
 import { useToast } from '../hooks/useToast';
 import { 
@@ -334,18 +334,13 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     const map: { [key: string]: { docType: string; url: string; fileName: string }[] } = {};
     const docsObj = shipment.documents || {};
 
-    const ignoredDocKeys = new Set([
-      'pix_key', 'cte_number', 'payment_method', 'risk_query_cost', 
-      'risk_query_type', 'cte_emission_date', 'risk_release_code', 
-      'advance_percentage', 'toll_value', 'advance_value', 'balance_value', 
-      'balance_to_receive_value', 'discount_value', 'net_balance_value', 
-      'unloaded_tonnage', 'loaded_tonnage'
-    ]);
-
     Object.entries(docsObj).forEach(([docType, val]) => {
-      if (ignoredDocKeys.has(docType.toLowerCase().trim()) || docType.startsWith('_')) return;
+      if (isDocumentMetadataKey(docType)) return;
       if (isClientUser && docType.toLowerCase().includes('carta frete')) return;
-      const urls = (Array.isArray(val) ? val : (typeof val === 'string' ? [val] : [])).filter(u => typeof u === 'string' && u.trim() !== '');
+
+      const rawUrls = (Array.isArray(val) ? val : (typeof val === 'string' ? [val] : []));
+      // Filtra estritamente para manter apenas arquivos e URLs navegáveis reais
+      const urls = rawUrls.filter(u => isActualDocumentUrl(u));
       if (urls.length === 0) return;
 
       // Encontra a etapa correspondente

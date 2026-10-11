@@ -1,5 +1,5 @@
 import { Shipment } from '../types';
-import { extractDetailedDocData, DetailedDocumentData } from './fiscalDocParser';
+import { extractDetailedDocData, DetailedDocumentData, isStrictNotaFiscalCategory } from './fiscalDocParser';
 import { calculateShipmentExpenses } from './operationalExpensesCalculator';
 
 export interface SyncProgressCallback {
@@ -61,8 +61,8 @@ export async function syncSingleShipmentDocuments(
           }
         }
 
-        // 2. Sincronização Nota Fiscal
-        if (extracted.documentType === 'Nota Fiscal' || docType.toLowerCase().includes('nota fiscal') || docType.toLowerCase().includes('danfe') || docType.toLowerCase().includes('nfe')) {
+        // 2. Sincronização Nota Fiscal (apenas campo estrito "Nota Fiscal")
+        if (isStrictNotaFiscalCategory(docType)) {
           if (extracted.docNumber && shipment.nfeNumber !== extracted.docNumber) {
             updated.nfeNumber = extracted.docNumber;
             hasChanges = true;
@@ -86,6 +86,12 @@ export async function syncSingleShipmentDocuments(
           if (extracted.ciot && (shipment.ciotNumber !== extracted.ciot || shipment.ciot !== extracted.ciot)) {
             updated.ciotNumber = extracted.ciot;
             updated.ciot = extracted.ciot;
+            const currentDocs = (updated.documents || shipment.documents || {}) as any;
+            updated.documents = {
+              ...currentDocs,
+              ciot_number: extracted.ciot,
+              ciot: extracted.ciot,
+            };
             hasChanges = true;
           }
           if (extracted.financeiro?.porcentagemAdiantamento !== undefined && shipment.advancePercentage !== extracted.financeiro.porcentagemAdiantamento) {

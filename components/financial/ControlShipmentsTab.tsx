@@ -351,7 +351,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'horaDataLiberacaoSaldo', label: 'HORA/DATA LIBER. SALDO', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'text', width: 'min-w-[110px] max-w-[130px]', align: 'center' },
   { key: 'tipoPagamentoSaldo', label: 'FORMA PGTO SALDO', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'text', width: 'min-w-[90px] max-w-[100px]', align: 'center' },
   { key: 'statusSaldo', label: 'STATUS SALDO', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'select', options: ['PAGO', 'PENDENTE'], width: 'min-w-[80px] max-w-[90px]', align: 'center' },
-  { key: 'ciot', label: 'CIOT', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'text', width: 'min-w-[130px] max-w-[160px]', isCalculated: true, align: 'center' },
+  { key: 'ciot', label: 'CIOT', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'text', width: 'min-w-[140px] max-w-[195px]', isCalculated: true, align: 'center' },
   { key: 'totalQuebra', label: 'TOTAL QUEBRA', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'number', width: 'min-w-[75px] max-w-[85px]', isCalculated: true, align: 'right' },
   { key: 'valorQuebraCiot', label: 'VALOR QUEBRA / DESC', category: 'Fechamento, CIOT, Quebra & Valor Total', categoryColor: 'bg-rose-700', type: 'currency', width: 'min-w-[90px] max-w-[100px]', align: 'right' },
 ];
@@ -2355,7 +2355,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                               : (calculatedCiotFee > 0 ? `Taxa CIOT (0,20%): ${formatCurrency(calculatedCiotFee)}` : 'CIOT não informado')}
                           >
                             {hasCiotCode ? (
-                              <span className={`font-mono font-bold ${isDark ? 'text-rose-300 bg-rose-950/40 border-rose-800/60' : 'text-rose-950 bg-rose-200 border-rose-400 font-black shadow-xs'} text-[11px] tracking-tight px-1.5 py-0.5 rounded border inline-block`}>
+                              <span className={`font-mono font-bold ${isDark ? 'text-rose-300 bg-rose-950/40 border-rose-800/60' : 'text-rose-950 bg-rose-200 border-rose-400 font-black shadow-xs'} text-[11px] tracking-tight px-1.5 py-0.5 rounded border inline-block whitespace-nowrap`}>
                                 {finalCiot}
                               </span>
                             ) : (

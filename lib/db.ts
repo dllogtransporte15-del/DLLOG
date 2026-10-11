@@ -1626,7 +1626,7 @@ export async function backfillShipmentFiscalNumbers(
         delete extracted.cteNumber;
         delete extracted.cteEmissionDate;
       }
-      const hasAny = extracted.cteNumber || extracted.cteEmissionDate || extracted.nfeNumber || extracted.mdfeNumber;
+      const hasAny = extracted.cteNumber || extracted.cteEmissionDate || extracted.nfeNumber || extracted.mdfeNumber || extracted.ciotNumber;
 
       if (hasAny) {
         const updatedDocs = {
@@ -1635,15 +1635,18 @@ export async function backfillShipmentFiscalNumbers(
           ...(extracted.cteEmissionDate ? { cte_emission_date: extracted.cteEmissionDate } : {}),
           ...(extracted.nfeNumber ? { nfe_number: extracted.nfeNumber } : {}),
           ...(extracted.mdfeNumber ? { mdfe_number: extracted.mdfeNumber } : {}),
+          ...(extracted.ciotNumber ? { ciot_number: extracted.ciotNumber, ciot: extracted.ciotNumber } : {}),
         };
+
+        const updatePayload: any = { documents: updatedDocs };
 
         const { error: updateError } = await supabase
           .from('shipments')
-          .update({ documents: updatedDocs })
+          .update(updatePayload)
           .eq('id', row.id);
 
         if (!updateError) {
-          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, Emissão=${extracted.cteEmissionDate || '-'}`);
+          console.log(`[backfill] ✅ ${row.id}: CT-e=${extracted.cteNumber || '-'}, CIOT=${extracted.ciotNumber || '-'}, Emissão=${extracted.cteEmissionDate || '-'}`);
           updated++;
         } else {
           console.warn(`[backfill] ⚠️ Falha ao atualizar ${row.id}:`, updateError.message);

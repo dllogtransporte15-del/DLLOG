@@ -315,69 +315,105 @@ export function getShipmentCiotNumber(shipment?: { id?: string; ciot?: string; c
     return false;
   };
 
-  // Normalização do CIOT para o padrão oficial do MDF-e (DAMDFE SEFAZ: estritamente 12 dígitos)
-  const normalizeToMdfeCiot = (val: any): string => {
+  // Normalização do CIOT preservando obrigatoriamente a barra "/" e os dígitos após a barra (padrão oficial ANTT / e-Frete)
+  const normalizeCiot = (val: any): string => {
     if (isInvalid(val)) return '-';
     const clean = String(val).trim();
-    const digits = clean.replace(/\D/g, '');
-    // Quando o código possui 16 dígitos (gerado por e-Frete com os 4 dígitos finais da operação),
-    // o número do CIOT impresso no MDF-e e exibido em "Detalhes da Leitura do Documento MDF-e"
-    // corresponde exatamente aos primeiros 12 dígitos.
-    if (digits.length >= 16) {
-      return digits.slice(0, 12);
+
+    // Se o valor contiver uma barra "/", preserva exatamente o número antes e depois da barra (ex: 520.038.012.363/9057 ou 520038012363/9057)
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      const prefix = parts[0].trim();
+      const suffix = parts.slice(1).join('/').trim();
+      if (suffix) {
+        return `${prefix}/${suffix}`;
+      }
+      return prefix;
     }
+
+    // Se tiver 16 dígitos contínuos (padrão 12 dígitos CIOT + 4 dígitos da operação), formata automaticamente com a barra
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 16) {
+      return `${digits.slice(0, 12)}/${digits.slice(12)}`;
+    }
+
     return clean;
   };
 
   const docs = shipment.documents;
 
-  // 1. CIOT explícito do MDF-e (prioridade máxima)
-  if (docs && typeof docs === 'object') {
-    if (!isInvalid(docs.mdfe_ciot)) return normalizeToMdfeCiot(docs.mdfe_ciot);
-    if (!isInvalid(docs.ciot_mdfe)) return normalizeToMdfeCiot(docs.ciot_mdfe);
-    if (!isInvalid(docs.mdfeCiot)) return normalizeToMdfeCiot(docs.mdfeCiot);
-  }
+  // Lista ordenada de candidatos a CIOT
+  const explicitCandidates: string[] = [];
+  const docCandidates: string[] = [];
 
-  // 2. Campo explícito no objeto do embarque
-  if (!isInvalid(shipment.ciotNumber)) return normalizeToMdfeCiot(shipment.ciotNumber);
-  if (!isInvalid(shipment.ciot)) return normalizeToMdfeCiot(shipment.ciot);
-  if (!isInvalid((shipment as any).ciot_number)) return normalizeToMdfeCiot((shipment as any).ciot_number);
+  // 1. Campo explícito no objeto do embarque
+  if (!isInvalid(shipment.ciotNumber)) explicitCandidates.push(String(shipment.ciotNumber).trim());
+  if (!isInvalid(shipment.ciot)) explicitCandidates.push(String(shipment.ciot).trim());
+  if (!isInvalid((shipment as any).ciot_number)) explicitCandidates.push(String((shipment as any).ciot_number).trim());
 
-  // 3. Campo em documents
+  // 2. Campo em documents
   if (docs && typeof docs === 'object') {
-    if (!isInvalid(docs.ciot_number)) return normalizeToMdfeCiot(docs.ciot_number);
-    if (!isInvalid(docs.ciotNumber)) return normalizeToMdfeCiot(docs.ciotNumber);
-    if (!isInvalid(docs.ciot)) return normalizeToMdfeCiot(docs.ciot);
-    if (!isInvalid(docs.CIOT)) return normalizeToMdfeCiot(docs.CIOT);
+    if (!isInvalid(docs.ciot_number)) docCandidates.push(String(docs.ciot_number).trim());
+    if (!isInvalid(docs.ciotNumber)) docCandidates.push(String(docs.ciotNumber).trim());
+    if (!isInvalid(docs.ciot)) docCandidates.push(String(docs.ciot).trim());
+    if (!isInvalid(docs.CIOT)) docCandidates.push(String(docs.CIOT).trim());
+    if (!isInvalid(docs.mdfe_ciot)) docCandidates.push(String(docs.mdfe_ciot).trim());
+    if (!isInvalid(docs.ciot_mdfe)) docCandidates.push(String(docs.ciot_mdfe).trim());
+    if (!isInvalid(docs.mdfeCiot)) docCandidates.push(String(docs.mdfeCiot).trim());
 
     // Buscar em chaves com nome ciot
     for (const [key, val] of Object.entries(docs)) {
       if (/ciot/i.test(key)) {
         if (!isInvalid(val)) {
-          return normalizeToMdfeCiot(val);
+          docCandidates.push(String(val).trim());
         }
         if (Array.isArray(val) && val.length > 0) {
           for (const item of val) {
             if (typeof item === 'string') {
-              const m = item.match(/\b(?:ciot)?[^\d\n]*?(\d{8,20})/i);
-              if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return normalizeToMdfeCiot(m[1]);
+              const m = item.match(/(\d{3}\.\d{3}\.\d{3}\.\d{3}\/\d{4}|\d{12}\/\d{4}|\d{3}\.\d{3}\.\d{3}\.\d{3}|\b520\d{9,15}\b|\b\d{16}\b|\b\d{12}\b)/i);
+              if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) docCandidates.push(m[1].trim());
             }
           }
         }
       }
     }
 
-    // Buscar em comprovantes / contratos de frete / PEF
+    // Buscar em comprovantes / contratos de frete / PEF / Carta Frete
     for (const [key, val] of Object.entries(docs)) {
-      if (/carta|contrato|pef/i.test(key) && typeof val === 'string') {
-        const m = val.match(/\bciot[^\d\n]*?(\d{8,20})/i);
-        if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) return normalizeToMdfeCiot(m[1]);
+      if (/carta|contrato|pef/i.test(key)) {
+        const items = Array.isArray(val) ? val : (typeof val === 'string' ? [val] : []);
+        for (const item of items) {
+          if (typeof item === 'string') {
+            const m = item.match(/(\d{3}\.\d{3}\.\d{3}\.\d{3}\/\d{4}|\d{12}\/\d{4}|\d{3}\.\d{3}\.\d{3}\.\d{3}|\b520\d{9,15}\b|\b\d{16}\b|\b\d{12}\b)/i);
+            if (m && m[1] && (!sId || m[1].toUpperCase() !== sId)) docCandidates.push(m[1].trim());
+          }
+        }
       }
     }
   }
 
+  const allCandidates = [...explicitCandidates, ...docCandidates];
+
+  // Prioridade 1: Qualquer candidato que contenha "/" ou tenha 16 dígitos (formato completo com sufixo da operação)
+  // Isso garante que números informados após a barra (ex: 520.038.012.363/9057) nunca sejam truncados por versões parciais (ex: 12 dígitos)
+  const candidateWithSlash = allCandidates.find(c => c.includes('/') || c.replace(/\D/g, '').length === 16);
+  if (candidateWithSlash) {
+    return normalizeCiot(candidateWithSlash);
+  }
+
+  // Prioridade 2: Primeiro candidato explícito válido
+  if (explicitCandidates.length > 0) {
+    return normalizeCiot(explicitCandidates[0]);
+  }
+
+  // Prioridade 3: Primeiro candidato documental válido
+  if (docCandidates.length > 0) {
+    return normalizeCiot(docCandidates[0]);
+  }
+
   return '-';
 }
+
 
 export function getShipmentCteEmissionDate(shipment?: { status?: any; cteEmissionDate?: string; documents?: any } | null): string | null {
   if (!shipment) return null;

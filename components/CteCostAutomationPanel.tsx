@@ -1,6 +1,6 @@
 import React from 'react';
 import { Shipment, ShipmentStatus, Cargo, RISK_QUERY_COST_MAP, HistoryLog, User, Client, UserProfile } from '../types';
-import { extractDetailedDocData } from '../utils/fiscalDocParser';
+import { extractDetailedDocData, isStrictNotaFiscalCategory } from '../utils/fiscalDocParser';
 import { upsertShipment } from '../lib/db';
 import { useToast } from '../hooks/useToast';
 import { isDemoUser } from '../auth';
@@ -1259,6 +1259,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const [autoToll, setAutoToll] = React.useState<number | undefined>(undefined);
   const [autoInvoiceValue, setAutoInvoiceValue] = React.useState<number | undefined>(undefined);
   const [autoFederalTax, setAutoFederalTax] = React.useState<number | undefined>(undefined);
+  const [autoCteServiceTotal, setAutoCteServiceTotal] = React.useState<number | undefined>(undefined);
+  const [autoCteIcms, setAutoCteIcms] = React.useState<number | undefined>(undefined);
   const [isSyncing, setIsSyncing] = React.useState(false);
 
   const syncDocs = React.useCallback(async () => {
@@ -1296,7 +1298,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       }
     }
 
-    let detectedInvoiceValue: number | undefined;
+    let sumDirectNfeValues = 0;
+    let directNfeCount = 0;
+    let transportCargoValue: number | undefined;
+    const detectedNfeNumbersList: string[] = [];
+    const countedNfeKeys = new Set<string>();
+
     let detectedToll: number | undefined;
     let detectedFederalTax: number | undefined;
 
@@ -1333,21 +1340,44 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           }
         }
 
-        const docNfeVal = ext.financeiro?.valorTotalNfe || ext.carga?.valorMercadoria;
-        if (docNfeVal !== undefined && docNfeVal > 0) {
-          if (ext.documentType === 'Nota Fiscal' || category.toLowerCase().includes('nota')) {
-            // Nota fiscal direta tem prioridade máxima
-            detectedInvoiceValue = docNfeVal;
-          } else if (ext.documentType === 'CT-e' || ext.documentType === 'MDF-e') {
-            if (detectedInvoiceValue === undefined) {
-              detectedInvoiceValue = docNfeVal;
+        const isNotaFiscalCategory = isStrictNotaFiscalCategory(category);
+        const docNfeVal = ext.carga?.valorMercadoria || ext.financeiro?.valorTotalNfe;
+
+        if (isNotaFiscalCategory) {
+          // Identificador único da NF para evitar dupla contagem do mesmo arquivo/número
+          const nfeUniqueKey = ext.accessKey || (ext.docNumber ? String(ext.docNumber) : url);
+          if (!countedNfeKeys.has(nfeUniqueKey)) {
+            countedNfeKeys.add(nfeUniqueKey);
+            // Quando há múltiplas notas anexadas (ex: 2 notas), soma o valor de cada uma delas
+            if (docNfeVal !== undefined && docNfeVal > 0) {
+              sumDirectNfeValues = Number((sumDirectNfeValues + docNfeVal).toFixed(2));
+              directNfeCount++;
             }
-          } else if (detectedInvoiceValue === undefined) {
-            detectedInvoiceValue = docNfeVal;
-          } else {
-            detectedInvoiceValue = Number((detectedInvoiceValue + docNfeVal).toFixed(2));
           }
-          setAutoInvoiceValue(detectedInvoiceValue);
+          const num = ext.docNumber || ext.notasFiscais?.[0]?.numero || ext.documentosVinculados?.find(d => d.tipo.toLowerCase().includes('nfe') || d.tipo.toLowerCase().includes('nota'))?.numero;
+          if (num && !detectedNfeNumbersList.includes(String(num))) {
+            detectedNfeNumbersList.push(String(num));
+          }
+        } else if (ext.documentType === 'CT-e' || ext.documentType === 'MDF-e') {
+          if (docNfeVal !== undefined && docNfeVal > 0 && !transportCargoValue) {
+            transportCargoValue = docNfeVal;
+          }
+          if (ext.documentType === 'CT-e') {
+            const servVal = ext.financeiro?.valorTotalServico !== undefined ? ext.financeiro.valorTotalServico : ext.financeiro?.valorTotalFrete;
+            if (servVal !== undefined && servVal > 0) {
+              setAutoCteServiceTotal(servVal);
+            }
+            if (ext.financeiro?.valorIcms !== undefined) {
+              setAutoCteIcms(ext.financeiro.valorIcms);
+            }
+          }
+          if (ext.notasFiscais && ext.notasFiscais.length > 0) {
+            for (const nf of ext.notasFiscais) {
+              if (nf.numero && !detectedNfeNumbersList.includes(String(nf.numero))) {
+                detectedNfeNumbersList.push(String(nf.numero));
+              }
+            }
+          }
         }
 
         if (ext.financeiro?.valorPisCofinsFederal !== undefined && ext.financeiro.valorPisCofinsFederal > 0) {
@@ -1365,6 +1395,20 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       }
     }
 
+    // Consolidação do Valor da NF: se houver 2 ou mais notas anexadas, a soma total prevalece
+    let detectedInvoiceValue: number | undefined;
+    if (directNfeCount > 0 && sumDirectNfeValues > 0) {
+      detectedInvoiceValue = directNfeCount > 1 
+        ? sumDirectNfeValues 
+        : Math.max(sumDirectNfeValues, transportCargoValue || 0);
+    } else if (transportCargoValue !== undefined && transportCargoValue > 0) {
+      detectedInvoiceValue = transportCargoValue;
+    }
+
+    if (detectedInvoiceValue && detectedInvoiceValue > 0) {
+      setAutoInvoiceValue(detectedInvoiceValue);
+    }
+
     if (onUpdateShipmentData) {
       let hasPatch = false;
       const patch: Partial<Shipment> = {};
@@ -1372,12 +1416,17 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
       const updatedDocs = { ...(shipment.documents || {}) };
 
       if (detectedInvoiceValue && detectedInvoiceValue > 0) {
-        const isManualInvoice = Boolean((shipment.realProfitData as any)?.isInvoiceValueManual);
-        if (!isManualInvoice && !shipment.nfeValue && !shipment.realProfitData?.invoiceValue) {
+        const currentInv = shipment.nfeValue || shipment.realProfitData?.invoiceValue;
+        if (!currentInv || currentInv !== detectedInvoiceValue) {
           patch.nfeValue = detectedInvoiceValue;
           updatedRealProfit.invoiceValue = detectedInvoiceValue;
           (updatedDocs as any).nfe_value = detectedInvoiceValue;
           (updatedDocs as any).valor_mercadoria = detectedInvoiceValue;
+          if (detectedNfeNumbersList.length > 0) {
+            const combinedNumbers = detectedNfeNumbersList.join(', ');
+            patch.nfeNumber = combinedNumbers;
+            (updatedDocs as any).nfe_number = combinedNumbers;
+          }
           hasPatch = true;
         }
       }
@@ -2010,6 +2059,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
           <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white font-mono">
             {formatBrl(totalCompanyFreight)}
           </div>
+          {autoCteServiceTotal !== undefined && Math.abs(autoCteServiceTotal - totalCompanyFreight) > 1.00 && (
+            <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title="Regra: VALOR TOTAL DO SERVIÇO - CTE precisa ser igual ao Total Frete Emp do sistema.">
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              <span>Divergência CT-e: {formatBrl(autoCteServiceTotal)}</span>
+            </div>
+          )}
           <div className="text-[10px] text-blue-600 dark:text-blue-400 font-medium truncate mt-0.5" title={demurrageRevenue > 0 ? `Frete Base: ${formatBrl(cteGrossFreight)} + Estadia: ${formatBrl(demurrageRevenue)}` : undefined}>
             Empresa • {tonnage.toLocaleString('pt-BR')} ton
             {demurrageRevenue > 0 && (
@@ -2519,6 +2574,20 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               <div className={`text-xs font-bold font-mono ${icms > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
                 {icms > 0 ? `- ${formatBrl(icms)}` : 'R$ 0,00'}
               </div>
+              {(() => {
+                const effectiveCteIcms = autoCteIcms !== undefined 
+                  ? autoCteIcms 
+                  : (Number((shipment.documents as any)?.icms_value) || (shipment.icmsValue !== undefined ? Number(shipment.icmsValue) : undefined));
+                if (effectiveCteIcms !== undefined && Math.abs(effectiveCteIcms - icms) > 1.00) {
+                  return (
+                    <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title="Divergência entre o ICMS do sistema e o destacado no CT-e">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      <span>Divergência CT-e: {formatBrl(effectiveCteIcms)}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               {icmsBruto > 0 && (
                 <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
                   Integral ({formatBrl(icmsBruto)})
@@ -2537,6 +2606,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
                 {formatBrl(toll)}
               </div>
+              {autoToll !== undefined && Math.abs(autoToll - toll) > 1.00 && (
+                <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title="Divergência entre o Vale-Pedágio do sistema e o documento fiscal">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>Divergência Doc: {formatBrl(autoToll)}</span>
+                </div>
+              )}
             </div>
 
             {/* Consulta GR (Modalidade de Consulta Realizada) */}

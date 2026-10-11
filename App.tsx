@@ -4082,7 +4082,7 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="relative flex flex-col h-screen bg-[#f8fafc] dark:bg-[#070c18] text-slate-800 dark:text-slate-100 overflow-hidden font-sans portal-theme-bg"
+      className="relative flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-[#f8fafc] dark:bg-[#070c18] text-slate-800 dark:text-slate-100 overflow-hidden font-sans portal-theme-bg"
       style={{ '--theme-bg': themeImage ? `url("${themeImage.replace(/"/g, '\\"')}")` : 'none' } as React.CSSProperties}
     >
       {/* Background Grid Pattern & Ambient Lighting (Model identical to Login Page) */}
@@ -4129,8 +4129,8 @@ const App: React.FC = () => {
         onSaveFreightOffer={handleSaveFreightOffer}
         onOpenUpdates={() => setIsUpdateModalOpen(true)}
       />
-      <main className="relative z-10 flex-1 overflow-y-auto" style={{ zoom: 0.72 }}>
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main className="relative z-10 flex-1 overflow-y-auto overscroll-contain" style={{ zoom: 0.72 }}>
+        <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 pb-36 sm:pb-12" style={{ paddingBottom: 'max(9rem, env(safe-area-inset-bottom, 0px) + 7rem)' }}>
             {renderPage()}
         </div>
       </main>

@@ -8,7 +8,7 @@ import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
-import { openDocumentInNewTab } from '../utils/documentViewer';
+import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
 import { isDemoUser } from '../auth';
 
@@ -510,7 +510,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     className="w-full mt-1 p-1.5 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                     value={editedData.ciotNumber || ''}
                                     onChange={e => setEditedData({...editedData, ciotNumber: e.target.value, ciot: e.target.value})}
-                                    placeholder="Ex: 123456789012"
+                                    placeholder="Ex: 520.038.012.363/9057"
                                 />
                             </div>
                         </>
@@ -1086,29 +1086,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         </div>
 
                         {shipment.documents && typeof shipment.documents === 'object' && Object.keys(shipment.documents).length > 0 && (() => {
-                            const ignoredDocKeys = new Set([
-                                'pix_key',
-                                'cte_number',
-                                'payment_method',
-                                'risk_query_cost',
-                                'risk_query_type',
-                                'cte_emission_date',
-                                'risk_release_code',
-                                'advance_percentage',
-                                'toll_value',
-                                'advance_value',
-                                'balance_value',
-                                'balance_to_receive_value',
-                                'discount_value',
-                                'net_balance_value',
-                                'unloaded_tonnage',
-                                'loaded_tonnage',
-                            ]);
-
                             const validEntries = Object.entries(shipment.documents).filter(([category, urls]) => {
-                                if (!category || ignoredDocKeys.has(category.toLowerCase().trim()) || category.startsWith('_')) return false;
+                                if (!category || isDocumentMetadataKey(category)) return false;
                                 const urlList = Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []);
-                                return urlList.some(url => typeof url === 'string' && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/') || url.includes('.')));
+                                return urlList.some(url => isActualDocumentUrl(url));
                             });
 
                             if (validEntries.length === 0) return null;
@@ -1119,7 +1100,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     <div className="space-y-4">
                                         {validEntries.map(([category, urls]) => {
                                             const urlList = (Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []))
-                                                .filter(url => typeof url === 'string' && url.trim() !== '' && (url.startsWith('http') || url.startsWith('/') || url.includes('.')));
+                                                .filter(url => isActualDocumentUrl(url));
                                             if (urlList.length === 0) return null;
 
                                             return (

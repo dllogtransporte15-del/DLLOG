@@ -441,7 +441,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       }}
       disabled={disabled}
       title={title}
-      className={`w-full text-left flex items-center gap-3 px-4 py-2 text-sm ${
+      className={`w-full text-left flex items-center gap-2 px-2.5 py-1 text-xs font-medium transition-colors ${
         disabled 
           ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed' 
           : isDestructive 
@@ -450,13 +450,13 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       }`}
       role="menuitem"
     >
-      <Icon className="w-4 h-4" />
-      <span>{text}</span>
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      <span className="truncate">{text}</span>
     </button>
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-12 sm:pb-6">
       {currentUser.profile !== UserProfile.Motorista && (
       <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col md:flex-row items-center justify-between p-3 gap-3">
@@ -1635,12 +1635,12 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                       position: 'fixed',
                                                       top: menuPosition.isUp ? 'auto' : `${menuPosition.top + 8}px`,
                                                       bottom: menuPosition.isUp ? `${window.innerHeight - menuPosition.top + 8}px` : 'auto',
-                                                      left: `${menuPosition.left - 224}px`,
+                                                      left: `${menuPosition.left - 172}px`,
                                                       zIndex: 9999
                                                     }}
-                                                    className="w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100"
+                                                    className="w-[172px] bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100 py-0.5"
                                                   >
-                                                      <div className="py-1" role="menu" aria-orientation="vertical">
+                                                      <div className="py-0.5" role="menu" aria-orientation="vertical">
                                                           {shipment.status === ShipmentStatus.AguardandoCarregamento && (
                                                               <>
                                                                   <ActionMenuItem icon={MapPin} text="Informar Rota do Motorista" onClick={() => onAttach && onAttach(shipment)} />
@@ -1690,12 +1690,12 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                           position: 'fixed',
                                                           top: menuPosition.isUp ? 'auto' : `${menuPosition.top + 8}px`,
                                                           bottom: menuPosition.isUp ? `${window.innerHeight - menuPosition.top + 8}px` : 'auto',
-                                                          left: `${menuPosition.left - 224}px`, // 224 is w-56 (14rem * 16px)
+                                                          left: `${menuPosition.left - 172}px`,
                                                           zIndex: 9999
                                                         }}
-                                                        className="w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100"
+                                                        className="w-[172px] bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 animate-in fade-in zoom-in duration-100 py-0.5"
                                                       >
-                                                          <div className="py-1" role="menu" aria-orientation="vertical">
+                                                          <div className="py-0.5" role="menu" aria-orientation="vertical">
                                                               {onShowHistory && <ActionMenuItem icon={HistoryIcon} text="Ver Histórico" onClick={() => onShowHistory(shipment)} />}
                                                               {shipment.status !== ShipmentStatus.Cancelado && (
                                                                   <>

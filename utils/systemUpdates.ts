@@ -21,6 +21,351 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_11_v2_70_45',
+    version: 'v2.70.45',
+    date: '11/10/2026',
+    title: 'Exibição Completa do CIOT com Barra e Sufixo Operacional na Planilha',
+    summary: 'Correção da exibição do CIOT na Planilha de Controle e nos módulos do sistema, garantindo que a barra "/" e os dígitos informados após a barra (ex: 520.038.012.363/9057) sejam integralmente preservados e exibidos, sem qualquer corte ou truncamento para 12 dígitos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Preservação dos Dígitos Após a Barra no CIOT',
+        description: 'Eliminado o truncamento para 12 dígitos. Números de CIOT informados manualmente ou extraídos de Declarações de Operação de Transporte/Carta Frete (ex: 520.038.012.363/9057) agora mantêm a barra e todo o código complementar visível na planilha e nas exportações.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ajuste de Largura e Layout da Coluna CIOT',
+        description: 'A coluna CIOT na planilha de controle foi expandida e configurada com não quebra de linha (whitespace-nowrap), acomodando com total legibilidade e nitidez os números completos com máscara e barra.'
+      },
+      {
+        category: 'fix',
+        title: 'Sincronização Retroativa em Massa de Todos os Embarques',
+        description: 'Processamento de varredura nos 414 embarques com Carta Frete/Declaração de Operação de Transporte anexadas: 398 embarques foram atualizados no banco de dados com a numeração completa com barra (ex: 520.038.043.809/4484), preenchendo todas as linhas da planilha.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_44',
+    version: 'v2.70.44',
+    date: '11/10/2026',
+    title: 'Sincronização Automática do Número do CIOT (Declaração de Operação de Transporte)',
+    summary: 'Aprimoramento do analisador fiscal e do sincronizador de documentos para leitura direta do campo "NÚMERO DO CIOT" presente na "DECLARAÇÃO DE OPERAÇÃO DE TRANSPORTE" / Carta Frete (ex: 520.038.012.363/9057), com preenchimento automático na planilha de controle e recuperação retrospectiva de embarques sem CIOT.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Reconhecimento Estrito do CIOT em Declaração de Operação de Transporte',
+        description: 'Implementado algoritmo de detecção que captura com exatidão o formato oficial ANTT (ex: 520.038.012.363/9057) mesmo havendo quebras de linha ou dados da instituição de pagamento no cabeçalho, normalizando para os 12 dígitos oficiais da planilha.'
+      },
+      {
+        category: 'fix',
+        title: 'Sincronização e Correção Retrospectiva dos Embarques na Planilha',
+        description: 'Todos os embarques anteriores com Carta Frete anexada que apresentavam "-" na coluna de CIOT tiveram seus números de CIOT sincronizados e gravados no banco de dados, eliminando campos vazios na planilha.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_43',
+    version: 'v2.70.43',
+    date: '11/10/2026',
+    title: 'Menu de Ações do Embarque Mais Compacto (-30%)',
+    summary: 'Redução de aproximadamente 30% nas dimensões do menu de contexto de ações rápidas dos embarques (ícone de 3 pontos), tornando os itens, espaçamentos e largura mais elegantes e ocupando menos espaço em tela.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Redução Proporcional da Janela / Dropdown',
+        description: 'Largura reduzida de 224px (w-56) para 172px, fontes reduzidas para text-xs, ícones para 14px e paddings otimizados (px-2.5 py-1), mantendo o alinhamento perfeito com o botão de acionamento.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_42',
+    version: 'v2.70.42',
+    date: '11/10/2026',
+    title: 'Remoção de Metadados e Propriedades do Painel "Gerenciar Anexos"',
+    summary: 'Limpeza e filtro estrito na listagem de documentos da linha do tempo e do modal "Gerenciar Anexos". Campos de dados textuais e números (como codg_atua, nfe_number, owner_name, ciot_number, mdfe_number, antt_modality, etc.) não são mais exibidos como se fossem anexos, mantendo apenas arquivos reais (PDF, imagens, XML).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Filtro Estrito de Arquivos Reais nos Anexos',
+        description: 'Chaves de metadados internos gravadas no objeto de documentos (como codg_atua, nfe_number, ciot_number, owner_name, driver_freight_type) foram bloqueadas de aparecer como cards de documentos. Agora apenas links e arquivos reais navegáveis são listados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Organização Visual do Painel de Documentos da Linha do Tempo',
+        description: 'A lista "Documentos e Comprovantes Vinculados a esta Etapa" agora exibe com clareza somente os anexos legítimos vinculados pelo operador ou emitidos pelo sistema, eliminando poluição visual.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_41',
+    version: 'v2.70.41',
+    date: '11/10/2026',
+    title: 'Bloqueio de Edição do "Adiantamento PG" e Validação Obrigatória com Carta Frete',
+    summary: 'O campo "Adiantamento PG" agora é estritamente bloqueado para edição manual (read-only) e deve ser idêntico ao "referente Adiantamento de viagem" extraído da Carta Frete. Se houver divergência com o cálculo do sistema, o botão "Salvar e Avançar" é travado até a correção.',
+    items: [
+      {
+        category: 'security',
+        title: 'Bloqueio de Edição Manual do Campo "Adiantamento PG"',
+        description: 'O campo "Adiantamento PG" foi configurado como somente leitura (com ícone de cadeado e status Bloqueado), impedindo alterações manuais arbitrárias e garantindo que o adiantamento reflita com precisão o contrato fiscal.'
+      },
+      {
+        category: 'feature',
+        title: 'Alinhamento com "referente Adiantamento de viagem" da Carta Frete',
+        description: 'O parser fiscal extrai com prioridade os itens contratuais de adiantamento (ex: "2.4 R$ 4.068,61 referente Adiantamento de viagem") e preenche automaticamente o valor a ser pago ao motorista.'
+      },
+      {
+        category: 'security',
+        title: 'Trava nos Campos "Valor pago no Tag" e "% Adiantamento" em Ag. Adiantamento',
+        description: 'No status "Ag. Adiantamento", os campos "Valor pago no Tag" e "% Adiantamento" passam a ser estritamente bloqueados para edição manual (read-only e status Fixo com ícone de cadeado), preservando os valores já validados na emissão contratual.'
+      },
+      {
+        category: 'security',
+        title: 'Trava no Botão "Salvar e Avançar" em Caso de Divergência',
+        description: 'Caso o cálculo do sistema ou o valor gravado divirja do Adiantamento de viagem da Carta Frete, é exibido um alerta em destaque e o avanço da etapa é completamente bloqueado. Foi adicionado um botão de 1 clique para alinhar e corrigir o valor instantaneamente, liberando o avanço.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_40',
+    version: 'v2.70.40',
+    date: '11/10/2026',
+    title: 'Separação Estrita de Validação Fiscal: CT-e (Frete Empresa) vs Carta Frete (Motorista)',
+    summary: 'Ajuste no classificador de documentos para que o arquivo de CT-e anexado nunca seja confundido com Carta Frete em razão do CIOT. O "VALOR TOTAL DO SERVIÇO" do CT-e (R$ 8.339,40) é estritamente validado contra o "Total Frete Emp", eliminando divergências indevidas no frete do motorista.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Isolamento do CT-e para Validação Exclusiva de Frete Empresa',
+        description: 'Documentos anexados no campo CT-e agora alimentam exclusivamente o campo VALOR TOTAL DO SERVIÇO para validação do Total Frete Emp da empresa, impedindo que o valor do serviço do CT-e sobrescreva ou compare com a Carta Frete do motorista.'
+      },
+      {
+        category: 'fix',
+        title: 'Eliminação da Falsa Divergência de Frete Motorista',
+        description: 'Corrigida a identificação para que o CT-e com CIOT não seja interpretado como Carta Frete. A Carta Frete anexada (R$ 5.812,30) agora confere perfeitamente com o frete do motorista do sistema (R$ 5.812,30), sem acusar divergência.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_39',
+    version: 'v2.70.39',
+    date: '11/10/2026',
+    title: 'Correção e Blindagem do Total Frete Motorista (Taxa vs Frete Empresa)',
+    summary: 'Correção do valor de Frete Motorista gravado indevidamente com o Frete Empresa no embarque SUP-705 e implementação de blindagem para garantir que o Total Frete MTR sempre respeite a taxa real do motorista por tonelada (R$ 130,00/ton), descontando o pedágio.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Correção do Frete Motorista do Embarque SUP-705',
+        description: 'Ajustado o frete do motorista de R$ 8.550,00 (que correspondia ao frete empresa de R$ 180,00/ton) para R$ 6.022,90 bruto (R$ 130,00/ton para 46,33 ton), resultando em R$ 5.812,30 líquido com o abatimento do pedágio (-R$ 210,60), compatível com a Carta Frete / Contrato Nº 2078/1.'
+      },
+      {
+        category: 'security',
+        title: 'Blindagem Contra Contaminação de Frete Empresa no Frete Motorista',
+        description: 'Implementada trava no cálculo dos cards e no comparador de divergências: se houver discrepância entre o frete armazenado e a taxa contratada do motorista por tonelada (driverRate * toneladas), o sistema prioriza automaticamente a taxa cadastrada do motorista, impedindo que o valor do serviço do CT-e sobrescreva o pagamento do motorista.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_38',
+    version: 'v2.70.38',
+    date: '11/10/2026',
+    title: 'Aprimoramento na Identificação de Carta Frete / Contrato de Transporte',
+    summary: 'Correção da classificação de documentos de Carta Frete e Contratos de Transporte Rodoviário (ex: Contrato nº 2078/1, CIOT 5200380123639057), eliminando falsos positivos de erro causados por citações contratuais a "Dacte (CT-e)".',
+    items: [
+      {
+        category: 'fix',
+        title: 'Eliminação de Falso Positivo de CT-e em Carta Frete',
+        description: 'Corrigida a lógica de classificação para identificar o documento como Carta Frete / Contrato de Transporte logo pelo cabeçalho oficial ("Contrato de Prestação de Serviço de Transporte/Frete", "CIOT", "Composição do Adiantamento de Frete"), impedindo que menções contratuais à entrega do Dacte (CT-e) assinado na cláusula de quitação de saldo o classifiquem incorretamente como CT-e.'
+      },
+      {
+        category: 'improvement',
+        title: 'Prioridade Total a Nomes de Arquivo de Carta Frete',
+        description: 'Arquivos cujo nome inicie ou contenha termos indicativos de Carta Frete (como "Carta Frete - ...", "_cf_", "contrato") são imediatamente validados como Carta Frete no campo correspondente, evitando avisos indevidos de documento incorreto.'
+      },
+      {
+        category: 'improvement',
+        title: 'Extração Aprimorada do Valor Total do Frete Contratual',
+        description: 'Reforçada a captura da cláusula "1.1 Valor total do frete R$ ..." para garantir a leitura correta do frete motorista sem pedágio diretamente do contrato anexado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_37',
+    version: 'v2.70.37',
+    date: '10/10/2026',
+    title: 'Detecção de Documento Incorreto e Correção em 1 Clique (MDF-e em Carta Frete)',
+    summary: 'Configuração do sistema para alertar como erro visual sempre que um documento for anexado no campo errado (por exemplo, MDF-e anexado no campo Carta Frete, ou CT-e/NF-e em campos trocados), oferecendo botão de ação imediata para "Mover para [Campo Correto]" ou "Remover".',
+    items: [
+      {
+        category: 'feature',
+        title: 'Alerta de Erro para Documento Fiscal no Campo Incorreto',
+        description: 'Ao anexar um arquivo cujo conteúdo ou nome indique outro documento fiscal (como MDF-e / DAMDFE no campo de Carta Frete), o item é destacado em vermelho com indicador pulsante e mensagem explicativa de erro.'
+      },
+      {
+        category: 'feature',
+        title: 'Opção de Correção em 1 Clique ("Mover para MDF-e")',
+        description: 'Adicionado botão de ação rápida diretamente no item incorreto que transfere o arquivo para o campo correto com um único clique (ex: transfere de Carta Frete para MDF-e), além de botão para remoção do anexo se desejado.'
+      },
+      {
+        category: 'improvement',
+        title: 'Bloqueio de Segurança e Notificação Instantânea',
+        description: 'Ao anexar ou soltar um arquivo trocado, o sistema notifica o operador via Toast e exibe alerta informativo no modal, bloqueando o avanço indevido até que os documentos estejam em suas categorias corretas.'
+      },
+      {
+        category: 'fix',
+        title: 'Isolamento de Extração de Valores entre MDF-e e Carta Frete',
+        description: 'Aprimorado o analisador fiscal para que um MDF-e anexado por engano no campo Carta Frete não corrompa a leitura automática do frete motorista.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_36',
+    version: 'v2.70.36',
+    date: '10/10/2026',
+    title: 'Identificação e Validação de Divergências em ICMS e Vale-Pedágio',
+    summary: 'Implementada a mesma lógica de identificação, conciliação e alerta de divergências para o "ICMS" e "Vale-Pedágio", comparando os dados informados/cadastrados no sistema com os valores destacados nos documentos fiscais anexados (CT-e e Carta Frete).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Validação e Notificação de Divergência de ICMS (Sistema vs CT-e)',
+        description: 'Aprimorada a conferência fiscal para alertar sempre que o ICMS no sistema divergir do valor destacado no CT-e (inclusive quando o sistema estiver como Isento R$ 0,00 e o CT-e possuir destaque de ICMS). O operador pode escolher com um clique: "Atualizar para ICMS do CT-e" ou "Manter ICMS do Sistema".'
+      },
+      {
+        category: 'feature',
+        title: 'Validação e Notificação de Divergência de Vale-Pedágio (Sistema vs Documento)',
+        description: 'Implementado card de divergência para o Vale-Pedágio: caso o valor de pedágio cadastrado no sistema difira do valor lido no CT-e ou na Carta Frete, o sistema notifica o operador e permite optar entre "Atualizar para Pedágio do Documento" ou "Manter Pedágio do Sistema".'
+      },
+      {
+        category: 'improvement',
+        title: 'Indicadores Visuais no Painel de Custos / DRE',
+        description: 'Os cards "ICMS Destacado" e "Vale-Pedágio" no painel de custos automatizado agora exibem badges destacados de aviso ("Divergência CT-e" / "Divergência Doc") assim que é detectada diferença em relação aos documentos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Extração Robusta de ICMS e Pedágio em Tabelas do DACTE',
+        description: 'O leitor fiscal foi atualizado para capturar com máxima precisão os valores de ICMS e Pedágio listados na tabela de componentes da prestação de serviço do DACTE (ex: ICMS 583,76 e PEDAGIO 210,60).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_35',
+    version: 'v2.70.35',
+    date: '10/10/2026',
+    title: 'Padronização de Frete Motorista no Sistema e Carta Frete Anexada (Sem Pedágio)',
+    summary: 'Configuração e harmonização do Frete Motorista para que ambos os lados da conferência — "Frete Motorista no Sistema" e "Carta Frete Anexada" — considerem o frete total motorista sem o valor do pedágio, conforme especificado na legislação (Lei nº 10.209/2001) e nos contratos de transporte.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Frete Motorista no Sistema (Sem Pedágio)',
+        description: 'No card de conferência/divergência do modal de anexos, o "Frete Motorista no Sistema" agora considera o frete total do motorista líquido sem o valor do pedágio (ex: R$ 5.812,30 ao invés do bruto com pedágio R$ 6.022,90), alinhado ao card "TOTAL FRETE MTR" do cabeçalho e DRE.'
+      },
+      {
+        category: 'fix',
+        title: 'Carta Frete Anexada sem Dedução Dupla de Pedágio',
+        description: 'A leitura da Carta Frete / Contrato de Transporte foi ajustada para reconhecer que o "1.1 Valor total do frete" declarado no documento já é contratualmente o frete sem pedágio (o vale-pedágio é discriminado e pago em TAG separadamente no item 2.2). Com isso, o pedágio não é mais subtraído erroneamente pela segunda vez, eliminando falsas divergências.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atualização e Conciliação Transparente',
+        description: 'Caso exista divergência real entre o frete da carta frete e o frete cadastrado no sistema, os botões de ação e a confirmação exibem os valores exatos sem pedágio e efetuam a atualização com perfeita recomposição dos valores financeiros.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_34',
+    version: 'v2.70.34',
+    date: '10/10/2026',
+    title: 'Frete Motorista sem Pedágio e Validação de Frete Empresa (CT-e vs Sistema)',
+    summary: 'Ajuste na leitura e conciliação da Carta Frete para desconsiderar o valor do pedágio do frete do motorista, além de implementação de notificação e validação de divergência para Frete Empresa: "VALOR TOTAL DO SERVIÇO - CTE precisa ser igual ao Total Frete Emp do sistema".',
+    items: [
+      {
+        category: 'feature',
+        title: 'Frete Motorista sem Pedágio',
+        description: 'A leitura da Carta Frete (PAMCARD, Repom, CTRC) e a validação de divergência agora consideram estritamente o valor do frete líquido sem pedágio (abatendo o vale-pedágio quando o valor do documento for bruto). Isso elimina alertas falsos e garante que o frete motorista do sistema corresponda ao frete real.'
+      },
+      {
+        category: 'feature',
+        title: 'Validação e Notificação de Frete Empresa (CT-e vs Sistema)',
+        description: 'Implementado alerta de divergência na conferência fiscal e na DRE: o VALOR TOTAL DO SERVIÇO do CT-e precisa ser igual ao Total Frete Emp do sistema. Caso haja diferença superior a R$ 1,00, o sistema alerta o operador e permite escolher com um clique qual valor deve prevalecer antes de avançar o status.'
+      },
+      {
+        category: 'improvement',
+        title: 'Leitura Precisa do Campo "VALOR TOTAL DO SERVIÇO" no DACTE',
+        description: 'Aprimorado o algoritmo de leitura OCR/PDF do DACTE para capturar com 100% de precisão o campo oficial "VALOR TOTAL DO SERVIÇO", mesmo quando há quebras de linha ou tabela de componentes (tarifa, frete valor, pedágio, icms) intermediárias antes do total.'
+      },
+      {
+        category: 'improvement',
+        title: 'Indicador Visual no Painel de Custos / DRE',
+        description: 'O card "CT-e Frete Bruto" agora exibe um badge de divergência caso o valor total do serviço lido no CT-e divirja do total de frete empresa calculado no sistema.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_33',
+    version: 'v2.70.33',
+    date: '10/10/2026',
+    title: 'Restrição Estrita da Leitura do "Valor NF" Apenas à Categoria "Nota Fiscal"',
+    summary: 'Arquivos anexados no campo "Ticket de Carregamento" (mesmo que contenham cópias de DANFE/NF) agora são estritamente desconsiderados para a soma do "Valor NF", evitando duplicidade quando o usuário anexa as notas em ambos os campos. O cálculo do "Valor NF" considera única e exclusivamente os documentos anexados na pasta/campo "Nota Fiscal".',
+    items: [
+      {
+        category: 'fix',
+        title: 'Exclusão do Ticket de Carregamento da Soma de NF-e',
+        description: 'Criada a validação isStrictNotaFiscalCategory garantindo que apenas arquivos vinculados diretamente ao campo "Nota Fiscal" tenham seus valores e números computados no "Valor NF". Anexos de Ticket de Carregamento, pesagem ou balança são ignorados para a apuração do valor da mercadoria.'
+      },
+      {
+        category: 'improvement',
+        title: 'Deduplicação de Arquivos e Chaves de Acesso',
+        description: 'Implementado rastreamento e deduplicação de chaves de acesso e números de NF anexados, prevenindo que um mesmo documento anexado mais de uma vez duplique o somatório.'
+      },
+      {
+        category: 'fix',
+        title: 'Ajuste do Embarque SUP-705 para R$ 12.045,77',
+        description: 'Corrigido o embarque SUP-705 no banco de dados, removendo a duplicação indevida (R$ 24.091,54) e restaurando o valor consolidado correto de R$ 12.045,77 referente às notas anexadas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_32',
+    version: 'v2.70.32',
+    date: '10/10/2026',
+    title: 'Soma Automática de Múltiplas Notas Fiscais no Campo "Valor NF"',
+    summary: 'Configuração do cálculo e sincronização automática de documentos para somar o valor de todas as notas fiscais anexadas na categoria "Nota Fiscal" (ex: 2 ou mais notas anexadas) no card Valor NF da DRE e persistir no banco de dados, além de concatenar os números das notas fiscais.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Soma Acumulada de Múltiplas NF-es no "Valor NF"',
+        description: 'Quando o usuário anexa 2 ou mais arquivos na categoria "Nota Fiscal", o sistema agora extrai e soma o valor de cada uma das notas anexadas, preenchendo automaticamente o valor consolidado no campo "Valor NF" da DRE e na base do seguro.'
+      },
+      {
+        category: 'fix',
+        title: 'Concatenação de Números de Notas Fiscais Anexadas',
+        description: 'Os números de todas as notas fiscais anexadas agora são concatenados em ordem (ex: 109726, 109731) em vez de registrar apenas a última nota lida.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atualização do Embarque SUP-705',
+        description: 'O embarque SUP-705 foi consolidado no banco de dados com a soma de R$ 12.045,77 referente às duas notas fiscais anexadas (NF 109726 de R$ 7.399,58 + NF 109731 de R$ 4.646,19).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_10_v2_70_31',
+    version: 'v2.70.31',
+    date: '10/10/2026',
+    title: 'Restrição de Permissão de Veículos na Solicitação de Embarque para Embarcador e Agenciador',
+    summary: 'Ocultação do botão "Permitir Este Veículo" e bloqueio da alteração de regras de tipos de veículos da carga para os perfis de Embarcador e Agenciador de Embarque, mantendo a função exclusiva para a equipe interna.',
+    items: [
+      {
+        category: 'security',
+        title: 'Bloqueio do Botão "Permitir Este Veículo"',
+        description: 'Usuários com perfil de Embarcador, Agenciador de Embarque, Motorista ou Cliente não visualizam mais o botão de liberar novos tipos de veículos na carga na Solicitação de Embarque, garantindo que as regras comerciais/operacionais não sejam alteradas indevidamente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Mensagens de Validação Contextuais',
+        description: 'Caso um Embarcador ou Agenciador tente submeter um veículo não homologado para a carga, o sistema agora orienta a solicitar a autorização à equipe interna responsável.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_10_v2_70_30',
     version: 'v2.70.30',
     date: '10/10/2026',

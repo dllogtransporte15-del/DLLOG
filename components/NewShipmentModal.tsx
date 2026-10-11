@@ -818,8 +818,32 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
     }
   };
 
+  const canAllowVehicleOnCargo = useMemo(() => {
+    if (!currentUser) return false;
+    const profile = currentUser.profile;
+    // Oculta e bloqueia para Embarcador e Agenciador / Agenciador de Embarque
+    if (profile === UserProfile.Embarcador || (profile as string) === 'Embarcador') {
+      return false;
+    }
+    if (profile === UserProfile.Agenciador || (profile as string) === 'Agenciador') {
+      return false;
+    }
+    if ((currentUser as any).agencyRole === 'embarque') {
+      return false;
+    }
+    if (profile === UserProfile.Motorista || profile === UserProfile.Cliente) {
+      return false;
+    }
+    return true;
+  }, [currentUser]);
+
   // 1-Click Allow Vehicle Type on Cargo
   const handleAllowCurrentVehicleOnCargo = async () => {
+    if (!canAllowVehicleOnCargo) {
+      showToast('Apenas a equipe interna possui permissão para liberar novos tipos de veículos na carga.', 'warning');
+      return;
+    }
+
     const target = currentCargo;
     if (!target) return;
     const currentSetType = vehicleSetType || selectedVehicle?.setType;
@@ -959,7 +983,10 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
             allowed.setType === vehicleInfo.setType && allowed.bodyTypes.includes(vehicleInfo.bodyType as VehicleBodyType)
         );
         if (!isAllowed) {
-            showToast(`O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Use o botão "Permitir Este Veículo" acima para liberar.`, 'error');
+            const msg = canAllowVehicleOnCargo
+                ? `O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Use o botão "Permitir Este Veículo" acima para liberar.`
+                : `O tipo do veículo selecionado (${vehicleInfo.setType} - ${vehicleInfo.bodyType}) não é permitido para esta carga. Solicite a autorização à equipe interna.`;
+            showToast(msg, 'error');
             return;
         }
     }
@@ -1447,16 +1474,18 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                         <RefreshCw className={`w-3 h-3 ${isSyncingCargo ? 'animate-spin text-primary' : ''}`} />
                         <span>{isSyncingCargo ? 'Checando...' : 'Sincronizar'}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleAllowCurrentVehicleOnCargo}
-                        disabled={isUpdatingCargoPermission}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition-all text-xs"
-                        title="Adiciona este tipo de veículo nas regras da carga agora sem recarregar a tela"
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>{isUpdatingCargoPermission ? 'Liberando...' : 'Permitir Este Veículo'}</span>
-                      </button>
+                      {canAllowVehicleOnCargo && (
+                        <button
+                          type="button"
+                          onClick={handleAllowCurrentVehicleOnCargo}
+                          disabled={isUpdatingCargoPermission}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition-all text-xs"
+                          title="Adiciona este tipo de veículo nas regras da carga agora sem recarregar a tela"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>{isUpdatingCargoPermission ? 'Liberando...' : 'Permitir Este Veículo'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ) : (vehicleValidationInfo.setType && vehicleValidationInfo.bodyType ? (

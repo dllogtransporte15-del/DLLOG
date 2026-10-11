@@ -5,10 +5,10 @@ import { isDemoUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
-import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData, parseWeightKg } from '../utils/fiscalDocParser';
+import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData, parseWeightKg, isStrictNotaFiscalCategory, calculateNetCartaFreteFreight, detectDocumentTypeFromFileName, detectAttachmentMismatch, DocMismatchInfo, isCteDocType, isCartaFreteDocType } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
-import { openDocumentInNewTab } from '../utils/documentViewer';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3 } from 'lucide-react';
+import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3, ArrowRightLeft, Lock } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
@@ -72,10 +72,46 @@ const FileInput: React.FC<{
   files: File[];
   allowPaste?: boolean;
   onInspectFile?: (file: File, docType: string) => void;
-}> = ({ label, onFileChange, files, allowPaste = true, onInspectFile }) => {
+  onMoveFile?: (file: File, fromDocType: string, toDocType: string) => void;
+  onRemoveFile?: (file: File, docType: string) => void;
+  detectedTypesMap?: Record<string, string>;
+  availableTargetCategories?: string[];
+}> = ({
+  label,
+  onFileChange,
+  files,
+  allowPaste = true,
+  onInspectFile,
+  onMoveFile,
+  onRemoveFile,
+  detectedTypesMap,
+  availableTargetCategories
+}) => {
   const id = `file-upload-${label.replace(/\s/g, '-')}`;
   const [isDragging, setIsDragging] = useState(false);
   const [pasteSuccess, setPasteSuccess] = useState(false);
+  const { showToast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFilesSelected = (selectedFiles: FileList | File[] | null) => {
+    if (!selectedFiles) {
+      onFileChange(null);
+      return;
+    }
+    const fileArray = Array.from(selectedFiles);
+    // Valida imediatamente se algum arquivo possui mismatch em relação ao campo atual
+    for (const f of fileArray) {
+      const mismatch = detectAttachmentMismatch(f, label, detectedTypesMap?.[f.name]);
+      if (mismatch) {
+        showToast(
+          `⚠️ Atenção: O arquivo "${f.name}" foi detectado como ${mismatch.detectedType}, mas está sendo anexado no campo "${label}". Você pode movê-lo para "${mismatch.suggestedCategory}" com 1 clique.`,
+          'warning',
+          7000
+        );
+      }
+    }
+    onFileChange(fileArray);
+  };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -94,7 +130,7 @@ const FileInput: React.FC<{
     }
     if (pastedFiles.length > 0) {
       e.preventDefault();
-      onFileChange(pastedFiles);
+      handleFilesSelected(pastedFiles);
       setPasteSuccess(true);
       setTimeout(() => setPasteSuccess(false), 3000);
     }
@@ -117,7 +153,7 @@ const FileInput: React.FC<{
           }
         }
         if (pastedFiles.length > 0) {
-          onFileChange(pastedFiles);
+          handleFilesSelected(pastedFiles);
           setPasteSuccess(true);
           setTimeout(() => setPasteSuccess(false), 3000);
           return;
@@ -133,7 +169,7 @@ const FileInput: React.FC<{
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFileChange(e.dataTransfer.files);
+      handleFilesSelected(e.dataTransfer.files);
     }
   };
 
@@ -179,10 +215,14 @@ const FileInput: React.FC<{
         </label>
         <input
           id={id}
+          ref={fileInputRef}
           type="file"
           className="hidden"
           multiple
-          onChange={(e) => onFileChange(e.target.files)}
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            if (e.target) e.target.value = '';
+          }}
           accept=".pdf,.png,.jpg,.jpeg,.gif,.xml"
         />
       </div>
@@ -194,26 +234,109 @@ const FileInput: React.FC<{
       )}
 
       {files.length > 0 && (
-        <ul className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1.5">
-          {files.map((file, idx) => (
-            <li key={idx} className="flex items-center justify-between p-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 gap-2">
-              <div className="flex items-center gap-1.5 truncate">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                <span className="truncate max-w-[220px] font-medium text-gray-700 dark:text-gray-200">{file.name}</span>
-              </div>
-              {onInspectFile && (
-                <button
-                  type="button"
-                  onClick={() => onInspectFile(file, label)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold cursor-pointer shrink-0"
-                  title="Ver todos os dados e campos lidos deste arquivo"
-                >
-                  <Eye className="w-3 h-3" />
-                  <span>Ver Dados</span>
-                </button>
-              )}
-            </li>
-          ))}
+        <ul className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-2">
+          {files.map((file, idx) => {
+            const mismatch = detectAttachmentMismatch(file, label, detectedTypesMap?.[file.name]);
+            const isMismatch = !!mismatch;
+
+            return (
+              <li
+                key={`${file.name}-${idx}`}
+                className={`flex flex-col p-2.5 rounded-xl transition-all border ${
+                  isMismatch
+                    ? 'bg-rose-50/90 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700/80 shadow-xs'
+                    : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isMismatch ? (
+                      <span className="flex h-2.5 w-2.5 relative shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                      </span>
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    )}
+                    <span
+                      className={`truncate max-w-[280px] sm:max-w-[340px] font-medium ${
+                        isMismatch ? 'text-rose-900 dark:text-rose-200 font-bold' : 'text-gray-700 dark:text-gray-200'
+                      }`}
+                      title={file.name}
+                    >
+                      {file.name}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onInspectFile && (
+                      <button
+                        type="button"
+                        onClick={() => onInspectFile(file, label)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold cursor-pointer shrink-0"
+                        title="Ver todos os dados e campos lidos deste arquivo"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>Ver Dados</span>
+                      </button>
+                    )}
+
+                    {onRemoveFile && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveFile(file, label)}
+                        className="p-1 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-gray-400 hover:text-rose-600 dark:text-gray-400 rounded cursor-pointer transition-colors"
+                        title="Remover este arquivo deste campo"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Banner de Erro com Ação de Correção em 1 Clique */}
+                {isMismatch && (
+                  <div className="mt-2 pt-2 border-t border-rose-200 dark:border-rose-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+                    <div className="flex items-start gap-1.5 text-[11px] text-rose-800 dark:text-rose-300">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-extrabold text-rose-700 dark:text-rose-200">
+                          Documento Incorreto:
+                        </span>
+                        <span className="ml-1">
+                          Este arquivo é um <strong>{mismatch.detectedType}</strong>, mas foi anexado no campo <strong>{label}</strong>.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      {mismatch.suggestedCategory && onMoveFile && (
+                        <button
+                          type="button"
+                          onClick={() => onMoveFile(file, label, mismatch.suggestedCategory)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-[11px] rounded-lg shadow-sm transition-all cursor-pointer"
+                          title={`Mover este arquivo diretamente para o campo "${mismatch.suggestedCategory}"`}
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5" />
+                          <span>Mover para {mismatch.suggestedCategory}</span>
+                        </button>
+                      )}
+                      {onRemoveFile && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveFile(file, label)}
+                          className="px-2 py-1 bg-rose-100 dark:bg-rose-900/40 hover:bg-rose-200 text-rose-800 dark:text-rose-200 font-semibold text-[11px] rounded-lg border border-rose-300 dark:border-rose-700 transition-colors cursor-pointer"
+                          title="Remover anexo incorreto"
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -259,6 +382,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
   const [singleFiles, setSingleFiles] = useState<File[]>([]);
   const [multiFiles, setMultiFiles] = useState<{ [key: string]: File[] }>({});
+  const [detectedDocTypes, setDetectedDocTypes] = useState<Record<string, string>>({});
   const [bankDetails, setBankDetails] = useState('');
   const [loadedTonnage, setLoadedTonnage] = useState<number | ''>('');
   const [advancePercentage, setAdvancePercentage] = useState<number | ''>('');
@@ -291,7 +415,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [isEditingCteWeight, setIsEditingCteWeight] = useState(false);
   const [manualCteWeightInput, setManualCteWeightInput] = useState('');
   const [cartaFreteExtractedFreight, setCartaFreteExtractedFreight] = useState<number | undefined>(undefined);
+  const [cartaFreteExtractedAdvance, setCartaFreteExtractedAdvance] = useState<number | undefined>(undefined);
   const [cteExtractedIcms, setCteExtractedIcms] = useState<number | undefined>(undefined);
+  const [cteExtractedServiceTotal, setCteExtractedServiceTotal] = useState<number | undefined>(undefined);
   const [cteExtractedTomadorNome, setCteExtractedTomadorNome] = useState<string | undefined>(undefined);
   const [cteExtractedTomadorCnpj, setCteExtractedTomadorCnpj] = useState<string | undefined>(undefined);
   const [isResolvingTomador, setIsResolvingTomador] = useState(false);
@@ -299,7 +425,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   // Decisões de resolução de divergências fiscais na etapa Aguardando Fiscal
   const [weightDecision, setWeightDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
   const [freightDecision, setFreightDecision] = useState<'unresolved' | 'use_carta_frete' | 'keep_system'>('unresolved');
+  const [advanceDecision, setAdvanceDecision] = useState<'unresolved' | 'resolved'>('unresolved');
+  const [companyFreightDecision, setCompanyFreightDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
   const [icmsDecision, setIcmsDecision] = useState<'unresolved' | 'use_cte' | 'keep_system'>('unresolved');
+  const [docExtractedToll, setDocExtractedToll] = useState<number | undefined>(undefined);
+  const [tollDecision, setTollDecision] = useState<'unresolved' | 'use_doc' | 'keep_system'>('unresolved');
   const [tomadorDecision, setTomadorDecision] = useState<'unresolved' | 'adjust_to_cte' | 'link_branch' | 'keep_system'>('unresolved');
 
   const ticketFiles: string[] = React.useMemo(() => {
@@ -335,6 +465,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     // 1. Atualiza estados locais do modal/etapa
     if (extracted.financeiro?.valorPedagio !== undefined) {
       setTollValue(extracted.financeiro.valorPedagio);
+      setDocExtractedToll(extracted.financeiro.valorPedagio);
     }
     if (extracted.financeiro?.valorAdiantamento !== undefined) {
       setAdvanceValue(extracted.financeiro.valorAdiantamento);
@@ -345,10 +476,41 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     if (extracted.financeiro?.chavePix) {
       setBankDetails(prev => prev ? `${prev} | PIX: ${extracted.financeiro?.chavePix}` : (extracted.financeiro?.chavePix || ''));
     }
-    if (extracted.financeiro?.valorTotalFrete !== undefined && extracted.financeiro.valorTotalFrete > 0) {
-      setCartaFreteExtractedFreight(extracted.financeiro.valorTotalFrete);
-    } else if (extracted.financeiro?.valorLiquido !== undefined && extracted.financeiro.valorLiquido > 0) {
-      setCartaFreteExtractedFreight(extracted.financeiro.valorLiquido);
+    const selDocType = selectedDocForDetails?.docType || '';
+    const isSelCte = isCteDocType(selDocType);
+    const isSelCartaFrete = isCartaFreteDocType(selDocType);
+
+    const isCartaFreteDoc = (isSelCartaFrete || extracted.documentType === 'Carta Frete') && !isSelCte && extracted.documentType !== 'CT-e' && extracted.documentType !== 'MDF-e';
+    const isCteDocData = (isSelCte || extracted.documentType === 'CT-e') && !isSelCartaFrete && extracted.documentType !== 'Carta Frete' && extracted.documentType !== 'MDF-e';
+
+    if (isCartaFreteDoc) {
+      const rawCfFreight = extracted.financeiro?.valorTotalFrete !== undefined ? extracted.financeiro.valorTotalFrete : extracted.financeiro?.valorLiquido;
+      const toll = extracted.financeiro?.valorPedagio !== undefined ? extracted.financeiro.valorPedagio : (Number(tollValue) || Number(shipment.tollValue) || 0);
+      const adv = extracted.financeiro?.valorAdiantamento !== undefined ? extracted.financeiro.valorAdiantamento : (Number(advanceValue) || Number(shipment.advanceValue) || 0);
+      const advPct = extracted.financeiro?.porcentagemAdiantamento !== undefined ? extracted.financeiro.porcentagemAdiantamento : (Number(advancePercentage) || Number(shipment.advancePercentage) || 0);
+      const sld = extracted.financeiro?.valorSaldo || extracted.calculoSaldoFrete?.saldoOriginal || extracted.calculoSaldoFrete?.subtotal || 0;
+
+      const cfFreightWithoutToll = calculateNetCartaFreteFreight({
+        rawFreight: rawCfFreight,
+        toll,
+        advance: adv,
+        advancePercentage: advPct,
+        saldo: sld,
+        systemFreightNetOfToll: systemDriverFreight,
+      });
+
+      if (cfFreightWithoutToll !== undefined && cfFreightWithoutToll > 0) {
+        setCartaFreteExtractedFreight(cfFreightWithoutToll);
+      }
+      if (adv !== undefined && adv > 0) {
+        setCartaFreteExtractedAdvance(adv);
+        setAdvanceValue(adv);
+      }
+    } else if (isCteDocData) {
+      const cteServ = extracted.financeiro?.valorTotalServico !== undefined ? extracted.financeiro.valorTotalServico : extracted.financeiro?.valorTotalFrete;
+      if (cteServ !== undefined && cteServ > 0) {
+        setCteExtractedServiceTotal(cteServ);
+      }
     }
     if (extracted.financeiro?.valorIcms !== undefined && extracted.financeiro.valorIcms > 0) {
       setCteExtractedIcms(extracted.financeiro.valorIcms);
@@ -370,9 +532,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     const updatedRealProfit: Record<string, any> = { ...(shipment.realProfitData || {}) };
     let hasShipmentChanges = false;
 
-    // Valor da NF-e / Mercadoria
+    // Valor da NF-e / Mercadoria: apenas quando o documento for estritamente do campo "Nota Fiscal"
+    const isDocStrictNotaFiscal = selectedDocForDetails?.docType ? isStrictNotaFiscalCategory(selectedDocForDetails.docType) : false;
     const detectedNfeValue = extracted.financeiro?.valorTotalNfe || extracted.carga?.valorMercadoria;
-    if (detectedNfeValue !== undefined && detectedNfeValue > 0) {
+    if (detectedNfeValue !== undefined && detectedNfeValue > 0 && isDocStrictNotaFiscal) {
       patch.nfeValue = detectedNfeValue;
       updatedRealProfit.invoiceValue = detectedNfeValue;
       updatedRealProfit.isInvoiceValueManual = true; // Trava contra sobrescrita por outros anexos
@@ -382,9 +545,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
 
     // Número da NF-e
-    const detectedNfeNumber = (extracted.documentType === 'Nota Fiscal' || selectedDocForDetails?.docType?.toLowerCase().includes('nota'))
+    const detectedNfeNumber = isDocStrictNotaFiscal
       ? (extracted.docNumber || extracted.notasFiscais?.[0]?.numero)
-      : (extracted.notasFiscais?.[0]?.numero);
+      : (extracted.documentType === 'CT-e' || extracted.documentType === 'MDF-e' ? extracted.notasFiscais?.[0]?.numero : undefined);
     if (detectedNfeNumber) {
       patch.nfeNumber = String(detectedNfeNumber);
       updatedDocs.nfe_number = String(detectedNfeNumber);
@@ -506,24 +669,70 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return null;
   }, [ticketLoadedWeightTon, cteWeightTon]);
 
-  // Frete Motorista: Comparação entre Sistema e Carta Frete
+  // Frete Motorista no Sistema: considerar frete total motorista sem o valor do pedágio
   const systemDriverFreight = React.useMemo(() => {
-    return Number(shipment.driverFreightValue) || 0;
-  }, [shipment.driverFreightValue]);
+    const currentToll = Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0;
+    const rate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+    const ton = Number(shipment.shipmentTonnage) || 0;
+    const calculatedFreight = (rate > 0 && ton > 0) ? Number((rate * ton).toFixed(2)) : 0;
+    const totalFreight = (calculatedFreight > 0 && shipment.driverFreightValue && Math.abs(Number(shipment.driverFreightValue) - calculatedFreight) > 5.00 && shipment.driverFreightRateSnapshot)
+      ? calculatedFreight
+      : (Number(shipment.driverFreightValue) || calculatedFreight);
+    return Number(Math.max(0, totalFreight - currentToll).toFixed(2));
+  }, [shipment.driverFreightValue, shipment.driverFreightRateSnapshot, cargo?.driverFreightValuePerTon, shipment.shipmentTonnage, tollValue, shipment.tollValue, shipment.documents]);
 
   const freightDivergenceInfo = React.useMemo(() => {
     if (!cartaFreteExtractedFreight || cartaFreteExtractedFreight <= 0 || systemDriverFreight <= 0) return null;
-    const diff = Math.abs(cartaFreteExtractedFreight - systemDriverFreight);
+
+    // Carta Frete Anexada: considerar frete total motorista sem o valor do pedágio
+    const currentToll = Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0;
+    const netCartaFreteFreight = calculateNetCartaFreteFreight({
+      rawFreight: cartaFreteExtractedFreight,
+      toll: currentToll,
+      advance: Number(advanceValue) || Number(shipment.advanceValue) || 0,
+      advancePercentage: Number(advancePercentage) || Number(shipment.advancePercentage) || 0,
+      systemFreightNetOfToll: systemDriverFreight,
+      systemFreightWithToll: Number(shipment.driverFreightValue) || 0,
+    }) || cartaFreteExtractedFreight;
+
+    const diff = Math.abs(netCartaFreteFreight - systemDriverFreight);
     if (diff > 1.00) {
       return {
         systemFreight: systemDriverFreight,
-        cartaFreteFreight: cartaFreteExtractedFreight,
+        cartaFreteFreight: netCartaFreteFreight,
         diff,
         diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       };
     }
     return null;
-  }, [cartaFreteExtractedFreight, systemDriverFreight]);
+  }, [cartaFreteExtractedFreight, systemDriverFreight, tollValue, advanceValue, advancePercentage, shipment.tollValue, shipment.advanceValue, shipment.advancePercentage, shipment.driverFreightValue, shipment.documents]);
+
+  // Frete Empresa: Comparação entre Sistema e CT-e (VALOR TOTAL DO SERVIÇO - CTE vs Total Frete Emp)
+  const systemCompanyFreight = React.useMemo(() => {
+    const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
+    const ton = ticketLoadedWeightTon || Number(loadedTonnage) || Number(shipment.shipmentTonnage) || Number(cargo?.totalVolume) || 0;
+    if (companyRate > 0 && ton > 0) {
+      return Number((companyRate * ton).toFixed(2));
+    }
+    if (shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0) {
+      return Number(shipment.realProfitData.companyFreight);
+    }
+    return 0;
+  }, [shipment.companyFreightRateSnapshot, cargo?.companyFreightValuePerTon, ticketLoadedWeightTon, loadedTonnage, shipment.shipmentTonnage, cargo?.totalVolume, shipment.realProfitData?.companyFreight]);
+
+  const companyFreightDivergenceInfo = React.useMemo(() => {
+    if (!cteExtractedServiceTotal || cteExtractedServiceTotal <= 0 || systemCompanyFreight <= 0) return null;
+    const diff = Math.abs(cteExtractedServiceTotal - systemCompanyFreight);
+    if (diff > 1.00) {
+      return {
+        systemCompanyFreight,
+        cteServiceTotal: cteExtractedServiceTotal,
+        diff,
+        diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      };
+    }
+    return null;
+  }, [cteExtractedServiceTotal, systemCompanyFreight]);
 
   // ICMS: Comparação entre Sistema e CT-e
   const systemIcms = React.useMemo(() => {
@@ -540,11 +749,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   }, [shipment.icmsValue, shipment.documents, shipment.realProfitData, shipment.shipmentTonnage, cargo]);
 
   const icmsDivergenceInfo = React.useMemo(() => {
-    if (!cteExtractedIcms || cteExtractedIcms <= 0) return null;
+    if (cteExtractedIcms === undefined) return null;
     const diff = Math.abs((systemIcms || 0) - cteExtractedIcms);
-    if (systemIcms > 0 && diff > 1.00) {
+    if (diff > 1.00) {
       return {
-        systemIcms,
+        systemIcms: systemIcms || 0,
         cteIcms: cteExtractedIcms,
         diff,
         diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -552,6 +761,25 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
     return null;
   }, [cteExtractedIcms, systemIcms]);
+
+  // Vale-Pedágio: Comparação entre Sistema e Documento Fiscal (CT-e / Carta Frete)
+  const systemToll = React.useMemo(() => {
+    return Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0;
+  }, [tollValue, shipment.tollValue, shipment.documents]);
+
+  const tollDivergenceInfo = React.useMemo(() => {
+    if (docExtractedToll === undefined) return null;
+    const diff = Math.abs(systemToll - docExtractedToll);
+    if (diff > 1.00) {
+      return {
+        systemToll,
+        docToll: docExtractedToll,
+        diff,
+        diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      };
+    }
+    return null;
+  }, [docExtractedToll, systemToll]);
 
   // Tomador (Pagador): Validação entre Cadastro da Carga (Sistema) e Tomador do CT-e
   const currentClient = React.useMemo(() => {
@@ -593,16 +821,79 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     };
   }, [cleanCteTomadorCnpj, cleanSystemCnpj, currentClient, currentClientCnpj, cteExtractedTomadorNome, cteExtractedTomadorCnpj]);
 
+  // Adiantamento: Validação do Cálculo do Sistema vs Adiantamento de Viagem da Carta Frete
+  const systemCalculatedAdvance = React.useMemo(() => {
+    const loadedTonnageValue = Number(loadedTonnage) || Number(shipment.shipmentTonnage) || 0;
+    const driverFreightRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+    const totalFreight = shipment.driverFreightValue || (driverFreightRate * loadedTonnageValue);
+    const advPercent = advancePercentage !== '' && advancePercentage !== undefined ? Number(advancePercentage) : 70;
+    const tagVal = Number(tollValue || 0);
+    const isPf = shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC';
+
+    const calc = calculateAdvanceAndBalance({
+      driverFreightValue: totalFreight,
+      driverFreightRate: driverFreightRate,
+      tonnage: loadedTonnageValue,
+      tollValue: tagVal,
+      advancePercentage: advPercent,
+      driverFreightType: isPf ? 'PF' : 'PJ',
+    });
+    return calc.advanceInAccountValue > 0 ? calc.advanceInAccountValue : (Number(advanceValue) || 0);
+  }, [loadedTonnage, shipment.shipmentTonnage, shipment.driverFreightRateSnapshot, cargo?.driverFreightValuePerTon, shipment.driverFreightValue, advancePercentage, tollValue, shipment.driverFreightType, shipment.anttModality, advanceValue]);
+
+  const advanceDivergenceInfo = React.useMemo(() => {
+    if (!cartaFreteExtractedAdvance || cartaFreteExtractedAdvance <= 0) return null;
+    const currentAdv = Number(advanceValue) || 0;
+    const diffCurrent = Math.abs(currentAdv - cartaFreteExtractedAdvance);
+    const diffCalc = Math.abs(systemCalculatedAdvance - cartaFreteExtractedAdvance);
+
+    // Se o valor de Adiantamento PG no sistema for diferente do Adiantamento de viagem da Carta Frete (> R$ 1,00)
+    // ou se o cálculo teórico do sistema divergir e a resolução não tiver sido confirmada
+    if (diffCurrent > 1.00 || (diffCalc > 1.00 && advanceDecision === 'unresolved')) {
+      const diff = diffCurrent > 1.00 ? diffCurrent : diffCalc;
+      return {
+        systemAdvance: currentAdv > 0 ? currentAdv : systemCalculatedAdvance,
+        systemCalculatedAdvance,
+        cartaFreteAdvance: cartaFreteExtractedAdvance,
+        diff,
+        diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      };
+    }
+    return null;
+  }, [cartaFreteExtractedAdvance, advanceValue, systemCalculatedAdvance, advanceDecision]);
+
   const isAguardandoFiscal = shipment.status === ShipmentStatus.AguardandoFiscal;
   const hasUnresolvedWeightDivergence = isAguardandoFiscal && !!weightDivergenceInfo && weightDecision === 'unresolved';
   const hasUnresolvedFreightDivergence = isAguardandoFiscal && !!freightDivergenceInfo && freightDecision === 'unresolved';
+  const hasUnresolvedCompanyFreightDivergence = isAguardandoFiscal && !!companyFreightDivergenceInfo && companyFreightDecision === 'unresolved';
   const hasUnresolvedIcmsDivergence = isAguardandoFiscal && !!icmsDivergenceInfo && icmsDecision === 'unresolved';
+  const hasUnresolvedTollDivergence = isAguardandoFiscal && !!tollDivergenceInfo && tollDecision === 'unresolved';
   const hasUnresolvedTomadorDivergence = !!tomadorDivergenceInfo && tomadorDecision === 'unresolved';
-  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTomadorDivergence;
+  const hasUnresolvedAdvanceDivergence = !!advanceDivergenceInfo && (advanceDecision === 'unresolved' || Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00);
+  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedCompanyFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTollDivergence || hasUnresolvedTomadorDivergence || hasUnresolvedAdvanceDivergence;
+
+  const hasAttachmentMismatch = React.useMemo(() => {
+    for (const [cat, list] of Object.entries(multiFiles)) {
+      if (!Array.isArray(list)) continue;
+      for (const file of list) {
+        const mismatch = detectAttachmentMismatch(file, cat, detectedDocTypes[file.name]);
+        if (mismatch?.isMismatch) return true;
+      }
+    }
+    return false;
+  }, [multiFiles, detectedDocTypes]);
 
   // Alertas em tempo real quando houver divergências no Aguardando Fiscal
   useEffect(() => {
     if (!isOpen || !isAguardandoFiscal) return;
+
+    if (hasAttachmentMismatch) {
+      showToast(
+        '⚠️ Documento anexado em campo incorreto detectado (ex: MDF-e em Carta Frete). Utilize o botão "Mover para ..." no arquivo para corrigir.',
+        'error',
+        8000
+      );
+    }
 
     if (weightDivergenceInfo && weightDecision === 'unresolved') {
       showToast(
@@ -613,7 +904,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
     if (freightDivergenceInfo && freightDecision === 'unresolved') {
       showToast(
-        `⚠️ Divergência de Frete Motorista: Sistema (R$ ${freightDivergenceInfo.systemFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) vs Carta Frete (R$ ${freightDivergenceInfo.cartaFreteFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Diferença: ${freightDivergenceInfo.diffFormatted}. Confirme qual valor é o correto.`,
+        `⚠️ Divergência de Frete Motorista: Sistema (R$ ${freightDivergenceInfo.systemFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) vs Carta Frete (R$ ${freightDivergenceInfo.cartaFreteFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} sem pedágio). Diferença: ${freightDivergenceInfo.diffFormatted}. Confirme qual valor é o correto.`,
+        'warning',
+        7000
+      );
+    }
+    if (companyFreightDivergenceInfo && companyFreightDecision === 'unresolved') {
+      showToast(
+        `⚠️ Divergência de Frete Empresa: CT-e (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.cteServiceTotal)}) vs Sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.systemCompanyFreight)}). Regra: VALOR TOTAL DO SERVIÇO - CTE precisa ser igual ao Total Frete Emp do sistema.`,
         'warning',
         7000
       );
@@ -625,6 +923,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         7000
       );
     }
+    if (tollDivergenceInfo && tollDecision === 'unresolved') {
+      showToast(
+        `⚠️ Divergência de Vale-Pedágio: Sistema (R$ ${tollDivergenceInfo.systemToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) vs Documento (R$ ${tollDivergenceInfo.docToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Diferença: ${tollDivergenceInfo.diffFormatted}. Confirme qual valor é o correto.`,
+        'warning',
+        7000
+      );
+    }
     if (tomadorDivergenceInfo && tomadorDecision === 'unresolved') {
       showToast(
         `⚠️ Divergência de Tomador: Carga (${tomadorDivergenceInfo.systemCnpj}) vs CT-e (${tomadorDivergenceInfo.cteTomadorCnpj}). Confirme se deseja ajustar para o Tomador do CT-e ou vincular como Filial.`,
@@ -632,7 +937,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         7000
       );
     }
-  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!icmsDivergenceInfo, !!tomadorDivergenceInfo]);
+    if (advanceDivergenceInfo) {
+      showToast(
+        `⚠️ Divergência no Adiantamento: "Adiantamento PG" (${formatCurrency(advanceDivergenceInfo.systemAdvance)}) difere do referente Adiantamento de viagem da Carta Frete (${formatCurrency(advanceDivergenceInfo.cartaFreteAdvance)}). Corrija para liberar o avanço.`,
+        'warning',
+        7000
+      );
+    }
+  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!companyFreightDivergenceInfo, !!icmsDivergenceInfo, !!tollDivergenceInfo, !!tomadorDivergenceInfo, !!advanceDivergenceInfo]);
 
   useEffect(() => {
     if (isOpen) {
@@ -644,9 +956,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       setLoadedTonnage(shipment.shipmentTonnage || '');
       setCteExtractedWeightKg(undefined);
       setCartaFreteExtractedFreight(undefined);
+      setCartaFreteExtractedAdvance(undefined);
+      setCteExtractedServiceTotal(undefined);
       setCteExtractedIcms(undefined);
       setWeightDecision('unresolved');
       setFreightDecision('unresolved');
+      setAdvanceDecision('unresolved');
+      setCompanyFreightDecision('unresolved');
       setIcmsDecision('unresolved');
       setTomadorDecision('unresolved');
       setCteExtractedTomadorNome(
@@ -710,10 +1026,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         }
         if (Object.keys(urlMap).length > 0) {
           extractFiscalDocNumbersFromUrls(urlMap).then(extracted => {
-            if (extracted.tollValue !== undefined && extracted.tollValue > 0 && (shipment.tollValue === undefined || shipment.tollValue === null)) {
-              setTollValue(extracted.tollValue);
+            if (extracted.tollValue !== undefined) {
+              setDocExtractedToll(extracted.tollValue);
+              if (extracted.tollValue > 0 && (shipment.tollValue === undefined || shipment.tollValue === null)) {
+                setTollValue(extracted.tollValue);
+              }
             }
-            if (extracted.advanceValue !== undefined && extracted.advanceValue > 0 && !shipment.advanceValue) {
+            if (extracted.advanceValue !== undefined && extracted.advanceValue > 0) {
+              setCartaFreteExtractedAdvance(extracted.advanceValue);
               setAdvanceValue(extracted.advanceValue);
             }
             if (extracted.advancePercentage !== undefined && extracted.advancePercentage > 0 && !shipment.advancePercentage) {
@@ -725,6 +1045,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             if (extracted.driverFreightValue !== undefined && extracted.driverFreightValue > 0) {
               setCartaFreteExtractedFreight(extracted.driverFreightValue);
             }
+            if (extracted.cteTotalServiceValue !== undefined && extracted.cteTotalServiceValue > 0) {
+              setCteExtractedServiceTotal(extracted.cteTotalServiceValue);
+            }
             if (extracted.icmsValue !== undefined && extracted.icmsValue > 0) {
               setCteExtractedIcms(extracted.icmsValue);
             }
@@ -733,6 +1056,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             }
             if (extracted.cteTomadorNome) {
               setCteExtractedTomadorNome(extracted.cteTomadorNome);
+            }
+            if (extracted.ciotNumber && (!shipment.ciotNumber || shipment.ciotNumber === '-' || shipment.ciotNumber === shipment.id) && onUpdateShipmentData) {
+              onUpdateShipmentData(shipment.id, {
+                ciot: extracted.ciotNumber,
+                ciotNumber: extracted.ciotNumber,
+                documents: {
+                  ...shipment.documents,
+                  ciot_number: extracted.ciotNumber,
+                  ciot: extracted.ciotNumber
+                }
+              }, { silent: true });
             }
             if (extracted.ordemCarregamentoNumero && !shipment.documents?.ordem_carregamento_numero && onUpdateShipmentData) {
               onUpdateShipmentData(shipment.id, {
@@ -804,9 +1138,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           let extractedAny = false;
           if (parsed.tollValue !== undefined) {
             setTollValue(parsed.tollValue);
+            setDocExtractedToll(parsed.tollValue);
             extractedAny = true;
           }
-          if (parsed.advanceValue !== undefined) {
+          if (parsed.advanceValue !== undefined && parsed.advanceValue > 0) {
+            setCartaFreteExtractedAdvance(parsed.advanceValue);
             setAdvanceValue(parsed.advanceValue);
             extractedAny = true;
           }
@@ -819,6 +1155,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           }
           if (parsed.driverFreightValue !== undefined && parsed.driverFreightValue > 0) {
             setCartaFreteExtractedFreight(parsed.driverFreightValue);
+            extractedAny = true;
+          }
+          if (parsed.cteTotalServiceValue !== undefined && parsed.cteTotalServiceValue > 0) {
+            setCteExtractedServiceTotal(parsed.cteTotalServiceValue);
             extractedAny = true;
           }
           if (parsed.icmsValue !== undefined && parsed.icmsValue > 0) {
@@ -843,6 +1183,69 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     };
     autoParseFreightDoc();
   }, [singleFiles, multiFiles, documentName]);
+
+  // Sniffing e detecção contínua do tipo real dos arquivos anexados (por nome e conteúdo)
+  useEffect(() => {
+    const filesToSniff: { file: File; currentCat: string }[] = [];
+    Object.entries(multiFiles).forEach(([cat, list]) => {
+      if (Array.isArray(list)) {
+        list.forEach(f => filesToSniff.push({ file: f, currentCat: cat }));
+      }
+    });
+    if (singleFiles.length > 0) {
+      singleFiles.forEach(f => filesToSniff.push({ file: f, currentCat: documentName || 'Documento' }));
+    }
+
+    filesToSniff.forEach(({ file, currentCat }) => {
+      const byName = detectDocumentTypeFromFileName(file.name);
+      if (byName && (!detectedDocTypes[file.name] || (byName === 'Carta Frete' && detectedDocTypes[file.name] !== 'Carta Frete'))) {
+        setDetectedDocTypes(prev => ({ ...prev, [file.name]: byName }));
+      }
+      extractDetailedDocData(file, currentCat).then(detailed => {
+        if (detailed?.documentType && detailed.documentType !== 'Outro') {
+          setDetectedDocTypes(prev => {
+            // Se o arquivo tiver nome indicando expressamente Carta Frete, mantém Carta Frete
+            if (byName === 'Carta Frete' && detailed.documentType !== 'Carta Frete') {
+              return prev;
+            }
+            if (prev[file.name] !== detailed.documentType) {
+              return { ...prev, [file.name]: detailed.documentType };
+            }
+            return prev;
+          });
+        }
+      }).catch(err => console.debug('[AttachmentModal] Doc type sniff error:', err));
+    });
+  }, [multiFiles, singleFiles, documentName]);
+
+  const handleMoveFile = (file: File, fromDocType: string, toDocType: string) => {
+    setMultiFiles(prev => {
+      const sourceFiles = (prev[fromDocType] || []).filter(f => f !== file && f.name !== file.name);
+      const existingTarget = (prev[toDocType] || []).filter(f => f.name !== file.name);
+      return {
+        ...prev,
+        [fromDocType]: sourceFiles,
+        [toDocType]: [...existingTarget, file],
+      };
+    });
+    showToast(`✓ Arquivo "${file.name}" transferido com sucesso para o campo "${toDocType}"!`, 'success');
+  };
+
+  const handleRemoveFile = (file: File, docType: string) => {
+    setMultiFiles(prev => ({
+      ...prev,
+      [docType]: (prev[docType] || []).filter(f => f !== file && f.name !== file.name),
+    }));
+    showToast(`Arquivo "${file.name}" removido do campo "${docType}".`, 'info');
+  };
+
+  const handleMultiFileChange = (docType: string, f: FileList | File[] | null) => {
+    const newFiles = f ? Array.from(f) : [];
+    setMultiFiles((prev: { [key: string]: File[] }) => ({
+      ...prev,
+      [docType]: newFiles,
+    }));
+  };
 
   const [isSyncingFederalTaxes, setIsSyncingFederalTaxes] = useState(false);
 
@@ -882,6 +1285,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         );
       };
 
+      let sumNfeValues = 0;
+      let nfeFilesCount = 0;
+      let transportCargoValue: number | undefined;
+      const detectedNfeNumbersList: string[] = [];
+      const countedNfeKeysInBatch = new Set<string>();
+
       for (const [docType, files] of Object.entries(filesToProcess)) {
         if (!Array.isArray(files) || isExcludedDocCategory(docType)) continue;
         for (const file of files) {
@@ -906,8 +1315,29 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             if (ext.financeiro?.valorPisCofinsFederal) parsedFederalTax = ext.financeiro.valorPisCofinsFederal;
             if (ext.financeiro?.valorPis) parsedPis = ext.financeiro.valorPis;
             if (ext.financeiro?.valorCofins) parsedCofins = ext.financeiro.valorCofins;
+
+            const isNotaFiscalCategory = isStrictNotaFiscalCategory(docType);
             const docNfeVal = ext.financeiro?.valorTotalNfe || ext.carga?.valorMercadoria;
-            if (docNfeVal) parsedNfeValue = docNfeVal;
+
+            if (isNotaFiscalCategory) {
+              const nfeUniqueKey = ext.accessKey || (ext.docNumber ? String(ext.docNumber) : file.name);
+              if (!countedNfeKeysInBatch.has(nfeUniqueKey)) {
+                countedNfeKeysInBatch.add(nfeUniqueKey);
+                if (docNfeVal && docNfeVal > 0) {
+                  sumNfeValues = Number((sumNfeValues + docNfeVal).toFixed(2));
+                  nfeFilesCount++;
+                }
+              }
+              const num = ext.docNumber || ext.notasFiscais?.[0]?.numero || ext.documentosVinculados?.find(d => d.tipo.toLowerCase().includes('nfe') || d.tipo.toLowerCase().includes('nota'))?.numero;
+              if (num && !detectedNfeNumbersList.includes(String(num))) {
+                detectedNfeNumbersList.push(String(num));
+              }
+            } else if (ext.documentType === 'CT-e' || ext.documentType === 'MDF-e') {
+              if (docNfeVal && docNfeVal > 0 && !transportCargoValue) {
+                transportCargoValue = docNfeVal;
+              }
+            }
+
             if (isTransport && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
           } catch {
             // ignore
@@ -942,8 +1372,29 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 if (!parsedFederalTax && ext.financeiro?.valorPisCofinsFederal) parsedFederalTax = ext.financeiro.valorPisCofinsFederal;
                 if (!parsedPis && ext.financeiro?.valorPis) parsedPis = ext.financeiro.valorPis;
                 if (!parsedCofins && ext.financeiro?.valorCofins) parsedCofins = ext.financeiro.valorCofins;
+
+                const isNotaFiscalCategory = isStrictNotaFiscalCategory(key);
                 const docNfeVal = ext.financeiro?.valorTotalNfe || ext.carga?.valorMercadoria;
-                if (!parsedNfeValue && docNfeVal) parsedNfeValue = docNfeVal;
+
+                if (isNotaFiscalCategory) {
+                  const nfeUniqueKey = ext.accessKey || (ext.docNumber ? String(ext.docNumber) : u);
+                  if (!countedNfeKeysInBatch.has(nfeUniqueKey)) {
+                    countedNfeKeysInBatch.add(nfeUniqueKey);
+                    if (docNfeVal && docNfeVal > 0) {
+                      sumNfeValues = Number((sumNfeValues + docNfeVal).toFixed(2));
+                      nfeFilesCount++;
+                    }
+                  }
+                  const num = ext.docNumber || ext.notasFiscais?.[0]?.numero || ext.documentosVinculados?.find(d => d.tipo.toLowerCase().includes('nfe') || d.tipo.toLowerCase().includes('nota'))?.numero;
+                  if (num && !detectedNfeNumbersList.includes(String(num))) {
+                    detectedNfeNumbersList.push(String(num));
+                  }
+                } else if (ext.documentType === 'CT-e' || ext.documentType === 'MDF-e') {
+                  if (docNfeVal && docNfeVal > 0 && !transportCargoValue) {
+                    transportCargoValue = docNfeVal;
+                  }
+                }
+
                 if (isTransport && ext.financeiro?.valorPedagio) parsedToll = ext.financeiro.valorPedagio;
                 if (ext.suspensaoPercentual && ext.suspensaoPercentual > 0) parsedSuspensionPercent = ext.suspensaoPercentual;
               } catch {
@@ -952,6 +1403,14 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             }
           }
         }
+      }
+
+      if (nfeFilesCount > 0 && sumNfeValues > 0) {
+        parsedNfeValue = nfeFilesCount > 1 
+          ? sumNfeValues 
+          : Math.max(sumNfeValues, transportCargoValue || 0);
+      } else if (transportCargoValue) {
+        parsedNfeValue = transportCargoValue;
       }
 
       const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
@@ -1116,8 +1575,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         driverFreightType: isPf ? 'PF' : 'PJ',
       });
 
-      // Atualiza Valor Pago na Conta
-      if (Math.abs(calc.advanceInAccountValue - Number(advanceValue || 0)) > 0.001) {
+      // Atualiza Valor Pago na Conta (Adiantamento PG segue a Carta Frete quando disponível)
+      if (cartaFreteExtractedAdvance !== undefined && cartaFreteExtractedAdvance > 0) {
+        if (advanceValue === '' || advanceValue === undefined) {
+          setAdvanceValue(cartaFreteExtractedAdvance);
+        }
+      } else if (Math.abs(calc.advanceInAccountValue - Number(advanceValue || 0)) > 0.001) {
         setAdvanceValue(calc.advanceInAccountValue > 0 ? calc.advanceInAccountValue : 0);
       }
       // Atualiza Saldo
@@ -1387,9 +1850,31 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
   };
 
+  const handleCorrectAdvanceToCartaFrete = () => {
+    if (!cartaFreteExtractedAdvance) return;
+    setAdvanceValue(cartaFreteExtractedAdvance);
+    setAdvanceDecision('resolved');
+    const loadedTonnageValue = Number(loadedTonnage) || Number(shipment.shipmentTonnage) || 0;
+    const driverFreightRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+    const totalFreight = shipment.driverFreightValue || (driverFreightRate * loadedTonnageValue);
+    const tagVal = Number(tollValue || 0);
+    if (totalFreight > 0) {
+      const calculatedPct = Number((((cartaFreteExtractedAdvance + tagVal) / totalFreight) * 100).toFixed(2));
+      if (calculatedPct > 0 && calculatedPct <= 100) {
+        setAdvancePercentage(calculatedPct);
+      }
+    }
+    showToast(`✓ Adiantamento PG corrigido para R$ ${cartaFreteExtractedAdvance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} conforme Carta Frete! Salvar e Avançar liberado.`, 'success');
+  };
+
   const handleSave = async () => {
     if (isDemo) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (hasUnresolvedAdvanceDivergence) {
+      showToast(`⚠️ Divergência no Adiantamento: "Adiantamento PG" (${formatCurrency(Number(advanceValue) || 0)}) deve ser igual ao "referente Adiantamento de viagem" da Carta Frete (${formatCurrency(cartaFreteExtractedAdvance || 0)}). Corrija o valor para liberar o avanço.`, 'warning');
+      setError('Adiantamento PG deve ser igual ao referente Adiantamento de viagem da carta frete antes de salvar e avançar.');
       return;
     }
     let filesToAttach: { [key: string]: File[] } = {};
@@ -1403,6 +1888,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         setError('Dados bancários são obrigatórios.');
         return;
       }
+      if (hasAttachmentMismatch) {
+        showToast('⚠️ Corrija os arquivos anexados em campos incorretos (ex: MDF-e em Carta Frete) antes de salvar.', 'error');
+        setError('Existem documentos anexados no campo incorreto. Corrija-os clicando em "Mover para ..." ou removendo o anexo.');
+        return;
+      }
       if (isAguardandoFiscal) {
         if (hasUnresolvedWeightDivergence) {
           showToast(`⚠️ Divergência de Peso pendente: Confirme se o peso correto é o do Ticket (${weightDivergenceInfo?.ticketTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) ou do CT-e (${weightDivergenceInfo?.cteTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) antes de avançar.`, 'warning');
@@ -1412,6 +1902,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         if (hasUnresolvedFreightDivergence) {
           showToast(`⚠️ Divergência de Frete Motorista pendente: Confirme se o valor correto é o do Sistema ou o da Carta Frete antes de avançar.`, 'warning');
           setError('É obrigatório confirmar qual valor de Frete Motorista é o correto antes de avançar.');
+          return;
+        }
+        if (hasUnresolvedCompanyFreightDivergence) {
+          showToast(`⚠️ Divergência de Frete Empresa pendente: VALOR TOTAL DO SERVIÇO - CTE (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo?.cteServiceTotal || 0)}) precisa ser igual ao Total Frete Emp do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo?.systemCompanyFreight || 0)}). Confirme qual valor deve prevalecer antes de avançar.`, 'warning');
+          setError('É obrigatório confirmar qual valor de Frete Empresa é o correto antes de avançar.');
           return;
         }
         if (hasUnresolvedIcmsDivergence) {
@@ -1527,6 +2022,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     const calculatedRiskCost = matchedOption ? matchedOption.cost : (riskQueryType ? (RISK_QUERY_COST_MAP[riskQueryType] ?? RISK_QUERY_COST_MAP[riskQueryType.toLowerCase().trim()] ?? 31.50) : undefined);
     const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
 
+    if (isAguardandoFiscal && companyFreightDecision === 'use_cte' && companyFreightDivergenceInfo && onUpdateShipmentData) {
+      const ton = ticketLoadedWeightTon || Number(loadedTonnage) || Number(shipment.shipmentTonnage) || Number(cargo?.totalVolume) || 1;
+      const newCompanyRate = ton > 0 ? Number((companyFreightDivergenceInfo.cteServiceTotal / ton).toFixed(2)) : undefined;
+      onUpdateShipmentData(shipment.id, {
+        companyFreightRateSnapshot: newCompanyRate,
+        realProfitData: {
+          ...(shipment.realProfitData || {}),
+          companyFreight: companyFreightDivergenceInfo.cteServiceTotal,
+        } as any
+      }, { silent: true });
+    }
+
     setError('');
     setIsSaving(true);
     try {
@@ -1536,13 +2043,24 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         loadedTonnage: shipment.status === ShipmentStatus.AguardandoCarregamento 
           ? Number(loadedTonnage) 
           : (isAguardandoFiscal && weightDecision === 'use_cte' && weightDivergenceInfo ? weightDivergenceInfo.cteTon : undefined),
-        driverFreightValue: (isAguardandoFiscal && freightDecision === 'use_carta_frete' && freightDivergenceInfo) ? freightDivergenceInfo.cartaFreteFreight : undefined,
+        driverFreightValue: (isAguardandoFiscal && freightDecision === 'use_carta_frete' && freightDivergenceInfo) 
+          ? Number((freightDivergenceInfo.cartaFreteFreight + (effectiveToll || 0)).toFixed(2)) 
+          : undefined,
         icmsValue: (isAguardandoFiscal && icmsDecision === 'use_cte' && icmsDivergenceInfo) 
           ? icmsDivergenceInfo.cteIcms 
           : (isAguardandoFiscal && cteExtractedIcms !== undefined && !icmsDivergenceInfo ? cteExtractedIcms : undefined),
+        realProfitData: (isAguardandoFiscal && companyFreightDecision === 'use_cte' && companyFreightDivergenceInfo) 
+          ? ({
+              ...(shipment.realProfitData || {}),
+              companyFreight: companyFreightDivergenceInfo.cteServiceTotal,
+              ...(icmsDecision === 'use_cte' && icmsDivergenceInfo ? { icmsDifference: icmsDivergenceInfo.cteIcms } : {}),
+            } as any)
+          : (icmsDecision === 'use_cte' && icmsDivergenceInfo ? ({ ...(shipment.realProfitData || {}), icmsDifference: icmsDivergenceInfo.cteIcms } as any) : undefined),
         advancePercentage: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advancePercentage) : undefined,
         advanceValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advanceValue) : undefined,
-        tollValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(tollValue || 0) : undefined,
+        tollValue: (isAguardandoFiscal && tollDecision === 'use_doc' && tollDivergenceInfo) 
+          ? tollDivergenceInfo.docToll 
+          : (shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(tollValue || 0) : undefined),
         balanceToReceiveValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? Number(balanceToReceiveValue) : undefined,
         discountValue: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? (isBreakageWaived ? 0 : (discountValue === '' ? undefined : Number(discountValue))) : undefined,
         isBreakageWaived: shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ? isBreakageWaived : undefined,
@@ -1569,33 +2087,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
   const isClientUser = currentUser.profile === UserProfile.Cliente;
 
-  const ignoredDocKeys = new Set([
-    'pix_key',
-    'cte_number',
-    'payment_method',
-    'risk_query_cost',
-    'risk_query_type',
-    'cte_emission_date',
-    'risk_release_code',
-    'advance_percentage',
-    'toll_value',
-    'advance_value',
-    'balance_value',
-    'balance_to_receive_value',
-    'discount_value',
-    'net_balance_value',
-    'unloaded_tonnage',
-    'loaded_tonnage',
-  ]);
-
   const isValidDocumentEntry = (key: string, value: any): boolean => {
-    if (!key || ignoredDocKeys.has(key.toLowerCase().trim())) return false;
-    if (key.startsWith('_')) return false;
+    if (!key || isDocumentMetadataKey(key)) return false;
     if (Array.isArray(value)) {
-      return value.length > 0 && value.some(v => typeof v === 'string' && v.trim() !== '' && (v.startsWith('http') || v.startsWith('/') || v.includes('.')));
+      return value.length > 0 && value.some(v => isActualDocumentUrl(v));
     }
     if (typeof value === 'string') {
-      return value.trim() !== '' && (value.startsWith('http') || value.startsWith('/') || (value.includes('.') && value.length > 4));
+      return isActualDocumentUrl(value);
     }
     return false;
   };
@@ -1618,7 +2116,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     const validDocs = docs.filter(([key, files]) => {
       if (!isValidDocumentEntry(key, files)) return false;
       const fileList = Array.isArray(files) ? files : (typeof files === 'string' ? [files] : []);
-      return fileList.length > 0;
+      return fileList.some(f => isActualDocumentUrl(f));
     });
 
     if (validDocs.length === 0) {
@@ -1630,7 +2128,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {validDocs.map(([docType, files]) => {
-          const rawList = (Array.isArray(files) ? files : (typeof files === 'string' ? [files] : [])).filter(f => typeof f === 'string' && f.trim() !== '');
+          const rawList = (Array.isArray(files) ? files : (typeof files === 'string' ? [files] : [])).filter(f => isActualDocumentUrl(f));
           const fileList = Array.from(new Set(rawList));
           if (fileList.length === 0) return null;
 
@@ -1737,13 +2235,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const embarcadorName = embarcadorUser?.name || shipment.embarcadorId || 'Não especificado';
 
   const canViewCompanyFreight = currentUser.profile !== UserProfile.Motorista && currentUser.profile !== UserProfile.Embarcador;
-  const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || (shipment.shipmentTonnage ? shipment.driverFreightValue / shipment.shipmentTonnage : 0);
+  const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const effectiveToll = tollValue !== '' && tollValue !== undefined
     ? Number(tollValue)
     : (shipment.tollValue || Number((shipment.documents as any)?.valor_pedagio || (shipment.documents as any)?.toll_value || 0));
 
-  const totalDriverFreight = shipment.driverFreightValue || (driverRate * (shipment.shipmentTonnage || 0));
+  const ton = Number(shipment.shipmentTonnage) || 0;
+  const calculatedDriverFreight = (driverRate > 0 && ton > 0) ? Number((driverRate * ton).toFixed(2)) : 0;
+  const totalDriverFreight = (calculatedDriverFreight > 0 && shipment.driverFreightValue && Math.abs(Number(shipment.driverFreightValue) - calculatedDriverFreight) > 5.00 && shipment.driverFreightRateSnapshot)
+    ? calculatedDriverFreight
+    : (Number(shipment.driverFreightValue) || calculatedDriverFreight);
   const driverFreightNetOfToll = Math.max(0, totalDriverFreight - effectiveToll);
   const totalCompanyFreight = shipment.realProfitData?.companyFreight !== undefined && shipment.realProfitData.companyFreight > 0
     ? shipment.realProfitData.companyFreight
@@ -2262,8 +2764,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       key={docType}
                       label={docType}
                       files={multiFiles[docType] || []}
-                      onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({ ...prev, [docType]: f ? Array.from(f) : [] }))}
+                      onFileChange={(f) => handleMultiFileChange(docType, f)}
                       onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                      onMoveFile={handleMoveFile}
+                      onRemoveFile={handleRemoveFile}
+                      detectedTypesMap={detectedDocTypes}
+                      availableTargetCategories={notaFiscalDocTypes}
                     />
                   ))}
                 </div>
@@ -2276,11 +2782,35 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       key={docType}
                       label={docType}
                       files={multiFiles[docType] || []}
-                      onFileChange={(f) => setMultiFiles((prev: { [key: string]: File[] }) => ({ ...prev, [docType]: f ? Array.from(f) : [] }))}
+                      onFileChange={(f) => handleMultiFileChange(docType, f)}
                       onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                      onMoveFile={handleMoveFile}
+                      onRemoveFile={handleRemoveFile}
+                      detectedTypesMap={detectedDocTypes}
+                      availableTargetCategories={travelDocTypes}
                     />
                   ))}
                 </div>
+
+                {/* Banner de Erro caso haja documento anexado na categoria errada (ex: MDF-e em Carta Frete) */}
+                {hasAttachmentMismatch && (
+                  <div className="p-4 rounded-xl border-2 bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-600 shadow-sm animate-in fade-in">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 shrink-0">
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-rose-900 dark:text-rose-100 flex items-center gap-1.5">
+                          ⛔ Documento Anexado no Campo Incorreto
+                        </h4>
+                        <p className="text-xs text-rose-700 dark:text-rose-300 mt-1">
+                          Foi identificado arquivo anexado no campo errado (por exemplo, MDF-e anexado em Carta Frete).
+                          Clique no botão <strong>"Mover para ..."</strong> presente no arquivo acima para transferi-lo imediatamente ao campo correto e liberar o avanço.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Painel de Validação e Conciliação Fiscal (CT-e e Carta Frete) */}
                 <div className="mt-4 space-y-3">
@@ -2411,13 +2941,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
                             <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Frete Motorista no Sistema:</span>
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Frete Motorista no Sistema (Sem Pedágio):</span>
                               <span className="text-base font-bold text-gray-900 dark:text-white">
                                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)}
                               </span>
                             </div>
                             <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Carta Frete Anexada:</span>
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Carta Frete Anexada (Sem Pedágio):</span>
                               <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
                                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)}
                               </span>
@@ -2430,7 +2960,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                               type="button"
                               onClick={() => {
                                 setFreightDecision('use_carta_frete');
-                                showToast(`✓ Confirmado: Frete motorista corrigido para ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)} (Carta Frete).`, 'success');
+                                showToast(`✓ Confirmado: Frete motorista corrigido para ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)} (Carta Frete sem pedágio).`, 'success');
                               }}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                 freightDecision === 'use_carta_frete'
@@ -2439,13 +2969,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                               }`}
                             >
                               <Check className="w-4 h-4" />
-                              <span>✓ Atualizar para Frete da Carta Frete ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)})</span>
+                              <span>✓ Atualizar para Frete da Carta Frete ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.cartaFreteFreight)} sem pedágio)</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => {
                                 setFreightDecision('keep_system');
-                                showToast(`✓ Confirmado: Mantido o frete motorista do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)}).`, 'info');
+                                showToast(`✓ Confirmado: Mantido o frete motorista do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)} sem pedágio).`, 'info');
                               }}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                                 freightDecision === 'keep_system'
@@ -2453,7 +2983,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                                   : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
                               }`}
                             >
-                              <span>Manter Frete do Sistema ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)})</span>
+                              <span>Manter Frete do Sistema ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freightDivergenceInfo.systemFreight)} sem pedágio)</span>
                             </button>
                           </div>
 
@@ -2465,6 +2995,97 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           {freightDecision === 'keep_system' && (
                             <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
                               ✓ O valor de frete motorista do sistema será mantido.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Divergência 3: Frete Empresa (Sistema vs CT-e) */}
+                  {companyFreightDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      companyFreightDecision === 'unresolved'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          companyFreightDecision === 'unresolved'
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {companyFreightDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              🏢 Validação de Frete Empresa: Sistema vs CT-e
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              Diferença: {companyFreightDivergenceInfo.diffFormatted}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            Regra fiscal: <strong>VALOR TOTAL DO SERVIÇO - CTE</strong> precisa ser igual ao <strong>Total Frete Emp do sistema</strong>. Escolha qual valor deve ser considerado:
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Total Frete Emp no Sistema:</span>
+                              <span className="text-base font-bold text-gray-900 dark:text-white">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.systemCompanyFreight)}
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Valor Total do Serviço (CT-e):</span>
+                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.cteServiceTotal)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação para o Operador Confirmar */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCompanyFreightDecision('use_cte');
+                                showToast(`✓ Confirmado: Frete Empresa atualizado para ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.cteServiceTotal)} (CT-e).`, 'success');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                companyFreightDecision === 'use_cte'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>✓ Atualizar para Frete Empresa do CT-e ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.cteServiceTotal)})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCompanyFreightDecision('keep_system');
+                                showToast(`✓ Confirmado: Mantido o Frete Empresa do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.systemCompanyFreight)}).`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                companyFreightDecision === 'keep_system'
+                                  ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                              }`}
+                            >
+                              <span>Manter Frete Empresa do Sistema ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(companyFreightDivergenceInfo.systemCompanyFreight)})</span>
+                            </button>
+                          </div>
+
+                          {companyFreightDecision === 'use_cte' && (
+                            <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ O Frete Empresa será atualizado automaticamente ao salvar.
+                            </p>
+                          )}
+                          {companyFreightDecision === 'keep_system' && (
+                            <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                              ✓ O valor de Frete Empresa do sistema será mantido.
                             </p>
                           )}
                         </div>
@@ -2556,6 +3177,98 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                           {icmsDecision === 'keep_system' && (
                             <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
                               ✓ O valor de ICMS do sistema será mantido.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Divergência de Vale-Pedágio (Sistema vs Documento Fiscal) */}
+                  {tollDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      tollDecision === 'unresolved'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          tollDecision === 'unresolved'
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {tollDecision === 'unresolved' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              🛣️ Validação de Vale-Pedágio: Sistema vs Documento Anexado
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              Diferença: {tollDivergenceInfo.diffFormatted}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            O valor de vale-pedágio cadastrado no sistema difere do valor lido no documento anexado (CT-e / Carta Frete). Escolha qual valor deve ser considerado:
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Vale-Pedágio no Sistema:</span>
+                              <span className="text-base font-bold text-gray-900 dark:text-white">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tollDivergenceInfo.systemToll)}
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Vale-Pedágio no Documento (CT-e / Carta Frete):</span>
+                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tollDivergenceInfo.docToll)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação para o Operador Confirmar */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTollDecision('use_doc');
+                                setTollValue(tollDivergenceInfo.docToll);
+                                showToast(`✓ Confirmado: Vale-Pedágio atualizado para ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tollDivergenceInfo.docToll)}.`, 'success');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                tollDecision === 'use_doc'
+                                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              }`}
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>✓ Atualizar para Pedágio do Documento ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tollDivergenceInfo.docToll)})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTollDecision('keep_system');
+                                showToast(`✓ Confirmado: Mantido o Vale-Pedágio do sistema (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tollDivergenceInfo.systemToll)}).`, 'info');
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                tollDecision === 'keep_system'
+                                  ? 'bg-gray-700 text-white shadow-md ring-2 ring-gray-600'
+                                  : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600'
+                              }`}
+                            >
+                              <span>Manter Pedágio do Sistema ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tollDivergenceInfo.systemToll)})</span>
+                            </button>
+                          </div>
+
+                          {tollDecision === 'use_doc' && (
+                            <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ O valor de pedágio será atualizado automaticamente ao salvar.
+                            </p>
+                          )}
+                          {tollDecision === 'keep_system' && (
+                            <p className="mt-2 text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                              ✓ O valor de vale-pedágio do sistema será mantido.
                             </p>
                           )}
                         </div>
@@ -2677,11 +3390,72 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     </div>
                   )}
 
+                  {/* Divergência 5: Adiantamento PG (Sistema vs Carta Frete - Referente Adiantamento de Viagem) */}
+                  {advanceDivergenceInfo && (
+                    <div className={`p-4 rounded-xl border-2 transition-all ${
+                      hasUnresolvedAdvanceDivergence
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
+                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          hasUnresolvedAdvanceDivergence
+                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {hasUnresolvedAdvanceDivergence ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                              💵 Validação de Adiantamento: Sistema vs Carta Frete
+                            </h4>
+                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
+                              Diferença: {advanceDivergenceInfo.diffFormatted}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                            Regra obrigatória: <strong>"Adiantamento PG"</strong> deve ser igual ao <strong>"referente Adiantamento de viagem"</strong> da Carta Frete. O botão <em>Salvar e Avançar</em> está travado até a correção.
+                          </p>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Adiantamento PG no Sistema:</span>
+                              <span className="text-base font-bold text-gray-900 dark:text-white">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(advanceDivergenceInfo.systemAdvance)}
+                              </span>
+                            </div>
+                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Adiantamento de Viagem (Carta Frete):</span>
+                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(advanceDivergenceInfo.cartaFreteAdvance)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleCorrectAdvanceToCartaFrete}
+                              className="px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500"
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>✓ Corrigir Adiantamento PG para R$ {advanceDivergenceInfo.cartaFreteAdvance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Carta Frete)</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Feedback positivo se houver documentos e nenhuma divergência pendente */}
                   {((cteWeightTon > 0 && !weightDivergenceInfo) || (weightDivergenceInfo && weightDecision !== 'unresolved')) &&
                    ((cartaFreteExtractedFreight && !freightDivergenceInfo) || (freightDivergenceInfo && freightDecision !== 'unresolved')) &&
+                   ((cteExtractedServiceTotal && !companyFreightDivergenceInfo) || (companyFreightDivergenceInfo && companyFreightDecision !== 'unresolved')) &&
                    ((cteExtractedIcms && !icmsDivergenceInfo) || (icmsDivergenceInfo && icmsDecision !== 'unresolved')) &&
-                   (!tomadorDivergenceInfo || tomadorDecision !== 'unresolved') && (
+                   ((docExtractedToll && !tollDivergenceInfo) || (tollDivergenceInfo && tollDecision !== 'unresolved')) &&
+                   (!tomadorDivergenceInfo || tomadorDecision !== 'unresolved') &&
+                   (!advanceDivergenceInfo || !hasUnresolvedAdvanceDivergence) && (
                     <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span className="font-medium">
@@ -2873,38 +3647,97 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                         </span>
                       </div>
 
+                      {/* Alerta de Divergência no Adiantamento PG */}
+                      {advanceDivergenceInfo && (
+                        <div className="p-3 bg-amber-100/90 dark:bg-amber-950/70 border-2 border-amber-500 dark:border-amber-500/80 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-start sm:items-center gap-2.5">
+                            <AlertTriangle className="w-5 h-5 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                            <div>
+                              <p className="text-xs font-bold text-amber-950 dark:text-amber-200">
+                                Divergência no Adiantamento: Sistema ({formatCurrency(advanceDivergenceInfo.systemAdvance)}) ≠ Carta Frete ({formatCurrency(advanceDivergenceInfo.cartaFreteAdvance)})
+                              </p>
+                              <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                                "Adiantamento PG" deve ser igual ao referente Adiantamento de viagem da Carta Frete. Salvar e Avançar travado até corrigir.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleCorrectAdvanceToCartaFrete}
+                            className="shrink-0 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Corrigir para {formatCurrency(advanceDivergenceInfo.cartaFreteAdvance)}</span>
+                          </button>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <div>
-                          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                            Valor pago no Tag
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className={`block text-xs font-semibold ${isAgAdiantamento ? 'text-gray-500 dark:text-gray-400 flex items-center gap-1' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {isAgAdiantamento && <Lock className="w-3 h-3 text-gray-400" />}
+                              <span>Valor pago no Tag</span>
+                            </label>
+                            {isAgAdiantamento && (
+                              <span className="text-[9px] font-bold text-gray-500 dark:text-gray-400 bg-gray-200/80 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                                Fixo
+                              </span>
+                            )}
+                          </div>
                           <div className="relative">
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">R$</span>
                             <input
                               type="number"
                               value={tollValue}
-                              onChange={(e) => setTollValue(e.target.value === '' ? '' : Number(e.target.value))}
-                              className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
-                              disabled={!canSave}
+                              onChange={(e) => !isAgAdiantamento && setTollValue(e.target.value === '' ? '' : Number(e.target.value))}
+                              readOnly={isAgAdiantamento}
+                              className={`w-full pl-8 pr-8 py-2 border rounded-lg text-sm dark:border-gray-600 ${
+                                isAgAdiantamento || !canSave
+                                  ? 'bg-gray-100 dark:bg-gray-800/80 cursor-not-allowed select-none text-gray-600 dark:text-gray-300'
+                                  : 'bg-white dark:bg-gray-700'
+                              }`}
+                              disabled={!canSave || isAgAdiantamento}
                               placeholder="0,00"
+                              title={isAgAdiantamento ? "Valor do pedágio definido na emissão da Carta Frete. Bloqueado para edição no status Ag. Adiantamento." : undefined}
                             />
+                            {isAgAdiantamento && (
+                              <Lock className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            )}
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                            % Adiantamento
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className={`block text-xs font-semibold ${isAgAdiantamento ? 'text-gray-500 dark:text-gray-400 flex items-center gap-1' : 'text-gray-600 dark:text-gray-300'}`}>
+                              {isAgAdiantamento && <Lock className="w-3 h-3 text-gray-400" />}
+                              <span>% Adiantamento</span>
+                            </label>
+                            {isAgAdiantamento && (
+                              <span className="text-[9px] font-bold text-gray-500 dark:text-gray-400 bg-gray-200/80 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                                Fixo
+                              </span>
+                            )}
+                          </div>
                           <div className="relative">
                             <input
                               type="number"
                               value={advancePercentage}
-                              onChange={(e) => setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))}
-                              className={`w-full px-3 py-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : 'bg-white'}`}
-                              disabled={!canSave}
+                              onChange={(e) => !isAgAdiantamento && setAdvancePercentage(e.target.value === '' ? '' : Number(e.target.value))}
+                              readOnly={isAgAdiantamento}
+                              className={`w-full pl-3 pr-10 py-2 border rounded-lg text-sm dark:border-gray-600 ${
+                                isAgAdiantamento || !canSave
+                                  ? 'bg-gray-100 dark:bg-gray-800/80 cursor-not-allowed select-none text-gray-600 dark:text-gray-300'
+                                  : 'bg-white dark:bg-gray-700'
+                              }`}
+                              disabled={!canSave || isAgAdiantamento}
                               placeholder="Ex: 80"
+                              title={isAgAdiantamento ? "% de adiantamento fixado na emissão da Carta Frete. Bloqueado para edição no status Ag. Adiantamento." : undefined}
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">%</span>
+                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
+                              {isAgAdiantamento && <Lock className="w-3 h-3 text-gray-400" />}
+                              <span className="text-xs text-gray-400 font-bold">%</span>
+                            </div>
                           </div>
                         </div>
 
@@ -2914,29 +3747,37 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             : ""
                         }>
                           <div className="flex items-center justify-between mb-1">
-                            <label className={`block text-xs font-semibold ${isAgAdiantamento ? 'text-blue-900 dark:text-blue-100 font-bold uppercase tracking-tight text-[11px]' : 'text-gray-600 dark:text-gray-300'}`}>
-                              Adiantamento PG
+                            <label className={`flex items-center gap-1 text-xs font-semibold ${isAgAdiantamento ? 'text-blue-900 dark:text-blue-100 font-bold uppercase tracking-tight text-[11px]' : 'text-gray-600 dark:text-gray-300'}`}>
+                              <Lock className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                              <span>Adiantamento PG</span>
                             </label>
-                            {isAgAdiantamento && (
-                              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-xs">
-                                A Pagar
+                            <div className="flex items-center gap-1">
+                              <span className="text-[9px] font-bold text-gray-500 dark:text-gray-400 bg-gray-200/80 dark:bg-gray-800 px-1.5 py-0.5 rounded flex items-center gap-0.5" title="Campo bloqueado para edição manual. Preenchido com o Adiantamento de viagem da Carta Frete.">
+                                Bloqueado
                               </span>
-                            )}
+                              {isAgAdiantamento && (
+                                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-xs">
+                                  A Pagar
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="relative">
                             <span className={`absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-medium ${isAgAdiantamento ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-gray-400'}`}>R$</span>
                             <input
                               type="number"
                               value={advanceValue}
-                              onChange={(e) => setAdvanceValue(e.target.value === '' ? '' : Number(e.target.value))}
-                              className={`w-full pl-8 pr-2.5 py-2 border rounded-lg text-sm ${
+                              readOnly={true}
+                              tabIndex={-1}
+                              className={`w-full pl-8 pr-8 py-2 border rounded-lg text-sm cursor-not-allowed select-none bg-gray-100 dark:bg-gray-800/80 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 ${
                                 isAgAdiantamento
-                                  ? 'border-blue-400 dark:border-blue-500 font-bold text-blue-950 dark:text-white bg-white dark:bg-gray-800 shadow-xs focus:ring-2 focus:ring-blue-500'
-                                  : 'dark:bg-gray-700 dark:border-gray-600 bg-white'
-                              } ${!canSave ? 'bg-gray-100 dark:bg-gray-900 cursor-not-allowed text-gray-400' : ''}`}
-                              disabled={!canSave}
+                                  ? 'border-blue-400 dark:border-blue-500 font-bold text-blue-950 dark:text-white shadow-xs'
+                                  : ''
+                              }`}
+                              title="Campo bloqueado para edição manual. O valor é preenchido automaticamente com o referente Adiantamento de viagem extraído da Carta Frete."
                               placeholder="0,00"
                             />
+                            <Lock className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                           </div>
                           <div className="mt-1 flex items-center justify-between text-[11px] px-0.5 text-gray-500 dark:text-gray-400 font-medium">
                             <span>Total Adiantamento:</span>
@@ -3631,14 +4472,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || 
                       (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
                       (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
-                      hasUnresolvedFiscalDivergence
+                      hasUnresolvedFiscalDivergence ||
+                      hasUnresolvedAdvanceDivergence ||
+                      hasAttachmentMismatch
                     }
                     className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(
                       isSaving || 
                       (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || 
                       (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
                       (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
-                      hasUnresolvedFiscalDivergence
+                      hasUnresolvedFiscalDivergence ||
+                      hasUnresolvedAdvanceDivergence ||
+                      hasAttachmentMismatch
                     )
                         ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-none'
                         : 'bg-primary hover:bg-primary-dark shadow-primary/20'
@@ -3650,11 +4495,20 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       </>
                     ) : 'Salvar e Avançar'}
                   </button>
-                  {hasUnresolvedFiscalDivergence && (
+                  {hasAttachmentMismatch && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-rose-950 text-rose-200 border border-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⚠️ Corrija os documentos anexados em campos incorretos (ex: MDF-e em Carta Frete) para liberar o avanço
+                    </div>
+                  )}
+                  {hasUnresolvedAdvanceDivergence ? (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-amber-950 text-amber-200 border border-amber-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⚠️ O Adiantamento PG precisa ser igual ao referente Adiantamento de viagem da Carta Frete ({formatCurrency(cartaFreteExtractedAdvance || 0)}) para liberar o avanço
+                    </div>
+                  ) : hasUnresolvedFiscalDivergence ? (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-amber-950 text-amber-200 border border-amber-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
                       ⚠️ Confirme e valide as divergências apontadas acima para liberar o avanço
                     </div>
-                  )}
+                  ) : null}
                   {shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim()) && (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-amber-950 text-amber-200 border border-amber-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
                       ⚠️ Preencha o CODG. ATUA para liberar o salvamento e avançar
