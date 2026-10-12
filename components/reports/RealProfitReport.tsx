@@ -28,7 +28,7 @@ import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isS
 import CteCostAutomationPanel from '../CteCostAutomationPanel';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { addPdfLogo } from '../../utils/pdfGenerator';
-import type { StayRecord } from '../../utils/toolStorage';
+import { extractCteNumberFromStay, type StayRecord } from '../../utils/toolStorage';
 
 interface RealProfitReportProps {
   shipments: Shipment[];
@@ -319,6 +319,11 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
       // Estadias vinculadas a este embarque
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
+      const complementCtes = Array.from(new Set(
+        shipmentStays
+          .map(stay => stay.cteNumber || extractCteNumberFromStay(stay))
+          .filter(Boolean)
+      )) as string[];
       const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
       const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);
       const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
@@ -421,6 +426,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         demurrageRevenue,
         demurrageDriverPaid,
         demurrageProfit,
+        complementCtes,
         requesterName: requesterUser?.name || s.agencyCommissionAgencyName || s.embarcadorId || s.createdById || 'N/A',
       };
     });
@@ -529,9 +535,13 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
     }
 
     const tableData = validRows.map(r => {
+      let cteDisplay = r.cte || '---';
+      if (r.complementCtes && r.complementCtes.length > 0) {
+        cteDisplay += `\n(Comp: ${r.complementCtes.join('/')})`;
+      }
       const rowArr = [
         r.shipment.id,
-        r.cte || '---',
+        cteDisplay,
         r.shipment.scheduledDate || '---',
         r.clientName,
         `${r.shipment.driverName} (${r.shipment.horsePlate})`,
@@ -656,9 +666,10 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
 
     const rows = enrichedRows.map(r => {
       const expenseDesc = r.expenseItems.map(e => `${e.name}: R$ ${e.value}`).join(' | ');
+      const compCteStr = r.complementCtes && r.complementCtes.length > 0 ? ` (Comp: ${r.complementCtes.join('/')})` : '';
       const rowData = [
         r.shipment.id,
-        r.cte || '',
+        (r.cte || '') + compCteStr,
         r.shipment.scheduledDate || '',
         r.shipment.status,
         `"${r.clientName.replace(/"/g, '""')}"`,
@@ -1177,6 +1188,19 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
                           CT-e nº {row.cte}
                         </span>
                       ) : null}
+                      {row.complementCtes && row.complementCtes.length > 0 && (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {row.complementCtes.map((compNum, idx) => (
+                            <span 
+                              key={idx} 
+                              className="inline-block text-[9px] font-mono text-purple-700 dark:text-purple-300 font-bold bg-purple-50 dark:bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800 shadow-2xs"
+                              title="CT-e Complementar de Estadia vinculado a este embarque"
+                            >
+                              Comp: {compNum}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
 
                     {/* Motorista / Placa */}

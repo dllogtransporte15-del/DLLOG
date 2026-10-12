@@ -17,7 +17,7 @@ import { LogOutIcon } from './icons/LogOutIcon';
 import { MapIcon } from './icons/MapIcon';
 import { ImageIcon } from './icons/ImageIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, MapPin } from 'lucide-react';
 
 
 interface SidebarProps {
@@ -60,6 +60,7 @@ const navItems: NavItem[] = [
         { id: 'drivers', label: 'Motoristas', icon: DriverIcon },
         { id: 'vehicles', label: 'Veículos', icon: TruckIcon },
         { id: 'loads', label: 'Cargas', icon: PackageIcon },
+        { id: 'locations', label: 'Expedidor/Recebedor', icon: MapPin },
     ]
   },
   { id: 'reports', label: 'Relatórios', icon: ChartIcon },

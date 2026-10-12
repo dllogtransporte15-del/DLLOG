@@ -540,11 +540,19 @@ export async function openDocumentInNewTab(urlOrFile?: string | File | null, raw
  */
 export function getShipmentCteFileUrl(shipment?: { documents?: any; cteUrl?: string } | null): string | null {
   if (!shipment) return null;
+  if (shipment.documents?.active_cte_url) {
+    const activeU = normalizeDocumentUrl(shipment.documents.active_cte_url);
+    if (activeU) return activeU;
+  }
   if (shipment.cteUrl && typeof shipment.cteUrl === 'string' && shipment.cteUrl.trim()) {
     return normalizeDocumentUrl(shipment.cteUrl.trim());
   }
   const docs = shipment.documents;
   if (!docs || typeof docs !== 'object') return null;
+
+  const cancelledUrls = Array.isArray(docs.cancelled_ctes)
+    ? docs.cancelled_ctes.map((c: any) => c.fileUrl).filter(Boolean)
+    : [];
 
   const keysToCheck = [
     'CT-e',

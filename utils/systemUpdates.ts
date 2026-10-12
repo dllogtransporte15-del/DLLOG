@@ -21,6 +21,165 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_12_v2_70_51',
+    version: 'v2.70.51',
+    date: '12/10/2026',
+    title: 'Novo Cadastro de Expedidor/Recebedor e Integração na Ordem de Carregamento',
+    summary: 'Configuração e criação do novo módulo de Cadastro chamado "Expedidor/Recebedor" para registro completo de locais (origem/destino de cargas: Fazenda, Galpão, Porto, etc.) com CNPJ ou CPF, Telefone com identificador de WhatsApp, classificação fixa "Ambos" (Expedidor/Recebedor), sugestão automática de link do Maps e exibição prioritária na Ordem de Carregamento em PDF com preservação de sigilo telefônico.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Módulo de Cadastro "Expedidor/Recebedor"',
+        description: 'Disponibilizado no menu "Cadastro" (Sidebar e TopNavBar) e na matriz de permissões com gestão completa: inclusão, edição, busca inteligente, exclusão e importação/sincronização de locais cadastrados.'
+      },
+      {
+        category: 'feature',
+        title: 'Dados Fiscais e de Contato com Validação',
+        description: 'Opção de informar CNPJ ou CPF com máscara e validação automática, Telefone formatado com indicador se possui WhatsApp para disparo de mensagens, Cidade, UF e Link do Google Maps.'
+      },
+      {
+        category: 'feature',
+        title: 'Classificação Fixa "Ambos" (Expedidor/Recebedor)',
+        description: 'Conforme especificado, a classificação do local é travada permanentemente como "Ambos", garantindo que qualquer local cadastrado possa ser utilizado tanto na origem quanto no destino das cargas.'
+      },
+      {
+        category: 'feature',
+        title: 'Cadastro Direto de Expedidor/Recebedor Dentro da Carga',
+        description: 'Adicionados botões "+ Cadastrar Local" e atalhos de "Editar" diretamente nos cards de Origem e Destino do formulário de carga. Abre modal rápido permitindo preencher Nome, CNPJ/CPF, Telefone, WhatsApp e Maps sem sair do cadastro da carga, com preenchimento e seleção imediata.'
+      },
+      {
+        category: 'improvement',
+        title: 'Autocompletar Inteligente no Cadastro de Cargas',
+        description: 'Os campos "Local / Fazenda / Galpão" (origem) e "Local / Porto / Galpão" (destino) nas cargas agora possuem autocompletar integrado à lista de locais cadastrados, preenchendo automaticamente o link do Google Maps quando disponível e registrando novos locais salvos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Otimização de Contraste e Paleta de Cores nos Modais',
+        description: 'Aprimoramento completo dos tons de fundo, textos, labels e botões nos modais de Expedidor/Recebedor, eliminando informações apagadas e garantindo nitidez e contraste absoluto tanto no modo claro quanto no tema escuro.'
+      },
+      {
+        category: 'security',
+        title: 'Nome do Local na Ordem de Carregamento sem Exposição Telefônica',
+        description: 'O PDF da Ordem de Carregamento agora destaca o Nome do Local e CNPJ/CPF em "ORIGEM DO CARREGAMENTO" e "DESTINO DA CARGA", garantindo estrita privacidade ao NÃO exibir o número de telefone do local no documento impresso.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_12_v2_70_50',
+    version: 'v2.70.50',
+    date: '12/10/2026',
+    title: 'Leitura de CT-e Complementar em Estadias e Integração no Relatório de Lucro Real',
+    summary: 'Configurada a leitura automatizada de CT-e complementar no Histórico de Estadias com identificação e persistência do número do documento, e integração completa dos números de CT-e complementar no Relatório em PDF de "Lucro Real da Operação" e na interface do sistema.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Leitura e Exibição de CT-e Complementar nas Estadias',
+        description: 'Ao anexar um arquivo PDF ou XML no Histórico de Estadias, o sistema realiza a leitura instantânea do CT-e, extrai automaticamente o número do documento (e sugere o valor aprovado), exibe campo dedicado para conferência do número e disponibiliza botão de leitura direta para documentos já armazenados.'
+      },
+      {
+        category: 'feature',
+        title: 'CT-es de Complemento no PDF de Lucro Real da Operação',
+        description: 'A exportação em PDF do Relatório de Lucro Real agora consolida e exibe na coluna de CT-e todos os CT-es complementares associados às estadias daquele embarque (ex: "2211 / Comp: 2450"), proporcionando rastreabilidade contábil e operacional completa.'
+      },
+      {
+        category: 'improvement',
+        title: 'Badges em Destaque nos Cards e na Tabela',
+        description: 'No Histórico de Estadias e na tabela de Lucro Real da Operação, adicionadas badges visuais de alto contraste com o número do CT-e complementar e link direto para visualização do documento anexado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_12_v2_70_49',
+    version: 'v2.70.49',
+    date: '12/10/2026',
+    title: 'Bloqueio Automático e Trava Contra Anexo de Documentos Duplicados',
+    summary: 'Implementado sistema de validação inteligente de duplicidade nos anexos do embarque. Qualquer tentativa de anexar o mesmo documento duplicado (seja no mesmo campo, em categorias diferentes, ou em relação a documentos já gravados no embarque e no fluxo de substituição de CT-e) é imediatamente travada e rejeitada, com alerta explicativo para o usuário.',
+    items: [
+      {
+        category: 'security',
+        title: 'Trava Imediata na Seleção de Arquivos',
+        description: 'Ao arrastar, colar ou selecionar arquivos nos campos de upload, o sistema verifica em tempo real o nome e a integridade do arquivo. Documentos duplicados são descartados e bloqueados imediatamente com mensagem de erro.'
+      },
+      {
+        category: 'fix',
+        title: 'Prevenção de Duplicidades Globais no Embarque',
+        description: 'A verificação compara os novos arquivos contra todos os documentos já persistidos no banco para o embarque, contra arquivos selecionados em outros campos da mesma sessão e contra o documento original no modal de cancelamento/substituição de CT-e.'
+      },
+      {
+        category: 'improvement',
+        title: 'Barreira Dupla de Segurança no Salvamento',
+        description: 'Adicionada validação definitiva no momento do envio e avanço de etapa, garantindo que nenhum documento redundante ou repetido seja gravado no storage ou nos registros do embarque.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_12_v2_70_48',
+    version: 'v2.70.48',
+    date: '12/10/2026',
+    title: 'Cancelamento e Substituição Rastreável de CT-e com Preservação de Histórico',
+    summary: 'Implementação de fluxo seguro e integrado para cancelamento de CT-e com exigência obrigatória de anexo e cadastro de CT-e substituto. O CT-e cancelado é mantido no histórico com identificação visual (badge CANCELADO e proteção contra exclusão), e todos os módulos e planilhas do sistema exibem a cadeia completa de CT-es participantes (ex: 2211/2233).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Botão e Modal "Cancelar & Substituir CT-e"',
+        description: 'No gerenciador de anexos do embarque, os CT-es ativos contam com a opção "Substituir". Ao acionar, abre-se um assistente que exige o upload do novo CT-e (PDF/XML), extrai ou recebe o novo número, registra a justificativa fiscal e vincula o substituto imediatamente.'
+      },
+      {
+        category: 'feature',
+        title: 'Preservação de Histórico de CT-es Cancelados',
+        description: 'Os documentos cancelados permanecem arquivados e visualizáveis com marcação "CANCELADO" e detalhes da auditoria (motivo, data/hora e autor), bloqueando exclusões acidentais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Exibição da Cadeia Completa em Todos os Fronts (ex: 2211/2233)',
+        description: 'Todos os módulos do sistema (Planilha de Controle, Detalhes do Embarque, Kanban, Contas a Receber e Relatórios) passam a apresentar a cadeia completa dos CT-es participantes separados por barra, com ordenação numérica inteligente baseada no CT-e substituto ativo e acesso direto ao PDF do CT-e vigente.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_47',
+    version: 'v2.70.47',
+    date: '11/10/2026',
+    title: 'Exibição da Filial Informada na Carga na Coluna Cliente Tomador Pagador',
+    summary: 'Ajuste na Planilha de Controle para identificar e exibir a filial exata informada na carga (ex: Organics - Gurupi, Organics Aruanã, Organics Formosa, Organics Nazário, Organics Campo Verde, etc.), em vez de fixar o tomador padrão da Matriz (Organics - Mineiros).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Resolução da Filial na Coluna Tomador Pagador',
+        description: 'A coluna CLIENTE TOMADOR PAGADOR agora verifica a filial selecionada na carga (clientBranchId e clientCnpj), os metadados da carga e os documentos do embarque, exibindo o nome específico da filial pagadora informada.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtros por Filial Específica',
+        description: 'Com a diferenciação correta das filiais por viagem, o filtro da coluna CLIENTE TOMADOR PAGADOR passa a listar cada filial individualmente, permitindo consultas e análises segmentadas por unidade.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_11_v2_70_46',
+    version: 'v2.70.46',
+    date: '11/10/2026',
+    title: 'Ordenação Dinâmica das Linhas por Número de CT-e (Crescente ou Decrescente)',
+    summary: 'Ajuste e ativação da alternância bidirecional da ordenação das linhas da Planilha de Controle pelo número de CT-e, permitindo alternar de forma instantânea entre ordem Decrescente (maior para o menor) e Crescente (menor para o maior), com suporte a clique direto no cabeçalho e botão dedicado na barra de ferramentas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Alternância Crescente / Decrescente por CT-e',
+        description: 'Ao clicar no cabeçalho "CTE" (tanto na Linha 1 de setores quanto na Linha 2 de colunas), a ordenação agora alterna perfeitamente entre Decrescente (▼) e Crescente (▲), reordenando numericamente todas as linhas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Botão de Controle Rápido na Barra de Ferramentas',
+        description: 'Adicionado botão dedicado "CT-e: Crescente (▲) / Decrescente (▼)" na barra de filtros superior e no cabeçalho da visualização em tela cheia para alternância rápida e visibilidade do estado atual de classificação.'
+      },
+      {
+        category: 'fix',
+        title: 'Preservação de Linhas com CT-e Válido no Topo',
+        description: 'Ao ordenar em ordem Crescente, o algoritmo agora mantém os embarques com CT-e emitido organizados do menor para o maior no topo, sem empurrar registros vazios/sem CT-e para o início da lista.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_11_v2_70_45',
     version: 'v2.70.45',
     date: '11/10/2026',

@@ -22,7 +22,7 @@ import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -85,6 +85,7 @@ const navItems: NavItem[] = [
         { id: 'drivers', label: 'Motoristas', icon: DriverIcon },
         { id: 'vehicles', label: 'Veículos', icon: TruckIcon },
         { id: 'loads', label: 'Cargas', icon: PackageIcon },
+        { id: 'locations', label: 'Expedidor/Recebedor', icon: MapPin },
         { id: 'products', label: 'Produtos', icon: PackageIcon },
         { id: 'risk-query-types', label: 'Tipos de Consulta GR', icon: ShieldCheck },
     ]

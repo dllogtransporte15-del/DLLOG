@@ -1,6 +1,21 @@
 // FIX: Moved Page type definition from App.tsx to here so it can be shared across modules.
 // FIX: Added 'embarcadores' and 'operational-map' to the page list to resolve type errors.
-export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types' | 'whatsapp' | 'messenger';
+export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'locations' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types' | 'whatsapp' | 'messenger';
+
+export interface ExpedidorRecebedor {
+  id: string;
+  name: string; // Nome do Local (Fazenda / Galpão / Porto / etc.)
+  documentType: 'CNPJ' | 'CPF';
+  documentNumber: string; // CNPJ ou CPF
+  phone: string; // Número de telefone
+  isWhatsapp: boolean; // Se o número é WhatsApp ou não
+  classification: 'Ambos'; // Classificação do Local: sempre "Ambos" (Expedidor/Recebedor)
+  city?: string;
+  state?: string;
+  mapLink?: string;
+  notes?: string;
+  createdAt: string;
+}
 
 export enum UserProfile {
   Embarcador = "Embarcador",
@@ -469,6 +484,17 @@ export interface RealProfitData {
   shipperCommission?: number;
   shipperCommissionRatePerTon?: number;
   shipperCommissionEnabled?: boolean;
+}
+
+export interface CancelledCteRecord {
+  cteNumber: string;
+  fileUrl?: string;
+  fileName?: string;
+  cancelledAt: string;
+  cancelledBy?: string;
+  reason?: string;
+  substituteCteNumber?: string;
+  substituteFileUrl?: string;
 }
 
 export interface Shipment {

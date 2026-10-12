@@ -31,10 +31,57 @@ export interface StayRecord {
   approvedValue?: number;
   driverPaidValue?: number;
   cteUrl?: string;
+  cteNumber?: string;
   paymentProofUrl?: string;
   status?: string;
   shipmentId?: string;
   date: string; // = created_at, para compatibilidade com o histórico
+}
+
+const STAY_CTE_STORAGE_KEY = 'transcunha_stay_cte_numbers';
+
+export function getStoredStayCteNumbers(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const saved = localStorage.getItem(STAY_CTE_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveStayCteNumber(stayId: string, cteNumber: string): void {
+  if (typeof window === 'undefined' || !stayId || !cteNumber) return;
+  try {
+    const current = getStoredStayCteNumbers();
+    current[stayId] = cteNumber.trim();
+    localStorage.setItem(STAY_CTE_STORAGE_KEY, JSON.stringify(current));
+  } catch (err) {
+    console.warn('Erro ao salvar cteNumber no storage local:', err);
+  }
+}
+
+export function extractCteNumberFromStay(stay?: Partial<StayRecord> | null): string | undefined {
+  if (!stay) return undefined;
+  if (stay.cteNumber && stay.cteNumber.trim()) return stay.cteNumber.trim();
+
+  // 1. Tentar ler do localStorage
+  if (stay.id) {
+    const stored = getStoredStayCteNumbers();
+    if (stored[stay.id]) return stored[stay.id];
+  }
+
+  // 2. Tentar ler do cteUrl (se o arquivo foi salvo com padrão _CTE_12345_)
+  if (stay.cteUrl) {
+    const match = stay.cteUrl.match(/_CTE_([0-9]+)/i);
+    if (match && match[1]) return match[1];
+
+    const fileName = decodeURIComponent(stay.cteUrl.split('/').pop() || '');
+    const cteMatch = fileName.match(/cte[-_\s]*([0-9]{3,9})/i);
+    if (cteMatch && cteMatch[1]) return cteMatch[1];
+  }
+
+  return undefined;
 }
 
 export interface QuoteRecord {
@@ -162,6 +209,7 @@ export async function getToolStays(userId: string): Promise<StayRecord[]> {
     approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
     driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
     cteUrl: row.cte_url ?? undefined,
+    cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
     paymentProofUrl: row.payment_proof_url ?? undefined,
     status: row.status ?? undefined,
     shipmentId: row.shipment_id ?? undefined,
@@ -201,6 +249,7 @@ export async function getAllToolStays(): Promise<StayRecord[]> {
     approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
     driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
     cteUrl: row.cte_url ?? undefined,
+    cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
     paymentProofUrl: row.payment_proof_url ?? undefined,
     status: row.status ?? undefined,
     shipmentId: row.shipment_id ?? undefined,
@@ -244,6 +293,7 @@ export async function getToolStaysByShipment(shipmentId: string): Promise<StayRe
     status: row.status ?? undefined,
     shipmentId: row.shipment_id ?? undefined,
     cteUrl: row.cte_url ?? undefined,
+    cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
     paymentProofUrl: row.payment_proof_url ?? undefined,
     date: row.created_at,
   }));
@@ -325,9 +375,15 @@ export async function deleteToolStay(id: string): Promise<void> {
   if (error) console.error('Erro ao excluir estadia:', error);
 }
 
-export async function uploadStayAttachment(stayId: string, type: 'cte_complementar' | 'comprovante_pagamento', file: File): Promise<string | null> {
+export async function uploadStayAttachment(
+  stayId: string, 
+  type: 'cte_complementar' | 'comprovante_pagamento', 
+  file: File,
+  cteNumber?: string
+): Promise<string | null> {
   const fileExt = file.name.split('.').pop();
-  const fileName = `${stayId}_${type}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+  const cleanCte = cteNumber ? `_CTE_${cteNumber.replace(/\D/g, '')}` : '';
+  const fileName = `${stayId}_${type}${cleanCte}_${Date.now()}.${fileExt}`;
   const filePath = `stays/${fileName}`;
 
   const { error: uploadError } = await supabase.storage
@@ -346,6 +402,11 @@ export async function updateToolStay(
   id: string,
   updates: Partial<StayRecord>
 ): Promise<StayRecord | null> {
+  // Se foi fornecido cteNumber, persistir no storage local
+  if (updates.cteNumber !== undefined) {
+    saveStayCteNumber(id, updates.cteNumber);
+  }
+
   const payload: any = {};
   if (updates.clientName !== undefined) payload.client_name = updates.clientName;
   if (updates.driver !== undefined) payload.driver = updates.driver;
@@ -368,7 +429,26 @@ export async function updateToolStay(
   if (updates.status !== undefined) payload.status = updates.status;
   if (updates.shipmentId !== undefined) payload.shipment_id = updates.shipmentId;
 
-  if (Object.keys(payload).length === 0) return null;
+  if (Object.keys(payload).length === 0) {
+    return {
+      id,
+      driver: '',
+      plate: '',
+      invoice: '',
+      origin: '',
+      destination: '',
+      location: 'Origem',
+      entryDate: '',
+      exitDate: '',
+      totalHours: 0,
+      weight: 0,
+      valuePerHour: 0,
+      tolerance: 0,
+      totalValue: 0,
+      cteNumber: updates.cteNumber || extractCteNumberFromStay({ id }),
+      date: new Date().toISOString()
+    };
+  }
 
   const { data, error } = await supabase
     .from('tool_stays')
@@ -406,6 +486,7 @@ export async function updateToolStay(
         status: data.status ?? undefined,
         shipmentId: data.shipment_id ?? undefined,
         cteUrl: data.cte_url ?? undefined,
+        cteNumber: updates.cteNumber || data.cte_number || extractCteNumberFromStay({ id: data.id, cteUrl: data.cte_url }),
         paymentProofUrl: data.payment_proof_url ?? undefined,
         date: data.created_at,
       }

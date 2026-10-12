@@ -13,8 +13,10 @@ import Header from '../components/Header';
 import { 
   getToolStays, getToolQuotes, StayRecord, QuoteRecord, 
   getToolClients, ToolClient, deleteToolStay, deleteToolQuote, updateToolStay, uploadStayAttachment,
-  getAllToolStays, getAllToolQuotes, getAllToolClients
+  getAllToolStays, getAllToolQuotes, getAllToolClients,
+  extractCteNumberFromStay, saveStayCteNumber
 } from '../utils/toolStorage';
+import { extractDetailedDocData } from '../utils/fiscalDocParser';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
@@ -43,6 +45,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     id: string, 
     approved: string, 
     paid: string, 
+    cteNumber?: string,
     cteFile?: File | null, 
     paymentFile?: File | null,
     clientName: string,
@@ -54,6 +57,8 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     shipmentId: string,
     invoice: string
   } | null>(null);
+  const [isReadingCte, setIsReadingCte] = useState(false);
+  const [cteFeedback, setCteFeedback] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [shipmentSearchTerm, setShipmentSearchTerm] = useState('');
   const [isShipmentDropdownOpen, setIsShipmentDropdownOpen] = useState(false);
@@ -152,16 +157,20 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (expandedId === id) {
       setExpandedId(null);
       setEditValues(null);
+      setCteFeedback(null);
       setShipmentSearchTerm('');
       setIsShipmentDropdownOpen(false);
     } else {
       setExpandedId(id);
+      setCteFeedback(null);
       const stay = stays.find(s => s.id === id);
       if (stay && activeView === 'estadias') {
+        const detectedCteNumber = stay.cteNumber || extractCteNumberFromStay(stay) || '';
         setEditValues({
           id,
           approved: stay.approvedValue != null ? stay.approvedValue.toString() : '',
           paid: stay.driverPaidValue != null ? stay.driverPaidValue.toString() : '',
+          cteNumber: detectedCteNumber,
           clientName: stay.clientName || '',
           driver: stay.driver || '',
           plate: stay.plate || '',
@@ -187,6 +196,70 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         setShipmentSearchTerm('');
       }
       setIsShipmentDropdownOpen(false);
+    }
+  };
+
+  const handleCteFileSelect = async (file: File) => {
+    if (!editValues) return;
+    setIsReadingCte(true);
+    setCteFeedback('Lendo dados do CT-e Complementar...');
+    setEditValues(prev => prev ? { ...prev, cteFile: file } : null);
+    try {
+      const detailed = await extractDetailedDocData(file, 'CT-e');
+      if (detailed?.docNumber) {
+        const num = detailed.docNumber.trim();
+        setEditValues(prev => prev ? { ...prev, cteNumber: num } : null);
+        setCteFeedback(`CT-e complementar nº ${num} detectado com sucesso!`);
+      } else {
+        const match = file.name.match(/(?:cte|ct-e)?[_-]?(\d{3,9})/i);
+        if (match && match[1]) {
+          setEditValues(prev => prev ? { ...prev, cteNumber: match[1] } : null);
+          setCteFeedback(`CT-e complementar nº ${match[1]} detectado pelo nome do arquivo.`);
+        } else {
+          setCteFeedback('Arquivo anexado com sucesso.');
+        }
+      }
+
+      // Se extraiu valor e o valor aprovado ainda está vazio
+      const extractedVal = detailed?.financeiro?.valorTotalServico || detailed?.financeiro?.valorTotalFrete;
+      if (extractedVal && (!editValues.approved || editValues.approved === '' || editValues.approved === '0')) {
+        setEditValues(prev => prev ? { ...prev, approved: extractedVal.toFixed(2) } : null);
+      }
+    } catch (err) {
+      console.warn('Erro ao processar leitura do CT-e:', err);
+      setCteFeedback('Arquivo anexado. Informe o número se necessário.');
+    } finally {
+      setIsReadingCte(false);
+    }
+  };
+
+  const handleReadExistingCte = async (stay: StayRecord) => {
+    if (!stay.cteUrl) return;
+    setIsReadingCte(true);
+    setCteFeedback('Lendo CT-e complementar anexado na nuvem...');
+    try {
+      const fileUrl = getShipmentAttachmentUrl(stay.cteUrl);
+      const detailed = await extractDetailedDocData(fileUrl, 'CT-e');
+      if (detailed?.docNumber) {
+        const num = detailed.docNumber.trim();
+        setEditValues(prev => prev ? { ...prev, cteNumber: num } : null);
+        saveStayCteNumber(stay.id, num);
+        setStays(prev => prev.map(s => s.id === stay.id ? { ...s, cteNumber: num } : s));
+        setCteFeedback(`CT-e complementar nº ${num} identificado com sucesso!`);
+      } else {
+        const fallback = extractCteNumberFromStay(stay);
+        if (fallback) {
+          setEditValues(prev => prev ? { ...prev, cteNumber: fallback } : null);
+          setCteFeedback(`CT-e complementar nº ${fallback} recuperado.`);
+        } else {
+          setCteFeedback('Não foi possível identificar o número do CT-e automaticamente no documento.');
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao ler CT-e anexado:', err);
+      setCteFeedback('Erro ao ler arquivo da nuvem.');
+    } finally {
+      setIsReadingCte(false);
     }
   };
 
@@ -245,11 +318,17 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       let cteUrl: string | undefined = undefined;
       let paymentProofUrl: string | undefined = undefined;
 
+      const cleanCteNum = editValues.cteNumber ? editValues.cteNumber.trim() : undefined;
+
       if (editValues.cteFile) {
-        cteUrl = (await uploadStayAttachment(editValues.id, 'cte_complementar', editValues.cteFile)) || undefined;
+        cteUrl = (await uploadStayAttachment(editValues.id, 'cte_complementar', editValues.cteFile, cleanCteNum)) || undefined;
       }
       if (editValues.paymentFile) {
         paymentProofUrl = (await uploadStayAttachment(editValues.id, 'comprovante_pagamento', editValues.paymentFile)) || undefined;
+      }
+
+      if (cleanCteNum) {
+        saveStayCteNumber(editValues.id, cleanCteNum);
       }
 
       const approvedVal = editValues.approved !== '' ? parseFlexibleNumber(editValues.approved) : undefined;
@@ -267,17 +346,19 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         destination: editValues.destination || undefined,
         shipmentId: editValues.shipmentId || undefined,
         invoice: editValues.invoice || undefined,
+        cteNumber: cleanCteNum,
         ...(cteUrl && { cteUrl }),
         ...(paymentProofUrl && { paymentProofUrl })
       };
       
       const result = await updateToolStay(editValues.id, updates);
       if (result) {
-        setStays(prev => prev.map(s => s.id === editValues.id ? { ...s, ...updates, ...result } : s));
+        setStays(prev => prev.map(s => s.id === editValues.id ? { ...s, ...updates, ...result, cteNumber: cleanCteNum || result.cteNumber || s.cteNumber } : s));
       }
       await loadData();
       setExpandedId(null);
       setEditValues(null);
+      setCteFeedback(null);
     } catch (err) {
       console.error('Erro ao salvar alterações da estadia:', err);
       alert('Erro ao salvar alterações. Por favor, tente novamente.');
@@ -433,11 +514,26 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                           {activeView === 'estadias' ? <Truck className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
                        </div>
                        <div>
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400 rounded-md tracking-wider uppercase">{item.id}</span>
                             {activeView === 'estadias' && (
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase ${item.calculationType === 'DAILY_FIXED' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200/50' : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200/50'}`}>
                                 {item.calculationType === 'DAILY_FIXED' ? 'Diária Fixa' : 'Ton / Hora'}
+                              </span>
+                            )}
+                            {activeView === 'estadias' && (item.cteNumber || extractCteNumberFromStay(item) || item.cteUrl) && (
+                              <span 
+                                onClick={(e) => {
+                                  if (item.cteUrl) {
+                                    e.stopPropagation();
+                                    openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl), 'CT-e Complementar');
+                                  }
+                                }}
+                                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md tracking-wider uppercase bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1 ${item.cteUrl ? 'cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/50' : ''}`}
+                                title={item.cteUrl ? "CT-e Complementar anexado (clique para abrir)" : "CT-e Complementar"}
+                              >
+                                <FileText className="w-3 h-3" />
+                                CT-e Comp: Nº {item.cteNumber || extractCteNumberFromStay(item) || 'Anexado'}
                               </span>
                             )}
                             <span className="text-xs text-slate-400 font-medium">{format(parseISO(item.date), 'dd/MM/yyyy')} às {format(parseISO(item.date), 'HH:mm')}</span>
@@ -484,6 +580,14 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                 <span className="text-slate-500">Nota Fiscal</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.invoice || 'Não Informada'}</span>
                               </div>
+                              {activeView === 'estadias' && (item.cteNumber || extractCteNumberFromStay(item) || item.cteUrl) && (
+                                <div className="flex justify-between text-sm py-2 border-b border-slate-100 dark:border-gray-700">
+                                  <span className="text-slate-500">CT-e Complementar</span>
+                                  <span className="font-bold font-mono text-purple-700 dark:text-purple-300">
+                                    Nº {item.cteNumber || extractCteNumberFromStay(item) || 'Anexado'}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between text-sm py-2">
                                 <span className="text-slate-500">Peso Transportado</span>
                                 <span className="font-bold text-slate-700 dark:text-gray-300">{item.weight} Toneladas</span>
@@ -622,26 +726,76 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                        placeholder="R$ 0,00"
                                        className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
                                      />
-                                     <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 p-1.5 rounded border border-slate-200 dark:border-gray-600 flex items-center justify-center whitespace-nowrap text-xs text-slate-600 dark:text-gray-300" title="Anexar CTe Complementar">
+                                     <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 p-1.5 rounded border border-slate-200 dark:border-gray-600 flex items-center justify-center whitespace-nowrap text-xs text-slate-600 dark:text-gray-300 transition-colors" title="Anexar e Ler CTe Complementar">
                                        <Paperclip className="w-4 h-4 mr-1" /> CTe
                                        <input 
                                          type="file" 
                                          className="hidden" 
+                                         accept=".pdf,.xml,application/pdf,text/xml"
                                          onChange={e => {
                                            const file = e.target.files?.[0];
-                                           if (file) setEditValues(prev => prev ? {...prev, cteFile: file} : null);
+                                           if (file) handleCteFileSelect(file);
                                          }} 
                                        />
                                      </label>
                                    </div>
+
+                                   {/* Número do CT-e Complementar (Lido automaticamente ou informado) */}
+                                   <div className="mt-2.5 p-2.5 bg-slate-50 dark:bg-gray-900/40 rounded-xl border border-slate-200/80 dark:border-gray-700/80">
+                                     <div className="flex items-center justify-between mb-1">
+                                       <label className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase block">
+                                         Nº do CT-e Complementar
+                                       </label>
+                                       {isReadingCte && (
+                                         <span className="text-[9px] text-indigo-500 font-semibold animate-pulse flex items-center">
+                                           <Clock className="w-3 h-3 mr-0.5 animate-spin" /> Lendo CT-e...
+                                         </span>
+                                       )}
+                                     </div>
+                                     <div className="flex gap-2 items-center">
+                                       <input 
+                                         type="text" 
+                                         value={editValues?.id === item.id ? (editValues?.cteNumber || '') : ''} 
+                                         onChange={e => setEditValues(prev => prev ? {...prev, cteNumber: e.target.value} : null)}
+                                         placeholder="Ex: 2450 (lido automaticamente)"
+                                         className="w-full px-2.5 py-1 text-xs font-mono font-bold border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500 text-purple-700 dark:text-purple-300 placeholder:font-normal placeholder:text-slate-400"
+                                       />
+                                       {item.cteUrl && !editValues?.cteFile && (
+                                         <button
+                                           type="button"
+                                           onClick={() => handleReadExistingCte(item)}
+                                           disabled={isReadingCte}
+                                           className="px-2 py-1 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[11px] rounded border border-purple-200 dark:border-purple-800 font-semibold whitespace-nowrap transition-colors"
+                                           title="Ler número do CT-e diretamente do anexo salvo na nuvem"
+                                         >
+                                           Ler CT-e
+                                         </button>
+                                       )}
+                                     </div>
+                                     {cteFeedback && editValues?.id === item.id && (
+                                       <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold">
+                                         {cteFeedback}
+                                       </div>
+                                     )}
+                                   </div>
+
                                    {editValues?.id === item.id && editValues?.cteFile && (
                                      <div className="text-[10px] text-indigo-500 mt-1 truncate">Anexo: {editValues.cteFile.name}</div>
                                    )}
                                    {item.cteUrl && !(editValues?.id === item.id && editValues?.cteFile) && (
-                                     <button type="button" onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl!), 'CTe Complementar')} className="text-[10px] text-indigo-500 hover:underline mt-1 block text-left font-semibold cursor-pointer">Ver CTe Anexado</button>
+                                     <div className="flex items-center gap-2 mt-1">
+                                       <button 
+                                         type="button" 
+                                         onClick={() => openDocumentInNewTab(getShipmentAttachmentUrl(item.cteUrl!), 'CTe Complementar')} 
+                                         className="text-[10px] text-indigo-500 hover:underline font-semibold cursor-pointer flex items-center gap-1"
+                                       >
+                                         <FileText className="w-3 h-3" />
+                                         Ver CTe Anexado {item.cteNumber || extractCteNumberFromStay(item) ? '(Nº ' + (item.cteNumber || extractCteNumberFromStay(item)) + ')' : ''}
+                                       </button>
+                                     </div>
                                    )}
                                  </div>
-                                 <div>
+                                  <div>
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Pago Motorista (Custo)</label>
                                    <div className="flex gap-2 items-center">
                                      <input 

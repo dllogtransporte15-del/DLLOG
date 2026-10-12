@@ -2,6 +2,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Shipment, Cargo, Client, Product, Vehicle } from "../types";
+import { findExpedidorRecebedorByName } from "./locationStorage";
 
 export const getStoredCompanyLogo = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -123,6 +124,18 @@ export const generateLoadingOrderPDF = (
   doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
   doc.text("1. INFORMAÇÕES DA CARGA", margin, 68);
 
+  const originLoc = findExpedidorRecebedorByName(cargo.originLocation || '');
+  const originDocInfo = originLoc?.documentNumber ? ` [${originLoc.documentType || 'DOC'}: ${originLoc.documentNumber}]` : '';
+  const originDisplay = cargo.originLocation
+    ? `${cargo.origin ? cargo.origin.toUpperCase() + ' - ' : ''}LOCAL / EXPEDIDOR: ${cargo.originLocation.toUpperCase()}${originDocInfo}`
+    : (cargo.origin || '').toUpperCase();
+
+  const destLoc = findExpedidorRecebedorByName(cargo.destinationLocation || '');
+  const destDocInfo = destLoc?.documentNumber ? ` [${destLoc.documentType || 'DOC'}: ${destLoc.documentNumber}]` : '';
+  const destDisplay = cargo.destinationLocation
+    ? `${cargo.destination ? cargo.destination.toUpperCase() + ' - ' : ''}LOCAL / RECEBEDOR: ${cargo.destinationLocation.toUpperCase()}${destDocInfo}`
+    : (cargo.destination || '').toUpperCase();
+
   autoTable(doc, {
     startY: 71,
     head: [["Descrição do Requisito", "Informações Detalhadas"]],
@@ -132,8 +145,8 @@ export const generateLoadingOrderPDF = (
       ["PRODUTO / MERCADORIA", (product?.name || cargo.productId || '').toUpperCase()],
       ["TIPO DE EMBALAGEM", (cargo.packaging || 'GRANEL').toUpperCase()],
       ["PESO / TONELAGEM", `${(Number(shipment.shipmentTonnage) || 0).toLocaleString("pt-BR")} TON`],
-      ["ORIGEM DO CARREGAMENTO", cargo.originLocation ? `${cargo.origin || ''} - ${cargo.originLocation}`.toUpperCase() : (cargo.origin || '').toUpperCase()],
-      ["DESTINO DA CARGA", cargo.destinationLocation ? `${cargo.destination || ''} - ${cargo.destinationLocation}`.toUpperCase() : (cargo.destination || '').toUpperCase()],
+      ["ORIGEM DO CARREGAMENTO", originDisplay],
+      ["DESTINO DA CARGA", destDisplay],
       ["DATA PROGRAMADA", shipment.scheduledDate ? new Date(`${shipment.scheduledDate}T00:00:00`).toLocaleDateString('pt-BR') : 'N/A'],
     ],
     theme: "striped",

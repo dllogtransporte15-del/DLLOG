@@ -199,13 +199,44 @@ export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; do
   if (!shipment) return '-';
   if (shipment.status && !isCteApplicableForStatus(shipment.status)) return '-';
 
-  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '') {
-    return shipment.cteNumber.trim();
-  }
-  if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '') {
-    return String(shipment.documents.cte_number).trim();
+  // 1. Extrair lista de números de CT-es cancelados, se houver
+  const cancelledNumbers: string[] = [];
+  if (Array.isArray(shipment.documents?.cancelled_ctes)) {
+    for (const c of shipment.documents.cancelled_ctes) {
+      const numStr = String(c?.cteNumber || '').trim();
+      if (numStr && !cancelledNumbers.includes(numStr)) {
+        cancelledNumbers.push(numStr);
+      }
+    }
   }
 
+  // 2. Extrair número registrado no embarque
+  let directNum = '';
+  if (shipment.cteNumber && typeof shipment.cteNumber === 'string' && shipment.cteNumber.trim() !== '') {
+    directNum = shipment.cteNumber.trim();
+  } else if (shipment.documents?.cte_number && String(shipment.documents.cte_number).trim() !== '') {
+    directNum = String(shipment.documents.cte_number).trim();
+  }
+
+  // Se directNum já contiver barra (ex: "2211/2233"), já está completo e no formato desejado
+  if (directNum && directNum.includes('/')) {
+    return directNum;
+  }
+
+  // Se houver números cancelados registrados e um número ativo
+  if (cancelledNumbers.length > 0) {
+    const allNums = [...cancelledNumbers];
+    if (directNum && !allNums.includes(directNum)) {
+      allNums.push(directNum);
+    }
+    return allNums.join('/');
+  }
+
+  if (directNum) {
+    return directNum;
+  }
+
+  // 3. Fallback: extração a partir dos anexos
   const cteDocs = shipment.documents?.['CT-e'] || shipment.documents?.['CT-E'] || shipment.documents?.['cte'] || shipment.documents?.['Cte'];
   if (Array.isArray(cteDocs) && cteDocs.length > 0) {
     const extractedList: string[] = [];
@@ -219,7 +250,7 @@ export function getShipmentCte(shipment?: { status?: any; cteNumber?: string; do
         }
       }
     }
-    if (extractedList.length > 0) return extractedList.join(', ');
+    if (extractedList.length > 0) return extractedList.join('/');
   } else if (typeof cteDocs === 'string' && cteDocs.trim() !== '') {
     const match = cteDocs.match(/DACTE_(\d+)/i) || 
                   cteDocs.match(/CT[-_]?e[^\d]*(\d{3,8})/i) || 

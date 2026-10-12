@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
-import { Shipment, Cargo, Client, ShipmentStatus, User, Product, Owner, Vehicle } from '../../types';
+import { Shipment, Cargo, Client, ClientBranchCnpj, ShipmentStatus, User, Product, Owner, Vehicle } from '../../types';
 import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber, normalizeWeightTonnage, getShipmentCteRemetente } from '../../utils';
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
@@ -278,7 +278,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'idEmbarqueSistema', label: 'ID EMBARQUE SISTEMA', category: 'Embarques do Sistema', categoryColor: 'bg-emerald-600', type: 'text', width: 'w-[100px] min-w-[100px] max-w-[100px]', isSynchronized: true, align: 'center' },
 
   // 1. Faturamento & Recebimento Empresa
-  { key: 'cteHoras', label: 'CTE', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'w-[75px] min-w-[75px] max-w-[75px]', align: 'center' },
+  { key: 'cteHoras', label: 'CTE', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[85px] max-w-[130px]', align: 'center' },
   { key: 'dataHoraEmissao', label: 'DATA/HORA DE EMISSÃO', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[105px] max-w-[120px]', align: 'center' },
   { key: 'jaFaturado', label: 'JÁ FATURADO', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'select', options: ['SIM', 'NÃO'], width: 'min-w-[70px] max-w-[80px]', align: 'center' },
   { key: 'dataVencimento', label: 'DATA VENCIM', category: 'Faturamento & Recebimento Empresa', categoryColor: 'bg-sky-600', type: 'text', width: 'min-w-[80px] max-w-[90px]', align: 'center' },
@@ -314,7 +314,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'ordemCarregamento', label: 'ORDEM DE CARREG', category: 'Cadastros & Controles', categoryColor: 'bg-slate-700', type: 'text', width: 'min-w-[90px] max-w-[100px]', align: 'center' },
 
   // 5. Tomador, Rota & Pesagem
-  { key: 'clienteTomadorPagador', label: 'CLIENTE TOMADOR PAGADOR', category: 'Tomador, Rota & Pesagem', categoryColor: 'bg-amber-600', type: 'text', width: 'min-w-[135px] max-w-[160px]' },
+  { key: 'clienteTomadorPagador', label: 'CLIENTE TOMADOR PAGADOR', category: 'Tomador, Rota & Pesagem', categoryColor: 'bg-amber-600', type: 'text', width: 'min-w-[150px] max-w-[220px]' },
   { key: 'freteEmpresaUnitario', label: 'FRETE EMPRESA', category: 'Tomador, Rota & Pesagem', categoryColor: 'bg-amber-600', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
   { key: 'origem', label: 'ORIGEM', category: 'Tomador, Rota & Pesagem', categoryColor: 'bg-amber-600', type: 'text', width: 'min-w-[95px] max-w-[115px]' },
   { key: 'kmDistancia', label: 'KM DISTÂNCIA', category: 'Tomador, Rota & Pesagem', categoryColor: 'bg-amber-600', type: 'text', width: 'min-w-[80px] max-w-[90px]', align: 'center' },
@@ -678,10 +678,100 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
     return '-';
   }, [effectiveOwners, effectiveVehicles, shipments]);
 
+  // Função para resolver o Tomador / Cliente e Filial informada na carga
+  const resolveTomadorClientName = useCallback((s: Shipment, cargo?: Cargo, clientObj?: Client): string => {
+    if (!clientObj && !cargo) return 'CLIENTE GERAL';
+
+    const branches = clientObj?.secondaryCnpjs || [];
+    
+    // Obter identificadores de filial na carga
+    let branchId = cargo?.clientBranchId;
+    let branchCnpj = cargo?.clientCnpj ? cargo.clientCnpj.replace(/\D/g, '') : '';
+
+    // Se não estiver no topo do cargo, busca nos metadados do histórico da carga
+    if (!branchId || !branchCnpj) {
+      if (Array.isArray(cargo?.history)) {
+        if (!branchId) {
+          const bLog = cargo.history.find((h: any) => h.id === 'meta_client_branch_id');
+          if (bLog?.description) branchId = bLog.description;
+        }
+        if (!branchCnpj) {
+          const cLog = cargo.history.find((h: any) => h.id === 'meta_client_cnpj');
+          if (cLog?.description) branchCnpj = cLog.description.replace(/\D/g, '');
+        }
+      }
+    }
+
+    // Também verifica se o documento do embarque extraiu o CNPJ do Tomador
+    if (!branchCnpj && s.documents) {
+      const docCnpj = (s.documents as any)?.cte_tomador_cnpj || (s.documents as any)?.cteTomadorCnpj;
+      if (docCnpj) branchCnpj = String(docCnpj).replace(/\D/g, '');
+    }
+
+    // Se temos branches cadastradas no cliente, procuramos a filial correspondente
+    if (branches.length > 0) {
+      let matchedBranch: ClientBranchCnpj | undefined = undefined;
+
+      // 1. Correspondência por ID da filial
+      if (branchId) {
+        matchedBranch = branches.find(b => b.id === branchId);
+      }
+
+      // 2. Correspondência por CNPJ da filial (se diferente do CNPJ da matriz)
+      const mainCnpj = (clientObj?.cnpj || '').replace(/\D/g, '');
+      if (!matchedBranch && branchCnpj && branchCnpj !== mainCnpj) {
+        matchedBranch = branches.find(b => (b.cnpj || '').replace(/\D/g, '') === branchCnpj);
+      }
+
+      // 3. Correspondência pelo Destino da Carga (ex: Gurupi, Nazario, Aruana, Formosa, Campo Verde, etc.)
+      if (!matchedBranch && cargo?.destination) {
+        const normDest = cargo.destination.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        matchedBranch = branches.find(b => {
+          if (!b.city) return false;
+          const normCity = b.city.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          return normDest.includes(normCity) || normCity.includes(normDest.split(',')[0].trim());
+        });
+      }
+
+      // Se encontrou a filial correspondente, formata o nome de exibição
+      if (matchedBranch) {
+        const cleanRazao = (matchedBranch.razaoSocial || '').replace(/^[\d\s\t\.\-]+/, '').trim().toUpperCase();
+        const cleanFantasia = (matchedBranch.nomeFantasia || '').trim().toUpperCase();
+
+        // Para filiais como "ORGANICS - GURUPI", se a razão social tiver o padrão "ORGANICS -", usa ela
+        if (cleanRazao.startsWith('ORGANICS -')) {
+          return cleanRazao;
+        }
+
+        // Se o nome fantasia estiver preenchido (ex: ORGANICS ARUANÃ, ORGANICS FORMOSA, etc.)
+        if (cleanFantasia) {
+          return cleanFantasia;
+        }
+
+        if (cleanRazao) {
+          return cleanRazao;
+        }
+
+        if (matchedBranch.city) {
+          const parentBase = (clientObj?.nomeFantasia || clientObj?.razaoSocial || 'CLIENTE').trim().toUpperCase();
+          return `${parentBase} - ${matchedBranch.city.toUpperCase()}`;
+        }
+      }
+    }
+
+    // Se a carga for da Matriz ou não tiver filial específica:
+    if (clientObj) {
+      return (clientObj.razaoSocial || clientObj.nomeFantasia || 'CLIENTE GERAL').trim().toUpperCase();
+    }
+
+    return 'CLIENTE GERAL';
+  }, []);
+
   const mappedRows = useMemo<TranscunhaSpreadsheetRow[]>(() => {
     return shipmentsFiltered.map((s, index) => {
       const cargo = s.cargoId ? cargoMap.get(s.cargoId) : undefined;
-      const clientName = cargo?.clientId ? clientMap.get(cargo.clientId) || '' : '';
+      const clientObj = cargo?.clientId ? clientObjMap.get(cargo.clientId) : undefined;
+      const clientName = resolveTomadorClientName(s, cargo, clientObj);
 
       // Embarcador Solicitante
       let solicitanteName = '';
@@ -775,7 +865,6 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       const kmFormatado = distKm > 0 ? `${distKm} km` : (cidadeOrigem !== '-' && cidadeDestino !== '-' ? `${cidadeOrigem} → ${cidadeDestino}` : '-');
 
       // Forma de Pagamento do Cliente (Pix, Boleto, Transferência Bancária)
-      const clientObj = cargo?.clientId ? clientObjMap.get(cargo.clientId) : undefined;
       let formaPagamentoCliente = clientPaymentMethodOverrides[s.id] || '';
       
       if (!formaPagamentoCliente && cargo?.clientId && clientPaymentMethodOverrides[cargo.clientId]) {
@@ -1121,7 +1210,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         balanceProofUrl: getShipmentBalanceProofUrl(s),
       };
     });
-  }, [shipmentsFiltered, cargoMap, clientMap, clientObjMap, userMap, users, clientPaymentMethodOverrides, productMap]);
+  }, [shipmentsFiltered, cargoMap, clientMap, clientObjMap, userMap, users, clientPaymentMethodOverrides, productMap, resolveTomadorClientName]);
 
   // Limites temporais calculados para filtro de período
   const dateRangeBounds = useMemo(() => {
@@ -1416,10 +1505,17 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         let valA = (a as any)[sortConfig.key];
         let valB = (b as any)[sortConfig.key];
 
-        // Comparação numérica para números de CT-e
+        // Comparação numérica para números de CT-e (suporta histórico com barra ex: "2211/2233")
         if (sortConfig.key === 'cteHoras' || sortConfig.key === 'cte') {
-          const numA = parseInt(String(valA || '').replace(/\D/g, ''), 10) || 0;
-          const numB = parseInt(String(valB || '').replace(/\D/g, ''), 10) || 0;
+          const partA = String(valA || '').split('/').pop() || '';
+          const partB = String(valB || '').split('/').pop() || '';
+          const numA = parseInt(partA.replace(/\D/g, ''), 10) || 0;
+          const numB = parseInt(partB.replace(/\D/g, ''), 10) || 0;
+
+          // Se um possui CT-e e o outro não (0/vazio), mantém os válidos no topo
+          if (numA && !numB) return -1;
+          if (!numA && numB) return 1;
+
           if (numA !== numB) {
             return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
           }
@@ -1486,10 +1582,12 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const handleSort = (key: keyof TranscunhaSpreadsheetRow) => {
     setSortConfig(current => {
       if (current?.key === key) {
-        if (current.direction === 'asc') return { key, direction: 'desc' };
-        return { key: 'cteHoras', direction: 'desc' };
+        return {
+          key,
+          direction: current.direction === 'asc' ? 'desc' : 'asc'
+        };
       }
-      return { key, direction: (key === 'dataEmbarque' || key === 'cteHoras' || key === 'cte') ? 'desc' : 'asc' };
+      return { key, direction: (key === 'dataEmbarque' || key === 'cteHoras' || key === 'cte' || key === 'dataHoraEmissao') ? 'desc' : 'asc' };
     });
   };
 
@@ -1649,7 +1747,20 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               <tr className="text-center font-black tracking-wider uppercase text-[11px] sm:text-xs">
                 <th className={`sticky left-0 z-50 ${isDark ? 'bg-slate-950 text-white border-slate-700' : 'bg-[#002b52] text-white border-black/40'} py-2 px-1 border-r w-10 min-w-[40px] max-w-[40px] text-center text-xs font-black shadow-xs`}>#</th>
                 <th className={`sticky left-[40px] z-50 ${isDark ? 'bg-slate-950 text-emerald-400 border-slate-700' : 'bg-[#002b52] text-emerald-300 border-black/40'} py-2 px-1 border-r w-[100px] min-w-[100px] max-w-[100px] text-center text-[10px] font-black shadow-xs`}>SISTEMA</th>
-                <th className={`sticky left-[140px] z-50 ${isDark ? 'bg-slate-950 text-sky-400 border-slate-700' : 'bg-[#002b52] text-sky-200 border-r-2 border-black'} py-2 px-1 border-r-2 ${isDark ? 'border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'border-black'} w-[75px] min-w-[75px] max-w-[75px] text-center text-[10px] font-black`}>CTE</th>
+                <th 
+                  onClick={() => handleSort('cteHoras')}
+                  title={`CT-e: Ordenação ${sortConfig?.key === 'cteHoras' && sortConfig.direction === 'asc' ? 'Crescente (▲)' : 'Decrescente (▼)'}. Clique para alternar.`}
+                  className={`sticky left-[140px] z-50 ${isDark ? 'bg-slate-950 text-sky-400 border-slate-700 hover:bg-slate-900' : 'bg-[#002b52] text-sky-200 border-r-2 border-black hover:bg-[#00386b]'} py-2 px-1 border-r-2 ${isDark ? 'border-indigo-500/80 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.3)]' : 'border-black'} w-[75px] min-w-[75px] max-w-[75px] text-center text-[10px] font-black cursor-pointer select-none transition-colors`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <span>CTE</span>
+                    {sortConfig?.key === 'cteHoras' && (
+                      <span className="text-amber-300 font-black text-xs shrink-0 drop-shadow-sm">
+                        {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                      </span>
+                    )}
+                  </div>
+                </th>
                 <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-sky-600 to-sky-500' : 'bg-[#0070c0]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Faturamento & Recebimento Empresa</th>
                 <th colSpan={6} className={`${isDark ? 'bg-gradient-to-r from-blue-700 to-blue-600' : 'bg-[#005a9e]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Identificação & Motorista</th>
                 <th colSpan={9} className={`${isDark ? 'bg-gradient-to-r from-cyan-700 to-cyan-600' : 'bg-[#006e82]'} text-white py-2.5 px-3 border-r ${isDark ? 'border-white/20' : 'border-black/30'} shadow-xs drop-shadow-sm font-black`}>Carga, Pedido & Logística</th>
@@ -1681,7 +1792,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       className={`px-1.5 py-1.5 border-r ${isDark ? 'border-slate-800 hover:bg-indigo-950/70 hover:text-indigo-300' : 'border-black/30 hover:bg-[#00386b] text-white font-black'} cursor-pointer transition-all select-none whitespace-normal text-center align-middle ${stickyClass} ${
                         isSorted ? (isDark ? 'bg-indigo-900/40 text-indigo-300 ring-1 ring-inset ring-indigo-500/40' : 'bg-[#00386b] text-yellow-300 ring-1 ring-inset ring-yellow-400') : ''
                       }`}
-                      title={col.tooltip || col.label}
+                      title={col.key === 'cteHoras' ? `CT-e: Ordenação ${sortConfig?.direction === 'asc' ? 'Crescente (▲)' : 'Decrescente (▼)'}. Clique para alternar.` : (col.tooltip || col.label)}
                     >
                       <div className="flex items-center justify-center gap-1 text-center whitespace-normal leading-[1.15]">
                         <span className="break-words font-black tracking-tight">{col.label}</span>
@@ -2181,6 +2292,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       // Coluna Especial: CTE (link direto para abrir PDF do CT-e)
                       if (col.key === 'cteHoras') {
                         const cteVal = String(raw || '-');
+                        const isSubstituted = cteVal.includes('/');
                         return (
                           <td 
                             key={col.key}
@@ -2207,9 +2319,20 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                                   ? (isDark ? 'text-sky-400 hover:text-sky-300 hover:underline' : 'text-blue-950 font-black hover:underline bg-white/70 px-1.5 py-0.5 rounded border border-blue-900/40 shadow-xs')
                                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-black font-black hover:text-slate-800')
                               }`}
-                              title={row.cteFileUrl ? `Clique para abrir o PDF do CT-e ${cteVal}` : `CT-e: ${cteVal} (sem PDF anexado)`}
+                              title={
+                                row.cteFileUrl 
+                                  ? (isSubstituted 
+                                      ? `CT-e ${cteVal}: Contém substituição fiscal. Clique para abrir o CT-e substituto ativo.` 
+                                      : `Clique para abrir o PDF do CT-e ${cteVal}`)
+                                  : `CT-e: ${cteVal} (sem PDF anexado)`
+                              }
                             >
-                              <span>{cteVal}</span>
+                              <span className={isSubstituted ? 'tracking-tight' : ''}>{cteVal}</span>
+                              {isSubstituted && (
+                                <span className="text-[8px] font-black px-1 py-0 rounded bg-amber-500 text-white leading-tight uppercase shrink-0" title="Possui CT-e substituído">
+                                  Subst
+                                </span>
+                              )}
                               {row.cteFileUrl && <ExternalLink className="w-2.5 h-2.5 opacity-70" />}
                             </button>
                           </td>
@@ -3350,6 +3473,23 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               <option value="PENDENTE" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">Pendente</option>
             </select>
 
+            {/* Alternador Rápido de Ordem do CT-e (Crescente / Decrescente) */}
+            <button
+              type="button"
+              onClick={() => handleSort('cteHoras')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs border font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
+                sortConfig?.key === 'cteHoras'
+                  ? 'bg-indigo-600/15 border-indigo-500/50 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-600/25 ring-1 ring-indigo-500/30'
+                  : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-400'
+              }`}
+              title="Clique para alternar a ordenação das linhas por número de CT-e (Crescente ou Decrescente)"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span>
+                CT-e: {sortConfig?.key === 'cteHoras' && sortConfig.direction === 'asc' ? 'Crescente (▲)' : 'Decrescente (▼)'}
+              </span>
+            </button>
+
             {activeColumnFiltersCount > 0 && (
               <button
                 onClick={handleClearAllFilters}
@@ -3462,6 +3602,21 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                     <span className="sr-only">Alinhar à Direita</span>
                   </button>
                 </div>
+
+                {/* BOTÃO ORDEM CT-E (TELA CHEIA) */}
+                <button
+                  type="button"
+                  onClick={() => handleSort('cteHoras')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-xs ${
+                    sortConfig?.key === 'cteHoras'
+                      ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/50 hover:bg-indigo-600/30 ring-1 ring-indigo-500/30'
+                      : (isSheetDark ? 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50')
+                  }`}
+                  title="Alternar ordenação por número de CT-e entre Crescente e Decrescente"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span>CT-e: {sortConfig?.key === 'cteHoras' && sortConfig.direction === 'asc' ? 'Crescente (▲)' : 'Decrescente (▼)'}</span>
+                </button>
 
                 <button
                   onClick={handleExportExcel}

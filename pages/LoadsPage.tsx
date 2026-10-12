@@ -8,7 +8,7 @@ import CargoDetailsModal from '../components/CargoDetailsModal';
 import CargoShipmentsSidePanel from '../components/CargoShipmentsSidePanel';
 import NewShipmentModal from '../components/NewShipmentModal';
 import BulkCargoImportModal from '../components/BulkCargoImportModal';
-import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch, Owner } from '../types';
+import type { Cargo, Client, Product, Driver, User, ProfilePermissions, Shipment, DailyScheduleEntry, Vehicle, Branch, Owner, ExpedidorRecebedor } from '../types';
 import { CargoStatus, UserProfile } from '../types';
 import { can, isDemoUser } from '../auth';
 import { StayRecord } from '../utils/toolStorage';
@@ -24,6 +24,7 @@ interface LoadsPageProps {
   shipments: Shipment[];
   allShipments: Shipment[];
   vehicles: Vehicle[];
+  locations?: ExpedidorRecebedor[];
   onSaveLoad: (loadData: Cargo | Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById'>) => void;
   onBulkSaveLoads?: (cargos: Omit<Cargo, 'id'>[]) => Promise<void>;
   currentUser: User;
@@ -45,7 +46,7 @@ interface LoadsPageProps {
   onSwapCargo?: (shipmentId: string, newCargoId: string) => void;
 }
 
-const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, owners = [], onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo }) => {
+const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, products, shipments, allShipments, onSaveLoad, onBulkSaveLoads, onReactivateLoad, onSuspendLoad, onUpdatePrice, currentUser, profilePermissions, users, onDeleteLoad, onModalStateChange, companyLogo, vehicles, drivers, owners = [], onDeleteAttachment, branches, stays = [], tickets = [], offerToConvert, setOfferToConvert, onCreateShipment, onSwapCargo, locations }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
@@ -210,6 +211,7 @@ const LoadsPage: React.FC<LoadsPageProps> = ({ loads, setLoads, clients, product
         users={users}
         loads={loads}
         branches={branches}
+        locations={locations}
         initialStep={initialModalStep}
         offerToConvert={offerToConvert}
       />

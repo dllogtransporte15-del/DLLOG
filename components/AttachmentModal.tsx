@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, ClientBranchCnpj, PaymentMethod, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData } from '../types';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, ClientBranchCnpj, PaymentMethod, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData, CancelledCteRecord } from '../types';
 import { upsertClient, upsertCargo } from '../lib/db';
 import { isDemoUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
@@ -8,10 +8,11 @@ import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData, parseWeightKg, isStrictNotaFiscalCategory, calculateNetCartaFreteFreight, detectDocumentTypeFromFileName, detectAttachmentMismatch, DocMismatchInfo, isCteDocType, isCartaFreteDocType } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
 import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3, ArrowRightLeft, Lock } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3, ArrowRightLeft, Lock, RotateCcw } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
+import { CancelAndSubstituteCteModal } from './CancelAndSubstituteCteModal';
 import { calculateAdvanceAndBalance, calculateTacTaxDeductions } from '../utils/freightCalculation';
 import { calculateFreightBalance } from '../utils/freightBalanceCalculator';
 
@@ -76,6 +77,7 @@ const FileInput: React.FC<{
   onRemoveFile?: (file: File, docType: string) => void;
   detectedTypesMap?: Record<string, string>;
   availableTargetCategories?: string[];
+  checkDuplicateFile?: (file: File, targetCategory: string) => { isDuplicate: boolean; foundLocation: string; originalName?: string } | null;
 }> = ({
   label,
   onFileChange,
@@ -85,7 +87,8 @@ const FileInput: React.FC<{
   onMoveFile,
   onRemoveFile,
   detectedTypesMap,
-  availableTargetCategories
+  availableTargetCategories,
+  checkDuplicateFile,
 }) => {
   const id = `file-upload-${label.replace(/\s/g, '-')}`;
   const [isDragging, setIsDragging] = useState(false);
@@ -99,8 +102,36 @@ const FileInput: React.FC<{
       return;
     }
     const fileArray = Array.from(selectedFiles);
-    // Valida imediatamente se algum arquivo possui mismatch em relação ao campo atual
+    const validFiles: File[] = [];
+
     for (const f of fileArray) {
+      // 1. Checagem contra duplicidade no próprio campo atual
+      const isAlreadyInField = files.some(
+        existing => existing !== f && existing.name.trim().toLowerCase() === f.name.trim().toLowerCase()
+      );
+      if (isAlreadyInField) {
+        showToast(
+          `⛔ Arquivo Duplicado Bloqueado: O arquivo "${f.name}" já foi selecionado no campo "${label}".`,
+          'error',
+          8000
+        );
+        continue;
+      }
+
+      // 2. Checagem contra duplicidade global (demais campos e documentos já salvos no embarque)
+      if (checkDuplicateFile) {
+        const dupCheck = checkDuplicateFile(f, label);
+        if (dupCheck?.isDuplicate) {
+          showToast(
+            `⛔ Arquivo Duplicado Bloqueado: O documento "${f.name}" já está ${dupCheck.foundLocation}. Não é permitido anexar o mesmo documento duplicado.`,
+            'error',
+            8000
+          );
+          continue;
+        }
+      }
+
+      // 3. Validação de mismatch de tipo de documento
       const mismatch = detectAttachmentMismatch(f, label, detectedTypesMap?.[f.name]);
       if (mismatch) {
         showToast(
@@ -109,8 +140,20 @@ const FileInput: React.FC<{
           7000
         );
       }
+
+      validFiles.push(f);
     }
-    onFileChange(fileArray);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
+    if (validFiles.length === 0 && fileArray.length > 0) {
+      // Trava: se todos os arquivos selecionados eram duplicados, não altera os arquivos válidos
+      return;
+    }
+
+    onFileChange(validFiles);
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -408,6 +451,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     fileOrUrl: File | string;
     docType: string;
     docName: string;
+  } | null>(null);
+  const [cteToCancel, setCteToCancel] = useState<{
+    cteNumber: string;
+    fileUrl?: string;
+    fileName?: string;
   } | null>(null);
 
   // Estados para armazenar valores extraídos de documentos fiscais
@@ -1218,6 +1266,84 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     });
   }, [multiFiles, singleFiles, documentName]);
 
+  // Validador universal de documentos duplicados para travar tentativas de anexo repetido
+  const checkDuplicateFile = React.useCallback((file: File, targetCategory: string): { isDuplicate: boolean; foundLocation: string; originalName?: string } | null => {
+    const normNewName = file.name.trim().toLowerCase();
+    const cleanNormNewName = normNewName.replace(/[^a-z0-9]/g, '');
+
+    // 1. Checa contra documentos já anexados e persistidos no embarque (shipment.documents)
+    if (shipment.documents) {
+      for (const [category, val] of Object.entries(shipment.documents)) {
+        if (!isValidDocumentEntry(category, val)) continue;
+        const list = Array.isArray(val) ? val : (typeof val === 'string' ? [val] : []);
+        for (const item of list) {
+          if (typeof item === 'string' && isActualDocumentUrl(item)) {
+            const rawFileName = decodeURIComponent(item.split('/').pop()?.split('?')[0] || '').trim().toLowerCase();
+            const cleanFileName = rawFileName.includes('_')
+              ? rawFileName.split('_').slice(2).join('_') || rawFileName
+              : rawFileName;
+
+            const cleanRawNorm = rawFileName.replace(/[^a-z0-9]/g, '');
+            const cleanNorm = cleanFileName.replace(/[^a-z0-9]/g, '');
+
+            const isSameName = (
+              rawFileName === normNewName ||
+              cleanFileName === normNewName ||
+              rawFileName.endsWith(normNewName) ||
+              (cleanNormNewName.length > 5 && (cleanNorm === cleanNormNewName || cleanRawNorm.endsWith(cleanNormNewName)))
+            );
+
+            if (isSameName) {
+              return {
+                isDuplicate: true,
+                foundLocation: `já gravado no campo "${category}" deste embarque`,
+                originalName: cleanFileName || rawFileName
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Checa contra arquivos já adicionados nesta sessão no estado multiFiles
+    for (const [category, fileList] of Object.entries(multiFiles)) {
+      for (const existingFile of (fileList || [])) {
+        if (existingFile === file) continue;
+        const existingNorm = existingFile.name.trim().toLowerCase();
+        const existingCleanNorm = existingNorm.replace(/[^a-z0-9]/g, '');
+
+        if (existingNorm === normNewName || 
+            (existingCleanNorm.length > 5 && existingCleanNorm === cleanNormNewName) ||
+            (existingFile.size === file.size && existingFile.size > 0 && Math.abs(existingFile.lastModified - file.lastModified) < 5000)) {
+          return {
+            isDuplicate: true,
+            foundLocation: `já selecionado no campo "${category}"`,
+            originalName: existingFile.name
+          };
+        }
+      }
+    }
+
+    // 3. Checa contra arquivos já adicionados nesta sessão no estado singleFiles
+    for (const existingFile of singleFiles) {
+      if (existingFile === file) continue;
+      const existingNorm = existingFile.name.trim().toLowerCase();
+      const existingCleanNorm = existingNorm.replace(/[^a-z0-9]/g, '');
+
+      if (existingNorm === normNewName || 
+          (existingCleanNorm.length > 5 && existingCleanNorm === cleanNormNewName) ||
+          (existingFile.size === file.size && existingFile.size > 0 && Math.abs(existingFile.lastModified - file.lastModified) < 5000)) {
+        return {
+          isDuplicate: true,
+          foundLocation: `já selecionado no campo "${documentName || 'Documentos'}"`,
+          originalName: existingFile.name
+        };
+      }
+    }
+
+    return null;
+  }, [shipment.documents, multiFiles, singleFiles, documentName]);
+
   const handleMoveFile = (file: File, fromDocType: string, toDocType: string) => {
     setMultiFiles(prev => {
       const sourceFiles = (prev[fromDocType] || []).filter(f => f !== file && f.name !== file.name);
@@ -1240,11 +1366,45 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   };
 
   const handleMultiFileChange = (docType: string, f: FileList | File[] | null) => {
-    const newFiles = f ? Array.from(f) : [];
+    if (!f) {
+      setMultiFiles((prev: { [key: string]: File[] }) => ({
+        ...prev,
+        [docType]: [],
+      }));
+      return;
+    }
+    const fileArray = Array.from(f);
+    const validFiles = fileArray.filter(file => {
+      const dup = checkDuplicateFile(file, docType);
+      if (dup?.isDuplicate) {
+        showToast(`⛔ Arquivo Duplicado Bloqueado: O documento "${file.name}" já está ${dup.foundLocation}. Não é permitido anexar o mesmo documento duplicado.`, 'error', 8000);
+        return false;
+      }
+      return true;
+    });
+
     setMultiFiles((prev: { [key: string]: File[] }) => ({
       ...prev,
-      [docType]: newFiles,
+      [docType]: validFiles,
     }));
+  };
+
+  const handleSingleFilesChange = (f: FileList | File[] | null, targetCategory?: string) => {
+    if (!f) {
+      setSingleFiles([]);
+      return;
+    }
+    const fileArray = Array.from(f);
+    const cat = targetCategory || documentName || 'Documento';
+    const validFiles = fileArray.filter(file => {
+      const dup = checkDuplicateFile(file, cat);
+      if (dup?.isDuplicate) {
+        showToast(`⛔ Arquivo Duplicado Bloqueado: O documento "${file.name}" já está ${dup.foundLocation}. Não é permitido anexar o mesmo documento duplicado.`, 'error', 8000);
+        return false;
+      }
+      return true;
+    });
+    setSingleFiles(validFiles);
   };
 
   const [isSyncingFederalTaxes, setIsSyncingFederalTaxes] = useState(false);
@@ -2034,6 +2194,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       }, { silent: true });
     }
 
+    // Validação final de bloqueio caso haja qualquer arquivo duplicado em filesToAttach
+    for (const [docCategory, files] of Object.entries(filesToAttach)) {
+      for (const file of files) {
+        const dup = checkDuplicateFile(file, docCategory);
+        if (dup?.isDuplicate) {
+          showToast(`⛔ Bloqueio de Salvamento: O documento "${file.name}" já está ${dup.foundLocation}. Remova o documento duplicado antes de avançar.`, 'error', 8000);
+          setError(`Arquivo duplicado detectado: "${file.name}" ${dup.foundLocation}.`);
+          return;
+        }
+      }
+    }
+
     setError('');
     setIsSaving(true);
     try {
@@ -2161,16 +2333,43 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   else if (ext === 'PDF') badgeColor = 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border-rose-300 dark:border-rose-700';
                   else if (['PNG', 'JPG', 'JPEG', 'WEBP'].includes(ext)) badgeColor = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700';
 
+                  const isCteDoc = isCteDocType(docType);
+                  const cancelledList: CancelledCteRecord[] = Array.isArray(shipment.documents?.cancelled_ctes)
+                    ? shipment.documents.cancelled_ctes
+                    : [];
+
+                  const cancelledRecord = isCteDoc ? cancelledList.find(c => {
+                    if (!c) return false;
+                    if (c.fileUrl && (c.fileUrl === file || file.includes(c.fileUrl) || c.fileUrl.includes(file))) return true;
+                    if (c.fileName && fileName && (c.fileName === fileName || fileName.includes(c.fileName))) return true;
+                    if (c.cteNumber && cleanFileName && cleanFileName.includes(c.cteNumber)) return true;
+                    return false;
+                  }) : undefined;
+
+                  const isCancelled = Boolean(cancelledRecord);
+
                   return (
                     <div
                       key={index}
-                      className="inline-flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-lg border border-indigo-200/80 dark:border-indigo-800/60 shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-600 transition-all w-full justify-between"
+                      className={`inline-flex items-center gap-1.5 p-1 rounded-lg border shadow-2xs transition-all w-full justify-between ${
+                        isCancelled
+                          ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800/80 hover:border-rose-400'
+                          : 'bg-white dark:bg-slate-800 border-indigo-200/80 dark:border-indigo-800/60 hover:border-indigo-300 dark:hover:border-indigo-600'
+                      }`}
                     >
                       <button
                         type="button"
                         onClick={() => openDocumentInNewTab(file, `${docType} - ${cleanFileName}`)}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 rounded text-xs font-semibold transition-colors cursor-pointer truncate min-w-0 flex-1"
-                        title={`Visualizar ${cleanFileName} (com opções de Baixar e Imprimir)`}
+                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold transition-colors cursor-pointer truncate min-w-0 flex-1 ${
+                          isCancelled
+                            ? 'text-rose-800 dark:text-rose-300 hover:text-rose-950 dark:hover:text-rose-100 line-through opacity-80'
+                            : 'text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100'
+                        }`}
+                        title={
+                          isCancelled
+                            ? `[CT-e Cancelado] Motivo: ${cancelledRecord?.reason || 'Substituição'} (Substituído por CT-e ${cancelledRecord?.substituteCteNumber || 'novo'})`
+                            : `Visualizar ${cleanFileName} (com opções de Baixar e Imprimir)`
+                        }
                       >
                         <PaperclipIcon className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{cleanFileName || 'Visualizar Anexo'}</span>
@@ -2179,42 +2378,82 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                             {ext}
                           </span>
                         )}
+                        {isCancelled ? (
+                          <span 
+                            className="text-[9px] font-black px-1.5 py-0.5 rounded border uppercase shrink-0 bg-rose-600 text-white border-rose-700 shadow-2xs"
+                            title={`Cancelado em ${cancelledRecord?.cancelledAt ? new Date(cancelledRecord.cancelledAt).toLocaleDateString() : ''} por ${cancelledRecord?.cancelledBy || 'Usuário'}`}
+                          >
+                            CANCELADO
+                          </span>
+                        ) : (
+                          isCteDoc && cancelledList.length > 0 && (
+                            <span 
+                              className="text-[9px] font-black px-1.5 py-0.5 rounded border uppercase shrink-0 bg-emerald-600 text-white border-emerald-700 shadow-2xs"
+                              title="CT-e Ativo em substituição"
+                            >
+                              ATIVO
+                            </span>
+                          )
+                        )}
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDocForDetails({
-                          fileOrUrl: file,
-                          docType,
-                          docName: cleanFileName
-                        })}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] font-bold transition-all shadow-xs cursor-pointer shrink-0"
-                        title="Ver todos os campos e dados extraídos deste documento"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>Ver Dados</span>
-                      </button>
-
-                      {onDeleteAttachment && !isDemo && (
-                        currentUser?.profile === UserProfile.Admin ||
-                        currentUser?.profile === UserProfile.Diretor ||
-                        currentUser?.profile === UserProfile.Supervisor ||
-                        currentUser?.profile === UserProfile.Fiscal ||
-                        currentUser?.profile === UserProfile.Embarcador
-                      ) && (
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={async () => {
-                            if (window.confirm(`Tem certeza que deseja excluir o anexo "${cleanFileName}" (${docType})?`)) {
-                              await onDeleteAttachment(shipment.id, file);
-                            }
-                          }}
-                          className="inline-flex items-center p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer shrink-0"
-                          title="Excluir Anexo"
+                          onClick={() => setSelectedDocForDetails({
+                            fileOrUrl: file,
+                            docType,
+                            docName: cleanFileName
+                          })}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-[10px] font-bold transition-all shadow-xs cursor-pointer shrink-0"
+                          title="Ver todos os campos e dados extraídos deste documento"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Eye className="w-3 h-3" />
+                          <span>Ver Dados</span>
                         </button>
-                      )}
+
+                        {/* Botão de Cancelar e Adicionar Substituto (Apenas para CT-e ativo) */}
+                        {isCteDoc && !isCancelled && !isDemo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cleanCte = String(shipment.cteNumber || '').split('/').pop()?.trim() || cleanFileName;
+                              setCteToCancel({
+                                cteNumber: cleanCte,
+                                fileUrl: file,
+                                fileName: cleanFileName
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-md text-[10px] font-extrabold transition-all shadow-xs cursor-pointer shrink-0"
+                            title="Cancelar este CT-e e vincular um novo CT-e em substituição (mantendo histórico 2211/2233)"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Substituir</span>
+                          </button>
+                        )}
+
+                        {/* CT-e cancelado NÃO pode ser excluído do sistema (regra explícita) */}
+                        {!isCancelled && onDeleteAttachment && !isDemo && (
+                          currentUser?.profile === UserProfile.Admin ||
+                          currentUser?.profile === UserProfile.Diretor ||
+                          currentUser?.profile === UserProfile.Supervisor ||
+                          currentUser?.profile === UserProfile.Fiscal ||
+                          currentUser?.profile === UserProfile.Embarcador
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (window.confirm(`Tem certeza que deseja excluir o anexo "${cleanFileName}" (${docType})?`)) {
+                                await onDeleteAttachment(shipment.id, file);
+                              }
+                            }}
+                            className="inline-flex items-center p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer shrink-0"
+                            title="Excluir Anexo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -2770,6 +3009,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       onRemoveFile={handleRemoveFile}
                       detectedTypesMap={detectedDocTypes}
                       availableTargetCategories={notaFiscalDocTypes}
+                      checkDuplicateFile={checkDuplicateFile}
                     />
                   ))}
                 </div>
@@ -2788,6 +3028,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       onRemoveFile={handleRemoveFile}
                       detectedTypesMap={detectedDocTypes}
                       availableTargetCategories={travelDocTypes}
+                      checkDuplicateFile={checkDuplicateFile}
                     />
                   ))}
                 </div>
@@ -3471,8 +3712,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   <FileInput
                     label={documentName}
                     files={singleFiles}
-                    onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                    onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                     onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                    checkDuplicateFile={checkDuplicateFile}
                   />
                   <div>
                     <label className="block text-sm font-medium mb-1">Toneladas Carregadas</label>
@@ -3503,8 +3745,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     <FileInput
                       label={documentName}
                       files={singleFiles}
-                      onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                      onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                       onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                      checkDuplicateFile={checkDuplicateFile}
                     />
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
@@ -3609,8 +3852,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 <FileInput
                   label={documentName}
                   files={singleFiles}
-                  onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                  onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                   onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                  checkDuplicateFile={checkDuplicateFile}
                 />
 
                 {/* Financial calculation & summary box */}
@@ -3873,8 +4117,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                 <FileInput
                   label={documentName}
                   files={singleFiles}
-                  onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                  onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                   onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                  checkDuplicateFile={checkDuplicateFile}
                 />
                 <div>
                   <label className="block text-sm font-medium mb-1">Peso Descarregado (Ton)</label>
@@ -3960,8 +4205,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     <FileInput
                       label="Anexar / Substituir Ticket de Descarga (opcional)"
                       files={singleFiles}
-                      onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                      onFileChange={(f) => handleSingleFilesChange(f, "Ticket de Descarga")}
                       onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                      checkDuplicateFile={checkDuplicateFile}
                     />
                   </div>
                 </div>
@@ -4121,8 +4367,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   <FileInput
                     label={documentName}
                     files={singleFiles}
-                    onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                    onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                     onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                    checkDuplicateFile={checkDuplicateFile}
                   />
                   <div>
                     <label className="block text-sm font-medium mb-1">Saldo estimado</label>
@@ -4283,8 +4530,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   <FileInput
                     label={documentName || "Comprovante de Cadastro"}
                     files={singleFiles}
-                    onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                    onFileChange={(f) => handleSingleFilesChange(f, documentName || "Comprovante de Cadastro")}
                     onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                    checkDuplicateFile={checkDuplicateFile}
                   />
                   <div className={`p-4 rounded-xl border transition-all ${
                     !codigoAtua.trim()
@@ -4329,8 +4577,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               <FileInput
                 label={documentName}
                 files={singleFiles}
-                onFileChange={(f) => setSingleFiles(f ? Array.from(f) : [])}
+                onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                 onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                checkDuplicateFile={checkDuplicateFile}
               />
             )}
 
@@ -4543,6 +4792,23 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             docName={selectedDocForDetails.docName}
             driverFreightType={shipment.driverFreightType}
             onApplyData={handleApplyExtractedData}
+          />
+        )}
+
+        {/* Modal de Cancelamento & Substituição de CT-e */}
+        {cteToCancel && (
+          <CancelAndSubstituteCteModal
+            isOpen={Boolean(cteToCancel)}
+            onClose={() => setCteToCancel(null)}
+            shipment={shipment}
+            currentCteNumber={cteToCancel.cteNumber}
+            currentFileUrl={cteToCancel.fileUrl}
+            currentFileName={cteToCancel.fileName}
+            currentUser={currentUser}
+            onSuccess={(updatedShipment) => {
+              Object.assign(shipment, updatedShipment);
+            }}
+            onUpdateShipmentData={onUpdateShipmentData}
           />
         )}
       </div>

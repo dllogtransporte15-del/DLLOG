@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer } from '../types';
+import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer, ExpedidorRecebedor } from '../types';
 import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType, FreightCalculationType, INTERNAL_PROFILES } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
-import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2 } from 'lucide-react';
+import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2, MapPin, Building2, Edit2 } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
 import { findRouteHistorySuggestion, RouteHistorySuggestion } from '../utils/routeHistorySuggester';
+import { getExpedidoresRecebedores, saveExpedidorRecebedor } from '../utils/locationStorage';
+import { QuickLocationModal } from './QuickLocationModal';
 
 interface LoadFormModalProps {
   isOpen: boolean;
@@ -23,6 +25,7 @@ interface LoadFormModalProps {
   users: User[];
   loads: Cargo[];
   branches: Branch[];
+  locations?: ExpedidorRecebedor[];
   initialStep?: number;
   offerToConvert?: FreightOffer | null;
 }
@@ -63,6 +66,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   users,
   loads,
   branches,
+  locations,
   initialStep = 0,
   offerToConvert = null
 }) => {
@@ -193,6 +197,46 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const [routeSuggestion, setRouteSuggestion] = useState<RouteHistorySuggestion | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [appliedSuggestion, setAppliedSuggestion] = useState(false);
+
+  // Modal Rápido de Cadastro de Expedidor/Recebedor
+  const [isQuickLocationModalOpen, setIsQuickLocationModalOpen] = useState(false);
+  const [quickLocationTarget, setQuickLocationTarget] = useState<'origin' | 'destination'>('origin');
+  const [quickLocationInitialName, setQuickLocationInitialName] = useState('');
+  const [quickLocationInitialCity, setQuickLocationInitialCity] = useState('');
+  const [quickLocationInitialMapLink, setQuickLocationInitialMapLink] = useState('');
+  const [quickLocationExisting, setQuickLocationExisting] = useState<ExpedidorRecebedor | null>(null);
+
+  const handleOpenQuickLocationModal = (target: 'origin' | 'destination') => {
+    setQuickLocationTarget(target);
+    const currentName = target === 'origin' ? (load.originLocation || '') : (load.destinationLocation || '');
+    const currentCity = target === 'origin' ? (load.origin || '') : (load.destination || '');
+    const currentMapLink = target === 'origin' ? (load.originMapLink || '') : (load.destinationMapLink || '');
+    
+    const existing = locationsList.find(l => l.name.trim().toLowerCase() === currentName.trim().toLowerCase()) || null;
+    
+    setQuickLocationInitialName(currentName);
+    setQuickLocationInitialCity(currentCity);
+    setQuickLocationInitialMapLink(currentMapLink);
+    setQuickLocationExisting(existing);
+    setIsQuickLocationModalOpen(true);
+  };
+
+  const handleQuickLocationSaved = (savedLoc: ExpedidorRecebedor) => {
+    if (quickLocationTarget === 'origin') {
+      setLoad(prev => ({
+        ...prev,
+        originLocation: savedLoc.name,
+        originMapLink: savedLoc.mapLink || prev.originMapLink
+      }));
+    } else {
+      setLoad(prev => ({
+        ...prev,
+        destinationLocation: savedLoc.name,
+        destinationMapLink: savedLoc.mapLink || prev.destinationMapLink
+      }));
+    }
+    showToast(`Local "${savedLoc.name}" salvo e aplicado com sucesso!`, 'success');
+  };
 
   const commercialUsers = useMemo(() => {
     return users.filter(u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin);
@@ -464,6 +508,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     };
   }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon, load.freightCalculationType, load.totalVolume]);
 
+  const locationsList = useMemo(() => locations || getExpedidoresRecebedores(), [locations]);
+
+  const originLocationData = useMemo(() => {
+    if (!load.originLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === load.originLocation?.trim().toLowerCase()) || null;
+  }, [load.originLocation, locationsList]);
+
+  const destinationLocationData = useMemo(() => {
+    if (!load.destinationLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === load.destinationLocation?.trim().toLowerCase()) || null;
+  }, [load.destinationLocation, locationsList]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     const formattedValue = autoFormatInput(name, value);
@@ -475,6 +531,21 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         setLoad(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
     }
     else {
+        // Sugestão de Link do Maps ao selecionar Local cadastrado
+        if (name === 'originLocation' && formattedValue) {
+          const match = locationsList.find(l => l.name.trim().toLowerCase() === formattedValue.trim().toLowerCase());
+          if (match?.mapLink && !load.originMapLink) {
+            setLoad(prev => ({ ...prev, originLocation: formattedValue, originMapLink: match.mapLink }));
+            return;
+          }
+        }
+        if (name === 'destinationLocation' && formattedValue) {
+          const match = locationsList.find(l => l.name.trim().toLowerCase() === formattedValue.trim().toLowerCase());
+          if (match?.mapLink && !load.destinationMapLink) {
+            setLoad(prev => ({ ...prev, destinationLocation: formattedValue, destinationMapLink: match.mapLink }));
+            return;
+          }
+        }
         setLoad(prev => ({ ...prev, [name]: formattedValue }));
     }
   };
@@ -585,6 +656,28 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           originCoords: originCoords || undefined,
           destinationCoords: destinationCoords || undefined,
       };
+
+      // Sincronização automática com o cadastro de Expedidor/Recebedor
+      try {
+        if (load.originLocation && load.originLocation.trim()) {
+          saveExpedidorRecebedor({
+            name: load.originLocation.trim(),
+            classification: 'Ambos',
+            mapLink: load.originMapLink || undefined,
+            city: load.origin || undefined
+          });
+        }
+        if (load.destinationLocation && load.destinationLocation.trim()) {
+          saveExpedidorRecebedor({
+            name: load.destinationLocation.trim(),
+            classification: 'Ambos',
+            mapLink: load.destinationMapLink || undefined,
+            city: load.destination || undefined
+          });
+        }
+      } catch (locErr) {
+        console.warn('Erro ao sincronizar expedidor/recebedor automático:', locErr);
+      }
 
       if (loadToEdit) {
         onSave({
@@ -884,7 +977,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     {/* Origem (Cidade e Local) */}
                     <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 space-y-2">
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Origem (Cidade e Local)</label>
+                        <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Origem (Cidade e Local)</label>
+                            <button 
+                              type="button" 
+                              onClick={() => handleOpenQuickLocationModal('origin')}
+                              className="px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                              title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                            >
+                                <MapPin className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                <span>+ Cadastrar Local</span>
+                            </button>
+                        </div>
                         <div className="space-y-2">
                             <input 
                               name="origin" 
@@ -901,6 +1005,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   value={load.originLocation ?? ''} 
                                   onChange={handleChange} 
                                   placeholder="Local / Fazenda / Galpão" 
+                                  list="expedidores-recebedores-datalist"
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                                 <input 
@@ -911,6 +1016,26 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                             </div>
+
+                            {/* Informações fiscais/contato do local de origem */}
+                            {originLocationData && (
+                                <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/80 dark:border-blue-800 text-[11px] text-blue-900 dark:text-blue-200">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                        <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <span className="font-semibold truncate">
+                                            {originLocationData.documentNumber ? `${originLocationData.documentType}: ${originLocationData.documentNumber}` : 'Local Cadastrado'}
+                                            {originLocationData.phone ? ` • Tel: ${originLocationData.phone}${originLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                                        </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickLocationModal('origin')}
+                                      className="text-blue-600 dark:text-blue-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                                    >
+                                        <Edit2 className="w-3 h-3" /> Editar
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                     
@@ -918,15 +1043,26 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/60 dark:bg-gray-800/40 space-y-2">
                         <div className="flex items-center justify-between">
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Destino (Cidade e Local)</label>
-                            <button 
-                              type="button" 
-                              onClick={() => setHasMultiLeg(prev => !prev)}
-                              className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 transition-colors text-xs font-medium flex items-center gap-1"
-                              title="Adicionar mais destinos/pernas"
-                            >
-                                <PlusIcon className="w-3 h-3" />
-                                <span>Perna Extra</span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button 
+                                  type="button" 
+                                  onClick={() => handleOpenQuickLocationModal('destination')}
+                                  className="px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                                  title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                                >
+                                    <MapPin className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                    <span>+ Cadastrar Local</span>
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setHasMultiLeg(prev => !prev)}
+                                  className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 transition-colors text-xs font-medium flex items-center gap-1"
+                                  title="Adicionar mais destinos/pernas"
+                                >
+                                    <PlusIcon className="w-3 h-3" />
+                                    <span>Perna Extra</span>
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="space-y-2">
@@ -945,6 +1081,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   value={load.destinationLocation ?? ''} 
                                   onChange={handleChange} 
                                   placeholder="Local / Porto / Galpão" 
+                                  list="expedidores-recebedores-datalist"
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                                 <input 
@@ -955,6 +1092,26 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                   className="w-full py-2 px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs" 
                                 />
                             </div>
+
+                            {/* Informações fiscais/contato do local de destino */}
+                            {destinationLocationData && (
+                                <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/80 dark:border-blue-800 text-[11px] text-blue-900 dark:text-blue-200">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                        <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <span className="font-semibold truncate">
+                                            {destinationLocationData.documentNumber ? `${destinationLocationData.documentType}: ${destinationLocationData.documentNumber}` : 'Local Cadastrado'}
+                                            {destinationLocationData.phone ? ` • Tel: ${destinationLocationData.phone}${destinationLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                                        </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenQuickLocationModal('destination')}
+                                      className="text-blue-600 dark:text-blue-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                                    >
+                                        <Edit2 className="w-3 h-3" /> Editar
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1036,6 +1193,14 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
                 <datalist id="cities-list">
                     {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
+                </datalist>
+
+                <datalist id="expedidores-recebedores-datalist">
+                    {locationsList.map(loc => (
+                      <option key={loc.id} value={loc.name}>
+                        {loc.city ? `${loc.name} (${loc.city}${loc.state ? '/' + loc.state : ''})` : loc.name}
+                      </option>
+                    ))}
                 </datalist>
 
                 {/* Produto, Embalagem, Pedido e Volume */}
@@ -2197,6 +2362,15 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           </div>
         </form>
 
+        <QuickLocationModal
+          isOpen={isQuickLocationModalOpen}
+          onClose={() => setIsQuickLocationModalOpen(false)}
+          onSaved={handleQuickLocationSaved}
+          initialName={quickLocationInitialName}
+          initialCity={quickLocationInitialCity}
+          initialMapLink={quickLocationInitialMapLink}
+          existingLocation={quickLocationExisting}
+        />
       </div>
     </div>
   );
