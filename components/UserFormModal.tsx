@@ -4,7 +4,8 @@ import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput } from '../utils/formatters';
-import { X, Copy, CheckCircle2 } from 'lucide-react';
+import { X, Copy, CheckCircle2, Mail, Key } from 'lucide-react';
+import { corporateEmailService } from '../services/corporateEmailService';
 
 interface UserFormModalProps {
   isOpen: boolean;
@@ -34,6 +35,10 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
     agencyRole: 'lider',
     agencyCommissionPercentage: 30,
     agencyLeaderId: undefined,
+    corporateEmail: '',
+    corporateEmailPassword: '',
+    corporateEmailQuotaMb: 5120,
+    corporateEmailStatus: 'Ativo',
   });
 
   const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string; customPermissions?: any }>(getInitialState());
@@ -43,9 +48,14 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
         setSelectedUserToMirror('');
         if(userToEdit) {
             const { password, ...userWithoutPass } = userToEdit;
+            const existingCorpAccount = corporateEmailService.getEmailAccounts().find(a => a.userId === userToEdit.id || (userToEdit.email && a.email.toLowerCase() === userToEdit.email.toLowerCase()));
             setUser({ 
               ...userWithoutPass, 
               availableForDriverRequests: userToEdit.availableForDriverRequests !== false,
+              corporateEmail: userToEdit.corporateEmail || existingCorpAccount?.email || '',
+              corporateEmailPassword: userToEdit.corporateEmailPassword || existingCorpAccount?.password || '',
+              corporateEmailQuotaMb: userToEdit.corporateEmailQuotaMb || (existingCorpAccount ? existingCorpAccount.quotaMb : 5120),
+              corporateEmailStatus: userToEdit.corporateEmailStatus || existingCorpAccount?.status || 'Ativo',
               password: '' 
             }); // Don't load existing password
         } else {
@@ -126,6 +136,19 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
       }
     }
 
+    if (user.corporateEmail && user.corporateEmail.trim()) {
+      corporateEmailService.saveEmailAccount({
+        email: user.corporateEmail.trim(),
+        displayName: user.name,
+        userId: userToEdit?.id,
+        userName: user.name,
+        department: corporateEmailService.mapProfileToDepartment(user.profile),
+        password: user.corporateEmailPassword || undefined,
+        status: user.corporateEmailStatus || 'Ativo',
+        quotaMb: user.corporateEmailQuotaMb || 5120,
+      });
+    }
+
     onSave(userToSave);
   };
 
@@ -163,6 +186,95 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             <input name="email" value={user.email} onChange={handleChange} type="email" placeholder="Email de Acesso" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
             <input name="phone" value={user.phone || ''} onChange={handleChange} placeholder="Telefone" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
             <input name="password" value={user.password} onChange={handleChange} type="password" placeholder={userToEdit ? 'Nova Senha (deixe em branco para manter)' : 'Senha'} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
+
+            {/* Campo & Configuração: E-mail Corporativo (@transcunhaoficial.com.br) */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Mail className="w-4 h-4 text-blue-600" />
+                  E-mail Corporativo (@transcunhaoficial.com.br)
+                </label>
+                <span className="text-[10px] text-slate-500 font-medium">Administração Integrada</span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Configure a caixa postal institucional deste colaborador para envio de ordens, cotações e acesso ao Webmail.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                    Endereço de E-mail Corporativo
+                  </label>
+                  <input
+                    name="corporateEmail"
+                    value={user.corporateEmail || ''}
+                    onChange={handleChange}
+                    type="email"
+                    placeholder="colaborador@transcunhaoficial.com.br"
+                    className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      Senha da Caixa Postal
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setUser(prev => ({ ...prev, corporateEmailPassword: corporateEmailService.generateSecurePassword(12) }))}
+                      className="text-[10px] text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <Key className="w-3 h-3" />
+                      Gerar Senha
+                    </button>
+                  </div>
+                  <input
+                    name="corporateEmailPassword"
+                    value={user.corporateEmailPassword || ''}
+                    onChange={handleChange}
+                    type="text"
+                    placeholder="Senha de acesso ao Webmail"
+                    className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                    Status da Caixa
+                  </label>
+                  <select
+                    name="corporateEmailStatus"
+                    value={user.corporateEmailStatus || 'Ativo'}
+                    onChange={handleChange}
+                    className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
+                  >
+                    <option value="Ativo">Ativo</option>
+                    <option value="Inativo">Inativo</option>
+                    <option value="Bloqueado">Bloqueado</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                    Cota de Armazenamento
+                  </label>
+                  <select
+                    name="corporateEmailQuotaMb"
+                    value={String(user.corporateEmailQuotaMb || 5120)}
+                    onChange={(e) => setUser(prev => ({ ...prev, corporateEmailQuotaMb: parseInt(e.target.value, 10) }))}
+                    className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
+                  >
+                    <option value="2048">2 GB</option>
+                    <option value="5120">5 GB (Padrão)</option>
+                    <option value="10240">10 GB</option>
+                    <option value="20480">20 GB</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           
             {/* Campo: Espelhar Acesso de Outro Usuário */}
             <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/80 space-y-2">

@@ -22,7 +22,8 @@ import {
   ArrowDownCircle, 
   Eye, 
   Download, 
-  X
+  X,
+  Receipt
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import { financialInvoiceService } from '../../services/financialInvoiceService';
@@ -89,6 +90,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
   useEffect(() => {
     loadInvoices();
+
+    const handleInvoicesUpdated = () => {
+      loadInvoices();
+    };
+    window.addEventListener('financial_invoices_updated', handleInvoicesUpdated);
+    window.addEventListener('storage', handleInvoicesUpdated);
+    return () => {
+      window.removeEventListener('financial_invoices_updated', handleInvoicesUpdated);
+      window.removeEventListener('storage', handleInvoicesUpdated);
+    };
   }, [users]);
 
   // Data atual para cálculo de vencimento
@@ -135,6 +146,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         fileUrl: inv.fileUrl,
         fileName: inv.fileName,
         fileType: inv.fileType,
+        boletoFileUrl: inv.boletoFileUrl,
+        boletoFileName: inv.boletoFileName,
+        boletoFileType: inv.boletoFileType,
         paymentMethod: inv.paymentMethod,
         paymentDetails: inv.paymentDetails,
         description: inv.description,
@@ -268,6 +282,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       payableAmount: number;
       status: 'Pendente' | 'Pago' | 'Atrasado';
       documentUrl?: string | null;
+      boletoUrl?: string | null;
       details?: string;
       originalItem: any;
     }> = [];
@@ -286,6 +301,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           payableAmount: inv.payableAmount,
           status: inv.status,
           documentUrl: inv.fileUrl,
+          boletoUrl: inv.boletoFileUrl,
           details: inv.description,
           originalItem: inv,
         });
@@ -675,22 +691,35 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     >
                       {/* 1. Tipo / Documento */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2.5">
                           {item.kind === 'invoice' ? (
-                            <div className="p-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg shrink-0" title="Nota Fiscal de Entrada">
-                              <FileText className="w-4 h-4" />
-                            </div>
+                            item.boletoUrl ? (
+                              <div className="p-2 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl shrink-0 border border-emerald-300 dark:border-emerald-800" title="Boleto Bancário vinculado à Nota Fiscal">
+                                <Receipt className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-xl shrink-0" title="Nota Fiscal de Entrada">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                            )
                           ) : (
-                            <div className="p-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-lg shrink-0" title="Lançamento Avulso">
+                            <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl shrink-0" title="Lançamento Avulso">
                               <Tag className="w-4 h-4" />
                             </div>
                           )}
                           <div>
-                            <span className="font-bold text-slate-900 dark:text-white block">
-                              {item.docNumber}
-                            </span>
-                            <span className="text-[10px] text-slate-400 block line-clamp-1 max-w-[160px]">
-                              {item.title}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-900 dark:text-white block">
+                                {item.docNumber}
+                              </span>
+                              {item.boletoUrl && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                  Boleto Vinculado
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 block line-clamp-1 max-w-[170px]">
+                              {item.boletoUrl ? `Boleto • ${item.title}` : item.title}
                             </span>
                           </div>
                         </div>
@@ -708,16 +737,33 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         )}
                       </td>
 
-                      {/* 3. Classificação */}
+                      {/* 3. Classificação & Linha Digitável */}
                       <td className="py-3 px-4">
                         <span className="text-slate-700 dark:text-slate-300 font-medium line-clamp-1 max-w-[200px]" title={item.categoryOrCenter}>
                           {item.categoryOrCenter}
                         </span>
-                        {item.details && (
+                        {item.originalItem?.paymentDetails ? (
+                          <div className="flex items-center gap-1 mt-0.5 max-w-[200px]">
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono truncate" title={item.originalItem.paymentDetails}>
+                              {item.originalItem.paymentDetails}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(item.originalItem.paymentDetails);
+                                alert('Linha digitável / código copiado para a área de transferência!');
+                              }}
+                              className="text-[9px] font-bold text-blue-600 dark:text-blue-400 hover:underline shrink-0 cursor-pointer"
+                              title="Copiar linha digitável / código de barras"
+                            >
+                              Copiar
+                            </button>
+                          </div>
+                        ) : item.details ? (
                           <span className="text-[10px] text-slate-400 block line-clamp-1 max-w-[200px]" title={item.details}>
                             {item.details}
                           </span>
-                        )}
+                        ) : null}
                       </td>
 
                       {/* 4. Vencimento */}
@@ -767,24 +813,42 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
                       {/* 8. Documento Anexado */}
                       <td className="py-3 px-4 text-center whitespace-nowrap">
-                        {item.documentUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (item.documentUrl) {
-                                openDocumentInNewTab(item.documentUrl, item.docNumber);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg text-[11px] font-bold border border-blue-200 dark:border-blue-800/60 transition-colors cursor-pointer"
-                            title="Abrir visualização do documento em nova aba"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>Ver Doc</span>
-                            <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                          </button>
-                        ) : (
-                          <span className="text-slate-400 text-[10px] italic">Sem anexo</span>
-                        )}
+                        <div className="flex items-center justify-center gap-1.5">
+                          {item.boletoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (item.boletoUrl) {
+                                  openDocumentInNewTab(item.boletoUrl, `Boleto_${item.docNumber}`);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 rounded-lg text-[11px] font-bold border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer"
+                              title="Abrir Boleto para Pagamento em nova aba"
+                            >
+                              <Receipt className="w-3 h-3" />
+                              <span>Boleto</span>
+                              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                            </button>
+                          )}
+                          {item.documentUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (item.documentUrl) {
+                                  openDocumentInNewTab(item.documentUrl, item.docNumber);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg text-[11px] font-bold border border-blue-200 dark:border-blue-800/60 transition-colors cursor-pointer"
+                              title="Abrir visualização do documento em nova aba"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>{item.boletoUrl ? 'NF' : 'Ver Doc'}</span>
+                              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                            </button>
+                          ) : (
+                            !item.boletoUrl && <span className="text-slate-400 text-[10px] italic">Sem anexo</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 9. Ações: Dar Baixa / Alternar */}

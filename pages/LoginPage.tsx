@@ -891,7 +891,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                             disabled={isLoading}
                             value={email}
                             onChange={e => setEmail(e.target.value)}
-                            placeholder="seu.email@transcunha.com.br"
+                            placeholder="seu.email@transcunhaoficial.com.br"
                             className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                           />
                         </div>
@@ -1026,7 +1026,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
               <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between gap-3 text-xs text-slate-400">
                 <button
                   type="button"
-                  onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@transcunha.com.br.")}
+                  onClick={() => alert("Para obter suporte ou recuperar credenciais corporativas, contate a administração pelo ramal interno ou envie um e-mail para suporte@transcunhaoficial.com.br.")}
                   className="hover:text-slate-200 transition-colors flex items-center gap-1.5"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-slate-500" />

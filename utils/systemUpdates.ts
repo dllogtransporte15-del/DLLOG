@@ -21,6 +21,112 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_12_v2_70_55',
+    version: 'v2.70.55',
+    date: '12/10/2026',
+    title: 'Padronização do Domínio Oficial Corporativo (transcunhaoficial.com.br)',
+    summary: 'Ajuste definitivo do domínio institucional oficial da empresa para "transcunhaoficial.com.br", com migração automática das contas (@transcunhaoficial.com.br), atualização de servidores IMAP/SMTP, webmail, assinaturas digitais e telas do sistema.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Domínio Oficial Corrigido',
+        description: 'Definição do domínio "transcunhaoficial.com.br" como endereço oficial da organização em todas as configurações de e-mail e infraestrutura.'
+      },
+      {
+        category: 'improvement',
+        title: 'Migração Automática de Caixas Postais e Aliases',
+        description: 'Sincronização inteligente com migração automática das contas e configurações locais para a terminação @transcunhaoficial.com.br, mantendo senhas e permissões intactas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Assinaturas Institucionais e Links Atualizados',
+        description: 'Atualização dos geradores de assinatura oficial e links de suporte e webmail para apontar diretamente para transcunhaoficial.com.br.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_12_v2_70_54',
+    version: 'v2.70.54',
+    date: '12/10/2026',
+    title: 'Módulo Completo de Administração de E-mail Corporativo (@transcunhaoficial.com.br)',
+    summary: 'Criação do novo módulo dedicado para gerenciar e administrar contas de e-mail corporativo diretamente pelo sistema, integrado com o cadastro de colaboradores, controle de senhas e cotas, configuração de servidores SMTP/IMAP, acesso direto ao Webmail e gerador de assinaturas padronizadas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Painel Central de E-mail Corporativo',
+        description: 'Módulo completo acessível pelo menu lateral em "Configurações > E-mail Corporativo", com métricas de caixas postais ativas, monitoramento de armazenamento utilizado/alocado e gestão de caixas departamentais e individuais.'
+      },
+      {
+        category: 'feature',
+        title: 'Integração Direta com Cadastro de Usuários',
+        description: 'Campos dedicados no formulário de colaboradores em "Gerenciar Usuários" para criar ou vincular contas @transcunhaoficial.com.br, definir senhas fortes automáticas, cotas em GB e sincronização bidirecional.'
+      },
+      {
+        category: 'feature',
+        title: 'Parâmetros de Servidor & DNS (SMTP / IMAP / Webmail)',
+        description: 'Configuração flexível com suporte a presets (cPanel Transcunha, Google Workspace, Microsoft 365, Zoho, Titan) e guias para configuração rápida no Outlook e celular.'
+      },
+      {
+        category: 'improvement',
+        title: 'Gerador de Assinaturas e Teste de Disparo',
+        description: 'Ferramenta para gerar assinaturas profissionais oficiais com logo da empresa prontas para copiar (em texto e HTML), além de área para testar envio institucional direto pelo sistema.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_12_v2_70_53',
+    version: 'v2.70.53',
+    date: '12/10/2026',
+    title: 'Integração Direta de Boletos Anexados ao Contas a Pagar',
+    summary: 'Configuração completa para que, ao anexar um boleto bancário no lançamento da Nota Fiscal, o registro seja vinculado e direcionado automaticamente para o painel de Contas a Pagar com a nota fiscal correspondente, dados de vencimento e linha digitável pronta para pagamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Direcionamento Automático ao Contas a Pagar',
+        description: 'Ao confirmar o lançamento de uma Nota Fiscal com boleto anexado, o sistema salva e redireciona automaticamente o usuário para a aba de "Contas a Pagar", destacando a NF com o boleto vinculado.'
+      },
+      {
+        category: 'improvement',
+        title: 'Vínculo Unificado de Documentos (NF + Boleto)',
+        description: 'No painel de Contas a Pagar, o registro exibe botões dedicados de acesso rápido tanto para a Nota Fiscal quanto para o Boleto de Cobrança, além de linha digitável com botão de cópia instantânea.'
+      },
+      {
+        category: 'improvement',
+        title: 'Navegação Ágil e Botão de Acesso Rápido',
+        description: 'Adicionado botão de navegação direta entre "Gestão de Notas Fiscais" e "Contas a Pagar", tanto no cabeçalho quanto na lista de ações de cada lançamento.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_12_v2_70_52',
+    version: 'v2.70.52',
+    date: '12/10/2026',
+    title: 'Anexo de Boleto Bancário e Preenchimento Automático de Valor e Vencimento',
+    summary: 'Adicionada funcionalidade de anexo de boleto bancário para pagamento no lançamento de Notas Fiscais e Contas a Pagar, com leitura inteligente da linha digitável, código de barras e OCR multimodal, preenchendo automaticamente o Valor a Pagar (R$) e a Data de Vencimento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Anexo de Boleto para Pagamento',
+        description: 'Campo dedicado para upload de boletos bancários (PDF, JPG, PNG e WebP) no modal "Lançar Nova Nota Fiscal", permitindo armazenar tanto o documento fiscal quanto o boleto de cobrança.'
+      },
+      {
+        category: 'feature',
+        title: 'Preenchimento Automático de Valor a Pagar e Vencimento',
+        description: 'Ao anexar o boleto, o sistema decodifica instantaneamente a linha digitável e o código de barras Febraban (além de reconhecimento textual e IA), preenchendo de forma automática o campo "Valor a Pagar (R$)" e a "Data de Vencimento".'
+      },
+      {
+        category: 'improvement',
+        title: 'Preenchimento de Linha Digitável e Forma de Pagamento',
+        description: 'A forma de pagamento é automaticamente definida como "Boleto" e a linha digitável/código de barras é inserida no campo "Dados para Pagamento", agilizando a conciliação bancária.'
+      },
+      {
+        category: 'improvement',
+        title: 'Visualização Rápida de Boletos nas Tabelas Financeiras',
+        description: 'Botão "Boleto" em destaque tanto na tabela de Gestão de Notas Fiscais quanto na tabela unificada de Contas a Pagar, permitindo ao setor financeiro visualizar ou baixar o boleto com um único clique.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_12_v2_70_51',
     version: 'v2.70.51',
     date: '12/10/2026',

@@ -333,6 +333,10 @@ export const financialInvoiceService = {
           fileName: d.file_name,
           fileType: d.file_type,
           fileSize: d.file_size ? Number(d.file_size) : undefined,
+          boletoFileUrl: d.boleto_file_url,
+          boletoFileName: d.boleto_file_name,
+          boletoFileType: d.boleto_file_type,
+          boletoFileSize: d.boleto_file_size ? Number(d.boleto_file_size) : undefined,
           createdAt: d.created_at,
           updatedAt: d.updated_at
         }));
@@ -414,18 +418,39 @@ export const financialInvoiceService = {
         file_name: item.fileName,
         file_type: item.fileType,
         file_size: item.fileSize,
+        boleto_file_url: item.boletoFileUrl,
+        boleto_file_name: item.boletoFileName,
+        boleto_file_type: item.boletoFileType,
+        boleto_file_size: item.boletoFileSize,
         updated_at: nowIso
       };
 
       if (isEdit) {
-        await supabase
+        const { error } = await supabase
           .from('financial_invoices')
           .update(dbPayload)
           .eq('id', existingId);
+
+        if (error) {
+          // Fallback caso a tabela Supabase ainda não tenha as colunas de boleto
+          const { boleto_file_url, boleto_file_name, boleto_file_type, boleto_file_size, ...fallbackPayload } = dbPayload;
+          await supabase
+            .from('financial_invoices')
+            .update(fallbackPayload)
+            .eq('id', existingId);
+        }
       } else {
-        await supabase
+        const { error } = await supabase
           .from('financial_invoices')
           .insert(dbPayload);
+
+        if (error) {
+          // Fallback caso a tabela Supabase ainda não tenha as colunas de boleto
+          const { boleto_file_url, boleto_file_name, boleto_file_type, boleto_file_size, ...fallbackPayload } = dbPayload;
+          await supabase
+            .from('financial_invoices')
+            .insert(fallbackPayload);
+        }
       }
     } catch {
       // Ignora falha de schema remoto
@@ -446,6 +471,9 @@ export const financialInvoiceService = {
         list = [completeInvoice];
       }
       localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: completeInvoice }));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -487,6 +515,9 @@ export const financialInvoiceService = {
           return inv;
         });
         localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, status } }));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -511,6 +542,9 @@ export const financialInvoiceService = {
         localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
       } else {
         localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify([]));
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, deleted: true } }));
       }
     } catch (e) {
       console.error(e);

@@ -551,3 +551,338 @@ export async function extractDataFromInvoiceFile(
 
   return {};
 }
+
+// ====================================================================
+// EXTRAÇÃO E LEITURA INTELIGENTE DE BOLETOS BANCÁRIOS PARA PAGAMENTO
+// ====================================================================
+
+export interface ExtractedBoletoData {
+  payableAmount?: number;
+  dueDate?: string; // YYYY-MM-DD
+  digitableLine?: string;
+  beneficiaryName?: string;
+  beneficiaryCnpjCpf?: string;
+  bankName?: string;
+}
+
+/**
+ * Decodifica linha digitável de boleto bancário (47 dígitos) ou arrecadação (48 dígitos)
+ * Extrai valor e data de vencimento (fator Febraban)
+ */
+export function parseBoletoDigitableLine(raw: string): {
+  digitableLine?: string;
+  payableAmount?: number;
+  dueDate?: string;
+} {
+  const clean = raw.replace(/\D/g, '');
+
+  // 1. Boleto Bancário de Cobrança Tradicional (47 dígitos)
+  if (clean.length === 47) {
+    const formatted = `${clean.slice(0, 5)}.${clean.slice(5, 10)} ${clean.slice(10, 15)}.${clean.slice(15, 21)} ${clean.slice(21, 26)}.${clean.slice(26, 32)} ${clean.slice(32, 33)} ${clean.slice(33, 47)}`;
+
+    // Campo 5 (14 dígitos): 4 dígitos do fator de vencimento + 10 dígitos de valor
+    const factorStr = clean.slice(33, 37);
+    const amountStr = clean.slice(37, 47);
+
+    const factor = parseInt(factorStr, 10);
+    const rawAmount = parseInt(amountStr, 10);
+    const payableAmount = rawAmount > 0 ? Number((rawAmount / 100).toFixed(2)) : undefined;
+
+    let dueDate: string | undefined = undefined;
+    if (factor > 0) {
+      // Regra Febraban:
+      // Ciclo 2: A partir de 22/02/2025, o fator 1000 corresponde a 22/02/2025
+      const baseCiclo2 = new Date(Date.UTC(2025, 1, 22));
+      const days = factor - 1000;
+      const targetDate = new Date(baseCiclo2.getTime() + days * 86400000);
+
+      const y = targetDate.getUTCFullYear();
+      const m = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(targetDate.getUTCDate()).padStart(2, '0');
+      dueDate = `${y}-${m}-${d}`;
+    }
+
+    return {
+      digitableLine: formatted,
+      payableAmount,
+      dueDate
+    };
+  }
+
+  // 2. Boleto de Concessionária / Tributos / Arrecadação (48 dígitos)
+  if (clean.length === 48 && clean.startsWith('8')) {
+    const formatted = `${clean.slice(0, 11)}-${clean.slice(11, 12)} ${clean.slice(12, 23)}-${clean.slice(23, 24)} ${clean.slice(24, 35)}-${clean.slice(35, 36)} ${clean.slice(36, 47)}-${clean.slice(47, 48)}`;
+    const rawValStr = clean.slice(4, 15);
+    const rawAmount = parseInt(rawValStr, 10);
+    const payableAmount = rawAmount > 0 ? Number((rawAmount / 100).toFixed(2)) : undefined;
+
+    return {
+      digitableLine: formatted,
+      payableAmount
+    };
+  }
+
+  return {};
+}
+
+/**
+ * Extração de dados de boleto bancário via expressões regulares sobre o texto
+ */
+function parseTextBoleto(text: string): ExtractedBoletoData {
+  const res: ExtractedBoletoData = {};
+  if (!text) return res;
+
+  // 1. Linha Digitável
+  const matchLinha = text.match(/\b\d{5}[\.\s]?\d{5}\s+\d{5}[\.\s]?\d{6}\s+\d{5}[\.\s]?\d{6}\s+\d\s+\d{14}\b/) ||
+                     text.match(/\b\d{47}\b/) ||
+                     text.match(/\b\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\b/) ||
+                     text.match(/\b\d{48}\b/);
+
+  if (matchLinha) {
+    const decoded = parseBoletoDigitableLine(matchLinha[0]);
+    if (decoded.digitableLine) res.digitableLine = decoded.digitableLine;
+    if (decoded.payableAmount !== undefined && decoded.payableAmount > 0) res.payableAmount = decoded.payableAmount;
+    if (decoded.dueDate) res.dueDate = decoded.dueDate;
+  }
+
+  // 2. Data de Vencimento explícita no texto
+  const duePatterns = [
+    /(?:(?:Data\s+(?:do\s+)?)?Vencimento|Data\s+Venc\.|Venc\.)\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i,
+    /Vencimento\s*[:.\s\n]+(\d{2}\/\d{2}\/\d{4})/i,
+    /VENCER\s+EM\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i
+  ];
+  for (const p of duePatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const iso = convertBrDateToIso(m[1]);
+      if (iso) {
+        res.dueDate = iso; // Data textual do boleto tem prioridade máxima
+        break;
+      }
+    }
+  }
+
+  // 3. Valor a Pagar explícito no texto
+  const valPatterns = [
+    /(?:(?:\(=\)\s*)?Valor\s+(?:do\s+)?Documento|Valor\s+Cobrado|Valor\s+a\s+Pagar|Valor\s+Documento|Valor\s+Nominal|Valor\s+L[íi]quido|Total\s+a\s+Pagar)\s*[:.\s]*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
+    /(?:Valor\s+do\s+Boleto|Total\s+do\s+Boleto)\s*[:.\s]*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
+    /(?:\(=\)\s*VALOR\s+DO\s+DOCUMENTO)[^\d\n,.]*?(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i
+  ];
+  for (const p of valPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const parsed = parseCurrencyPtBr(m[1]);
+      if (parsed !== undefined && parsed > 0) {
+        res.payableAmount = parsed; // Valor explícito do boleto tem prioridade
+        break;
+      }
+    }
+  }
+
+  // 4. Beneficiário / Cedente
+  const benPatterns = [
+    /(?:Benefici[áa]rio|Cedente|Nome\s+do\s+Benefici[áa]rio|Raz[ãa]o\s+Social)\s*[:.\s]+([A-Z0-9\s.,&'-]{3,80})/i,
+    /(?:Pagador\s*\/)?Benefici[áa]rio\s*[:.\s\n]+([A-Z0-9\s.,&'-]{3,80})/i
+  ];
+  for (const p of benPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const clean = m[1].replace(/(?:CNPJ|CPF|ENDERE|AG[ÊE]NCIA|CONTA|DATA)[\s\S]*/i, '').trim();
+      if (clean.length >= 3) {
+        res.beneficiaryName = clean;
+        break;
+      }
+    }
+  }
+
+  // 5. CNPJ / CPF do Beneficiário
+  const cnpjCpfMatch = text.match(/(?:CNPJ|CPF)(?:\s+(?:do\s+)?Benefici[áa]rio)?\s*[:.\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})/i);
+  if (cnpjCpfMatch && cnpjCpfMatch[1]) {
+    res.beneficiaryCnpjCpf = formatCnpjCpf(cnpjCpfMatch[1]);
+  }
+
+  return res;
+}
+
+/**
+ * Chamada à API Gemini Multimodal para reconhecimento visual de Boleto Bancário
+ */
+async function parseBoletoWithGemini(
+  base64Data: string,
+  mimeType: string
+): Promise<ExtractedBoletoData | null> {
+  const apiKey =
+    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+    localStorage.getItem('gemini_api_key') ||
+    '';
+
+  if (!apiKey) {
+    console.warn('[invoiceExtractionService] VITE_GEMINI_API_KEY não configurada para OCR de boleto.');
+    return null;
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+
+    const prompt = `Você é um auditor financeiro especialista em conferência de Boletos Bancários e Títulos de Cobrança brasileiros (Febraban / Concessionárias).
+Analise com extrema atenção a imagem/PDF do boleto bancário anexado e extraia:
+1. "valorAPagar": Valor nominal/cobrado do boleto em decimal (ex: 1250.00, sem R$)
+2. "dataVencimento": Data de vencimento no formato "AAAA-MM-DD" (ex: "2026-10-25")
+3. "linhaDigitavel": Linha digitável completa com pontuações (ex: "34191.09008 00000.282119 00818.989004 5 98760000150000")
+4. "beneficiario": Razão Social ou Nome do Beneficiário / Cedente
+5. "cnpjCpfBeneficiario": CNPJ ou CPF do Beneficiário formatado
+6. "banco": Nome do banco emissor se visível (ex: Itaú, Bradesco, Santander, Banco do Brasil, Caixa, etc.)
+
+Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de código \`\`\`json):
+{
+  "valorAPagar": 1250.00,
+  "dataVencimento": "2026-10-25",
+  "linhaDigitavel": "34191.09008 00000.282119 00818.989004 5 98760000150000",
+  "beneficiario": "Posto Graal Parada Real",
+  "cnpjCpfBeneficiario": "12.345.678/0001-99",
+  "banco": "Itaú"
+}`;
+
+    const modelsToTry = [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-flash-latest'
+    ];
+
+    const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    const cleanMime = mimeType.includes('pdf') ? 'application/pdf' : (mimeType || 'image/jpeg');
+
+    for (const model of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: cleanMime,
+                    data: cleanBase64
+                  }
+                },
+                {
+                  text: prompt
+                }
+              ]
+            }
+          ]
+        });
+
+        const textOutput = response.text || '';
+        const cleanJson = textOutput.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanJson);
+
+        return {
+          payableAmount: typeof parsed.valorAPagar === 'number' ? parsed.valorAPagar : parseFloat(String(parsed.valorAPagar || '').replace(',', '.')) || undefined,
+          dueDate: convertBrDateToIso(parsed.dataVencimento),
+          digitableLine: parsed.linhaDigitavel ? String(parsed.linhaDigitavel).trim() : undefined,
+          beneficiaryName: parsed.beneficiario ? String(parsed.beneficiario).trim() : undefined,
+          beneficiaryCnpjCpf: parsed.cnpjCpfBeneficiario ? formatCnpjCpf(String(parsed.cnpjCpfBeneficiario)) : undefined,
+          bankName: parsed.banco ? String(parsed.banco).trim() : undefined
+        };
+      } catch (e) {
+        console.warn(`[invoiceExtractionService] Modelo ${model} para boleto falhou:`, e);
+      }
+    }
+  } catch (err) {
+    console.error('[invoiceExtractionService] Erro ao chamar Gemini para boleto:', err);
+  }
+  return null;
+}
+
+/**
+ * Função pública principal para extração automática de dados de Boleto Bancário para Pagamento
+ */
+export async function extractDataFromBoletoFile(
+  fileOrBase64: File | string,
+  fileName?: string
+): Promise<ExtractedBoletoData> {
+  const isFile = typeof fileOrBase64 !== 'string';
+  const name = isFile ? fileOrBase64.name : (fileName || 'boleto');
+  const lowerName = name.toLowerCase();
+
+  let mimeType = isFile ? fileOrBase64.type : '';
+  let base64String = '';
+
+  if (isFile) {
+    base64String = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(fileOrBase64);
+    });
+  } else {
+    base64String = fileOrBase64;
+    const matchMime = base64String.match(/^data:(.*?);base64,/);
+    if (matchMime) mimeType = matchMime[1];
+  }
+
+  let localPdfResult: ExtractedBoletoData | null = null;
+  const isPdf = lowerName.endsWith('.pdf') || mimeType.includes('pdf') || base64String.startsWith('data:application/pdf');
+
+  // 1. Tenta extrair texto de PDF via PDF.js
+  if (isPdf) {
+    try {
+      const buffer = isFile ? await fileOrBase64.arrayBuffer() : dataUrlToArrayBuffer(base64String);
+      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+      const pdf = await loadingTask.promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        fullText += textContent.items.map((it: any) => it.str || '').join(' ') + '\n';
+      }
+
+      if (fullText.trim().length > 10) {
+        localPdfResult = parseTextBoleto(fullText);
+      }
+    } catch (e) {
+      console.warn('[invoiceExtractionService] Falha ao extrair texto do PDF do boleto:', e);
+    }
+  }
+
+  // Se o parser local já obteve o valor a pagar e a data de vencimento com precisão, retorna imediatamente
+  if (
+    localPdfResult &&
+    localPdfResult.payableAmount !== undefined &&
+    localPdfResult.dueDate
+  ) {
+    console.log('[invoiceExtractionService] Dados do boleto extraídos com sucesso do PDF local:', localPdfResult);
+    return localPdfResult;
+  }
+
+  // 2. Fallback inteligente com IA Gemini Multimodal (para scans, fotos ou PDFs rasterizados)
+  try {
+    const geminiResult = await parseBoletoWithGemini(base64String, mimeType || (isPdf ? 'application/pdf' : 'image/jpeg'));
+    if (geminiResult) {
+      const merged: ExtractedBoletoData = {
+        payableAmount: geminiResult.payableAmount !== undefined ? geminiResult.payableAmount : localPdfResult?.payableAmount,
+        dueDate: geminiResult.dueDate || localPdfResult?.dueDate,
+        digitableLine: geminiResult.digitableLine || localPdfResult?.digitableLine,
+        beneficiaryName: geminiResult.beneficiaryName || localPdfResult?.beneficiaryName,
+        beneficiaryCnpjCpf: geminiResult.beneficiaryCnpjCpf || localPdfResult?.beneficiaryCnpjCpf,
+        bankName: geminiResult.bankName || localPdfResult?.bankName
+      };
+
+      console.log('[invoiceExtractionService] Dados do boleto extraídos com sucesso via Gemini Multimodal:', merged);
+      return merged;
+    }
+  } catch (e) {
+    console.warn('[invoiceExtractionService] Falha no Gemini Multimodal para boleto:', e);
+  }
+
+  if (localPdfResult) {
+    return localPdfResult;
+  }
+
+  return {};
+}
+

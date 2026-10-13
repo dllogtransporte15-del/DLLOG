@@ -3,7 +3,7 @@ import React from 'react';
 import type { User, Client } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
-import { Building2, Smartphone, PhoneOff, Eye } from 'lucide-react';
+import { Building2, Smartphone, PhoneOff, Eye, Mail } from 'lucide-react';
 
 interface UserTableProps {
   users: User[];
@@ -68,7 +68,13 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                   {user.name}
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px] lg:max-w-xs xl:max-w-none" title={user.email}>
-                  {user.email}
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{user.email}</div>
+                  {user.corporateEmail && user.corporateEmail !== user.email && (
+                    <div className="flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 font-mono" title={`E-mail corporativo: ${user.corporateEmail}`}>
+                      <Mail className="w-3 h-3 shrink-0" />
+                      <span>{user.corporateEmail}</span>
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {user.phone ? (

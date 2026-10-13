@@ -17,7 +17,7 @@ import { LogOutIcon } from './icons/LogOutIcon';
 import { MapIcon } from './icons/MapIcon';
 import { ImageIcon } from './icons/ImageIcon';
 import { HistoryIcon } from './icons/HistoryIcon';
-import { ShieldCheck, MapPin } from 'lucide-react';
+import { ShieldCheck, MapPin, Mail } from 'lucide-react';
 
 
 interface SidebarProps {
@@ -70,6 +70,7 @@ const navItems: NavItem[] = [
     icon: UsersIcon,
     children: [
       { id: 'users-register', label: 'Gerenciar Usuários', icon: UserPlusIcon },
+      { id: 'corporate-email', label: 'E-mail Corporativo', icon: Mail },
       { id: 'appearance', label: 'Aparência', icon: ImageIcon },
     ]
   }

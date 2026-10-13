@@ -96,6 +96,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'operational-loads': 'Cargas (Operacional)',
   'operational-map': 'Mapa Operacional',
   'users-register': 'Gerenciar Usuários',
+  'corporate-email': 'E-mail Corporativo',
   'commissions': 'Comissões',
   'appearance': 'Aparência',
   'layover-calculator': 'Cálculo de Estadias',

@@ -1,6 +1,6 @@
 // FIX: Moved Page type definition from App.tsx to here so it can be shared across modules.
 // FIX: Added 'embarcadores' and 'operational-map' to the page list to resolve type errors.
-export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'locations' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types' | 'whatsapp' | 'messenger';
+export type Page = 'dashboard' | 'clients' | 'owners' | 'embarcadores' | 'drivers' | 'vehicles' | 'loads' | 'products' | 'locations' | 'shipments' | 'financial' | 'reports' | 'operational-loads' | 'operational-map' | 'users-register' | 'corporate-email' | 'commissions' | 'appearance' | 'shipment-history' | 'load-history' | 'layover-calculator' | 'freight-quote' | 'ai-assistant' | 'tools-history' | 'branches' | 'system-monitor' | 'freight-offers-history' | 'risk-management' | 'risk-query-types' | 'whatsapp' | 'messenger';
 
 export interface ExpedidorRecebedor {
   id: string;
@@ -15,6 +15,51 @@ export interface ExpedidorRecebedor {
   mapLink?: string;
   notes?: string;
   createdAt: string;
+}
+
+export type CorporateEmailStatus = 'Ativo' | 'Inativo' | 'Bloqueado' | 'Em Configuração';
+
+export type CorporateEmailDepartment = 
+  | 'Operacional'
+  | 'Comercial'
+  | 'Financeiro'
+  | 'Diretoria'
+  | 'RH / Administrativo'
+  | 'TI / Suporte'
+  | 'Geral';
+
+export interface CorporateEmailAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  userId?: string;
+  userName?: string;
+  department: CorporateEmailDepartment;
+  password?: string;
+  status: CorporateEmailStatus;
+  quotaMb: number;
+  usedMb: number;
+  aliases: string[];
+  forwardTo?: string;
+  signature?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CorporateEmailServerConfig {
+  domain: string;
+  webmailUrl: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: 'ssl' | 'tls' | 'none';
+  imapHost: string;
+  imapPort: number;
+  imapSecure: 'ssl' | 'tls' | 'none';
+  popHost?: string;
+  popPort?: number;
+  defaultQuotaMb: number;
+  providerPreset: 'cpanel' | 'google_workspace' | 'microsoft_365' | 'zoho' | 'titan' | 'custom';
 }
 
 export enum UserProfile {
@@ -84,6 +129,10 @@ export interface User {
   agencyRole?: 'lider' | 'embarque';
   agencyLeaderId?: string;
   customPermissions?: { [key in Page]?: CrudPermissions };
+  corporateEmail?: string;
+  corporateEmailPassword?: string;
+  corporateEmailQuotaMb?: number;
+  corporateEmailStatus?: CorporateEmailStatus;
 }
 
 export enum PaymentMethod {
@@ -894,6 +943,12 @@ export interface FinancialInvoice {
   fileName?: string;
   fileType?: string;
   fileSize?: number;
+
+  // Anexo do Boleto Bancário para Pagamento (PDF ou imagem)
+  boletoFileUrl?: string;
+  boletoFileName?: string;
+  boletoFileType?: string;
+  boletoFileSize?: number;
   
   createdAt: string;
   updatedAt?: string;

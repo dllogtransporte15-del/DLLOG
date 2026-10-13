@@ -42,15 +42,18 @@ import {
   Layers, 
   Sparkles,
   Paperclip,
-  Loader2
+  Loader2,
+  Receipt,
+  CreditCard
 } from 'lucide-react';
-import { extractDataFromInvoiceFile } from '../../utils/invoiceExtractionService';
+import { extractDataFromInvoiceFile, extractDataFromBoletoFile } from '../../utils/invoiceExtractionService';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
 
 interface InvoicesManagementTabProps {
   users: User[];
   currentUser?: User | null;
+  onNavigateToPayables?: () => void;
 }
 
 const NATURE_CONFIG: Record<InvoiceCostNature, { label: string; icon: React.ElementType; badgeClass: string }> = {
@@ -101,7 +104,8 @@ const STATUS_CONFIG: Record<InvoicePaymentStatus, { label: string; icon: React.E
 
 export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   users,
-  currentUser
+  currentUser,
+  onNavigateToPayables
 }) => {
   // State: Dados principais
   const [invoices, setInvoices] = useState<FinancialInvoice[]>([]);
@@ -159,7 +163,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [formDescription, setFormDescription] = useState('');
   const [formNotes, setFormNotes] = useState('');
 
-  // Form State: Anexo de arquivo e Extração Inteligente
+  // Form State: Anexo de arquivo da Nota Fiscal e Extração Inteligente
   const [formFileUrl, setFormFileUrl] = useState<string | undefined>(undefined);
   const [formFileName, setFormFileName] = useState<string | undefined>(undefined);
   const [formFileType, setFormFileType] = useState<string | undefined>(undefined);
@@ -167,6 +171,15 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionSuccess, setExtractionSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Form State: Anexo de Boleto Bancário e Extração Automática
+  const [formBoletoFileUrl, setFormBoletoFileUrl] = useState<string | undefined>(undefined);
+  const [formBoletoFileName, setFormBoletoFileName] = useState<string | undefined>(undefined);
+  const [formBoletoFileType, setFormBoletoFileType] = useState<string | undefined>(undefined);
+  const [formBoletoFileSize, setFormBoletoFileSize] = useState<number | undefined>(undefined);
+  const [isExtractingBoleto, setIsExtractingBoleto] = useState(false);
+  const [boletoExtractionSuccess, setBoletoExtractionSuccess] = useState<string | null>(null);
+  const boletoFileInputRef = useRef<HTMLInputElement>(null);
 
   // State: Blob URL seguro para visualização em iframe sem bloqueio do navegador
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
@@ -350,6 +363,93 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     }
   };
 
+  // Tratamento do Anexo de Boleto com Leitura e Preenchimento Automático
+  const handleBoletoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert('O boleto selecionado excede o limite máximo permitido de 15MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      const detectedType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : undefined);
+      setFormBoletoFileUrl(base64);
+      setFormBoletoFileName(file.name);
+      setFormBoletoFileType(detectedType);
+      setFormBoletoFileSize(file.size);
+
+      // Leitura automática dos dados do boleto
+      setIsExtractingBoleto(true);
+      setBoletoExtractionSuccess(null);
+      try {
+        const extracted = await extractDataFromBoletoFile(file);
+        const updatedFields: string[] = [];
+
+        // 1. Atualização automática do "Valor a Pagar (R$)"
+        if (extracted.payableAmount !== undefined && extracted.payableAmount > 0) {
+          const formatted = extracted.payableAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          setFormPayableAmount(formatted);
+          if (!formAmount || formAmount === '0,00') {
+            setFormAmount(formatted);
+          }
+          updatedFields.push(`Valor a Pagar (R$ ${formatted})`);
+        }
+
+        // 2. Atualização automática da "Data de Vencimento"
+        if (extracted.dueDate) {
+          setFormDueDate(extracted.dueDate);
+          const [ano, mes, dia] = extracted.dueDate.split('-');
+          updatedFields.push(`Vencimento (${dia}/${mes}/${ano})`);
+        }
+
+        // 3. Atualização da Forma de Pagamento para Boleto
+        setFormPaymentMethod('Boleto');
+
+        // 4. Preenchimento de Linha Digitável
+        if (extracted.digitableLine) {
+          setFormPaymentDetails(extracted.digitableLine);
+          updatedFields.push('Linha Digitável');
+        }
+
+        // 5. Sugestão de Fornecedor / Beneficiário se ainda vazio
+        if (extracted.beneficiaryName && !formSupplier) {
+          setFormSupplier(extracted.beneficiaryName);
+          updatedFields.push('Favorecido');
+        }
+        if (extracted.beneficiaryCnpjCpf && !formCnpjCpf) {
+          setFormCnpjCpf(extracted.beneficiaryCnpjCpf);
+        }
+
+        if (updatedFields.length > 0) {
+          setBoletoExtractionSuccess(`✨ Boleto identificado com sucesso! ${updatedFields.join(', ')} atualizados automaticamente.`);
+        } else {
+          setBoletoExtractionSuccess('✨ Boleto bancário anexado com sucesso!');
+        }
+      } catch (err) {
+        console.warn('Erro ao extrair dados do boleto:', err);
+      } finally {
+        setIsExtractingBoleto(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveBoletoFile = () => {
+    setFormBoletoFileUrl(undefined);
+    setFormBoletoFileName(undefined);
+    setFormBoletoFileType(undefined);
+    setFormBoletoFileSize(undefined);
+    setIsExtractingBoleto(false);
+    setBoletoExtractionSuccess(null);
+    if (boletoFileInputRef.current) {
+      boletoFileInputRef.current.value = '';
+    }
+  };
+
   // Abrir modal de criação
   const handleOpenCreateModal = () => {
     setEditingInvoiceId(null);
@@ -375,6 +475,15 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormFileSize(undefined);
     setIsExtracting(false);
     setExtractionSuccess(null);
+    setFormBoletoFileUrl(undefined);
+    setFormBoletoFileName(undefined);
+    setFormBoletoFileType(undefined);
+    setFormBoletoFileSize(undefined);
+    setIsExtractingBoleto(false);
+    setBoletoExtractionSuccess(null);
+    if (boletoFileInputRef.current) {
+      boletoFileInputRef.current.value = '';
+    }
 
     // Selecionar o usuário logado ou primeiro usuário disponível
     const selectedUser = users.find(u => u.id === currentUser?.id) || users[0];
@@ -431,8 +540,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormFileName(inv.fileName);
     setFormFileType(inv.fileType);
     setFormFileSize(inv.fileSize);
+    setFormBoletoFileUrl(inv.boletoFileUrl);
+    setFormBoletoFileName(inv.boletoFileName);
+    setFormBoletoFileType(inv.boletoFileType);
+    setFormBoletoFileSize(inv.boletoFileSize);
     setIsExtracting(false);
     setExtractionSuccess(null);
+    setIsExtractingBoleto(false);
+    setBoletoExtractionSuccess(null);
 
     setIsFormModalOpen(true);
   };
@@ -484,7 +599,11 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       fileUrl: formFileUrl,
       fileName: formFileName,
       fileType: formFileType,
-      fileSize: formFileSize
+      fileSize: formFileSize,
+      boletoFileUrl: formBoletoFileUrl,
+      boletoFileName: formBoletoFileName,
+      boletoFileType: formBoletoFileType,
+      boletoFileSize: formBoletoFileSize
     };
 
     try {
@@ -495,6 +614,10 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         setInvoices(prev => [saved, ...prev]);
       }
       setIsFormModalOpen(false);
+
+      if (formBoletoFileUrl && onNavigateToPayables) {
+        onNavigateToPayables();
+      }
     } catch (err) {
       console.error('Erro ao salvar nota fiscal:', err);
       alert('Houve um erro ao salvar a nota fiscal. Tente novamente.');
@@ -921,6 +1044,17 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             <span className="hidden sm:inline">Imprimir</span>
           </button>
 
+          {onNavigateToPayables && (
+            <button
+              onClick={onNavigateToPayables}
+              title="Abrir painel de Contas a Pagar"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 shadow-sm transition-all cursor-pointer"
+            >
+              <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden md:inline">Contas a Pagar</span>
+            </button>
+          )}
+
           <button
             onClick={handleOpenCreateModal}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-600/30 transition-all cursor-pointer"
@@ -1250,18 +1384,31 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
                         {/* 9. Anexo */}
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          {inv.fileUrl ? (
-                            <button
-                              onClick={() => setPreviewFile({ url: inv.fileUrl!, name: inv.fileName || 'Nota Fiscal', type: inv.fileType })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-semibold text-[11px] transition-colors cursor-pointer"
-                              title="Visualizar documento anexo"
-                            >
-                              <Paperclip className="w-3.5 h-3.5" />
-                              <span>Ver NF</span>
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-slate-400 italic">Sem anexo</span>
-                          )}
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-1.5">
+                            {inv.fileUrl && (
+                              <button
+                                onClick={() => setPreviewFile({ url: inv.fileUrl!, name: inv.fileName || 'Nota Fiscal', type: inv.fileType })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-semibold text-[11px] transition-colors cursor-pointer"
+                                title="Visualizar Nota Fiscal"
+                              >
+                                <Paperclip className="w-3.5 h-3.5" />
+                                <span>Ver NF</span>
+                              </button>
+                            )}
+                            {inv.boletoFileUrl && (
+                              <button
+                                onClick={() => setPreviewFile({ url: inv.boletoFileUrl!, name: inv.boletoFileName || 'Boleto para Pagamento', type: inv.boletoFileType })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-semibold text-[11px] border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer"
+                                title="Visualizar Boleto para Pagamento"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                                <span>Boleto</span>
+                              </button>
+                            )}
+                            {!inv.fileUrl && !inv.boletoFileUrl && (
+                              <span className="text-[11px] text-slate-400 italic">Sem anexo</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* 10. Ações */}
@@ -1274,6 +1421,15 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
+                            {inv.boletoFileUrl && onNavigateToPayables && (
+                              <button
+                                onClick={onNavigateToPayables}
+                                title="Abrir em Contas a Pagar"
+                                className="p-1.5 text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-400 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                              >
+                                <CreditCard className="w-4 h-4" />
+                              </button>
+                            )}
                             <button
                               onClick={() => handleDeleteInvoice(inv.id)}
                               title="Excluir Nota Fiscal"
@@ -1566,15 +1722,15 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       {/* ========================================================= */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 w-full max-w-3xl rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden my-8">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-5xl rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden my-6">
             {/* Modal Header */}
-            <div className="px-6 py-5 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
+            <div className="px-7 py-5 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-white/10 rounded-2xl">
                   <FileText className="w-6 h-6 text-blue-300" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black tracking-tight">
+                  <h3 className="text-xl font-black tracking-tight">
                     {editingInvoiceId ? 'Editar Nota Fiscal' : 'Lançar Nova Nota Fiscal'}
                   </h3>
                   <p className="text-xs text-blue-200 mt-0.5">
@@ -1591,99 +1747,196 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             </div>
 
             {/* Modal Body / Form */}
-            <form onSubmit={handleSubmitInvoiceForm} className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-              {/* 1. SEÇÃO DE ANEXO DIRETO DO ARQUIVO */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <UploadCloud className="w-4 h-4 text-blue-500" />
-                    Arquivo da Nota Fiscal (PDF ou Imagem)
-                  </span>
-                  <span className="text-[11px] text-slate-400 font-normal">Máx: 15MB</span>
-                </label>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.xml,application/pdf,application/xml,text/xml,image/png,image/jpeg,image/webp"
-                  onChange={handleFileChange}
-                  className="hidden"
-                  id="invoice-file-upload"
-                />
-
-                {formFileUrl ? (
-                  <div className="flex items-center justify-between p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-2xl">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-blue-600 text-white rounded-xl">
-                        <File className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-xs text-slate-900 dark:text-white block truncate max-w-xs sm:max-w-md">
-                          {formFileName || 'Documento Anexado'}
-                        </span>
-                        <span className="text-[11px] text-blue-600 dark:text-blue-400">
-                          {formFileSize ? `${(formFileSize / (1024 * 1024)).toFixed(2)} MB` : 'Pronto para visualização'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewFile({ url: formFileUrl, name: formFileName || 'Nota Fiscal', type: formFileType })}
-                        className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-xl transition-colors cursor-pointer"
-                        title="Visualizar anexo"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRemoveFile}
-                        className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-colors cursor-pointer"
-                        title="Remover anexo"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <label
-                    htmlFor="invoice-file-upload"
-                    className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-500 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 hover:bg-blue-50/20 dark:hover:bg-blue-950/20 transition-all cursor-pointer text-center group"
-                  >
-                    <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-blue-500 transition-colors mb-2" />
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Clique para anexar o PDF, XML ou Imagem da Nota Fiscal
+            <form onSubmit={handleSubmitInvoiceForm} className="p-7 space-y-6 max-h-[82vh] overflow-y-auto">
+              {/* 1. SEÇÃO DE ANEXOS: NOTA FISCAL E BOLETO PARA PAGAMENTO */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1.1 ANEXO DA NOTA FISCAL */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <UploadCloud className="w-4 h-4 text-blue-500" />
+                      Arquivo da Nota Fiscal (PDF/XML)
                     </span>
-                    <span className="text-[11px] text-slate-400 mt-0.5">
-                      Arquivos suportados: PDF, XML, JPG, PNG e WebP (Leitura e preenchimento com IA)
-                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">Máx: 15MB</span>
                   </label>
-                )}
 
-                {/* Banner de Processamento da Extração Automática */}
-                {isExtracting && (
-                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center gap-2.5 text-blue-600 dark:text-blue-300 text-xs font-semibold animate-pulse">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
-                    <span>Identificando e extraindo dados da Nota Fiscal automaticamente...</span>
-                  </div>
-                )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.xml,application/pdf,application/xml,text/xml,image/png,image/jpeg,image/webp"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="invoice-file-upload"
+                  />
 
-                {/* Banner de Sucesso da Extração Automática */}
-                {extractionSuccess && (
-                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-2.5 text-emerald-600 dark:text-emerald-400 text-xs font-semibold animate-fade-in">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>{extractionSuccess}</span>
+                  {formFileUrl ? (
+                    <div className="flex items-center justify-between p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-2xl min-h-[96px]">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-blue-600 text-white rounded-xl shrink-0">
+                          <File className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white block truncate max-w-[150px] sm:max-w-[200px]" title={formFileName}>
+                            {formFileName || 'Documento Anexado'}
+                          </span>
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 block">
+                            {formFileSize ? `${(formFileSize / (1024 * 1024)).toFixed(2)} MB` : 'NF pronta'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFile({ url: formFileUrl, name: formFileName || 'Nota Fiscal', type: formFileType })}
+                          className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-xl transition-colors cursor-pointer"
+                          title="Visualizar anexo"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemoveFile}
+                          className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-colors cursor-pointer"
+                          title="Remover anexo"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setExtractionSuccess(null)}
-                      className="text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-300 p-1 cursor-pointer"
+                  ) : (
+                    <label
+                      htmlFor="invoice-file-upload"
+                      className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-500 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 hover:bg-blue-50/20 dark:hover:bg-blue-950/20 transition-all cursor-pointer text-center group min-h-[96px]"
                     >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+                      <UploadCloud className="w-6 h-6 text-slate-400 group-hover:text-blue-500 transition-colors mb-1" />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Anexar Nota Fiscal (PDF ou XML)
+                      </span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">
+                        Lê número, fornecedor, CNPJ e valores com IA
+                      </span>
+                    </label>
+                  )}
+
+                  {/* Banner de Processamento da Extração Automática de NF */}
+                  {isExtracting && (
+                    <div className="p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center gap-2 text-blue-600 dark:text-blue-300 text-xs font-semibold animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500 shrink-0" />
+                      <span>Extraindo dados fiscais da NF...</span>
+                    </div>
+                  )}
+
+                  {/* Banner de Sucesso da Extração da NF */}
+                  {extractionSuccess && (
+                    <div className="p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-between gap-2 text-blue-700 dark:text-blue-300 text-xs font-semibold animate-fade-in">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="line-clamp-1">{extractionSuccess}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExtractionSuccess(null)}
+                        className="text-blue-500 hover:text-blue-700 p-0.5 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 1.2 ANEXO DO BOLETO PARA PAGAMENTO */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Receipt className="w-4 h-4 text-emerald-500" />
+                      Boleto para Pagamento (PDF ou Imagem)
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">Máx: 15MB</span>
+                  </label>
+
+                  <input
+                    ref={boletoFileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf,image/png,image/jpeg,image/webp"
+                    onChange={handleBoletoFileChange}
+                    className="hidden"
+                    id="boleto-file-upload"
+                  />
+
+                  {formBoletoFileUrl ? (
+                    <div className="flex items-center justify-between p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl min-h-[96px]">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-emerald-600 text-white rounded-xl shrink-0">
+                          <Receipt className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white block truncate max-w-[150px] sm:max-w-[200px]" title={formBoletoFileName}>
+                            {formBoletoFileName || 'Boleto Anexado'}
+                          </span>
+                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 block">
+                            {formBoletoFileSize ? `${(formBoletoFileSize / (1024 * 1024)).toFixed(2)} MB` : 'Boleto pronto'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFile({ url: formBoletoFileUrl, name: formBoletoFileName || 'Boleto para Pagamento', type: formBoletoFileType })}
+                          className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded-xl transition-colors cursor-pointer"
+                          title="Visualizar boleto"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemoveBoletoFile}
+                          className="p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-colors cursor-pointer"
+                          title="Remover boleto"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="boleto-file-upload"
+                      className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-emerald-300 dark:border-emerald-700/80 hover:border-emerald-500 rounded-2xl bg-emerald-50/20 dark:bg-emerald-950/10 hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 transition-all cursor-pointer text-center group min-h-[96px]"
+                    >
+                      <Receipt className="w-6 h-6 text-emerald-500 group-hover:scale-110 transition-transform mb-1" />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Anexar Boleto para Pagamento
+                      </span>
+                      <span className="text-[10px] text-slate-400 mt-0.5">
+                        Preenche Valor a Pagar e Vencimento automaticamente
+                      </span>
+                    </label>
+                  )}
+
+                  {/* Banner de Processamento da Extração do Boleto */}
+                  {isExtractingBoleto && (
+                    <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2 text-emerald-600 dark:text-emerald-300 text-xs font-semibold animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500 shrink-0" />
+                      <span>Identificando valor e vencimento do boleto...</span>
+                    </div>
+                  )}
+
+                  {/* Banner de Sucesso da Extração do Boleto */}
+                  {boletoExtractionSuccess && (
+                    <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-2 text-emerald-700 dark:text-emerald-400 text-xs font-semibold animate-fade-in">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <span className="line-clamp-1">{boletoExtractionSuccess}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBoletoExtractionSuccess(null)}
+                        className="text-emerald-500 hover:text-emerald-700 p-0.5 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 2. DADOS BÁSICOS DA NOTA FISCAL */}
@@ -1743,7 +1996,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                 {/* Valor a Pagar */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
-                    <span>Valor a Pagar (R$) *</span>
+                    <span className="flex items-center gap-1.5">
+                      <span>Valor a Pagar (R$) *</span>
+                      {formBoletoFileUrl && (
+                        <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                          Boleto
+                        </span>
+                      )}
+                    </span>
                     <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Líquido</span>
                   </label>
                   <input
@@ -1755,7 +2015,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     onBlur={() => handleFormatAmountBlur(formPayableAmount, setFormPayableAmount)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">Valor efetivo (com retenções/acordos)</span>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    {formBoletoFileUrl ? 'Valor nominal extraído do boleto bancário' : 'Valor efetivo (com retenções/acordos)'}
+                  </span>
                 </div>
 
                 {/* Fornecedor / Prestador */}
@@ -1803,8 +2065,13 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
                 {/* Data de Vencimento */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Data de Vencimento *
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
+                    <span>Data de Vencimento *</span>
+                    {formBoletoFileUrl && (
+                      <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                        Do Boleto
+                      </span>
+                    )}
                   </label>
                   <input
                     type="date"
@@ -1813,6 +2080,11 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     onChange={(e) => setFormDueDate(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
+                  {formBoletoFileUrl && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 block">
+                      Vencimento extraído do boleto bancário
+                    </span>
+                  )}
                 </div>
 
                 {/* Status do Pagamento */}
@@ -2028,20 +2300,36 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               </div>
 
               {/* Modal Footer / Botões */}
-              <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFormModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
-                >
-                  {editingInvoiceId ? 'Salvar Alterações' : 'Confirmar e Lançar NF'}
-                </button>
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                {formBoletoFileUrl ? (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+                    <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>
+                      Boleto anexado: será direcionado ao <strong>Contas a Pagar</strong> vinculado a esta Nota Fiscal.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400 dark:text-slate-500 hidden sm:block">
+                    * Campos obrigatórios para lançamento fiscal.
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    {formBoletoFileUrl && <Receipt className="w-4 h-4" />}
+                    <span>{editingInvoiceId ? 'Salvar Alterações' : (formBoletoFileUrl ? 'Lançar e Ir para Contas a Pagar' : 'Confirmar e Lançar NF')}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

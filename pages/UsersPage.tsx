@@ -13,7 +13,7 @@ import type {
 import { UserProfile } from '../types';
 import { can } from '../auth';
 import { useToast } from '../hooks/useToast';
-import { Building2, Globe, Truck, Users } from 'lucide-react';
+import { Building2, Globe, Truck, Users, Mail } from 'lucide-react';
 
 export type UserTabType = 'internal' | 'external_clients' | 'external_drivers' | 'all';
 
@@ -174,11 +174,19 @@ const UsersPage: React.FC<UsersPageProps> = ({
           {canUpdateUser && (
               <button
                   onClick={() => setIsPermissionsModalOpen(true)}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 font-medium text-sm transition-colors"
+                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 font-medium text-sm transition-colors cursor-pointer"
               >
                   Gerenciar Permissões
               </button>
           )}
+          <a
+              href="/corporate-email"
+              className="px-4 py-2 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-100 font-medium text-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Gerenciar e-mails corporativos @transcunhaoficial.com.br"
+          >
+              <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>E-mail Corporativo</span>
+          </a>
           {canCreateUser && (
               <button
                   onClick={handleOpenUserModal}

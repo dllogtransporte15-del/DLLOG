@@ -458,6 +458,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
           <InvoicesManagementTab
             users={users}
             currentUser={_currentUser}
+            onNavigateToPayables={() => handleTabChange('payables')}
           />
         )}
 
