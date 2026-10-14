@@ -8,7 +8,9 @@ import type {
   User 
 } from '../../types';
 import { 
-  financialInvoiceService 
+  financialInvoiceService,
+  subscribeToFinancialInvoices,
+  getNextInvoiceId
 } from '../../services/financialInvoiceService';
 import { 
   Plus, 
@@ -44,7 +46,8 @@ import {
   Paperclip,
   Loader2,
   Receipt,
-  CreditCard
+  CreditCard,
+  RefreshCw
 } from 'lucide-react';
 import { extractDataFromInvoiceFile, extractDataFromBoletoFile } from '../../utils/invoiceExtractionService';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
@@ -112,6 +115,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [costTypes, setCostTypes] = useState<CostType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // State: Visão ativa ('table' ou 'analytics')
   const [activeView, setActiveView] = useState<'table' | 'analytics'>('table');
@@ -226,35 +230,55 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     };
   }, [previewFile]);
 
-  // Carregamento inicial
-  useEffect(() => {
-    const loadData = async () => {
+  // Carregamento principal e sincronização em tempo real (Realtime)
+  const loadData = async (showLoadingSpinner = true) => {
+    if (showLoadingSpinner) {
       setLoading(true);
-      try {
-        const [invs, centers, types] = await Promise.all([
-          financialInvoiceService.getInvoices(users),
-          financialInvoiceService.getCostCenters(),
-          financialInvoiceService.getCostTypes()
-        ]);
-        setInvoices(invs);
-        setCostCenters(centers);
-        setCostTypes(types);
+    } else {
+      setIsSyncing(true);
+    }
+    try {
+      const [invs, centers, types] = await Promise.all([
+        financialInvoiceService.getInvoices(users),
+        financialInvoiceService.getCostCenters(),
+        financialInvoiceService.getCostTypes()
+      ]);
+      setInvoices(invs);
+      setCostCenters(centers);
+      setCostTypes(types);
 
-        // Pre-seleção padrão
-        if (centers.length > 0 && !formCostCenterId) {
-          setFormCostCenterId(centers[0].id);
-        }
-        if (types.length > 0 && !formCostTypeId) {
-          setFormCostTypeId(types[0].id);
-        }
-      } catch (err) {
-        console.error('Erro ao carregar dados de notas fiscais:', err);
-      } finally {
-        setLoading(false);
+      // Pre-seleção padrão
+      if (centers.length > 0 && !formCostCenterId) {
+        setFormCostCenterId(centers[0].id);
       }
+      if (types.length > 0 && !formCostTypeId) {
+        setFormCostTypeId(types[0].id);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados de notas fiscais:', err);
+    } finally {
+      if (showLoadingSpinner) setLoading(false);
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData(true);
+
+    // Escuta em tempo real: qualquer nota inserida, editada ou excluída por qualquer usuário atualiza instantaneamente
+    const unsubscribe = subscribeToFinancialInvoices(() => {
+      loadData(false);
+    });
+
+    return () => {
+      unsubscribe();
     };
-    loadData();
   }, [users]);
+
+  // ID prospectivo para o próximo lançamento (ex: 'nf-1', 'nf-12'...)
+  const prospectiveNextId = useMemo(() => {
+    return getNextInvoiceId(invoices);
+  }, [invoices]);
 
   // Tipos filtrados pela modalidade ativa no form
   const availableCostTypesForForm = useMemo(() => {
@@ -910,6 +934,40 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Barra de Status Realtime & Totais Compartilhados */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-blue-900/10 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-blue-950/40 border border-blue-200/80 dark:border-blue-800/80 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="relative flex items-center justify-center shrink-0">
+            <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-ping absolute opacity-75"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 relative"></span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100">
+                Sincronização Realtime Ativa
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-semibold border border-emerald-300 dark:border-emerald-800">
+                Em Nuvem Transcunha
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Todas as notas anexadas por qualquer usuário aparecem instantaneamente para todos que têm acesso ({invoices.length} notas no sistema • Total Geral: {formatCurrency(invoices.reduce((acc, i) => acc + (i.totalAmount || 0), 0))})
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => loadData(false)}
+            disabled={isSyncing}
+            title="Sincronizar com o banco central em nuvem"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer shadow-sm disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 dark:text-blue-400 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Atualizar Realtime'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* Top Banner / KPIs Header */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Total Geral */}
@@ -923,7 +981,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               {formatCurrency(totalAmount)}
             </div>
             <span className="text-[11px] text-slate-400 mt-0.5 block">
-              Volume total filtrado
+              {filteredInvoices.length !== invoices.length ? `Filtrado (${invoices.length} no sistema)` : 'Volume total compartilhado'}
             </span>
           </div>
           <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-2xl">
@@ -1241,7 +1299,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4">Nota Fiscal / Doc</th>
+                    <th className="py-3 px-4">ID / Nota Fiscal</th>
                     <th className="py-3 px-4">Fornecedor / Prestador</th>
                     <th className="py-3 px-4">Natureza / Tipo</th>
                     <th className="py-3 px-4">Centro de Custo</th>
@@ -1271,7 +1329,10 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                               <FileText className="w-4 h-4" />
                             </div>
                             <div>
-                              <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 font-mono font-bold border border-blue-200 dark:border-blue-800 shrink-0">
+                                  {inv.id}
+                                </span>
                                 <span>NF nº {inv.invoiceNumber}</span>
                                 {inv.series && (
                                   <span className="text-[10px] px-1 bg-slate-100 dark:bg-slate-700 rounded text-slate-500 font-mono">
@@ -1730,9 +1791,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   <FileText className="w-6 h-6 text-blue-300" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black tracking-tight">
-                    {editingInvoiceId ? 'Editar Nota Fiscal' : 'Lançar Nova Nota Fiscal'}
-                  </h3>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="text-xl font-black tracking-tight">
+                      {editingInvoiceId ? 'Editar Nota Fiscal' : 'Lançar Nova Nota Fiscal'}
+                    </h3>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/50 font-mono font-bold tracking-wider">
+                      ID: {editingInvoiceId || prospectiveNextId}
+                    </span>
+                  </div>
                   <p className="text-xs text-blue-200 mt-0.5">
                     Preencha os dados da NF, anexo, centro de custo e responsável interno.
                   </p>

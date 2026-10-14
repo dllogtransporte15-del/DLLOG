@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_14_v2_70_59',
+    version: 'v2.70.59',
+    date: '14/10/2026',
+    title: 'Sincronização Realtime de Notas Fiscais, IDs Sequenciais [nf-1...] e Totais Compartilhados',
+    summary: 'Refinamento completo da sincronização em tempo real das Notas Fiscais e Boletos anexados. Todos os lançamentos agora geram IDs sequenciais padronizados a partir de nf-1 e sincronizam instantaneamente via WebSockets na nuvem Supabase, garantindo que o volume total e os cards de indicadores apareçam de forma idêntica e simultânea para todos os usuários com acesso ao módulo financeiro.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sincronização Realtime em Nuvem Compartilhada',
+        description: 'Implementação de canal WebSocket broadcast e sincronização centralizada no Supabase. Qualquer nota fiscal inserida, alterada ou anexada por qualquer usuário é refletida imediatamente na tela de todos os demais usuários sem necessidade de atualizar a página.'
+      },
+      {
+        category: 'feature',
+        title: 'Padronização de IDs Sequenciais (nf-1, nf-2, nf-3...)',
+        description: 'Cada nota fiscal ou anexo gerado recebe automaticamente um identificador sequencial único iniciando em nf-1, com pré-visualização no modal de cadastro e destaque visual em badges tanto na aba de Notas Fiscais quanto no Contas a Pagar.'
+      },
+      {
+        category: 'improvement',
+        title: 'Totalização Global Compartilhada para Todos os Usuários',
+        description: 'Barra informativa de status de sincronização em tempo real exibindo a contagem e a soma global de todas as notas fiscais do sistema para usuários autorizados, eliminando divergências locais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Integração em Tempo Real com Contas a Pagar',
+        description: 'A listagem e as baixas de notas fiscais vinculadas ao Contas a Pagar e aos Boletos são sincronizadas instantaneamente com identificadores visuais consolidados.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_14_v2_70_58',
     version: 'v2.70.58',
     date: '14/10/2026',

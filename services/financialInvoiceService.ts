@@ -160,6 +160,153 @@ export const getInitialInvoicesSeed = (users: User[]): FinancialInvoice[] => {
   ];
 };
 
+// ----------------------------------------------------
+// NOTAS FISCAIS (SINCRONIZAÇÃO EM TEMPO REAL & IDs SEQUENCIAIS nf-1, nf-2...)
+// ----------------------------------------------------
+
+export const SUPABASE_INVOICES_RECORD_ID = 888;
+export const INVOICES_REALTIME_CHANNEL = 'financial_invoices_realtime';
+
+/**
+ * Gera o próximo ID sequencial padronizado no formato 'nf-1', 'nf-2', etc.
+ */
+export function getNextInvoiceId(existingList: FinancialInvoice[]): string {
+  let maxNum = 0;
+  if (Array.isArray(existingList)) {
+    for (const item of existingList) {
+      if (!item || !item.id) continue;
+      const m = String(item.id).match(/^nf-(\d+)$/i);
+      if (m && m[1]) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+  return `nf-${maxNum + 1}`;
+}
+
+/**
+ * Normaliza e migra a lista de notas para que todos os lançamentos possuam IDs sequenciais 'nf-1', 'nf-2'...
+ */
+export function normalizeInvoicesList(list: FinancialInvoice[]): FinancialInvoice[] {
+  if (!Array.isArray(list)) return [];
+
+  // Remove notas mock antigas de teste se houver
+  const valid = list.filter(inv => inv && inv.id && !inv.id.startsWith('inv_00'));
+
+  const hasNfRegex = /^nf-(\d+)$/i;
+
+  // Descobre o maior ID nf- já existente
+  let maxAssigned = 0;
+  for (const inv of valid) {
+    const m = String(inv.id).match(hasNfRegex);
+    if (m && m[1]) {
+      const num = parseInt(m[1], 10);
+      if (!isNaN(num) && num > maxAssigned) {
+        maxAssigned = num;
+      }
+    }
+  }
+
+  // Atribui sequencialmente nf- aos que ainda possuem IDs legados (ex.: inv_timestamp)
+  let nextSeq = maxAssigned === 0 ? 1 : maxAssigned + 1;
+  const normalized = valid.map(inv => {
+    let finalId = inv.id;
+    if (!hasNfRegex.test(inv.id)) {
+      finalId = `nf-${nextSeq}`;
+      nextSeq++;
+    }
+    return {
+      ...inv,
+      id: finalId,
+      totalAmount: typeof inv.totalAmount === 'number' && !isNaN(inv.totalAmount) ? inv.totalAmount : 0,
+      payableAmount: typeof inv.payableAmount === 'number' && !isNaN(inv.payableAmount) ? inv.payableAmount : (inv.totalAmount || 0)
+    };
+  });
+
+  return normalized;
+}
+
+/**
+ * Envia notificação via broadcast Realtime do Supabase para todos os clientes conectados.
+ */
+function broadcastInvoicesChange(action: 'create' | 'update' | 'delete', invoiceId?: string) {
+  try {
+    const channel = supabase.channel(INVOICES_REALTIME_CHANNEL);
+    channel.send({
+      type: 'broadcast',
+      event: 'invoices_changed',
+      payload: { action, invoiceId, timestamp: Date.now() }
+    });
+  } catch (err) {
+    console.warn('[Realtime] Falha ao enviar broadcast de notas fiscais:', err);
+  }
+}
+
+/**
+ * Subscreve a atualizações em tempo real das Notas Fiscais (WebSockets Supabase + Postgres + Local).
+ */
+export function subscribeToFinancialInvoices(onUpdate: () => void) {
+  let isMounted = true;
+  const channelName = `fin_inv_rt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const channel = supabase.channel(channelName);
+
+  // 1. Broadcast Realtime WebSocket entre diferentes navegadores e usuários
+  channel.on('broadcast', { event: 'invoices_changed' }, () => {
+    if (isMounted) onUpdate();
+  });
+
+  // 2. Postgres Changes no registro compartilhado no Supabase (row 888 em profile_permissions)
+  channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'profile_permissions' },
+    (payload: any) => {
+      if (isMounted) {
+        const rowId = payload?.new?.id ?? payload?.old?.id;
+        if (rowId === SUPABASE_INVOICES_RECORD_ID || rowId === 888 || !rowId) {
+          onUpdate();
+        }
+      }
+    }
+  );
+
+  // 3. Postgres Changes na tabela dedicada financial_invoices (se criada)
+  channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'financial_invoices' },
+    () => {
+      if (isMounted) onUpdate();
+    }
+  );
+
+  channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      console.log('[Realtime] ✅ Canal de Notas Fiscais conectado com sucesso');
+    }
+  });
+
+  // 4. Ouvintes de eventos no mesmo navegador (CustomEvent e storage entre abas)
+  const handleLocal = () => {
+    if (isMounted) onUpdate();
+  };
+  window.addEventListener('financial_invoices_updated', handleLocal);
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_INVOICES_KEY && isMounted) {
+      onUpdate();
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  return () => {
+    isMounted = false;
+    try { supabase.removeChannel(channel); } catch {}
+    window.removeEventListener('financial_invoices_updated', handleLocal);
+    window.removeEventListener('storage', handleStorage);
+  };
+}
+
 export const financialInvoiceService = {
   // ----------------------------------------------------
   // CENTROS DE CUSTO
@@ -297,74 +444,125 @@ export const financialInvoiceService = {
   // NOTAS FISCAIS
   // ----------------------------------------------------
   getInvoices: async (_users: User[] = []): Promise<FinancialInvoice[]> => {
+    let remoteInvoices: FinancialInvoice[] | null = null;
+
+    // 1. Tentar ler do Supabase (registro compartilhado 888 acessível a todos os usuários)
     try {
       const { data, error } = await supabase
-        .from('financial_invoices')
-        .select('*')
-        .order('issue_date', { ascending: false });
+        .from('profile_permissions')
+        .select('permissions')
+        .eq('id', SUPABASE_INVOICES_RECORD_ID)
+        .maybeSingle();
 
-      if (!error && data) {
-        return data.map(d => ({
-          id: d.id,
-          invoiceNumber: d.invoice_number,
-          series: d.series,
-          accessKey: d.access_key,
-          supplierName: d.supplier_name,
-          supplierCnpjCpf: d.supplier_cnpj_cpf,
-          totalAmount: Number(d.total_amount) || 0,
-          payableAmount: d.payable_amount !== undefined && d.payable_amount !== null ? Number(d.payable_amount) : (Number(d.total_amount) || 0),
-          issueDate: d.issue_date,
-          dueDate: d.due_date,
-          paymentDate: d.payment_date,
-          status: d.status as InvoicePaymentStatus,
-          paymentMethod: d.payment_method,
-          paymentDetails: d.payment_details || d.paymentDetails,
-          costNature: d.cost_nature as InvoiceCostNature,
-          costTypeId: d.cost_type_id,
-          costTypeName: d.cost_type_name,
-          costCenterId: d.cost_center_id,
-          costCenterName: d.cost_center_name,
-          responsibleUserId: d.responsible_user_id,
-          responsibleUserName: d.responsible_user_name,
-          responsibleUserProfile: d.responsible_user_profile,
-          description: d.description,
-          notes: d.notes,
-          fileUrl: d.file_url,
-          fileName: d.file_name,
-          fileType: d.file_type,
-          fileSize: d.file_size ? Number(d.file_size) : undefined,
-          boletoFileUrl: d.boleto_file_url,
-          boletoFileName: d.boleto_file_name,
-          boletoFileType: d.boleto_file_type,
-          boletoFileSize: d.boleto_file_size ? Number(d.boleto_file_size) : undefined,
-          createdAt: d.created_at,
-          updatedAt: d.updated_at
-        }));
+      if (!error && data?.permissions?.invoices && Array.isArray(data.permissions.invoices)) {
+        remoteInvoices = data.permissions.invoices;
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('[DB] Erro ao consultar NFs remotas:', err);
     }
 
+    // 2. Se não encontrou na row 888, tentar na tabela dedicada 'financial_invoices'
+    if (!remoteInvoices || remoteInvoices.length === 0) {
+      try {
+        const { data, error } = await supabase
+          .from('financial_invoices')
+          .select('*')
+          .order('issue_date', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          remoteInvoices = data.map(d => ({
+            id: d.id,
+            invoiceNumber: d.invoice_number,
+            series: d.series,
+            accessKey: d.access_key,
+            supplierName: d.supplier_name,
+            supplierCnpjCpf: d.supplier_cnpj_cpf,
+            totalAmount: Number(d.total_amount) || 0,
+            payableAmount: d.payable_amount !== undefined && d.payable_amount !== null ? Number(d.payable_amount) : (Number(d.total_amount) || 0),
+            issueDate: d.issue_date,
+            dueDate: d.due_date,
+            paymentDate: d.payment_date,
+            status: d.status as InvoicePaymentStatus,
+            paymentMethod: d.payment_method,
+            paymentDetails: d.payment_details || d.paymentDetails,
+            costNature: d.cost_nature as InvoiceCostNature,
+            costTypeId: d.cost_type_id,
+            costTypeName: d.cost_type_name,
+            costCenterId: d.cost_center_id,
+            costCenterName: d.cost_center_name,
+            responsibleUserId: d.responsible_user_id,
+            responsibleUserName: d.responsible_user_name,
+            responsibleUserProfile: d.responsible_user_profile,
+            description: d.description,
+            notes: d.notes,
+            fileUrl: d.file_url,
+            fileName: d.file_name,
+            fileType: d.file_type,
+            fileSize: d.file_size ? Number(d.file_size) : undefined,
+            boletoFileUrl: d.boleto_file_url,
+            boletoFileName: d.boleto_file_name,
+            boletoFileType: d.boleto_file_type,
+            boletoFileSize: d.boleto_file_size ? Number(d.boleto_file_size) : undefined,
+            createdAt: d.created_at,
+            updatedAt: d.updated_at
+          }));
+        }
+      } catch {
+        // Tabela ainda não criada
+      }
+    }
+
+    // 3. Ler cópia local do localStorage
+    let localInvoices: FinancialInvoice[] = [];
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      if (local !== null) {
-        const parsed: FinancialInvoice[] = JSON.parse(local);
+      if (local) {
+        const parsed = JSON.parse(local);
         if (Array.isArray(parsed)) {
-          // Normaliza valores e remove automaticamente notas mock antigas de teste/semente
-          const cleaned = parsed.map(inv => ({
-            ...inv,
-            totalAmount: typeof inv.totalAmount === 'number' && !isNaN(inv.totalAmount) ? inv.totalAmount : 0,
-            payableAmount: typeof inv.payableAmount === 'number' && !isNaN(inv.payableAmount) ? inv.payableAmount : (inv.totalAmount || 0)
-          })).filter(inv => !inv.id.startsWith('inv_00'));
-          if (cleaned.length !== parsed.length) {
-            localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(cleaned));
-            return cleaned;
-          }
-          return cleaned;
+          localInvoices = parsed;
         }
       }
     } catch (e) {
-      console.warn('Erro ao ler notas fiscais locais:', e);
+      console.warn('Erro ao ler notas locais:', e);
+    }
+
+    // 4. Se a nuvem tiver dados, ela é a fonte central para todos os usuários
+    if (remoteInvoices && remoteInvoices.length > 0) {
+      const map = new Map<string, FinancialInvoice>();
+      localInvoices.forEach(inv => {
+        if (inv?.id) map.set(inv.id, inv);
+      });
+      remoteInvoices.forEach(inv => {
+        if (inv?.id) map.set(inv.id, inv);
+      });
+
+      const merged = normalizeInvoicesList(Array.from(map.values()));
+      localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(merged));
+      return merged;
+    }
+
+    // 5. Se a nuvem estiver vazia mas o usuário local já possuir notas (ex.: 11 notas existentes),
+    // faz o upload automático imediato para o Supabase para que TODOS os outros usuários tenham acesso!
+    if (localInvoices.length > 0) {
+      const normalizedLocal = normalizeInvoicesList(localInvoices);
+      localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(normalizedLocal));
+      
+      (async () => {
+        try {
+          await supabase.from('profile_permissions').upsert({
+            id: SUPABASE_INVOICES_RECORD_ID,
+            permissions: {
+              invoices: normalizedLocal,
+              updatedAt: new Date().toISOString()
+            }
+          });
+          broadcastInvoicesChange('update');
+        } catch (err) {
+          console.warn('[Sync] Falha no upload inicial para Supabase:', err);
+        }
+      })();
+
+      return normalizedLocal;
     }
 
     localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify([]));
@@ -377,7 +575,16 @@ export const financialInvoiceService = {
   ): Promise<FinancialInvoice> => {
     const isEdit = !!existingId;
     const nowIso = new Date().toISOString();
-    const invoiceId = existingId || `inv_${Date.now()}`;
+
+    // 1. Ler a lista atual normalizada
+    let currentList: FinancialInvoice[] = [];
+    try {
+      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
+      if (local) currentList = normalizeInvoicesList(JSON.parse(local));
+    } catch {}
+
+    // REGRA DE OURO: Para novos lançamentos, gera ID sequencial no formato 'nf-1', 'nf-2', etc.
+    const invoiceId = existingId || getNextInvoiceId(currentList);
 
     const completeInvoice: FinancialInvoice = {
       ...item,
@@ -388,7 +595,28 @@ export const financialInvoiceService = {
       updatedAt: nowIso
     };
 
-    // Tentar persistir no Supabase
+    let updatedList: FinancialInvoice[];
+    if (isEdit) {
+      updatedList = currentList.map(inv => inv.id === existingId ? completeInvoice : inv);
+    } else {
+      updatedList = [completeInvoice, ...currentList];
+    }
+    updatedList = normalizeInvoicesList(updatedList);
+
+    // 2. Persistência na nuvem Supabase (Registro compartilhado para sincronização entre todos os usuários)
+    try {
+      await supabase.from('profile_permissions').upsert({
+        id: SUPABASE_INVOICES_RECORD_ID,
+        permissions: {
+          invoices: updatedList,
+          updatedAt: nowIso
+        }
+      });
+    } catch (err) {
+      console.warn('[Supabase] Erro ao sincronizar NFs na nuvem:', err);
+    }
+
+    // 3. Tentar persistir também na tabela dedicada 'financial_invoices' se existir
     try {
       const dbPayload = {
         invoice_number: item.invoiceNumber,
@@ -426,57 +654,26 @@ export const financialInvoiceService = {
       };
 
       if (isEdit) {
-        const { error } = await supabase
-          .from('financial_invoices')
-          .update(dbPayload)
-          .eq('id', existingId);
-
-        if (error) {
-          // Fallback caso a tabela Supabase ainda não tenha as colunas de boleto
-          const { boleto_file_url, boleto_file_name, boleto_file_type, boleto_file_size, ...fallbackPayload } = dbPayload;
-          await supabase
-            .from('financial_invoices')
-            .update(fallbackPayload)
-            .eq('id', existingId);
-        }
+        await supabase.from('financial_invoices').update(dbPayload).eq('id', existingId);
       } else {
-        const { error } = await supabase
-          .from('financial_invoices')
-          .insert(dbPayload);
-
-        if (error) {
-          // Fallback caso a tabela Supabase ainda não tenha as colunas de boleto
-          const { boleto_file_url, boleto_file_name, boleto_file_type, boleto_file_size, ...fallbackPayload } = dbPayload;
-          await supabase
-            .from('financial_invoices')
-            .insert(fallbackPayload);
-        }
+        await supabase.from('financial_invoices').insert(dbPayload);
       }
     } catch {
-      // Ignora falha de schema remoto
+      // Tabela não criada
     }
 
-    // Persistência local garantida
+    // 4. Persistência local garantida
     try {
-      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      let list: FinancialInvoice[] = local ? JSON.parse(local) : [];
-      if (Array.isArray(list)) {
-        list = list.filter(inv => !inv.id.startsWith('inv_00'));
-        if (isEdit) {
-          list = list.map(inv => inv.id === existingId ? completeInvoice : inv);
-        } else {
-          list = [completeInvoice, ...list];
-        }
-      } else {
-        list = [completeInvoice];
-      }
-      localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
+      localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: completeInvoice }));
       }
     } catch (e) {
       console.error(e);
     }
+
+    // 5. Notificar todos os outros usuários conectados via WebSocket Realtime
+    broadcastInvoicesChange(isEdit ? 'update' : 'create', invoiceId);
 
     return completeInvoice;
   },
@@ -486,68 +683,102 @@ export const financialInvoiceService = {
     status: InvoicePaymentStatus,
     paymentDate?: string
   ): Promise<void> => {
+    const nowIso = new Date().toISOString();
+    let updatedList: FinancialInvoice[] = [];
+
+    try {
+      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
+      if (local) {
+        const list: FinancialInvoice[] = JSON.parse(local);
+        updatedList = list.map(inv => {
+          if (inv.id === id) {
+            return {
+              ...inv,
+              status,
+              paymentDate: paymentDate || (status === 'Pago' ? (inv.paymentDate || new Date().toISOString().split('T')[0]) : undefined),
+              updatedAt: nowIso
+            };
+          }
+          return inv;
+        });
+        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Atualiza no Supabase row 888
+    try {
+      if (updatedList.length > 0) {
+        await supabase.from('profile_permissions').upsert({
+          id: SUPABASE_INVOICES_RECORD_ID,
+          permissions: {
+            invoices: updatedList,
+            updatedAt: nowIso
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[Supabase] Erro ao atualizar status de NF na nuvem:', err);
+    }
+
+    // Tenta atualizar na tabela dedicada
     try {
       await supabase
         .from('financial_invoices')
         .update({
           status,
           payment_date: paymentDate || (status === 'Pago' ? new Date().toISOString().split('T')[0] : null),
-          updated_at: new Date().toISOString()
+          updated_at: nowIso
         })
         .eq('id', id);
-    } catch {
-      // Fallback local
-    }
+    } catch {}
 
-    try {
-      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      if (local) {
-        let list: FinancialInvoice[] = JSON.parse(local);
-        list = list.map(inv => {
-          if (inv.id === id) {
-            return {
-              ...inv,
-              status,
-              paymentDate: paymentDate || (status === 'Pago' ? (inv.paymentDate || new Date().toISOString().split('T')[0]) : undefined),
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return inv;
-        });
-        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, status } }));
-        }
-      }
-    } catch (e) {
-      console.error(e);
+    // Notifica abas e outros usuários
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, status } }));
     }
+    broadcastInvoicesChange('update', id);
   },
 
   deleteInvoice: async (id: string): Promise<void> => {
-    try {
-      await supabase
-        .from('financial_invoices')
-        .delete()
-        .eq('id', id);
-    } catch {
-      // Fallback local
-    }
+    const nowIso = new Date().toISOString();
+    let updatedList: FinancialInvoice[] = [];
 
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
       let list: FinancialInvoice[] = local ? JSON.parse(local) : [];
       if (Array.isArray(list)) {
-        list = list.filter(inv => inv.id !== id && !inv.id.startsWith('inv_00'));
-        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(list));
-      } else {
-        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify([]));
-      }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, deleted: true } }));
+        updatedList = list.filter(inv => inv.id !== id && !inv.id.startsWith('inv_00'));
+        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
       }
     } catch (e) {
       console.error(e);
     }
+
+    // Atualiza no Supabase row 888
+    try {
+      await supabase.from('profile_permissions').upsert({
+        id: SUPABASE_INVOICES_RECORD_ID,
+        permissions: {
+          invoices: updatedList,
+          updatedAt: nowIso
+        }
+      });
+    } catch (err) {
+      console.warn('[Supabase] Erro ao deletar NF na nuvem:', err);
+    }
+
+    // Tenta deletar na tabela dedicada
+    try {
+      await supabase.from('financial_invoices').delete().eq('id', id);
+    } catch {}
+
+    // Notifica abas e outros usuários
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, deleted: true } }));
+    }
+    broadcastInvoicesChange('delete', id);
   }
 };
+

@@ -26,7 +26,10 @@ import {
   Receipt
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { financialInvoiceService } from '../../services/financialInvoiceService';
+import { 
+  financialInvoiceService,
+  subscribeToFinancialInvoices 
+} from '../../services/financialInvoiceService';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
 
 interface AccountsPayableTabProps {
@@ -91,14 +94,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   useEffect(() => {
     loadInvoices();
 
-    const handleInvoicesUpdated = () => {
+    // Sincronização em tempo real (WebSockets Supabase + Postgres + Local)
+    const unsubscribe = subscribeToFinancialInvoices(() => {
       loadInvoices();
-    };
-    window.addEventListener('financial_invoices_updated', handleInvoicesUpdated);
-    window.addEventListener('storage', handleInvoicesUpdated);
+    });
+
     return () => {
-      window.removeEventListener('financial_invoices_updated', handleInvoicesUpdated);
-      window.removeEventListener('storage', handleInvoicesUpdated);
+      unsubscribe();
     };
   }, [users]);
 
@@ -709,6 +711,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           )}
                           <div>
                             <div className="flex items-center gap-1.5 flex-wrap">
+                              {item.kind === 'invoice' && item.originalItem?.id && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 font-mono font-bold border border-blue-200 dark:border-blue-800 shrink-0">
+                                  {item.originalItem.id}
+                                </span>
+                              )}
                               <span className="font-bold text-slate-900 dark:text-white block">
                                 {item.docNumber}
                               </span>
