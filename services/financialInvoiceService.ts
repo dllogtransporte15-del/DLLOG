@@ -193,14 +193,15 @@ export function getNextInvoiceId(existingList: FinancialInvoice[]): string {
 export function normalizeInvoicesList(list: FinancialInvoice[]): FinancialInvoice[] {
   if (!Array.isArray(list)) return [];
 
-  // Remove notas mock antigas de teste se houver
-  const valid = list.filter(inv => inv && inv.id && !inv.id.startsWith('inv_00'));
+  // Mantém todas as notas válidas (nunca descarta por prefixo!)
+  const valid = list.filter(inv => inv && (inv.id || inv.invoiceNumber));
 
   const hasNfRegex = /^nf-(\d+)$/i;
 
   // Descobre o maior ID nf- já existente
   let maxAssigned = 0;
   for (const inv of valid) {
+    if (!inv.id) continue;
     const m = String(inv.id).match(hasNfRegex);
     if (m && m[1]) {
       const num = parseInt(m[1], 10);
@@ -210,11 +211,11 @@ export function normalizeInvoicesList(list: FinancialInvoice[]): FinancialInvoic
     }
   }
 
-  // Atribui sequencialmente nf- aos que ainda possuem IDs legados (ex.: inv_timestamp)
+  // Atribui sequencialmente nf- aos que ainda possuem IDs legados (ex.: inv_...)
   let nextSeq = maxAssigned === 0 ? 1 : maxAssigned + 1;
   const normalized = valid.map(inv => {
     let finalId = inv.id;
-    if (!hasNfRegex.test(inv.id)) {
+    if (!finalId || !hasNfRegex.test(finalId)) {
       finalId = `nf-${nextSeq}`;
       nextSeq++;
     }
@@ -227,6 +228,55 @@ export function normalizeInvoicesList(list: FinancialInvoice[]): FinancialInvoic
   });
 
   return normalized;
+}
+
+/**
+ * Busca a lista remota compartilhada de notas fiscais no Supabase (row 888 de profile_permissions).
+ */
+export async function fetchRemoteInvoices(): Promise<FinancialInvoice[]> {
+  try {
+    const { data, error } = await supabase
+      .from('profile_permissions')
+      .select('permissions')
+      .eq('id', SUPABASE_INVOICES_RECORD_ID)
+      .maybeSingle();
+
+    if (!error && data?.permissions?.invoices && Array.isArray(data.permissions.invoices)) {
+      return data.permissions.invoices;
+    }
+  } catch (err) {
+    console.warn('[DB] Erro ao consultar NFs remotas:', err);
+  }
+  return [];
+}
+
+/**
+ * Mescla de forma inteligente notas remotas e locais sem perda de dados e sem duplicações.
+ */
+export function mergeInvoicesList(remoteList: FinancialInvoice[], localList: FinancialInvoice[]): FinancialInvoice[] {
+  const result: FinancialInvoice[] = Array.isArray(remoteList) ? [...remoteList] : [];
+  const remoteKeys = new Set(
+    result.map(r => `${r.invoiceNumber || ''}_${(r.supplierName || '').trim().toLowerCase()}`)
+  );
+  const existingIds = new Set(result.map(r => r.id));
+
+  if (Array.isArray(localList)) {
+    for (const loc of localList) {
+      if (!loc) continue;
+      const key = `${loc.invoiceNumber || ''}_${(loc.supplierName || '').trim().toLowerCase()}`;
+      if (!remoteKeys.has(key)) {
+        remoteKeys.add(key);
+        let id = loc.id;
+        if (!id || existingIds.has(id) || !/^nf-\d+$/i.test(id)) {
+          id = getNextInvoiceId(result);
+        }
+        existingIds.add(id);
+        result.push({ ...loc, id });
+      }
+    }
+  }
+
+  return normalizeInvoicesList(result);
 }
 
 /**
@@ -444,24 +494,11 @@ export const financialInvoiceService = {
   // NOTAS FISCAIS
   // ----------------------------------------------------
   getInvoices: async (_users: User[] = []): Promise<FinancialInvoice[]> => {
-    let remoteInvoices: FinancialInvoice[] | null = null;
-
     // 1. Tentar ler do Supabase (registro compartilhado 888 acessível a todos os usuários)
-    try {
-      const { data, error } = await supabase
-        .from('profile_permissions')
-        .select('permissions')
-        .eq('id', SUPABASE_INVOICES_RECORD_ID)
-        .maybeSingle();
-
-      if (!error && data?.permissions?.invoices && Array.isArray(data.permissions.invoices)) {
-        remoteInvoices = data.permissions.invoices;
-      }
-    } catch (err) {
-      console.warn('[DB] Erro ao consultar NFs remotas:', err);
-    }
+    const remoteInvoices = await fetchRemoteInvoices();
 
     // 2. Se não encontrou na row 888, tentar na tabela dedicada 'financial_invoices'
+    let fallbackRemote: FinancialInvoice[] | null = null;
     if (!remoteInvoices || remoteInvoices.length === 0) {
       try {
         const { data, error } = await supabase
@@ -470,7 +507,7 @@ export const financialInvoiceService = {
           .order('issue_date', { ascending: false });
 
         if (!error && data && data.length > 0) {
-          remoteInvoices = data.map(d => ({
+          fallbackRemote = data.map(d => ({
             id: d.id,
             invoiceNumber: d.invoice_number,
             series: d.series,
@@ -512,6 +549,8 @@ export const financialInvoiceService = {
       }
     }
 
+    const effectiveRemote = (remoteInvoices && remoteInvoices.length > 0) ? remoteInvoices : (fallbackRemote || []);
+
     // 3. Ler cópia local do localStorage
     let localInvoices: FinancialInvoice[] = [];
     try {
@@ -526,17 +565,9 @@ export const financialInvoiceService = {
       console.warn('Erro ao ler notas locais:', e);
     }
 
-    // 4. Se a nuvem tiver dados, ela é a fonte central para todos os usuários
-    if (remoteInvoices && remoteInvoices.length > 0) {
-      const map = new Map<string, FinancialInvoice>();
-      localInvoices.forEach(inv => {
-        if (inv?.id) map.set(inv.id, inv);
-      });
-      remoteInvoices.forEach(inv => {
-        if (inv?.id) map.set(inv.id, inv);
-      });
-
-      const merged = normalizeInvoicesList(Array.from(map.values()));
+    // 4. Se a nuvem tiver dados, mescla com os locais preservando todos os lançamentos
+    if (effectiveRemote.length > 0) {
+      const merged = mergeInvoicesList(effectiveRemote, localInvoices);
       localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(merged));
       return merged;
     }
@@ -576,12 +607,15 @@ export const financialInvoiceService = {
     const isEdit = !!existingId;
     const nowIso = new Date().toISOString();
 
-    // 1. Ler a lista atual normalizada
-    let currentList: FinancialInvoice[] = [];
+    // 1. Sempre busca dados atualizados da nuvem Supabase antes de mesclar e salvar
+    const remoteList = await fetchRemoteInvoices();
+    let localList: FinancialInvoice[] = [];
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      if (local) currentList = normalizeInvoicesList(JSON.parse(local));
+      if (local) localList = JSON.parse(local);
     } catch {}
+
+    const currentList = mergeInvoicesList(remoteList, localList);
 
     // REGRA DE OURO: Para novos lançamentos, gera ID sequencial no formato 'nf-1', 'nf-2', etc.
     const invoiceId = existingId || getNextInvoiceId(currentList);
@@ -599,7 +633,7 @@ export const financialInvoiceService = {
     if (isEdit) {
       updatedList = currentList.map(inv => inv.id === existingId ? completeInvoice : inv);
     } else {
-      updatedList = [completeInvoice, ...currentList];
+      updatedList = [completeInvoice, ...currentList.filter(inv => inv.id !== invoiceId)];
     }
     updatedList = normalizeInvoicesList(updatedList);
 
@@ -684,28 +718,27 @@ export const financialInvoiceService = {
     paymentDate?: string
   ): Promise<void> => {
     const nowIso = new Date().toISOString();
-    let updatedList: FinancialInvoice[] = [];
-
+    
+    // Sempre busca da nuvem para mesclar antes de atualizar status
+    const remoteList = await fetchRemoteInvoices();
+    let localList: FinancialInvoice[] = [];
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      if (local) {
-        const list: FinancialInvoice[] = JSON.parse(local);
-        updatedList = list.map(inv => {
-          if (inv.id === id) {
-            return {
-              ...inv,
-              status,
-              paymentDate: paymentDate || (status === 'Pago' ? (inv.paymentDate || new Date().toISOString().split('T')[0]) : undefined),
-              updatedAt: nowIso
-            };
-          }
-          return inv;
-        });
-        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
+      if (local) localList = JSON.parse(local);
+    } catch {}
+
+    const currentList = mergeInvoicesList(remoteList, localList);
+    const updatedList = currentList.map(inv => {
+      if (inv.id === id) {
+        return {
+          ...inv,
+          status,
+          paymentDate: paymentDate || (status === 'Pago' ? (inv.paymentDate || new Date().toISOString().split('T')[0]) : undefined),
+          updatedAt: nowIso
+        };
       }
-    } catch (e) {
-      console.error(e);
-    }
+      return inv;
+    });
 
     // Atualiza no Supabase row 888
     try {
@@ -734,6 +767,13 @@ export const financialInvoiceService = {
         .eq('id', id);
     } catch {}
 
+    // Atualiza local
+    try {
+      localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
+    } catch (e) {
+      console.error(e);
+    }
+
     // Notifica abas e outros usuários
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, status } }));
@@ -743,18 +783,16 @@ export const financialInvoiceService = {
 
   deleteInvoice: async (id: string): Promise<void> => {
     const nowIso = new Date().toISOString();
-    let updatedList: FinancialInvoice[] = [];
-
+    
+    const remoteList = await fetchRemoteInvoices();
+    let localList: FinancialInvoice[] = [];
     try {
       const local = localStorage.getItem(STORAGE_INVOICES_KEY);
-      let list: FinancialInvoice[] = local ? JSON.parse(local) : [];
-      if (Array.isArray(list)) {
-        updatedList = list.filter(inv => inv.id !== id && !inv.id.startsWith('inv_00'));
-        localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
-      }
-    } catch (e) {
-      console.error(e);
-    }
+      if (local) localList = JSON.parse(local);
+    } catch {}
+
+    const currentList = mergeInvoicesList(remoteList, localList);
+    const updatedList = currentList.filter(inv => inv.id !== id);
 
     // Atualiza no Supabase row 888
     try {
@@ -773,6 +811,13 @@ export const financialInvoiceService = {
     try {
       await supabase.from('financial_invoices').delete().eq('id', id);
     } catch {}
+
+    // Atualiza local
+    try {
+      localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(updatedList));
+    } catch (e) {
+      console.error(e);
+    }
 
     // Notifica abas e outros usuários
     if (typeof window !== 'undefined') {

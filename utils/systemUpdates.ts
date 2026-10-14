@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_14_v2_70_60',
+    version: 'v2.70.60',
+    date: '14/10/2026',
+    title: 'Restauração Consolidada de Notas Fiscais e Proteção contra Sobrescrita Multiusuário',
+    summary: 'Correção crítica na camada de persistência e normalização de Notas Fiscais. Restauração integral dos lançamentos fiscais consolidados no Supabase, eliminação do filtro restritivo de prefixos e implementação de mesclagem bidirecional inteligente (Cloud-First Merge), garantindo que cadastros ou alterações feitas por diferentes usuários nunca excluam notas existentes.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Restauração das Notas Fiscais no Banco de Dados',
+        description: 'Recuperação completa dos lançamentos fiscais consolidados com identificadores sequenciais [nf-1...] e preservação dos anexos, restabelecendo o volume e os indicadores operacionais do financeiro.'
+      },
+      {
+        category: 'security',
+        title: 'Proteção contra Sobrescrita Concorrente (Cloud-First Merge)',
+        description: 'O serviço de notas fiscais agora consulta a nuvem Supabase antes de gravar qualquer novo lançamento, alteração de status ou exclusão, prevenindo que a sincronização local de uma sessão substitua os dados de outra.'
+      },
+      {
+        category: 'improvement',
+        title: 'Normalização Segura sem Descarte de Prefixos',
+        description: 'Refatoração da rotina de normalização para migrar com segurança qualquer formato legado de identificador para o padrão sequencial nf- sem perda de registros.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_14_v2_70_59',
     version: 'v2.70.59',
     date: '14/10/2026',
