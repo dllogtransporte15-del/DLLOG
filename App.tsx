@@ -44,6 +44,8 @@ const RiskManagementPage = React.lazy(() => import('./pages/RiskManagementPage')
 const RiskQueryTypesPage = React.lazy(() => import('./pages/RiskQueryTypesPage'));
 const WhatsAppManagementPage = React.lazy(() => import('./pages/WhatsAppManagementPage'));
 const MessengerPage = React.lazy(() => import('./pages/MessengerPage'));
+const CommercialPresentationPage = React.lazy(() => import('./pages/CommercialPresentationPage'));
+const InstitutionalWebsitePage = React.lazy(() => import('./pages/InstitutionalWebsitePage'));
 
 // Component Imports
 import TopNavBar from './components/TopNavBar';
@@ -4038,6 +4040,11 @@ const App: React.FC = () => {
           <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
           <Route path="/whatsapp" element={<Navigate to="/messenger" replace />} />
           <Route path="/messenger" element={!can('read', currentUser, 'messenger', profilePermissions) ? <Navigate to="/" replace /> : <MessengerPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} users={users} currentUser={currentUser} />} />
+          <Route path="/apresentacao" element={<CommercialPresentationPage companyLogo={companyLogo} currentUser={currentUser} onBackToApp={() => navigate('/')} />} />
+          <Route path="/apresentacao-comercial" element={<CommercialPresentationPage companyLogo={companyLogo} currentUser={currentUser} onBackToApp={() => navigate('/')} />} />
+          <Route path="/site" element={<InstitutionalWebsitePage companyLogo={companyLogo} isLoggedIn={!!currentUser} onGoToSystem={() => navigate('/')} onOpenPresentation={() => navigate('/apresentacao')} />} />
+          <Route path="/website" element={<InstitutionalWebsitePage companyLogo={companyLogo} isLoggedIn={!!currentUser} onGoToSystem={() => navigate('/')} onOpenPresentation={() => navigate('/apresentacao')} />} />
+          <Route path="/institucional" element={<InstitutionalWebsitePage companyLogo={companyLogo} isLoggedIn={!!currentUser} onGoToSystem={() => navigate('/')} onOpenPresentation={() => navigate('/apresentacao')} />} />
           <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
         </Routes>
       </React.Suspense>
@@ -4059,6 +4066,39 @@ const App: React.FC = () => {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
         <DownloadAppPage companyLogo={companyLogo} />
+      </React.Suspense>
+    );
+  }
+
+  if (location.pathname === '/apresentacao' || location.pathname === '/apresentacao-comercial') {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <CommercialPresentationPage 
+          companyLogo={companyLogo} 
+          currentUser={currentUser}
+          onBackToApp={currentUser ? () => navigate('/') : undefined}
+        />
+      </React.Suspense>
+    );
+  }
+
+  const isInstitutionalHost = typeof window !== 'undefined' && 
+    (window.location.hostname.includes('transcunhaoficial.com.br') || window.location.hostname.includes('transcunhaoficial'));
+
+  if (
+    location.pathname === '/site' || 
+    location.pathname === '/website' || 
+    location.pathname === '/institucional' ||
+    (isInstitutionalHost && (location.pathname === '/' || location.pathname === ''))
+  ) {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <InstitutionalWebsitePage 
+          companyLogo={companyLogo} 
+          isLoggedIn={!!currentUser}
+          onGoToSystem={currentUser ? () => navigate('/') : () => navigate('/login')}
+          onOpenPresentation={() => navigate('/apresentacao')}
+        />
       </React.Suspense>
     );
   }

@@ -22,7 +22,7 @@ import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -428,7 +428,33 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  <ChevronDownIcon className={`hidden lg:block w-3.5 h-3.5 xl:w-4 xl:h-4 text-slate-500 shrink-0 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
               </button>
               {openDropdown === 'user' && (
-                <div className="absolute mt-2 w-52 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                <div className="absolute mt-2 w-56 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                    <button 
+                      onClick={() => {
+                        handleDropdownToggle('user');
+                        setCurrentPage('apresentacao-comercial' as Page);
+                      }} 
+                      className="w-full text-left flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                    >
+                        <div className="flex items-center gap-3">
+                          <Presentation className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" />
+                          <span>Apresentação Comercial</span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">PDF</span>
+                    </button>
+                    <button 
+                      onClick={() => {
+                        handleDropdownToggle('user');
+                        setCurrentPage('website' as Page);
+                      }} 
+                      className="w-full text-left flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                    >
+                        <div className="flex items-center gap-3">
+                          <Globe className="w-4 h-4 text-emerald-500 group-hover:scale-110 transition-transform" />
+                          <span>Website Institucional</span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
+                    </button>
                     <button 
                       onClick={() => {
                         handleDropdownToggle('user');
@@ -547,6 +573,32 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 </div>
              </div>
              <div className="mt-3 px-2 space-y-1">
+                <button
+                   onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setCurrentPage('apresentacao-comercial' as Page);
+                   }}
+                   className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                   <div className="flex items-center">
+                      <Presentation className="w-5 h-5 mr-3 text-blue-500" />
+                      Apresentação Comercial
+                   </div>
+                   <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">PDF</span>
+                </button>
+                <button
+                   onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setCurrentPage('website' as Page);
+                   }}
+                   className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                   <div className="flex items-center">
+                      <Globe className="w-5 h-5 mr-3 text-emerald-500" />
+                      Website Institucional
+                   </div>
+                   <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
+                </button>
                 <button
                    onClick={onLogout}
                    className="w-full flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"

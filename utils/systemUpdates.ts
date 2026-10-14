@@ -21,6 +21,98 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_14_v2_70_58',
+    version: 'v2.70.58',
+    date: '14/10/2026',
+    title: 'Website Institucional Oficial (transcunhaoficial.com.br) e Acesso Direto Multicanal',
+    summary: 'Lançamento do Website Institucional oficial com layout tecnológico de alto padrão, animações modernas, cobertura geográfica interativa, carrossel de marcas parceiras, simulador de cotação via WhatsApp e pontos de acesso direto integrados no menu do usuário e apresentação comercial.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Novo Website Institucional Moderno (transcunhaoficial.com.br)',
+        description: 'Página institucional pública de alta conversão, responsiva, com visual tech dark-mode, hero com elementos dinâmicos, contadores de métricas em tempo real, apresentação da frota, serviços agrícolas/industriais e link para o Portal do Cliente.'
+      },
+      {
+        category: 'feature',
+        title: 'Acesso Direto no Menu do Usuário (TopNavBar)',
+        description: 'Inclusão do item "Website Institucional" diretamente no menu suspenso do usuário e no menu mobile para navegação ágil entre a plataforma operacional e o site público.'
+      },
+      {
+        category: 'feature',
+        title: 'Acesso Direto Integrado na Apresentação Comercial',
+        description: 'Card interativo do portal oficial no slide de contato com botão "Acessar" e atalho dedicado no cabeçalho superior para acesso instantâneo ao website oficial.'
+      },
+      {
+        category: 'improvement',
+        title: 'Alinhamento Superior dos Quadros de Indicadores',
+        description: 'Ajuste fino de distribuição nos cartões de métricas do Slide 3 (Fundadores, Rede Ativa, Sinistros e Cargas Asseguradas), com alinhamento uniforme ao topo e visual perfeitamente balanceado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_14_v2_70_57',
+    version: 'v2.70.57',
+    date: '14/10/2026',
+    title: 'Refinamento de Enquadramento e Alinhamento Visual dos Campos no PDF Comercial',
+    summary: 'Ajuste milimétrico de alinhamento vertical, baselines tipográficas e enquadramento de badges, selos e números nos slides da Apresentação Comercial para exportação em PDF de altíssima fidelidade.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Enquadramento e Alinhamento dos Badges da Capa e Cabeçalho',
+        description: 'Correção de baseline e espaçamentos internos nas cápsulas "Apresentação Institucional & Comercial", "Edição Oficial 2026", "Transportes & Logística Pesada" e "transcunhaoficial.com.br", eliminando proximidade com a borda inferior.'
+      },
+      {
+        category: 'fix',
+        title: 'Centralização Perfeita dos Blocos Numéricos (01, 02, 03)',
+        description: 'Padronização dos containers numéricos de pilares operacionais e siglas estaduais com altura de linha dedicada, garantindo números perfeitamente centrados sem afundamento.'
+      },
+      {
+        category: 'fix',
+        title: 'Simetria e Ícones nos Cards de Números de Impacto',
+        description: 'Padronização visual e inclusão do ícone de fundadores no Card 1, harmonizando todos os 4 cards (Fundadores, Rede Ativa, 2022-2026, Garantia) com selos de altura uniforme e alinhamento simétrico.'
+      },
+      {
+        category: 'fix',
+        title: 'Ajuste dos Selos do Portal do Embarcador e Rodapés',
+        description: 'Refinamento do espaçamento dos selos "100% Online", "Em Viagem", "Concluído", da caixa de destaque contra planilhas manuais e do selo de paginação "Página 0X de 07".'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_13_v2_70_56',
+    version: 'v2.70.56',
+    date: '13/10/2026',
+    title: 'Nova Apresentação Comercial Institucional com Acesso Público e Exportação em PDF Horizontal',
+    summary: 'Lançamento oficial do módulo e página pública de Apresentação Comercial da Transcunha Transportes e Logística. Apresentação completa em formato horizontal (landscape), com gerador de PDF de alta fidelidade, portfólio de marcas parceiras, diferencial da tecnologia própria do Portal do Cliente e acesso público direto por link.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Apresentação Comercial em Formato Horizontal',
+        description: 'Painel estilizado em 7 slides horizontais de alto impacto visual (Tons de Azul Tecnológico #0052CC e Grafite Dark #1E293B) destacando a empresa, estados de atuação, solidez com +15 anos, +5.000 motoristas e apenas 1 sinistro recente.'
+      },
+      {
+        category: 'feature',
+        title: 'Acesso Público e Acesso no Menu de Perfil',
+        description: 'Acesso rápido dentro da janela do perfil de usuário ("Apresentação Comercial") e link público direto (/apresentacao e /apresentacao-comercial) acessível para qualquer pessoa sem exigir login.'
+      },
+      {
+        category: 'feature',
+        title: 'Exportador de PDF Horizontal Profissional',
+        description: 'Botão dedicado para compilar e baixar a apresentação comercial completa em PDF com páginas no formato horizontal (paisagem) e botão para cópia rápida do link público.'
+      },
+      {
+        category: 'improvement',
+        title: 'Destaque para Clientes e Portal Tecnológico',
+        description: 'Inclusão do painel de marcas clientes (Morroverde, Consube, Agrobom, Grão de Ouro, Mantiqueira, USJ, Adecoagro, Black Bio, Grupo Organics, DF Grãos) e detalhamento dos recursos do Portal do Cliente.'
+      },
+      {
+        category: 'fix',
+        title: 'Correção de Exportação do PDF e Padronização A4 Horizontal',
+        description: 'Eliminação da falha de corrupção na compilação do PDF através de renderização off-screen dedicada em proporção A4 (1122x793), garantindo arquivo leve, nítido e com o mesmo design moderno do portal.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_12_v2_70_55',
     version: 'v2.70.55',
     date: '12/10/2026',

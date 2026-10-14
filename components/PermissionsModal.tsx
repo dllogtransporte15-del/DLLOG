@@ -44,6 +44,10 @@ const PAGE_NAMES: Record<Page, string> = {
   'risk-query-types': 'Tipos de Consulta GR',
   'whatsapp': 'WhatsApp',
   'messenger': 'Mensageiro',
+  'apresentacao': 'Apresentação Comercial',
+  'apresentacao-comercial': 'Apresentação Comercial (Completa)',
+  'site': 'Website Institucional',
+  'website': 'Website Institucional (transcunhaoficial.com.br)',
 };
 
 const CATEGORIES = [
