@@ -21,6 +21,54 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_14_v2_70_62',
+    version: 'v2.70.62',
+    date: '14/10/2026',
+    title: 'Visualização Inicial das Notas do Dia e Filtro Avançado por Período',
+    summary: 'Configuração da tela de Notas Fiscais para abrir inicialmente exibindo as notas do dia (Hoje), evitando sobrecarga com todo o histórico e permitindo foco nas operações do dia a dia. Implementação de barra de filtros por período completa (Hoje, Ontem, Esta Semana, Mês Atual, Mês Anterior, Ano Atual, Personalizado De/Até e Todo o Histórico), com contadores dinâmicos e seletor da base de data (Emissão, Vencimento ou Lançamento).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Exibição Inicial Automática das Notas do Dia',
+        description: 'Ao carregar a tela de Notas Fiscais, o sistema inicializa filtrado por "Hoje (Notas do Dia)", apresentando os lançamentos fiscais da data corrente com contadores e totalizadores focados.'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro Completo por Período e Intervalo Personalizado',
+        description: 'Barra de períodos com botões rápidos para Hoje, Ontem, Esta Semana, Mês Atual, Mês Anterior, Ano Atual, Todo o Histórico e Período Personalizado com campos De/Até.'
+      },
+      {
+        category: 'improvement',
+        title: 'Seletor de Base de Data e Contadores Rápidos',
+        description: 'Possibilidade de escolher qual data da nota utilizar no filtro (Data de Emissão, Data de Vencimento ou Data de Lançamento) e exibição da quantidade de notas em cada período nos botões.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_14_v2_70_61',
+    version: 'v2.70.61',
+    date: '14/10/2026',
+    title: 'Bloqueio Inteligente Anti-Duplicidade de Notas Fiscais e Detecção em Tempo Real',
+    summary: 'Implementação de validação rigorosa anti-duplicidade em duas camadas (Interface e Serviço/Banco de Dados). O sistema agora identifica e impede o lançamento de notas fiscais já cadastradas (por Chave de Acesso NFe de 44 dígitos ou por Número da NF + Fornecedor + Série), bloqueia o botão de salvar com alerta visual e sinaliza notas repetidas na listagem com filtro dedicado.',
+    items: [
+      {
+        category: 'security',
+        title: 'Bloqueio de Lançamento de Notas Repetidas',
+        description: 'Prevenção ativa no serviço de persistência e no formulário: caso uma nota com o mesmo número/fornecedor ou a mesma chave de acesso já exista no sistema, o botão de salvar é bloqueado imediatamente e o usuário é notificado com detalhes da nota conflitante.'
+      },
+      {
+        category: 'feature',
+        title: 'Identificação e Alerta Visual em Tempo Real',
+        description: 'Card de alerta proativo no modal de lançamento exibindo o ID, valor e responsável da nota já cadastrada, com botão direto "Abrir Nota Existente" para conferência ou edição rápida.'
+      },
+      {
+        category: 'improvement',
+        title: 'Destaque Visual e Filtro de Repetidas na Listagem',
+        description: 'Notas repetidas recebem uma tag destacada ⚠️ Repetida [ID] na tabela e uma opção de filtro rápido "Ver Repetidas" na barra de ferramentas para auditoria e controle do setor fiscal.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_14_v2_70_60',
     version: 'v2.70.60',
     date: '14/10/2026',

@@ -10,7 +10,9 @@ import type {
 import { 
   financialInvoiceService,
   subscribeToFinancialInvoices,
-  getNextInvoiceId
+  getNextInvoiceId,
+  findDuplicateInvoice,
+  type DuplicateInvoiceMatch
 } from '../../services/financialInvoiceService';
 import { 
   Plus, 
@@ -47,7 +49,10 @@ import {
   Loader2,
   Receipt,
   CreditCard,
-  RefreshCw
+  RefreshCw,
+  ShieldAlert,
+  AlertTriangle,
+  Copy
 } from 'lucide-react';
 import { extractDataFromInvoiceFile, extractDataFromBoletoFile } from '../../utils/invoiceExtractionService';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
@@ -126,9 +131,13 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [costCenterFilter, setCostCenterFilter] = useState<string>('all');
   const [userFilter, setUserFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [periodPreset, setPeriodPreset] = useState<'all' | 'current_month' | 'last_month' | 'custom'>('all');
+  const [periodPreset, setPeriodPreset] = useState<
+    'today' | 'yesterday' | 'current_week' | 'current_month' | 'last_month' | 'current_year' | 'custom' | 'all'
+  >('today');
+  const [dateBasis, setDateBasis] = useState<'issue' | 'due' | 'created'>('issue');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  const [onlyDuplicatesFilter, setOnlyDuplicatesFilter] = useState(false);
 
   // State: Modais
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -278,6 +287,48 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   // ID prospectivo para o próximo lançamento (ex: 'nf-1', 'nf-12'...)
   const prospectiveNextId = useMemo(() => {
     return getNextInvoiceId(invoices);
+  }, [invoices]);
+
+  // Identificação em tempo real de notas fiscais repetidas/duplicadas no formulário de lançamento
+  const duplicateInvoiceMatch: DuplicateInvoiceMatch = useMemo(() => {
+    if (!isFormModalOpen) return { isDuplicate: false };
+    return findDuplicateInvoice(
+      {
+        invoiceNumber: formNumber,
+        series: formSeries,
+        accessKey: formAccessKey,
+        supplierName: formSupplier,
+        supplierCnpjCpf: formCnpjCpf
+      },
+      invoices,
+      editingInvoiceId || undefined
+    );
+  }, [
+    isFormModalOpen,
+    formNumber,
+    formSeries,
+    formAccessKey,
+    formSupplier,
+    formCnpjCpf,
+    invoices,
+    editingInvoiceId
+  ]);
+
+  // Mapeamento de notas repetidas já existentes na base para alerta e auditoria visual
+  const duplicateInvoicesMap = useMemo(() => {
+    const map = new Map<string, FinancialInvoice>();
+    if (!Array.isArray(invoices) || invoices.length < 2) return map;
+
+    for (let i = 0; i < invoices.length; i++) {
+      for (let j = i + 1; j < invoices.length; j++) {
+        const match = findDuplicateInvoice(invoices[i], [invoices[j]]);
+        if (match.isDuplicate) {
+          map.set(invoices[i].id, invoices[j]);
+          map.set(invoices[j].id, invoices[i]);
+        }
+      }
+    }
+    return map;
   }, [invoices]);
 
   // Tipos filtrados pela modalidade ativa no form
@@ -630,6 +681,12 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       boletoFileSize: formBoletoFileSize
     };
 
+    // REGRA DE SEGURANÇA: Bloqueia lançamento duplicado
+    if (duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.matchedInvoice) {
+      alert(duplicateInvoiceMatch.message || `Ação bloqueada: A Nota Fiscal nº "${formNumber}" já está cadastrada no sistema sob o ID [${duplicateInvoiceMatch.matchedInvoice.id}] pelo fornecedor "${duplicateInvoiceMatch.matchedInvoice.supplierName}". O sistema não permite lançamentos repetidos.`);
+      return;
+    }
+
     try {
       const saved = await financialInvoiceService.saveInvoice(payload, editingInvoiceId || undefined);
       if (editingInvoiceId) {
@@ -642,9 +699,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       if (formBoletoFileUrl && onNavigateToPayables) {
         onNavigateToPayables();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar nota fiscal:', err);
-      alert('Houve um erro ao salvar a nota fiscal. Tente novamente.');
+      alert(err?.message || 'Houve um erro ao salvar a nota fiscal. Tente novamente.');
     }
   };
 
@@ -710,11 +767,56 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     }
   };
 
-  // Filtro de Período Preset
+  // Datas de referência com cálculo local preciso
   const now = new Date();
+  const getLocalDateString = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = getLocalDateString(now);
+
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(now.getDate() - 1);
+  const yesterdayStr = getLocalDateString(yesterdayDate);
+
+  // Segunda-feira até Domingo da semana atual
+  const currentDayOfWeek = now.getDay();
+  const diffToMonday = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1;
+  const startOfWeekDate = new Date(now);
+  startOfWeekDate.setDate(now.getDate() - diffToMonday);
+  const startOfWeekStr = getLocalDateString(startOfWeekDate);
+
+  const endOfWeekDate = new Date(startOfWeekDate);
+  endOfWeekDate.setDate(startOfWeekDate.getDate() + 6);
+  const endOfWeekStr = getLocalDateString(endOfWeekDate);
+
   const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthPrefix = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  const currentYearPrefix = `${now.getFullYear()}-`;
+
+  // Função para extrair a data comparada de acordo com dateBasis ('issue' | 'due' | 'created')
+  const getInvoiceComparisonDate = (inv: FinancialInvoice, basis: 'issue' | 'due' | 'created'): string => {
+    if (basis === 'due') {
+      return inv.dueDate || inv.issueDate || '';
+    }
+    if (basis === 'created') {
+      return inv.createdAt ? inv.createdAt.split('T')[0] : (inv.issueDate || '');
+    }
+    return inv.issueDate || (inv.createdAt ? inv.createdAt.split('T')[0] : '');
+  };
+
+  // Contadores para os botões de período
+  const todayCount = useMemo(() => {
+    return invoices.filter(i => getInvoiceComparisonDate(i, dateBasis) === todayStr).length;
+  }, [invoices, dateBasis, todayStr]);
+
+  const currentMonthCount = useMemo(() => {
+    return invoices.filter(i => getInvoiceComparisonDate(i, dateBasis).startsWith(currentMonthPrefix)).length;
+  }, [invoices, dateBasis, currentMonthPrefix]);
 
   // Filtragem dos dados
   const filteredInvoices = useMemo(() => {
@@ -753,17 +855,30 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       }
 
       // 6. Período
-      if (periodPreset === 'current_month') {
-        if (!inv.issueDate.startsWith(currentMonthPrefix) && !inv.dueDate.startsWith(currentMonthPrefix)) {
-          return false;
+      if (periodPreset !== 'all') {
+        const compDate = getInvoiceComparisonDate(inv, dateBasis);
+
+        if (periodPreset === 'today') {
+          if (compDate !== todayStr) return false;
+        } else if (periodPreset === 'yesterday') {
+          if (compDate !== yesterdayStr) return false;
+        } else if (periodPreset === 'current_week') {
+          if (!compDate || compDate < startOfWeekStr || compDate > endOfWeekStr) return false;
+        } else if (periodPreset === 'current_month') {
+          if (!compDate.startsWith(currentMonthPrefix)) return false;
+        } else if (periodPreset === 'last_month') {
+          if (!compDate.startsWith(lastMonthPrefix)) return false;
+        } else if (periodPreset === 'current_year') {
+          if (!compDate.startsWith(currentYearPrefix)) return false;
+        } else if (periodPreset === 'custom') {
+          if (customStartDate && compDate < customStartDate) return false;
+          if (customEndDate && compDate > customEndDate) return false;
         }
-      } else if (periodPreset === 'last_month') {
-        if (!inv.issueDate.startsWith(lastMonthPrefix) && !inv.dueDate.startsWith(lastMonthPrefix)) {
-          return false;
-        }
-      } else if (periodPreset === 'custom') {
-        if (customStartDate && inv.issueDate < customStartDate) return false;
-        if (customEndDate && inv.issueDate > customEndDate) return false;
+      }
+
+      // 7. Filtro de Notas Repetidas / Duplicadas
+      if (onlyDuplicatesFilter && !duplicateInvoicesMap.has(inv.id)) {
+        return false;
       }
 
       return true;
@@ -776,10 +891,18 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     userFilter, 
     statusFilter, 
     periodPreset, 
+    dateBasis,
     customStartDate, 
     customEndDate,
+    todayStr,
+    yesterdayStr,
+    startOfWeekStr,
+    endOfWeekStr,
     currentMonthPrefix,
-    lastMonthPrefix
+    lastMonthPrefix,
+    currentYearPrefix,
+    onlyDuplicatesFilter,
+    duplicateInvoicesMap
   ]);
 
   // KPIs
@@ -1130,21 +1253,24 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             <Filter className="w-3.5 h-3.5 text-blue-500" />
             Filtros & Rastreamento de Custos
           </span>
-          {(searchTerm || natureFilter !== 'all' || costCenterFilter !== 'all' || userFilter !== 'all' || statusFilter !== 'all' || periodPreset !== 'all') && (
+          {(searchTerm || natureFilter !== 'all' || costCenterFilter !== 'all' || userFilter !== 'all' || statusFilter !== 'all' || periodPreset !== 'today' || onlyDuplicatesFilter || dateBasis !== 'issue') && (
             <button
+              type="button"
               onClick={() => {
                 setSearchTerm('');
                 setNatureFilter('all');
                 setCostCenterFilter('all');
                 setUserFilter('all');
                 setStatusFilter('all');
-                setPeriodPreset('all');
+                setPeriodPreset('today');
+                setDateBasis('issue');
                 setCustomStartDate('');
                 setCustomEndDate('');
+                setOnlyDuplicatesFilter(false);
               }}
-              className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer lowercase"
+              className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer lowercase text-[11px]"
             >
-              limpar todos os filtros
+              limpar filtros (restaurar notas de hoje)
             </button>
           )}
         </div>
@@ -1225,48 +1351,98 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
           </div>
         </div>
 
-        {/* Linha 2 de Filtros: Período */}
+        {/* Linha 2 de Filtros: Período Avançado */}
         <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-          <span className="font-semibold text-slate-500 dark:text-slate-400">Período:</span>
-          {(['all', 'current_month', 'last_month', 'custom'] as const).map(preset => {
-            const labels = {
-              all: 'Todo o Histórico',
-              current_month: 'Mês Atual',
-              last_month: 'Mês Anterior',
-              custom: 'Personalizado...'
-            };
-            const isSelected = periodPreset === preset;
+          <div className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300 mr-0.5">
+            <Calendar className="w-3.5 h-3.5 text-blue-500" />
+            <span>Período:</span>
+          </div>
+
+          {[
+            { id: 'today' as const, label: 'Hoje (Notas do Dia)', count: todayCount },
+            { id: 'yesterday' as const, label: 'Ontem' },
+            { id: 'current_week' as const, label: 'Esta Semana' },
+            { id: 'current_month' as const, label: 'Mês Atual', count: currentMonthCount },
+            { id: 'last_month' as const, label: 'Mês Anterior' },
+            { id: 'current_year' as const, label: 'Ano Atual' },
+            { id: 'custom' as const, label: 'Personalizado...' },
+            { id: 'all' as const, label: 'Todo o Histórico', count: invoices.length },
+          ].map(preset => {
+            const isSelected = periodPreset === preset.id;
             return (
               <button
-                key={preset}
-                onClick={() => setPeriodPreset(preset)}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                key={preset.id}
+                type="button"
+                onClick={() => setPeriodPreset(preset.id)}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   isSelected
-                    ? 'bg-blue-600 text-white font-bold'
+                    ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/30'
                     : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
-                {labels[preset]}
+                <span>{preset.label}</span>
+                {typeof preset.count === 'number' && (
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                    isSelected
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
+                  }`}>
+                    {preset.count}
+                  </span>
+                )}
               </button>
             );
           })}
 
+          {/* Seletor de Base de Data para o filtro */}
+          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-200 dark:border-slate-700">
+            <span className="text-[11px] text-slate-400 font-semibold hidden sm:inline">Data por:</span>
+            <select
+              value={dateBasis}
+              onChange={(e) => setDateBasis(e.target.value as any)}
+              className="px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+              title="Escolha qual data da nota fiscal utilizar no filtro por período"
+            >
+              <option value="issue">📅 Data de Emissão</option>
+              <option value="due">⏰ Data de Vencimento</option>
+              <option value="created">📥 Data de Lançamento</option>
+            </select>
+          </div>
+
+          {/* Inputs de Data Personalizada */}
           {periodPreset === 'custom' && (
-            <div className="flex items-center gap-2 ml-2">
+            <div className="flex items-center gap-2 ml-1 p-1 bg-blue-50/60 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
+              <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300 pl-1">De:</span>
               <input
                 type="date"
                 value={customStartDate}
                 onChange={(e) => setCustomStartDate(e.target.value)}
-                className="px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200"
+                className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200"
               />
-              <span className="text-slate-400">até</span>
+              <span className="text-[11px] font-bold text-blue-700 dark:text-blue-300">Até:</span>
               <input
                 type="date"
                 value={customEndDate}
                 onChange={(e) => setCustomEndDate(e.target.value)}
-                className="px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200"
+                className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200"
               />
             </div>
+          )}
+
+          {duplicateInvoicesMap.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setOnlyDuplicatesFilter(prev => !prev)}
+              className={`ml-auto px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                onlyDuplicatesFilter
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-md shadow-amber-500/20'
+                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/80 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+              }`}
+              title="Filtrar notas que possuem o mesmo número e fornecedor no sistema"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{onlyDuplicatesFilter ? 'Exibindo Repetidas' : 'Ver Repetidas'} ({duplicateInvoicesMap.size})</span>
+            </button>
           )}
         </div>
       </div>
@@ -1280,19 +1456,44 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             </div>
           ) : filteredInvoices.length === 0 ? (
             <div className="py-20 text-center">
-              <FileText className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <Calendar className="w-12 h-12 text-blue-400 dark:text-blue-500 mx-auto mb-3 opacity-80" />
               <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">
-                Nenhuma Nota Fiscal encontrada
+                {periodPreset === 'today'
+                  ? `Nenhuma Nota Fiscal para hoje (${new Date().toLocaleDateString('pt-BR')})`
+                  : 'Nenhuma Nota Fiscal encontrada para os filtros'}
               </h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Não há lançamentos que correspondam aos filtros selecionados. Tente ajustar os filtros ou clique em "Lançar Nova NF".
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                {periodPreset === 'today'
+                  ? 'Ainda não constam notas fiscais para o dia de hoje. Você pode alternar para visualizar o mês ou o histórico completo abaixo.'
+                  : 'Não há lançamentos fiscais correspondentes aos filtros selecionados. Tente ajustar o período ou centro de custo.'}
               </p>
-              <button
-                onClick={handleOpenCreateModal}
-                className="mt-4 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 cursor-pointer"
-              >
-                + Lançar Primeira Nota Fiscal
-              </button>
+              <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
+                {periodPreset !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setPeriodPreset('all')}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors"
+                  >
+                    Ver Todo o Histórico ({invoices.length})
+                  </button>
+                )}
+                {periodPreset !== 'current_month' && (
+                  <button
+                    type="button"
+                    onClick={() => setPeriodPreset('current_month')}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors"
+                  >
+                    Ver Mês Atual ({currentMonthCount})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-md shadow-blue-600/30"
+                >
+                  + Lançar Nova NF
+                </button>
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -1337,6 +1538,15 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                                 {inv.series && (
                                   <span className="text-[10px] px-1 bg-slate-100 dark:bg-slate-700 rounded text-slate-500 font-mono">
                                     Série {inv.series}
+                                  </span>
+                                )}
+                                {duplicateInvoicesMap.has(inv.id) && (
+                                  <span 
+                                    className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-700 flex items-center gap-1 shadow-sm"
+                                    title={`Atenção: Esta nota fiscal possui número e fornecedor idênticos à nota ${duplicateInvoicesMap.get(inv.id)?.id} (${duplicateInvoicesMap.get(inv.id)?.supplierName})`}
+                                  >
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    Repetida ({duplicateInvoicesMap.get(inv.id)?.id})
                                   </span>
                                 )}
                               </div>
@@ -1814,6 +2024,53 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
             {/* Modal Body / Form */}
             <form onSubmit={handleSubmitInvoiceForm} className="p-7 space-y-6 max-h-[82vh] overflow-y-auto">
+              {/* ALERTA DE DUPLICIDADE EM TEMPO REAL */}
+              {duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.matchedInvoice && (
+                <div className="p-4 bg-rose-50 dark:bg-rose-950/50 border-2 border-rose-500 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900 dark:text-rose-200 shadow-lg shadow-rose-500/10">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-rose-600 text-white rounded-xl shrink-0 mt-0.5 shadow-md shadow-rose-600/30">
+                      <ShieldAlert className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="font-black text-sm flex items-center gap-2 text-rose-600 dark:text-rose-400 uppercase tracking-tight">
+                        <span>⚠️ NOTA FISCAL JÁ CADASTRADA NO SISTEMA! LANÇAMENTO BLOQUEADO</span>
+                      </div>
+                      <p className="text-xs text-rose-700 dark:text-rose-300 mt-1 font-medium">
+                        {duplicateInvoiceMatch.message}
+                      </p>
+                      <div className="text-[11px] text-rose-600 dark:text-rose-400 mt-1.5 flex items-center gap-2 flex-wrap">
+                        <span className="font-bold bg-rose-100 dark:bg-rose-900/60 px-2 py-0.5 rounded border border-rose-300 dark:border-rose-800">
+                          ID: {duplicateInvoiceMatch.matchedInvoice.id}
+                        </span>
+                        <span>
+                          Valor: R$ {(duplicateInvoiceMatch.matchedInvoice.totalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Emissão: {new Date(duplicateInvoiceMatch.matchedInvoice.issueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Resp: {duplicateInvoiceMatch.matchedInvoice.responsibleUserName || 'Sistema'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (duplicateInvoiceMatch.matchedInvoice) {
+                        handleOpenEditModal(duplicateInvoiceMatch.matchedInvoice);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shrink-0 transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-rose-600/30"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>Abrir Nota Existente</span>
+                  </button>
+                </div>
+              )}
+
               {/* 1. SEÇÃO DE ANEXOS: NOTA FISCAL E BOLETO PARA PAGAMENTO */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* 1.1 ANEXO DA NOTA FISCAL */}
@@ -2009,8 +2266,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {/* Número da NF */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Número da NF *
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
+                    <span>Número da NF *</span>
+                    {duplicateInvoiceMatch.isDuplicate && (
+                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        NF Repetida
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
@@ -2018,8 +2281,17 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     placeholder="Ex: 89240"
                     value={formNumber}
                     onChange={(e) => setFormNumber(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm focus:outline-none transition-all ${
+                      duplicateInvoiceMatch.isDuplicate
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500 text-rose-900 dark:text-rose-100 focus:ring-2 focus:ring-rose-500/40 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/40'
+                    }`}
                   />
+                  {duplicateInvoiceMatch.isDuplicate && (
+                    <span className="text-[10px] text-rose-600 dark:text-rose-400 mt-1 block font-medium">
+                      Já existe nota com este número para este fornecedor.
+                    </span>
+                  )}
                 </div>
 
                 {/* Série */}
@@ -2088,8 +2360,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
                 {/* Fornecedor / Prestador */}
                 <div className="sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Fornecedor / Prestador de Serviço *
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
+                    <span>Fornecedor / Prestador de Serviço *</span>
+                    {duplicateInvoiceMatch.isDuplicate && (
+                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Conflito de Fornecedor
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
@@ -2097,7 +2375,11 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     placeholder="Razão Social ou Nome Fantasia"
                     value={formSupplier}
                     onChange={(e) => setFormSupplier(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm focus:outline-none transition-all ${
+                      duplicateInvoiceMatch.isDuplicate
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500 text-rose-900 dark:text-rose-100 focus:ring-2 focus:ring-rose-500/40 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/40'
+                    }`}
                   />
                 </div>
 
@@ -2213,8 +2495,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
                 {/* Chave de Acesso NFe */}
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Chave de Acesso NFe (44 dígitos)
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
+                    <span>Chave de Acesso NFe (44 dígitos)</span>
+                    {duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.reason === 'access_key' && (
+                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Chave Já Cadastrada
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
@@ -2222,8 +2510,17 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     placeholder="Chave completa da NFe (opcional)"
                     value={formAccessKey}
                     onChange={(e) => setFormAccessKey(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm font-mono text-[11px] focus:outline-none transition-all ${
+                      duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.reason === 'access_key'
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500 text-rose-900 dark:text-rose-100 focus:ring-2 focus:ring-rose-500/40 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/40'
+                    }`}
                   />
+                  {duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.reason === 'access_key' && (
+                    <span className="text-[10px] text-rose-600 dark:text-rose-400 mt-1 block font-medium">
+                      Esta chave de 44 dígitos já pertence a outra NF no sistema.
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2390,10 +2687,24 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/30 transition-all cursor-pointer flex items-center gap-2"
+                    disabled={duplicateInvoiceMatch.isDuplicate}
+                    className={`px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                      duplicateInvoiceMatch.isDuplicate
+                        ? 'bg-rose-500 text-white cursor-not-allowed opacity-90 shadow-md shadow-rose-500/20'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 cursor-pointer'
+                    }`}
                   >
-                    {formBoletoFileUrl && <Receipt className="w-4 h-4" />}
-                    <span>{editingInvoiceId ? 'Salvar Alterações' : (formBoletoFileUrl ? 'Lançar e Ir para Contas a Pagar' : 'Confirmar e Lançar NF')}</span>
+                    {duplicateInvoiceMatch.isDuplicate ? (
+                      <>
+                        <ShieldAlert className="w-4 h-4 text-white" />
+                        <span>Bloqueado (Nota Repetida)</span>
+                      </>
+                    ) : (
+                      <>
+                        {formBoletoFileUrl && <Receipt className="w-4 h-4" />}
+                        <span>{editingInvoiceId ? 'Salvar Alterações' : (formBoletoFileUrl ? 'Lançar e Ir para Contas a Pagar' : 'Confirmar e Lançar NF')}</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

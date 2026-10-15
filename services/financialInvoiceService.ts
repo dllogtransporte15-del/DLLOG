@@ -251,21 +251,150 @@ export async function fetchRemoteInvoices(): Promise<FinancialInvoice[]> {
 }
 
 /**
- * Mescla de forma inteligente notas remotas e locais sem perda de dados e sem duplicações.
+ * Normaliza número de nota fiscal (remove zeros à esquerda, prefixos como 'NF' e espaços).
+ */
+export function normalizeInvoiceNumber(num?: string): string {
+  if (!num) return '';
+  const clean = String(num)
+    .replace(/^(nf|nfe|nfs|nfse|n°|nº|num)\s*/i, '')
+    .trim()
+    .toLowerCase();
+  const noZeros = clean.replace(/^0+/, '');
+  return noZeros || clean;
+}
+
+/**
+ * Normaliza CNPJ ou CPF mantendo apenas dígitos numéricos.
+ */
+export function normalizeCnpjCpf(doc?: string): string {
+  if (!doc) return '';
+  return String(doc).replace(/\D/g, '');
+}
+
+/**
+ * Normaliza nome do fornecedor (remove acentos, espaços extras e sufixos empresariais comuns).
+ */
+export function normalizeSupplierText(name?: string): string {
+  if (!name) return '';
+  return String(name)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/\b(ltda|s\/a|sa|eireli|me|epp)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+export interface DuplicateInvoiceMatch {
+  isDuplicate: boolean;
+  matchedInvoice?: FinancialInvoice;
+  reason?: 'access_key' | 'number_and_supplier';
+  message?: string;
+}
+
+/**
+ * Identifica rigorosamente se uma Nota Fiscal já existe no sistema com base na:
+ * 1) Chave de Acesso da NFe (44 dígitos); OU
+ * 2) Número da NF + Fornecedor (CNPJ/CPF ou Razão Social) + Série.
+ */
+export function findDuplicateInvoice(
+  target: {
+    invoiceNumber?: string;
+    series?: string;
+    accessKey?: string;
+    supplierName?: string;
+    supplierCnpjCpf?: string;
+  },
+  existingList: FinancialInvoice[],
+  excludeId?: string
+): DuplicateInvoiceMatch {
+  if (!existingList || !Array.isArray(existingList)) {
+    return { isDuplicate: false };
+  }
+
+  const targetAccessKey = (target.accessKey || '').replace(/\D/g, '');
+  const targetNormNum = normalizeInvoiceNumber(target.invoiceNumber);
+  const targetNormCnpj = normalizeCnpjCpf(target.supplierCnpjCpf);
+  const targetNormSupplier = normalizeSupplierText(target.supplierName);
+  const targetSeries = (target.series || '').trim().toLowerCase();
+
+  // Se não temos ao menos o número da NF ou chave de acesso válida, não há como analisar
+  if (!targetNormNum && (!targetAccessKey || targetAccessKey.length < 20)) {
+    return { isDuplicate: false };
+  }
+
+  for (const inv of existingList) {
+    if (!inv) continue;
+    // Ignora a própria nota quando estiver em modo de edição
+    if (excludeId && inv.id === excludeId) continue;
+
+    // 1. Verificação por Chave de Acesso (44 dígitos)
+    if (targetAccessKey && targetAccessKey.length >= 20) {
+      const invAccessKey = (inv.accessKey || '').replace(/\D/g, '');
+      if (invAccessKey && invAccessKey === targetAccessKey) {
+        return {
+          isDuplicate: true,
+          matchedInvoice: inv,
+          reason: 'access_key',
+          message: `Esta Nota Fiscal já está cadastrada no sistema sob o ID [${inv.id}] com a mesma Chave de Acesso de 44 dígitos (Fornecedor: ${inv.supplierName || 'Identificado'}, Valor: R$ ${(inv.totalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).`
+        };
+      }
+    }
+
+    // 2. Verificação por Número da NF + Fornecedor + Série
+    if (targetNormNum && targetNormNum === normalizeInvoiceNumber(inv.invoiceNumber)) {
+      // Se ambas as séries foram informadas e forem explicitamente diferentes (ex: Série 1 vs Série 2), não considera duplicata
+      const invSeries = (inv.series || '').trim().toLowerCase();
+      const seriesMatch = !targetSeries || !invSeries || targetSeries === invSeries;
+
+      if (seriesMatch) {
+        // A) Checagem prioritária e exata por CNPJ/CPF do Fornecedor
+        const invNormCnpj = normalizeCnpjCpf(inv.supplierCnpjCpf);
+        if (targetNormCnpj && invNormCnpj && targetNormCnpj === invNormCnpj) {
+          return {
+            isDuplicate: true,
+            matchedInvoice: inv,
+            reason: 'number_and_supplier',
+            message: `A Nota Fiscal nº "${inv.invoiceNumber}" do fornecedor "${inv.supplierName}" (CNPJ ${inv.supplierCnpjCpf || 'identificado'}) já está cadastrada no sistema sob o ID [${inv.id}]!`
+          };
+        }
+
+        // B) Checagem por Nome/Razão Social do Fornecedor (normalizado)
+        const invNormSupplier = normalizeSupplierText(inv.supplierName);
+        if (targetNormSupplier && invNormSupplier) {
+          if (
+            targetNormSupplier === invNormSupplier ||
+            (targetNormSupplier.length >= 5 && invNormSupplier.includes(targetNormSupplier)) ||
+            (invNormSupplier.length >= 5 && targetNormSupplier.includes(invNormSupplier))
+          ) {
+            return {
+              isDuplicate: true,
+              matchedInvoice: inv,
+              reason: 'number_and_supplier',
+              message: `A Nota Fiscal nº "${inv.invoiceNumber}" do fornecedor "${inv.supplierName}" já está cadastrada no sistema sob o ID [${inv.id}]!`
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return { isDuplicate: false };
+}
+
+/**
+ * Mescla de forma inteligente notas remotas e locais sem perda de dados e prevenindo duplicações.
  */
 export function mergeInvoicesList(remoteList: FinancialInvoice[], localList: FinancialInvoice[]): FinancialInvoice[] {
   const result: FinancialInvoice[] = Array.isArray(remoteList) ? [...remoteList] : [];
-  const remoteKeys = new Set(
-    result.map(r => `${r.invoiceNumber || ''}_${(r.supplierName || '').trim().toLowerCase()}`)
-  );
   const existingIds = new Set(result.map(r => r.id));
 
   if (Array.isArray(localList)) {
     for (const loc of localList) {
       if (!loc) continue;
-      const key = `${loc.invoiceNumber || ''}_${(loc.supplierName || '').trim().toLowerCase()}`;
-      if (!remoteKeys.has(key)) {
-        remoteKeys.add(key);
+      // Previne adicionar nota que já exista na lista remota
+      const dup = findDuplicateInvoice(loc, result);
+      if (!dup.isDuplicate && !existingIds.has(loc.id)) {
         let id = loc.id;
         if (!id || existingIds.has(id) || !/^nf-\d+$/i.test(id)) {
           id = getNextInvoiceId(result);
@@ -616,6 +745,16 @@ export const financialInvoiceService = {
     } catch {}
 
     const currentList = mergeInvoicesList(remoteList, localList);
+
+    // REGRA DE SEGURANÇA FISCAL: Bloqueia lançamento de Nota Fiscal repetida/duplicada
+    const duplicateMatch = findDuplicateInvoice(item, currentList, existingId);
+    if (duplicateMatch.isDuplicate && duplicateMatch.matchedInvoice) {
+      const match = duplicateMatch.matchedInvoice;
+      throw new Error(
+        duplicateMatch.message ||
+        `Lançamento recusado: A Nota Fiscal nº "${item.invoiceNumber}" do fornecedor "${item.supplierName}" já se encontra cadastrada no sistema sob o ID [${match.id}] (Valor: R$ ${(match.totalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). O sistema não permite lançamentos repetidos.`
+      );
+    }
 
     // REGRA DE OURO: Para novos lançamentos, gera ID sequencial no formato 'nf-1', 'nf-2', etc.
     const invoiceId = existingId || getNextInvoiceId(currentList);
