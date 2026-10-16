@@ -754,6 +754,10 @@ export interface FreightOffer {
   clientCnpj?: string;
   clientBranchId?: string;
   isExport?: boolean;
+  originCoords?: { lat: number; lng: number };
+  destinationCoords?: { lat: number; lng: number };
+  distanceKm?: number;
+  isExactDistance?: boolean;
 }
 
 export enum AnttModality {

@@ -13,6 +13,7 @@ import FreightOfferModal from './FreightOfferModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { isDemoUser } from '../auth';
+import { calculateOfferRoute, type ResolvedWaypoint } from '../services/routeDistanceService';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -21,14 +22,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-interface Waypoint {
-  label: string;
-  subLabel?: string;
-  lat: number;
-  lng: number;
-  isExact: boolean;
-  type: 'origin' | 'destination' | 'via';
-}
+type Waypoint = ResolvedWaypoint;
 
 interface RouteData {
   distanceKm: number;
@@ -36,6 +30,7 @@ interface RouteData {
   coordinates: [number, number][];
   bounds: L.LatLngBounds | null;
   waypoints: Waypoint[];
+  isExact?: boolean;
 }
 
 class MapErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
@@ -78,216 +73,6 @@ function MapUpdater({ bounds }: { bounds: L.LatLngBounds | null }) {
 
 const DEFAULT_CENTER: [number, number] = [-15.7801, -47.9292];
 
-const parseCoordinatesFromText = (str: string | undefined): { lat: number; lng: number } | null => {
-  if (!str) return null;
-  const trimmed = str.trim();
-  
-  // 1. Direct "lat, lng" e.g. -16.2341, -47.9123 or -16.2341 -47.9123
-  const directCoordMatch = trimmed.match(/^(-?\d{1,2}\.\d+)\s*[\s,]\s*(-?\d{1,3}\.\d+)$/);
-  if (directCoordMatch) {
-    const lat = parseFloat(directCoordMatch[1]);
-    const lng = parseFloat(directCoordMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-      return { lat, lng };
-    }
-  }
-
-  // 2. Google Maps @lat,lng e.g. maps.google.com/maps/@-16.2341,-47.9123,17z
-  const atCoordMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-  if (atCoordMatch) {
-    const lat = parseFloat(atCoordMatch[1]);
-    const lng = parseFloat(atCoordMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  // 3. Google Maps 3d/4d params e.g. !3d-16.2341!4d-47.9123 or 3d-16.2341!4d-47.9123
-  const d3d4Match = trimmed.match(/!?3d(-?\d+\.\d+)!?4d(-?\d+\.\d+)/);
-  if (d3d4Match) {
-    const lat = parseFloat(d3d4Match[1]);
-    const lng = parseFloat(d3d4Match[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  // 4. Google Maps query/ll params e.g. ?q=-16.2341,-47.9123 or &ll=-16.2341,-47.9123
-  const paramMatch = trimmed.match(/[?&](?:q|ll|destination|origin|center)=(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/i);
-  if (paramMatch) {
-    const lat = parseFloat(paramMatch[1]);
-    const lng = parseFloat(paramMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  // 5. Google Maps /place/lat,lng/ or /dir/lat,lng/
-  const pathMatch = trimmed.match(/\/(?:place|dir|search)\/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/i);
-  if (pathMatch) {
-    const lat = parseFloat(pathMatch[1]);
-    const lng = parseFloat(pathMatch[2]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      return { lat, lng };
-    }
-  }
-
-  return null;
-};
-
-const extractPlaceNameFromUrl = (url: string): string | null => {
-  const match = url.match(/\/place\/([^\/@?]+)/);
-  if (match && match[1]) {
-    try {
-      const decoded = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
-      if (decoded && !/^-?\d+\.\d+/.test(decoded)) {
-        return decoded;
-      }
-    } catch (e) {
-      return match[1].replace(/\+/g, ' ').trim();
-    }
-  }
-  return null;
-};
-
-const resolveLocationToWaypoint = async (
-  locationStr: string | undefined,
-  cityStr: string,
-  type: 'origin' | 'destination' | 'via'
-): Promise<Waypoint | null> => {
-  let targetLocation = locationStr?.trim() || '';
-  let extractedCoords = parseCoordinatesFromText(targetLocation);
-  let extractedPlaceName: string | null = null;
-
-  const urlMatch = targetLocation.match(/(https?:\/\/[^\s]+)/i);
-  const url = urlMatch ? urlMatch[0] : null;
-
-  if (url && !extractedCoords) {
-    extractedPlaceName = extractPlaceNameFromUrl(url);
-
-    if (url.includes('goo.gl') || url.includes('maps.app') || url.includes('shorturl') || url.includes('bit.ly') || url.includes('t.co')) {
-      try {
-        const proxyResp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-        if (proxyResp.ok) {
-          const data = await proxyResp.json();
-          const finalUrl = data.status?.url || data.contents || '';
-          extractedCoords = parseCoordinatesFromText(finalUrl);
-          if (!extractedPlaceName) {
-            extractedPlaceName = extractPlaceNameFromUrl(finalUrl);
-          }
-        }
-      } catch (e) {
-        console.warn('Could not unshorten URL via proxy:', e);
-      }
-    }
-  }
-
-  if (extractedCoords) {
-    const cleanLabel = targetLocation.replace(/https?:\/\/[^\s]+/g, '').trim();
-    const label = cleanLabel && cleanLabel.length > 2 && !cleanLabel.startsWith('-')
-      ? cleanLabel 
-      : (extractedPlaceName || (type === 'origin' ? 'Origem' : type === 'destination' ? 'Destino' : 'Ponto de Apoio'));
-
-    return {
-      label,
-      subLabel: cityStr ? `Localização Exata (${cityStr})` : `Coordenadas: ${extractedCoords.lat.toFixed(4)}, ${extractedCoords.lng.toFixed(4)}`,
-      lat: extractedCoords.lat,
-      lng: extractedCoords.lng,
-      isExact: true,
-      type
-    };
-  }
-
-  const cityCoords = parseCoordinatesFromText(cityStr);
-  if (cityCoords) {
-    return {
-      label: `Coordenadas: ${cityCoords.lat.toFixed(4)}, ${cityCoords.lng.toFixed(4)}`,
-      lat: cityCoords.lat,
-      lng: cityCoords.lng,
-      isExact: true,
-      type
-    };
-  }
-
-  const cleanStr = (s: string) => s.replace(/https?:\/\/[^\s]+/g, '').replace(/[\\/]/g, ' ').trim();
-  const cleanLoc = cleanStr(targetLocation);
-  const cleanCity = cleanStr(cityStr);
-
-  if (extractedPlaceName && cleanCity) {
-    try {
-      const query = `${extractedPlaceName}, ${cleanCity}, Brasil`;
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.length > 0) {
-          return {
-            label: extractedPlaceName,
-            subLabel: cleanCity,
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            isExact: true,
-            type
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Geocoding extracted place name failed:', e);
-    }
-  }
-
-  if (cleanLoc && cleanLoc.length > 2) {
-    try {
-      const query = `${cleanLoc}, ${cleanCity}, Brasil`;
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.length > 0) {
-          return {
-            label: cleanLoc,
-            subLabel: cleanCity,
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            isExact: true,
-            type
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Geocoding exact location text failed:', e);
-    }
-  }
-
-  if (cleanCity && cleanCity.length > 2) {
-    try {
-      const query = `${cleanCity}, Brasil`;
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=pt-br&countrycodes=br`
-      );
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.length > 0) {
-          return {
-            label: cleanCity,
-            subLabel: (cleanLoc || extractedPlaceName) ? `Local: "${cleanLoc || extractedPlaceName}" (não mapeado exatamente)` : undefined,
-            lat: parseFloat(data[0].lat),
-            lng: parseFloat(data[0].lon),
-            isExact: false,
-            type
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Geocoding city failed:', e);
-    }
-  }
-
-  return null;
-};
-
 const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -307,58 +92,33 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
     }
 
     try {
-      const originRes = await resolveLocationToWaypoint(offer.originLocation, offer.origin, 'origin');
-      if (!originRes) {
-        setError(`Não foi possível localizar a Origem "${offer.origin}".`);
-        setIsLoading(false);
-        return;
+      const result = await calculateOfferRoute({
+        origin: offer.origin,
+        originLocation: offer.originLocation,
+        destination: offer.destination,
+        destinationLocation: offer.destinationLocation,
+        additionalDestinations: offer.additionalDestinations
+      });
+
+      if (!result) {
+        throw new Error('Não foi possível calcular a rota para as localizações.');
       }
 
-      const resolvedVias: Waypoint[] = [];
-      if (offer.additionalDestinations && offer.additionalDestinations.length > 0) {
-        for (const via of offer.additionalDestinations) {
-          if (via.city && via.city.trim().length >= 3) {
-            const viaRes = await resolveLocationToWaypoint(via.location, via.city, 'via');
-            if (viaRes) resolvedVias.push(viaRes);
-          }
-        }
-      }
-
-      const destRes = await resolveLocationToWaypoint(offer.destinationLocation, offer.destination, 'destination');
-      if (!destRes) {
-        setError(`Não foi possível localizar o Destino "${offer.destination}".`);
-        setIsLoading(false);
-        return;
-      }
-
-      const allWaypoints = [originRes, ...resolvedVias, destRes];
-
-      const waypointsParam = allWaypoints.map(w => `${w.lng},${w.lat}`).join(';');
-      const osrmResp = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${waypointsParam}?overview=full&geometries=geojson`
-      );
-
-      if (!osrmResp.ok) throw new Error('Falha no serviço de rotas OSRM.');
-
-      const osrmData = await osrmResp.json();
-      if (osrmData.code !== 'Ok' || !osrmData.routes || osrmData.routes.length === 0) {
-        throw new Error('Rota não encontrada entre as localizações.');
-      }
-
-      const route = osrmData.routes[0];
-      const distanceKm = route.distance / 1000;
-      const durationMin = Math.round(route.duration / 60);
-      const coordinates: [number, number][] = route.geometry.coordinates.map(
-        (c: [number, number]) => [c[1], c[0]]
-      );
+      const coordinates: [number, number][] = result.coordinates && result.coordinates.length > 0
+        ? result.coordinates
+        : [
+            [result.originCoords.lat, result.originCoords.lng],
+            [result.destinationCoords.lat, result.destinationCoords.lng]
+          ];
       const bounds = L.latLngBounds(coordinates);
 
       setRouteData({
-        distanceKm,
-        durationMin,
+        distanceKm: result.distanceKm,
+        durationMin: result.durationMin,
         coordinates,
         bounds,
-        waypoints: allWaypoints
+        waypoints: [result.originWaypoint, result.destinationWaypoint],
+        isExact: result.isExact
       });
     } catch (err: any) {
       console.error('Error fetching route in OfferRoutePreview:', err);
@@ -497,6 +257,100 @@ const OfferRoutePreview: React.FC<{ offer: FreightOffer }> = ({ offer }) => {
   );
 };
 
+const OfferPercursoCell: React.FC<{
+  offer: FreightOffer;
+  onUpdateOffer?: (updated: FreightOffer) => void;
+}> = ({ offer, onUpdateOffer }) => {
+  const [distanceKm, setDistanceKm] = useState<number | null>(offer.distanceKm ?? null);
+  const [isExact, setIsExact] = useState<boolean>(offer.isExactDistance ?? Boolean(offer.originCoords && offer.destinationCoords));
+  const [loading, setLoading] = useState<boolean>(!offer.distanceKm && Boolean(offer.origin && offer.destination));
+
+  useEffect(() => {
+    if (offer.distanceKm) {
+      setDistanceKm(offer.distanceKm);
+      setIsExact(offer.isExactDistance ?? Boolean(offer.originCoords && offer.destinationCoords));
+      setLoading(false);
+      return;
+    }
+
+    if (!offer.origin || !offer.destination) {
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    setLoading(true);
+
+    calculateOfferRoute({
+      origin: offer.origin,
+      originLocation: offer.originLocation,
+      destination: offer.destination,
+      destinationLocation: offer.destinationLocation,
+      additionalDestinations: offer.additionalDestinations
+    }).then(res => {
+      if (!isMounted) return;
+      if (res) {
+        setDistanceKm(res.distanceKm);
+        setIsExact(res.isExact);
+        if (!offer.distanceKm && onUpdateOffer) {
+          onUpdateOffer({
+            ...offer,
+            distanceKm: res.distanceKm,
+            isExactDistance: res.isExact,
+            originCoords: res.originCoords,
+            destinationCoords: res.destinationCoords
+          });
+        }
+      }
+      setLoading(false);
+    }).catch(() => {
+      if (isMounted) setLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [offer.id, offer.distanceKm, offer.origin, offer.originLocation, offer.destination, offer.destinationLocation]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-gray-400 animate-pulse">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+        <span>Calculando...</span>
+      </div>
+    );
+  }
+
+  if (distanceKm === null || distanceKm === 0) {
+    return <span className="text-xs text-gray-400">-</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <span
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all ${
+          isExact
+            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 shadow-xs'
+            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+        }`}
+        title={isExact ? 'Distância rodoviária calculada via link exato de localização' : 'Distância estimada entre cidades'}
+      >
+        <RouteIcon className={`w-3.5 h-3.5 ${isExact ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500'}`} />
+        {isExact ? `${distanceKm} km` : `~${distanceKm} km`}
+      </span>
+      <span className="text-[10px] font-medium flex items-center gap-1">
+        {isExact ? (
+          <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+            Pontos exatos
+          </span>
+        ) : (
+          <span className="text-gray-400 dark:text-gray-500">Entre cidades</span>
+        )}
+      </span>
+    </div>
+  );
+};
 
 interface FreightOffersListProps {
   offers: FreightOffer[];
@@ -671,6 +525,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
               {!isClientProfile && <th className="px-4 py-3 font-medium">Cliente</th>}
               <th className="px-4 py-3 font-medium">Origem</th>
               <th className="px-4 py-3 font-medium">Destino</th>
+              <th className="px-4 py-3 font-medium">Percurso</th>
               <th className="px-4 py-3 font-medium">Produto</th>
               <th className="px-4 py-3 font-medium">Total (Ton)</th>
               <th className="px-4 py-3 font-medium">Valor (R$/Ton)</th>
@@ -741,6 +596,9 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                     </div>
                     {renderLocationValue(offer.destinationLocation, "block text-xs text-gray-500 mt-1")}
                   </div>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <OfferPercursoCell offer={offer} onUpdateOffer={onSaveFreightOffer} />
                 </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                   <div>{getProductName(offer.productId)}</div>
@@ -1220,6 +1078,27 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                           {renderLocationValue(d.location, "block text-xs text-gray-500 mt-1")}
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="font-semibold block text-gray-500 dark:text-gray-400 mb-1">Percurso Rodoviário:</span>
+                    <div className="bg-indigo-50/70 dark:bg-indigo-950/40 p-3 rounded-lg border border-indigo-100 dark:border-indigo-800/60 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <RouteIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        <span className="text-sm font-bold text-gray-900 dark:text-white">
+                          {detailsModal.distanceKm ? `${detailsModal.distanceKm} km` : 'Calculando...'}
+                        </span>
+                      </div>
+                      {detailsModal.isExactDistance ? (
+                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                          ✓ Pontos exatos do link
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                          Entre cidades
+                        </span>
+                      )}
                     </div>
                   </div>
 

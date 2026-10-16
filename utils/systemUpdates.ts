@@ -21,6 +21,102 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_16_v2_70_66',
+    version: 'v2.70.66',
+    date: '16/10/2026',
+    title: 'Cálculo e Exibição do KM do Percurso Exato das Ofertas de Frete',
+    summary: 'Configuração completa para calcular e exibir a quilometragem (KM) rodoviária exata entre os pontos de coleta (Origem) e entrega (Destino) nas Ofertas de Frete, extraindo com precisão as coordenadas a partir dos links de localização informados (Google Maps, URLs encurtadas maps.app.goo.gl, coordenadas decimais e graus DMS).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Coluna de Percurso na Tabela de Ofertas Pendentes',
+        description: 'Nova coluna "Percurso" adicionada à tabela de ofertas pendentes exibindo a distância rodoviária calculada (ex: 260 km, 366 km) com indicador visual de "Pontos exatos" quando originada dos links de localização fornecidos.'
+      },
+      {
+        category: 'feature',
+        title: 'Extração Precisa de Coordenadas de Links de Localização',
+        description: 'Desenvolvimento do serviço routeDistanceService e endpoint de resolução para descompactar links encurtados do Google Maps e extrair as coordenadas reais de fazendas, indústrias e silos para traçado rodoviário via OSRM.'
+      },
+      {
+        category: 'improvement',
+        title: 'Roteiro e Detalhes da Oferta Integrados',
+        description: 'O mapa do roteiro e a visualização detalhada da oferta agora utilizam as coordenadas exatas dos links, com badge de confirmação e persistência automática dos dados no banco.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_16_v2_70_65',
+    version: 'v2.70.65',
+    date: '16/10/2026',
+    title: 'Compactação e Otimização Visual dos Cards do Kanban do Dashboard',
+    summary: 'Redução vertical da altura dos cards de embarque no dashboard operacional e financeiro. Unificação de linhas com posicionamento inteligente do Solicitante (e WhatsApp) ao lado do CT-e e integração do botão de ação primária (Anexar) e ferramentas de detalhes no cabeçalho e na linha de dados fiscais.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Redução da Altura Vertical dos Cards',
+        description: 'Os cards foram reduzidos de 6 para 4 linhas enxutas, eliminando o excesso de espaçamento em branco e permitindo que significativamente mais embarques caibam na tela sem rolagem.'
+      },
+      {
+        category: 'improvement',
+        title: 'Solicitante Integrado na Linha Fiscal',
+        description: 'Os dados do Solicitante e o ícone direto do WhatsApp foram reposicionados no espaço disponível entre o número do CT-e e o selo de Forma de Pagamento do motorista.'
+      },
+      {
+        category: 'improvement',
+        title: 'Botão de Ação e Ferramentas Otimizados',
+        description: 'O botão de avanço/anexo de documento foi integrado no lado direito da linha fiscal, enquanto os atalhos de Ver Detalhes e Copiar Ficha foram movidos para o cabeçalho ao lado do SLA.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_16_v2_70_64',
+    version: 'v2.70.64',
+    date: '16/10/2026',
+    title: 'Exibição da Forma de Pagamento do Motorista e Número do CT-e nos Cards do Dashboard',
+    summary: 'Aprimoramento nas janelas do dashboard de gestão operacional e financeira dos embarques (Kanban). Agora cada card exibe de forma destacada o número do CT-e (com acesso rápido para visualização em nova aba e cópia de número) e a forma de pagamento informada para o motorista (PIX - E-FRETE, SMS CARTA FRETE, DEPÓSITO EM CONTA), além de suporte à cópia da chave Pix e busca integrada por esses campos.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Número do CT-e Visível nos Cards do Kanban',
+        description: 'Exibição do número do CT-e emitido diretamente no cabeçalho do card e em linha dedicada. Caso o arquivo PDF do CT-e esteja anexado, um clique abre o documento em tela cheia instantaneamente; botão de cópia rápida permite copiar o número com um clique.'
+      },
+      {
+        category: 'feature',
+        title: 'Forma de Pagamento do Motorista Identificada',
+        description: 'Badge colorido com ícone representativo para cada modalidade cadastrada: PIX - E-FRETE (verde), SMS CARTA FRETE (roxo) e DEPÓSITO EM CONTA (azul). Quando houver chave Pix informada, o card oferece botão de cópia direta da chave sem precisar abrir o modal de detalhes.'
+      },
+      {
+        category: 'improvement',
+        title: 'Busca Inteligente & Ficha de WhatsApp Atualizada',
+        description: 'A barra de pesquisa dos embarques agora permite localizar cards digitando o número do CT-e, modalidade de pagamento ou chave Pix. O botão de cópia da ficha resumida para WhatsApp passa a conter os dados do CT-e e da forma de pagamento do motorista.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_15_v2_70_63',
+    version: 'v2.70.63',
+    date: '15/10/2026',
+    title: 'Restauração da Dedução de CIOT (0,20%) sobre Frete Líquido do Motorista para Todos os Embarques',
+    summary: 'Correção e padronização integral da dedução de taxa do CIOT (0,20%) sobre o valor líquido do frete do motorista em todos os embarques da transportadora, independentemente da modalidade (PF/TAC ou PJ/ETC). O desconto é aplicado no painel de automatização do CT-e, no demonstrativo DRE de Lucro Líquido Real, na planilha de controle financeiro e nos relatórios gerenciais.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Cálculo de CIOT (0,20%) Aplicado em Todos os Embarques',
+        description: 'Eliminada a isenção indevida para transportadores PJ no painel de CT-e e na calculadora de despesas operacionais. Todos os embarques passam a deduzir 0,20% sobre o frete líquido do motorista (abatido o pedágio obrigatório e, para motoristas autônomos PF, as retenções de INSS e SEST/SENAT).'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificação Clara no Card de Dedução do CIOT',
+        description: 'O card de CIOT no Painel de Automatização do CT-e agora destaca a taxa de 0,20% Líq. (PJ ou PF) com detalhamento da base líquida utilizada no cálculo e débito em vermelho na composição do Lucro Real.'
+      },
+      {
+        category: 'fix',
+        title: 'Saneamento de Registros com Taxa CIOT Zerada',
+        description: 'Varredura e saneamento de registros no banco de dados para restabelecer a taxa calculada do CIOT nos embarques onde havia sido gravado valor nulo ou zerado.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_14_v2_70_62',
     version: 'v2.70.62',
     date: '14/10/2026',

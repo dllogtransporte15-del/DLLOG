@@ -17,6 +17,30 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      name: 'unshorten-url-endpoint',
+      configureServer(server) {
+        server.middlewares.use('/api/unshorten', async (req, res) => {
+          const parsedUrl = new URL(req.url || '', 'http://localhost');
+          const targetUrl = parsedUrl.searchParams.get('url');
+          if (!targetUrl) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'url parameter required' }));
+            return;
+          }
+          try {
+            const fetchRes = await fetch(targetUrl, { redirect: 'follow' });
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ originalUrl: targetUrl, resolvedUrl: fetchRes.url }));
+          } catch (err: any) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err?.message || 'Failed to unshorten', originalUrl: targetUrl }));
+          }
+        });
+      }
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],

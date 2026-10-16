@@ -1153,10 +1153,12 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         valorTaxaCiot: (() => {
           const isShipmentPf = (s.driverFreightType === 'PF' || s.anttModality === 'TAC');
           // Valor salvo manualmente tem prioridade
+          const isCiotManual = Boolean((s.realProfitData as any)?.isCiotManual);
           const savedCiotFee = (s as any).ciotFeeValue || 
             (s.documents as any)?.taxa_ciot || 
             (s.documents as any)?.ciotFeeValue || 
-            (s.realProfitData as any)?.ciotFeeValue;
+            (s.realProfitData as any)?.ciotFeeValue ||
+            (isCiotManual ? (s.realProfitData as any)?.ciot : undefined);
           if (savedCiotFee !== undefined && savedCiotFee !== null && Number(savedCiotFee) > 0) {
             return Number(savedCiotFee);
           }
@@ -2465,7 +2467,10 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         const inssRet = tacDed?.inss || 0;
                         const sestRet = tacDed?.sestSenat || 0;
                         const baseFreightCiot = isShipmentPf ? Math.max(0, freteMot - tollV - inssRet - sestRet) : Math.max(0, freteMot - tollV);
-                        const calculatedCiotFee = baseFreightCiot > 0 ? Number((baseFreightCiot * 0.0020).toFixed(2)) : 0;
+                        const isCiotManual = Boolean((sOrig?.realProfitData as any)?.isCiotManual);
+                        const calculatedCiotFee = isCiotManual && (sOrig?.realProfitData as any)?.ciot !== undefined
+                          ? Number((sOrig?.realProfitData as any).ciot)
+                          : (baseFreightCiot > 0 ? Number((baseFreightCiot * 0.0020).toFixed(2)) : 0);
 
                         return (
                           <td 

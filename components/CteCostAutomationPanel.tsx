@@ -1715,15 +1715,15 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const inssRetidoPf = tacDeductions?.inss || 0;
   const sestSenatRetidoPf = tacDeductions?.sestSenat || 0;
 
-  // 11. CIOT (0,20% s/ Frete do Motorista abatido Pedágio em TAC/PF; Isento para PJ)
+  // 11. CIOT (0,20% s/ Frete Líquido do Motorista: deduz pedágio e, para TAC/PF, retenções de INSS e SEST/SENAT)
   const isCiotManual = Boolean((shipment.realProfitData as any)?.isCiotManual);
   const manualCiotValue = (shipment.realProfitData as any)?.ciot;
   const baseCiotFreight = isShipmentPf
     ? Math.max(0, driverFreight - toll - inssRetidoPf - sestSenatRetidoPf)
-    : 0;
+    : Math.max(0, driverFreight - toll);
   const ciotValue = isCiotManual && manualCiotValue !== undefined
     ? Number(manualCiotValue)
-    : (isShipmentPf && baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0);
+    : (baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0);
 
   // 13. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixoValue = Number((cteGrossFreight * 0.0035).toFixed(2));
@@ -2665,27 +2665,23 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               )}
             </div>
 
-            {/* CIOT (0,20% sobre o Frete Motorista abatido o Pedágio; Isento para PJ) */}
-            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${!isShipmentPf ? 'opacity-90' : ''}`}>
+            {/* CIOT (0,20% sobre o Frete Líquido do Motorista) */}
+            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">CIOT</span>
                 <span 
-                  className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 ${
-                    isShipmentPf 
-                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' 
-                      : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                  }`}
-                  title={isShipmentPf ? "0,20% sobre o frete do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "Isento para PJ (ETC)"}
+                  className="text-[8px] font-medium px-1 py-0.2 rounded shrink-0 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300"
+                  title={isShipmentPf ? "0,20% sobre o frete líquido do motorista deduzindo pedágio, INSS e SEST/SENAT (PF)" : "0,20% sobre o frete líquido do motorista abatido o pedágio (PJ)"}
                 >
-                  {isShipmentPf ? '0,20% Mot. (PF)' : 'Isento (PJ)'}
+                  {isShipmentPf ? '0,20% Líq. (PF)' : '0,20% Líq. (PJ)'}
                 </span>
               </div>
               <div className={`text-xs font-bold font-mono ${
-                isShipmentPf && ciotValue > 0
+                ciotValue > 0
                   ? 'text-rose-600 dark:text-rose-400'
-                  : 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-500 dark:text-slate-400 font-medium'
               }`}>
-                {isShipmentPf && ciotValue > 0 ? `- ${formatBrl(ciotValue)}` : 'R$ 0,00'}
+                {ciotValue > 0 ? `- ${formatBrl(ciotValue)}` : 'R$ 0,00'}
               </div>
               {driverFreight > 0 && (
                 <div 
@@ -2693,12 +2689,12 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   title={
                     isShipmentPf
                       ? `0,20% sobre frete (${formatBrl(driverFreight)}) - pedágio (${formatBrl(toll)}) - INSS (${formatBrl(inssRetidoPf)}) - SEST/SENAT (${formatBrl(sestSenatRetidoPf)}) = Base ${formatBrl(baseCiotFreight)}`
-                      : 'Transportador PJ (ETC): Isento de taxa CIOT'
+                      : `0,20% sobre frete líquido (${formatBrl(driverFreight)}${toll > 0 ? ` - pedágio (${formatBrl(toll)})` : ''}) = Base ${formatBrl(baseCiotFreight)}`
                   }
                 >
                   {isShipmentPf 
                     ? `0,20% s/ Líq. (Mot-Ped-INSS-SEST)` 
-                    : 'Isenção ANTT / PJ (R$ 0,00)'}
+                    : (toll > 0 ? `0,20% s/ Mot.-Ped.` : `0,20% s/ Mot.`)}
                 </div>
               )}
             </div>

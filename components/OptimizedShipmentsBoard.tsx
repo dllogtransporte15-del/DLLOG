@@ -29,12 +29,14 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
-  Loader2
+  Loader2,
+  CreditCard
 } from 'lucide-react';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { Shipment, Cargo, Client, Product, Driver, Vehicle, User, ShipmentStatus, REQUIRED_DOCUMENT_MAP } from '../types';
 import { useToast } from '../hooks/useToast';
-import { openDocumentInNewTab, getShipmentTmsOrderUrl } from '../utils/documentViewer';
+import { openDocumentInNewTab, getShipmentTmsOrderUrl, getShipmentCteFileUrl } from '../utils/documentViewer';
+import { getShipmentCte } from '../utils';
 
 export interface KanbanColumnConfig {
   id: string;
@@ -70,6 +72,80 @@ export interface OptimizedShipmentsBoardProps {
 
 type SlaUrgencyFilter = 'all' | 'normal' | 'warning' | 'critical';
 type DensityMode = 'expanded' | 'compact';
+
+export interface ShipmentPaymentDetails {
+  rawMethod: string;
+  type: 'pix' | 'carta_frete' | 'deposito' | 'outro';
+  label: string;
+  pixKey?: string;
+  bankDetails?: string;
+}
+
+export const resolveShipmentPaymentInfo = (shipment: Shipment): ShipmentPaymentDetails => {
+  const docs = (shipment.documents || {}) as any;
+  const rawMethod = (
+    shipment.paymentMethod ||
+    docs?.payment_method ||
+    docs?.forma_pagamento ||
+    docs?.tipoPagamentoSaldo ||
+    docs?.formaPagamento ||
+    docs?.driver_payment_method ||
+    ''
+  ).toString().trim();
+
+  const pixKey = (
+    shipment.pixKey ||
+    docs?.pix_key ||
+    docs?.chave_pix ||
+    docs?.pixKey ||
+    docs?.chavePix ||
+    ''
+  ).toString().trim();
+
+  const bankDetails = (
+    shipment.bankDetails ||
+    docs?.bank_details ||
+    docs?.dados_bancarios ||
+    docs?.dadosBancarios ||
+    docs?.bankDetails ||
+    ''
+  ).toString().trim();
+
+  const upper = rawMethod.toUpperCase();
+  let type: 'pix' | 'carta_frete' | 'deposito' | 'outro' = 'pix';
+  let label = 'PIX - E-FRETE';
+
+  if (upper.includes('CARTA') || upper.includes('SMS')) {
+    type = 'carta_frete';
+    label = 'SMS CARTA FRETE';
+  } else if (
+    upper.includes('DEPOSITO') ||
+    upper.includes('DEPÓSITO') ||
+    upper.includes('CONTA') ||
+    upper.includes('TRANSFERENCIA') ||
+    upper.includes('TRANSFERÊNCIA')
+  ) {
+    type = 'deposito';
+    label = 'DEPÓSITO EM CONTA';
+  } else if (upper.includes('PIX')) {
+    type = 'pix';
+    label = upper.includes('E-FRETE') ? 'PIX - E-FRETE' : 'PIX';
+  } else if (rawMethod) {
+    label = rawMethod;
+    type = 'outro';
+  } else {
+    type = 'pix';
+    label = 'PIX - E-FRETE';
+  }
+
+  return {
+    rawMethod,
+    type,
+    label,
+    pixKey: pixKey || undefined,
+    bankDetails: bankDetails || undefined,
+  };
+};
 
 const LiveClock: React.FC = () => {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString('pt-BR'));
@@ -116,6 +192,8 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
   const [densityMode, setDensityMode] = useState<DensityMode>('expanded');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedPlate, setCopiedPlate] = useState<string | null>(null);
+  const [copiedCte, setCopiedCte] = useState<string | null>(null);
+  const [copiedPix, setCopiedPix] = useState<string | null>(null);
   const [isTvMode, setIsTvMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -386,16 +464,26 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
   }, []);
 
   // Copy Helpers
-  const handleCopyText = useCallback((text: string, type: 'id' | 'plate', itemKey: string) => {
+  const handleCopyText = useCallback((text: string, type: 'id' | 'plate' | 'cte' | 'pix' | 'bank', itemKey: string) => {
     navigator.clipboard.writeText(text);
     if (type === 'id') {
       setCopiedId(itemKey);
       setTimeout(() => setCopiedId(null), 2000);
       showToast(`ID #${text} copiado!`, 'info', 2000);
-    } else {
+    } else if (type === 'plate') {
       setCopiedPlate(itemKey);
       setTimeout(() => setCopiedPlate(null), 2000);
       showToast(`Placa ${text} copiada!`, 'info', 2000);
+    } else if (type === 'cte') {
+      setCopiedCte(itemKey);
+      setTimeout(() => setCopiedCte(null), 2000);
+      showToast(`CT-e nº ${text} copiado!`, 'info', 2000);
+    } else if (type === 'pix') {
+      setCopiedPix(itemKey);
+      setTimeout(() => setCopiedPix(null), 2000);
+      showToast(`Chave PIX copiada: ${text}`, 'info', 2000);
+    } else if (type === 'bank') {
+      showToast(`Dados bancários copiados!`, 'info', 2000);
     }
   }, [showToast]);
 
@@ -406,6 +494,19 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
       openDocumentInNewTab(ocUrl, `OC_TMS_${shipment.id}`);
     } else {
       showToast(`Nenhuma Ordem de Carregamento (OC TMS) anexada para o embarque #${shipment.id}`, 'info', 3000);
+    }
+  }, [showToast]);
+
+  const handleOpenCte = useCallback((e: React.MouseEvent, shipment: Shipment) => {
+    e.stopPropagation();
+    const cteUrl = getShipmentCteFileUrl(shipment);
+    const cteNumber = getShipmentCte(shipment);
+    if (cteUrl) {
+      openDocumentInNewTab(cteUrl, `CTE_${cteNumber !== '-' ? cteNumber : shipment.id}`);
+    } else if (cteNumber && cteNumber !== '-') {
+      showToast(`CT-e nº ${cteNumber} registrado, mas o arquivo PDF/XML não foi anexado`, 'info', 3000);
+    } else {
+      showToast(`Nenhum CT-e emitido ou anexado para o embarque #${shipment.id}`, 'info', 3000);
     }
   }, [showToast]);
 
@@ -421,6 +522,13 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
     const origin = cargo ? cargo.origin : 'N/A';
     const destination = cargo ? cargo.destination : 'N/A';
     const embarcadorName = embarcador ? embarcador.name : 'N/A';
+    const cteNum = getShipmentCte(shipment);
+    const payment = resolveShipmentPaymentInfo(shipment);
+    const paymentExtra = payment.type === 'pix' && payment.pixKey
+      ? ` (Chave: ${payment.pixKey})`
+      : payment.type === 'deposito' && payment.bankDetails
+      ? ` (Dados: ${payment.bankDetails})`
+      : '';
 
     const summary = [
       `🚛 *DETALHES DO EMBARQUE #${shipment.id}*`,
@@ -429,6 +537,8 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
       `📍 *Rota:* ${origin} ➔ ${destination}`,
       `🏢 *Cliente:* ${clientName}`,
       `📦 *Produto:* ${productName} (${shipment.shipmentTonnage.toLocaleString('pt-BR')} t)`,
+      `📄 *CT-e:* ${cteNum !== '-' ? cteNum : 'Pendente de emissão'}`,
+      `💳 *Pagamento Motorista:* ${payment.label}${paymentExtra}`,
       `⏱️ *Status:* ${shipment.status} (Tempo no status: ${elapsedStr})`,
       `👤 *Solicitante:* ${embarcadorName}`,
     ].join('\n');
@@ -470,8 +580,16 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
         const productMatch = (product?.name || '').toLowerCase().includes(search);
         const originMatch = (cargo?.origin || '').toLowerCase().includes(search);
         const destMatch = (cargo?.destination || '').toLowerCase().includes(search);
+        const cte = getShipmentCte(shipment);
+        const cteMatch = cte && cte !== '-' && cte.toLowerCase().includes(search);
+        const payment = resolveShipmentPaymentInfo(shipment);
+        const paymentMatch = (
+          payment.label + ' ' + 
+          (payment.pixKey || '') + ' ' + 
+          (payment.bankDetails || '')
+        ).toLowerCase().includes(search);
 
-        if (!idMatch && !driverNameMatch && !driverCpfMatch && !horsePlateMatch && !trailer1Match && !embarcadorMatch && !clientMatch && !productMatch && !originMatch && !destMatch) {
+        if (!idMatch && !driverNameMatch && !driverCpfMatch && !horsePlateMatch && !trailer1Match && !embarcadorMatch && !clientMatch && !productMatch && !originMatch && !destMatch && !cteMatch && !paymentMatch) {
           return false;
         }
       }
@@ -1214,6 +1332,33 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                     const embarcadorWhatsAppUrl = getWhatsAppLink(embarcador?.phone, `Olá ${embarcadorName}, sobre o embarque #${shipment.id} (${shipment.driverName} - ${shipment.horsePlate})...`);
                     const docActionName = getDocumentActionName(shipment.status);
 
+                    // Informações Fiscais (CT-e) & Forma de Pagamento do Motorista
+                    const cteNumber = getShipmentCte(shipment);
+                    const hasCte = cteNumber !== '-';
+                    const cteFileUrl = getShipmentCteFileUrl(shipment);
+                    const paymentInfo = resolveShipmentPaymentInfo(shipment);
+
+                    let paymentBadgeClass = 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200/80 dark:border-emerald-800/60';
+                    let paymentIcon = <Banknote className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />;
+
+                    if (paymentInfo.type === 'carta_frete') {
+                      paymentBadgeClass = 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200/80 dark:border-purple-800/60';
+                      paymentIcon = <CreditCard className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400 flex-shrink-0" />;
+                    } else if (paymentInfo.type === 'deposito') {
+                      paymentBadgeClass = 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200/80 dark:border-sky-800/60';
+                      paymentIcon = <Building2 className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400 flex-shrink-0" />;
+                    } else if (paymentInfo.type === 'outro') {
+                      paymentBadgeClass = 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200/80 dark:border-amber-800/60';
+                      paymentIcon = <Wallet className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />;
+                    }
+
+                    const paymentTooltip = 
+                      paymentInfo.type === 'pix' && paymentInfo.pixKey
+                        ? `Forma: ${paymentInfo.label} • Chave Pix: ${paymentInfo.pixKey} (clique para copiar)`
+                        : paymentInfo.type === 'deposito' && paymentInfo.bankDetails
+                        ? `Forma: ${paymentInfo.label} • Dados Bancários: ${paymentInfo.bankDetails}`
+                        : `Forma de pagamento informada para o motorista: ${paymentInfo.label}`;
+
                     // Urgency Visual Styles
                     const slaBadgeClass = 
                       urgency === 'critical'
@@ -1235,7 +1380,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                           key={shipment.id}
                           className={`bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-200/90 dark:border-gray-700 shadow-xs hover:shadow-sm transition-all duration-150 ${cardBorderHighlight}`}
                         >
-                          {/* Compact Row 1: ID, Time, SLA */}
+                          {/* Compact Row 1: ID, CT-e, Time, SLA */}
                           <div className="flex items-center justify-between gap-1.5 mb-1.5">
                             <div className="flex items-center gap-1 min-w-0">
                               <button
@@ -1258,6 +1403,16 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                               >
                                 {copiedId === shipment.id ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5" />}
                               </button>
+                              {hasCte && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleOpenCte(e, shipment)}
+                                  className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded font-mono text-[9px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                                  title={cteFileUrl ? "Clique para abrir o CT-e" : `CT-e nº ${cteNumber}`}
+                                >
+                                  <span>CT-e {cteNumber}</span>
+                                </button>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1 flex-shrink-0">
@@ -1309,6 +1464,27 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                             <span className="font-bold text-gray-700 dark:text-gray-300 flex-shrink-0">
                               {shipment.shipmentTonnage}t
                             </span>
+                          </div>
+
+                          {/* Compact Row 3.5: CT-e & Forma de Pagamento */}
+                          <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 gap-1 mb-1.5 pt-1 border-t border-dashed border-gray-100 dark:border-gray-700/60">
+                            <div className="flex items-center gap-1 font-mono">
+                              <span className="text-[9px] text-gray-400 dark:text-gray-500">CT-e:</span>
+                              {hasCte ? (
+                                <span className="font-bold text-gray-800 dark:text-gray-200 text-[10px]" title="Número do CT-e">
+                                  {cteNumber}
+                                </span>
+                              ) : (
+                                <span className="italic text-gray-400 dark:text-gray-500 text-[9px]">Pendente</span>
+                              )}
+                            </div>
+                            <div
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold border ${paymentBadgeClass}`}
+                              title={paymentTooltip}
+                            >
+                              {paymentIcon}
+                              <span>{paymentInfo.label}</span>
+                            </div>
                           </div>
 
                           {/* Compact Row 4: Action Buttons */}
@@ -1363,14 +1539,14 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                       );
                     }
 
-                    // EXPANDED CARD (RICO OTIMIZADO)
+                    // EXPANDED CARD (RICO OTIMIZADO COMPACTO)
                     return (
                       <div
                         key={shipment.id}
-                        className={`bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200/90 dark:border-gray-700/90 shadow-xs hover:shadow-md transition-all duration-150 ${cardBorderHighlight} space-y-2`}
+                        className={`bg-white dark:bg-gray-800 rounded-xl p-2.5 border border-gray-200/90 dark:border-gray-700/90 shadow-xs hover:shadow-md transition-all duration-150 ${cardBorderHighlight} space-y-1.5`}
                       >
-                        {/* Header: ID, Date, SLA Badge */}
-                        <div className="flex items-center justify-between gap-2">
+                        {/* Linha 1: ID, OC TMS, Data, Ações Rápidas (Eye, WhatsApp) & SLA */}
+                        <div className="flex items-center justify-between gap-1.5">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <button
                               type="button"
@@ -1392,14 +1568,39 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                             >
                               {copiedId === shipment.id ? <Check className="w-2.5 h-2.5 text-green-500" /> : <Copy className="w-2.5 h-2.5" />}
                             </button>
-                            <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-0.5 ml-1">
+
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-0.5 ml-0.5">
                               <Clock className="w-2.5 h-2.5" />
                               {formatDate(startTime)}
                             </span>
                           </div>
 
-                          {/* SLA Pill */}
+                          {/* Ações Rápidas de Topo (Ver Detalhes, Copiar Ficha) & SLA Pill */}
                           <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onShowDetails(shipment);
+                              }}
+                              className="p-1 rounded-md bg-gray-100 dark:bg-gray-700/70 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition-colors cursor-pointer"
+                              title="Ver detalhes completos do embarque"
+                            >
+                              <Eye className="w-3 h-3" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopySummary(shipment);
+                              }}
+                              className="p-1 rounded-md bg-gray-100 dark:bg-gray-700/70 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 transition-colors cursor-pointer"
+                              title="Copiar ficha resumida para WhatsApp"
+                            >
+                              <FileText className="w-3 h-3" />
+                            </button>
+
                             <span className={`text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs ${slaBadgeClass}`}>
                               {urgency === 'critical' && <Flame className="w-2.5 h-2.5 text-rose-500 animate-bounce" />}
                               {urgency === 'warning' && <AlertTriangle className="w-2.5 h-2.5 text-amber-500" />}
@@ -1409,8 +1610,8 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                           </div>
                         </div>
 
-                        {/* Motorista, WhatsApp & Veículo */}
-                        <div className="flex items-center justify-between gap-2 text-xs">
+                        {/* Linha 2: Motorista, WhatsApp & Veículo */}
+                        <div className="flex items-center justify-between gap-1.5 text-xs">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <UserIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                             <span className="font-bold text-gray-900 dark:text-white truncate" title={shipment.driverName}>
@@ -1422,14 +1623,14 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-green-500 hover:text-green-600 transition-colors p-0.5 flex-shrink-0"
-                                title="Conversar no WhatsApp"
+                                title="Conversar com o motorista no WhatsApp"
                               >
                                 <WhatsAppIcon className="w-3.5 h-3.5" />
                               </a>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <div className="flex items-center gap-1 flex-shrink-0">
                             {/* Mercosul / Plate Badge */}
                             <button
                               onClick={() => handleCopyText(shipment.horsePlate, 'plate', shipment.id)}
@@ -1452,7 +1653,7 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                           </div>
                         </div>
 
-                        {/* Rota, Cliente & Produto */}
+                        {/* Linha 3: Rota, Cliente & Produto */}
                         <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] pt-0.5">
                           {/* Route */}
                           <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300 font-medium truncate max-w-full">
@@ -1476,77 +1677,126 @@ export const OptimizedShipmentsBoard: React.FC<OptimizedShipmentsBoardProps> = (
                           </div>
                         </div>
 
-                        {/* Solicitante */}
-                        {embarcador && (
-                          <div className="pt-1 flex items-center justify-between text-[10px] text-gray-400 dark:text-gray-500">
-                            <span className="truncate">
-                              Solicitante: <strong className="text-gray-600 dark:text-gray-400 font-medium">{embarcadorName}</strong>
-                            </span>
-                            {embarcadorWhatsAppUrl && (
-                              <a
-                                href={embarcadorWhatsAppUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-green-500 hover:text-green-600 dark:text-green-400 transition-colors p-0.5 flex-shrink-0"
-                                title="WhatsApp do solicitante"
-                              >
-                                <WhatsAppIcon className="w-3 h-3" />
-                              </a>
+                        {/* Linha 4: Fiscal (CT-e), Solicitante, Pagamento & Ação de Anexar */}
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] pt-1.5 border-t border-dashed border-gray-100 dark:border-gray-700/60">
+                          {/* Lado Esquerdo: CT-e & Solicitante Compacto */}
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            {/* CT-e */}
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-0.5">
+                                <FileText className="w-2.5 h-2.5 text-indigo-500" />
+                                CT-e:
+                              </span>
+                              {hasCte ? (
+                                <div className="inline-flex items-center gap-1 font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60 shadow-2xs">
+                                  {cteFileUrl ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleOpenCte(e, shipment)}
+                                      className="hover:underline flex items-center gap-0.5 cursor-pointer text-indigo-700 dark:text-indigo-300"
+                                      title="Clique para visualizar o CT-e em tela cheia"
+                                    >
+                                      <span>{cteNumber}</span>
+                                      <ExternalLink className="w-2 h-2 opacity-60 ml-0.5" />
+                                    </button>
+                                  ) : (
+                                    <span title="Número do CT-e registrado no embarque">{cteNumber}</span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyText(cteNumber, 'cte', shipment.id);
+                                    }}
+                                    className="text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 cursor-pointer p-0.5 transition-colors"
+                                    title="Copiar número do CT-e"
+                                  >
+                                    {copiedCte === shipment.id ? (
+                                      <Check className="w-2.5 h-2.5 text-emerald-500" />
+                                    ) : (
+                                      <Copy className="w-2.5 h-2.5 opacity-70" />
+                                    )}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[9px] font-mono text-gray-400 dark:text-gray-500 italic bg-gray-50 dark:bg-gray-800/80 px-1 py-0.2 rounded border border-dashed border-gray-200 dark:border-gray-700">
+                                  Pendente
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Solicitante compacto ao lado do CT-e e antes da forma de pagamento */}
+                            {embarcador && (
+                              <div className="inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 min-w-0" title={`Solicitante: ${embarcadorName}`}>
+                                <span className="text-gray-400 dark:text-gray-500">Sol:</span>
+                                <strong className="text-gray-700 dark:text-gray-300 font-semibold truncate max-w-[120px] sm:max-w-[150px]">{embarcadorName}</strong>
+                                {embarcadorWhatsAppUrl && (
+                                  <a
+                                    href={embarcadorWhatsAppUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-green-500 hover:text-green-600 dark:text-green-400 transition-colors p-0.5 flex-shrink-0"
+                                    title="WhatsApp do solicitante"
+                                  >
+                                    <WhatsAppIcon className="w-2.5 h-2.5" />
+                                  </a>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
 
-                        {/* Action Buttons Row */}
-                        <div className="pt-1.5 flex items-center gap-1.5 border-t border-gray-100 dark:border-gray-700/60">
-                          {/* Primary Action Button: Anexar e Avançar */}
-                          {onAttach && (
-                            <button
-                              onClick={() => onAttach(shipment)}
-                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary hover:bg-primary-dark text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all shadow-xs active:scale-98"
-                              title={`Avançar status: ${docActionName}`}
+                          {/* Lado Direito: Forma de Pagamento & Botões de Ação */}
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {/* Forma de Pagamento do Motorista */}
+                            <div
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border shadow-2xs ${paymentBadgeClass}`}
+                              title={paymentTooltip}
                             >
-                              <Paperclip className="w-3 h-3" />
-                              <span className="truncate">{docActionName}</span>
-                            </button>
-                          )}
+                              {paymentIcon}
+                              <span className="tracking-tight">{paymentInfo.label}</span>
+                              {paymentInfo.type === 'pix' && paymentInfo.pixKey && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyText(paymentInfo.pixKey!, 'pix', shipment.id);
+                                  }}
+                                  className="opacity-70 hover:opacity-100 cursor-pointer ml-0.5 p-0.5 transition-opacity"
+                                  title={`Copiar Chave Pix: ${paymentInfo.pixKey}`}
+                                >
+                                  {copiedPix === shipment.id ? (
+                                    <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-2.5 h-2.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
 
-                          {/* ANTT Action if PreCadastro */}
-                          {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && (
-                            <button
-                              onClick={() => onOpenCadastroAntt(shipment)}
-                              className="py-1.5 px-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-medium flex items-center gap-1 transition-colors"
-                              title="Fazer Cadastro de Titular ANTT"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              <span>ANTT</span>
-                            </button>
-                          )}
+                            {/* ANTT Action if PreCadastro */}
+                            {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && (
+                              <button
+                                onClick={() => onOpenCadastroAntt(shipment)}
+                                className="py-1 px-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                                title="Fazer Cadastro de Titular ANTT"
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                <span>ANTT</span>
+                              </button>
+                            )}
 
-                          {/* Details Button */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onShowDetails(shipment);
-                            }}
-                            className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors border border-gray-200/60 dark:border-gray-700 cursor-pointer"
-                            title="Ver detalhes completos do embarque"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Copy Summary Button */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopySummary(shipment);
-                            }}
-                            className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700/80 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors border border-gray-200/60 dark:border-gray-700 cursor-pointer"
-                            title="Copiar resumo formatado para WhatsApp"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                          </button>
+                            {/* Primary Action Button: Anexar e Avançar */}
+                            {onAttach && (
+                              <button
+                                onClick={() => onAttach(shipment)}
+                                className="py-1 px-2.5 rounded-lg bg-primary hover:bg-primary-dark text-white text-[11px] font-semibold flex items-center justify-center gap-1 transition-all shadow-xs active:scale-98 cursor-pointer"
+                                title={`Avançar status: ${docActionName}`}
+                              >
+                                <Paperclip className="w-3 h-3" />
+                                <span className="truncate">{docActionName}</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

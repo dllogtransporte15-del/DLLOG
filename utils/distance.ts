@@ -142,7 +142,7 @@ function normalizeName(str: string): string {
     .trim();
 }
 
-function findCityCoords(cityName: string): { lat: number; lng: number } | null {
+export function findCityCoords(cityName: string): { lat: number; lng: number } | null {
   if (!cityName) return null;
   const norm = normalizeName(cityName);
   if (!norm) return null;

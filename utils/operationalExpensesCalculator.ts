@@ -231,18 +231,17 @@ export function calculateShipmentExpenses(
   const insuranceRcv = config.insuranceRcvPerLoad;
   const totalInsurance = Number((insuranceAcidente + insuranceRoubo + insuranceRcv).toFixed(2));
 
-  // 10. CIOT (0,20% s/ Frete Motorista - Pedágio em TAC/PF; Isento para PJ)
-  let baseCiot = 0;
-  if (isShipmentPf) {
-    baseCiot = Math.max(0, driverFreight - toll);
-    if (baseCiot > 0) {
-      const tacTaxes = calculateTacTaxDeductions(driverFreight, toll);
-      baseCiot = Math.max(0, baseCiot - tacTaxes.inss - tacTaxes.sestSenat);
-    }
+  // 10. CIOT (0,20% s/ Frete Líquido do Motorista: deduz pedágio e, para TAC/PF, retenções de INSS e SEST/SENAT)
+  let baseCiot = Math.max(0, driverFreight - toll);
+  if (isShipmentPf && baseCiot > 0) {
+    const tacTaxes = calculateTacTaxDeductions(driverFreight, toll);
+    baseCiot = Math.max(0, baseCiot - tacTaxes.inss - tacTaxes.sestSenat);
   }
-  const ciot = (shipment.realProfitData?.ciot !== undefined)
-    ? Number(shipment.realProfitData.ciot)
-    : (isShipmentPf && baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0);
+  const isCiotManual = Boolean((shipment.realProfitData as any)?.isCiotManual);
+  const manualCiot = (shipment.realProfitData as any)?.ciot;
+  const ciot = isCiotManual && manualCiot !== undefined
+    ? Number(manualCiot)
+    : (baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0);
 
   // 11. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixo = companyFreight > 0 

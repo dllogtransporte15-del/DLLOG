@@ -22,6 +22,10 @@ export const toFreightOffer = (row: any): FreightOffer => {
   let icmsPercentage: number | undefined = row.icms_percentage !== undefined ? Number(row.icms_percentage) : undefined;
   let clientCnpj: string | undefined = row.client_cnpj || undefined;
   let clientBranchId: string | undefined = row.client_branch_id || undefined;
+  let originCoords: { lat: number; lng: number } | undefined = undefined;
+  let destinationCoords: { lat: number; lng: number } | undefined = undefined;
+  let distanceKm: number | undefined = undefined;
+  let isExactDistance: boolean | undefined = undefined;
 
   if (metaLog) {
     try {
@@ -38,6 +42,10 @@ export const toFreightOffer = (row: any): FreightOffer => {
       if (parsed.icmsPercentage !== undefined) icmsPercentage = parsed.icmsPercentage;
       if (parsed.clientCnpj) clientCnpj = parsed.clientCnpj;
       if (parsed.clientBranchId) clientBranchId = parsed.clientBranchId;
+      if (parsed.originCoords) originCoords = parsed.originCoords;
+      if (parsed.destinationCoords) destinationCoords = parsed.destinationCoords;
+      if (parsed.distanceKm !== undefined) distanceKm = Number(parsed.distanceKm);
+      if (parsed.isExactDistance !== undefined) isExactDistance = Boolean(parsed.isExactDistance);
     } catch (e) {
       console.error('Error parsing freight offer metadata:', e);
     }
@@ -70,6 +78,10 @@ export const toFreightOffer = (row: any): FreightOffer => {
     icmsPercentage,
     clientCnpj,
     clientBranchId,
+    originCoords,
+    destinationCoords,
+    distanceKm,
+    isExactDistance,
   };
 };
 
@@ -110,7 +122,7 @@ export const fetchFreightOffers = async (): Promise<FreightOffer[]> => {
 const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
   const history = [...(o.history || [])].filter(h => h.id !== 'meta_dest_obs');
   
-  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined || o.clientCnpj || o.clientBranchId) {
+  if ((o.additionalDestinations && o.additionalDestinations.length > 0) || o.observations || (o.attachments && o.attachments.length > 0) || o.driverId || o.cargoId || o.requestedEmbarcadorId || o.requestTimestamp || o.freightType || o.hasIcms !== undefined || o.icmsPercentage !== undefined || o.clientCnpj || o.clientBranchId || o.originCoords || o.destinationCoords || o.distanceKm !== undefined) {
     history.push({
       id: 'meta_dest_obs',
       userId: 'system',
@@ -128,6 +140,10 @@ const fromFreightOffer = (o: FreightOffer | Omit<FreightOffer, 'id'>) => {
         icmsPercentage: o.icmsPercentage,
         clientCnpj: o.clientCnpj,
         clientBranchId: o.clientBranchId,
+        originCoords: o.originCoords,
+        destinationCoords: o.destinationCoords,
+        distanceKm: o.distanceKm,
+        isExactDistance: o.isExactDistance,
       })
     });
   }
