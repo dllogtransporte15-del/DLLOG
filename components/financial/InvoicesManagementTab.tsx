@@ -121,6 +121,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [costTypes, setCostTypes] = useState<CostType[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // State: Visão ativa ('table' ou 'analytics')
   const [activeView, setActiveView] = useState<'table' | 'analytics'>('table');
@@ -252,7 +253,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         financialInvoiceService.getCostCenters(),
         financialInvoiceService.getCostTypes()
       ]);
-      setInvoices(invs);
+      if (Array.isArray(invs)) {
+        setInvoices(invs);
+      }
       setCostCenters(centers);
       setCostTypes(types);
 
@@ -265,6 +268,16 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       }
     } catch (err) {
       console.error('Erro ao carregar dados de notas fiscais:', err);
+      // Fallback defensivo de emergência
+      try {
+        const local = localStorage.getItem('transcunha_financial_invoices');
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setInvoices(parsed);
+          }
+        }
+      } catch {}
     } finally {
       if (showLoadingSpinner) setLoading(false);
       setIsSyncing(false);
@@ -687,6 +700,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       return;
     }
 
+    setIsSaving(true);
     try {
       const saved = await financialInvoiceService.saveInvoice(payload, editingInvoiceId || undefined);
       if (editingInvoiceId) {
@@ -702,6 +716,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     } catch (err: any) {
       console.error('Erro ao salvar nota fiscal:', err);
       alert(err?.message || 'Houve um erro ao salvar a nota fiscal. Tente novamente.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2687,14 +2703,21 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={duplicateInvoiceMatch.isDuplicate}
+                    disabled={duplicateInvoiceMatch.isDuplicate || isSaving}
                     className={`px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
                       duplicateInvoiceMatch.isDuplicate
                         ? 'bg-rose-500 text-white cursor-not-allowed opacity-90 shadow-md shadow-rose-500/20'
+                        : isSaving
+                        ? 'bg-blue-400 text-white cursor-wait opacity-80 shadow-md'
                         : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 cursor-pointer'
                     }`}
                   >
-                    {duplicateInvoiceMatch.isDuplicate ? (
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        <span>Salvando e Anexando...</span>
+                      </>
+                    ) : duplicateInvoiceMatch.isDuplicate ? (
                       <>
                         <ShieldAlert className="w-4 h-4 text-white" />
                         <span>Bloqueado (Nota Repetida)</span>
