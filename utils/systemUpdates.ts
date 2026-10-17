@@ -21,6 +21,49 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_17_v2_70_79',
+    version: 'v2.70.79',
+    date: '17/10/2026',
+    title: 'Harmonização de Faturamento e Indicadores no 1º Resultado (Agência GO e Operadores)',
+    summary: 'Ajustada a classificação e os critérios de faturamento no 1º Resultado Financeiro (FirstResultTab.tsx). Agora a Agência Goiás (Maurício) reconhece integralmente os embarques operados pelo seu operador de embarque (Murilo Rodrigues, prefixo MUR-) mesmo em cargas originárias da Matriz, além de unificar o critério de Faturamento Bruto e contagem de veículos carregados com base na emissão efetiva do CT-e (conforme os Relatórios Comercial e de Filiais), garantindo 100% de precisão e conciliação entre as telas.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Resolução de Liderança de Agência e Prefixo MUR- (Murilo Rodrigues)',
+        description: 'Atualizada a classificação de filiais para identificar o prefixo "MUR-" e resolver a liderança de operadores de agência (agencyLeaderId) vinculados ao Maurício (USR-294), assegurando que fretes operados pela agência para cargas de clientes corporativos sejam devidamente creditados à agência.'
+      },
+      {
+        category: 'improvement',
+        title: 'Precedência da Filial do Operador sobre Carga Matriz',
+        description: 'Definida precedência clara para que a filial do operador do embarque não seja sobrescrita pela filial cadastral da carga, alinhando o comportamento ao Relatório de Filiais (BranchReport.tsx).'
+      },
+      {
+        category: 'fix',
+        title: 'Alinhamento do Faturamento ao Frete Efetivamente Faturado (CT-e)',
+        description: 'O card de Faturamento e a contagem de veículos carregados passam a considerar embarques com CT-e emitido, eliminando divergências com o modal de Detalhamento de Embarques da Agência e Relatórios Gerenciais.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_78',
+    version: 'v2.70.78',
+    date: '17/10/2026',
+    title: 'Sincronização de Faturamento das Filiais no 1º Resultado (Ag GO / TRANSCUNHA-GOAIS)',
+    summary: 'Ajustada a classificação de faturamento no 1º Resultado (FirstResultTab.tsx) para considerar a Filial cadastrada do embarque, carga e operador (ex: TRANSCUNHA-GOAIS / Catalão - GO). Anteriormente, o card Ag GO só contabilizava embarques explicitamente atribuídos ao usuário Maurício, fazendo com que os embarques da filial de Goiás caíssem indevidamente na Matriz.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Contabilização da Filial TRANSCUNHA-GOAIS no Card Ag GO',
+        description: 'Atualizada a função classifyBranch para reconhecer a filial efetiva do embarque (s.branchId, cargo.branchId ou filial do operador) para Goiás, São Paulo e Paraná, garantindo alinhamento imediato entre o 1º Resultado e o Relatório de Filiais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Precisão nos Indicadores de Agências e Matriz',
+        description: 'Eliminada a distorção que atribuía operações de unidades filiais à Matriz quando o embarque era registrado por operadores corporativos ou administradores.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_17_v2_70_77',
     version: 'v2.70.77',
     date: '17/10/2026',

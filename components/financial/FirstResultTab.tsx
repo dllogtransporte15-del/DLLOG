@@ -30,7 +30,15 @@ import {
   CreditCard
 } from 'lucide-react';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentEffectiveDate, parseDateToYmd, getFinancialPeriodRange, toLocalYmd, FinancialPeriodFilter } from '../../utils';
+import { 
+  getShipmentEffectiveDate, 
+  parseDateToYmd, 
+  getFinancialPeriodRange, 
+  toLocalYmd, 
+  FinancialPeriodFilter, 
+  getShipmentCte, 
+  isCteApplicableForStatus 
+} from '../../utils';
 
 export interface FirstResultTabProps {
   data: FirstLevelFinancialResult;
@@ -78,25 +86,54 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
   const userBranchMap = useMemo(() => new Map(users.map(u => [u.id, u.branchId])), [users]);
 
+  // Helper para resolução de liderança de agência (ex: operador Murilo USR-1007 -> líder Maurício USR-294)
+  const getLeaderIdForUser = (userId?: string) => {
+    if (!userId) return undefined;
+    const user = userMap.get(userId);
+    if (!user) return undefined;
+    if (user.agencyRole === 'embarque' && user.agencyLeaderId) {
+      return user.agencyLeaderId;
+    }
+    if (user.agencyLeaderId) {
+      return user.agencyLeaderId;
+    }
+    return user.id;
+  };
+
   // Função para identificar a filial do embarque e agrupar nas 4 frentes do dashboard:
-  // "Ag GO" = Agência do "Maurício"
-  // "Ag SP" = Agência do "RAFAEL PINHEIRO" + "RAFAEL TARANTELLI"
-  // "Ag PR" = Agência Paraná
+  // "Ag GO" = Agência Goiás (Filial TRANSCUNHA-GOAIS / Catalão - GO / Operações do Maurício e Murilo)
+  // "Ag SP" = Agência do "RAFAEL PINHEIRO" + "RAFAEL TARANTELLI" / Filial SP
+  // "Ag PR" = Agência Paraná / Cambará
   // "Matriz" = Demais operações / Sede
   const classifyBranch = (s: Shipment, cargo?: Cargo): 'matriz' | 'ag_sp' | 'ag_go' | 'ag_pr' => {
-    // 1. Identificação direta por Usuário (Agenciador / Embarcador / Criador)
+    // 1. Identificação direta por prefixo do embarque
+    // Prefixo RAF-xxx -> Agência SP (Rafael Pinheiro / Rafael Tarantelli)
+    // Prefixo MAU-xxx / MUR-xxx -> Agência GO (Maurício / Murilo Rodrigues)
+    const sid = (s.id || '').toUpperCase();
+    if (sid.startsWith('RAF-')) return 'ag_sp';
+    if (sid.startsWith('MAU-') || sid.startsWith('MUR-')) return 'ag_go';
+
+    // 2. Identificação direta por Agência Líder ou Operador da Agência
     const checkUser = (userId?: string) => {
       if (!userId) return null;
+      const leaderId = getLeaderIdForUser(userId);
       const u = userMap.get(userId);
-      const name = (u?.name || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const email = (u?.email || '').toUpperCase();
-      const id = userId.toUpperCase();
+      const leader = leaderId ? userMap.get(leaderId) : null;
 
-      // "Ag GO" = Agência do "Maurício" (USR-294)
+      const name = ((u?.name || '') + ' ' + (leader?.name || '')).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const email = ((u?.email || '') + ' ' + (leader?.email || '')).toUpperCase();
+      const id = userId.toUpperCase();
+      const lid = (leaderId || '').toUpperCase();
+
+      // "Ag GO" = Agência do "Maurício" (USR-294) / Murilo Rodrigues (USR-1007)
       if (
         id === 'USR-294' ||
+        lid === 'USR-294' ||
+        id === 'USR-1007' ||
         name.includes('MAURICIO') ||
-        email.includes('MAURICIO')
+        name.includes('MURILO') ||
+        email.includes('MAURICIO') ||
+        email.includes('MURILO')
       ) {
         return 'ag_go';
       }
@@ -105,6 +142,8 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
       if (
         id === 'USR-106' ||
         id === 'USR-107' ||
+        lid === 'USR-106' ||
+        lid === 'USR-107' ||
         name.includes('RAFAEL PINHEIRO') ||
         name.includes('RAFAEL TARANTELLI') ||
         email.includes('PINHEIRO') ||
@@ -116,56 +155,76 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
       return null;
     };
 
-    // Prioridade 1: Agenciador / Embarcador vinculado diretamente ao embarque
+    // Prioridade por Agenciador / Embarcador / Criador
     const byEmbarcador = checkUser(s.embarcadorId);
     if (byEmbarcador) return byEmbarcador;
 
-    // Prioridade 2: Usuário criador do embarque
     const byCreator = checkUser(s.createdById);
     if (byCreator) return byCreator;
 
-    // Prioridade 3: Prefixo identificador do embarque (ex: RAF-xxx -> Rafael Pinheiro / Rafael Tarantelli)
-    if (s.id && s.id.toUpperCase().startsWith('RAF-')) {
-      return 'ag_sp';
-    }
-    if (s.id && s.id.toUpperCase().startsWith('MAU-')) {
-      return 'ag_go';
+    // 3. Filial cadastrada (a filial do operador tem precedência sobre a filial de carga Matriz)
+    const operatorBranchId = userBranchMap.get(s.embarcadorId) || userBranchMap.get(s.createdById);
+    const effectiveBranchId = s.branchId || 
+                              operatorBranchId || 
+                              cargo?.branchId || 
+                              (cargo ? userBranchMap.get(cargo.createdById) : undefined);
+
+    if (effectiveBranchId) {
+      const bObj = branches.find(b => b.id === effectiveBranchId);
+      if (bObj) {
+        const bName = (bObj.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const bCity = (bObj.city || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const bState = (bObj.state || '').toLowerCase();
+
+        // Filial Goiás (TRANSCUNHA-GOAIS / Catalão - GO)
+        if (
+          bName.includes('go') ||
+          bName.includes('goias') ||
+          bCity.includes('catalao') ||
+          bState === 'go'
+        ) {
+          return 'ag_go';
+        }
+
+        // Filial São Paulo
+        if (
+          bName.includes('sp') ||
+          bName.includes('sao paulo') ||
+          bState === 'sp'
+        ) {
+          return 'ag_sp';
+        }
+
+        // Filial Paraná
+        if (
+          bName.includes('pr') ||
+          bName.includes('parana') ||
+          bName.includes('cambara') ||
+          bCity.includes('maringa') ||
+          bCity.includes('londrina') ||
+          bState === 'pr'
+        ) {
+          return 'ag_pr';
+        }
+      }
     }
 
-    // Prioridade 4: Criador da carga original vinculada
+    // Criador da carga original vinculada
     if (cargo?.createdById) {
       const byCargoCreator = checkUser(cargo.createdById);
       if (byCargoCreator) return byCargoCreator;
     }
 
-    // Prioridade 5: Filial Paraná (Ag PR)
-    const bId = s.branchId || cargo?.branchId;
-    let branchName = '';
-    let branchState = '';
-    if (bId) {
-      const bObj = branches.find(b => b.id === bId);
-      if (bObj) {
-        branchName = bObj.name.toLowerCase();
-        branchState = (bObj.state || '').toLowerCase();
-      }
-    }
-
-    if (
-      branchName.includes('pr') || 
-      branchName.includes('paraná') || 
-      branchName.includes('parana') || 
-      branchName.includes('cambara') || 
-      branchName.includes('cambará') || 
-      branchName.includes('maringa') || 
-      branchName.includes('londrina') ||
-      branchState === 'pr'
-    ) {
-      return 'ag_pr';
-    }
-
+    // Rota e Localidade
     const route = ((s.route || '') + ' ' + (cargo?.origin || '') + ' ' + (cargo?.destination || '')).toUpperCase();
+    if (route.includes('/GO') || route.includes('- GO') || route.includes('GOIAS') || route.includes('GOIÁS') || route.includes('CATALAO') || route.includes('CATALÃO')) {
+      return 'ag_go';
+    }
     if (route.includes('/PR') || route.includes('- PR') || route.includes('PARANA') || route.includes('PARANÁ') || route.includes('CAMBARA') || route.includes('CAMBARÁ')) {
       return 'ag_pr';
+    }
+    if (route.includes('/SP') || route.includes('- SP') || route.includes('SAO PAULO') || route.includes('SÃO PAULO')) {
+      return 'ag_sp';
     }
 
     // Padrão: Matriz
@@ -271,67 +330,87 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
       const branchKey = classifyBranch(s, cargo);
       const freightBruto = exp.companyFreight || (s.companyFreightRateSnapshot ? s.companyFreightRateSnapshot * (s.shipmentTonnage || 0) : s.driverFreightValue * 1.15);
 
-      const isLoaded = !['Ag. Cadastro', 'Ag. Seguradora', 'Ag. Carregamento', ShipmentStatus.PreCadastro, ShipmentStatus.AguardandoSeguradora, ShipmentStatus.AguardandoCarregamento].includes(s.status as any);
+      // Critério de Faturamento Efetivo: apurado mediante emissão do CT-e (conforme Relatório Comercial e de Filiais)
+      const cteVal = getShipmentCte(s);
+      const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '' && isCteApplicableForStatus(s.status));
 
       if (branchKey === 'ag_sp') {
-        faturamentoAgSP += freightBruto;
+        if (hasCte) {
+          faturamentoAgSP += freightBruto;
+          loadedVehiclesAgSP += 1;
+        }
         totalVehiclesAgSP += 1;
-        if (isLoaded) loadedVehiclesAgSP += 1;
       } else if (branchKey === 'ag_go') {
-        faturamentoAgGO += freightBruto;
+        if (hasCte) {
+          faturamentoAgGO += freightBruto;
+          loadedVehiclesAgGO += 1;
+        }
         totalVehiclesAgGO += 1;
-        if (isLoaded) loadedVehiclesAgGO += 1;
       } else if (branchKey === 'ag_pr') {
-        faturamentoAgPR += freightBruto;
+        if (hasCte) {
+          faturamentoAgPR += freightBruto;
+          loadedVehiclesAgPR += 1;
+        }
         totalVehiclesAgPR += 1;
-        if (isLoaded) loadedVehiclesAgPR += 1;
       } else {
-        faturamentoMatriz += freightBruto;
+        if (hasCte) {
+          faturamentoMatriz += freightBruto;
+          loadedVehiclesMatriz += 1;
+        }
         totalVehiclesMatriz += 1;
-        if (isLoaded) loadedVehiclesMatriz += 1;
       }
 
-      // Demonstrativo de Notas Fiscais (apenas documentos reais, sem multiplicadores sintéticos)
+      // Demonstrativo de Notas Fiscais (apenas documentos reais)
       const nfVal = s.nfeValue || s.realProfitData?.invoiceValue || exp.invoiceValue || 0;
-      totalNfValor += nfVal;
+      if (hasCte) {
+        totalNfValor += nfVal;
+      }
 
       // Pedágio sanitizado (limite de R$ 25.000 para frete rodoviário unitário)
       const rawToll = Number(s.tollValue);
       const safeToll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
-      pedagioTotal += safeToll;
+      if (hasCte) {
+        pedagioTotal += safeToll;
+      }
 
-      // Comissões por canal
-      if (branchKey === 'ag_sp') comissaoAgSP += (exp.agencyCommission || (freightBruto * 0.015));
-      if (branchKey === 'ag_go') comissaoAgGO += (exp.agencyCommission || (freightBruto * 0.015));
-      if (branchKey === 'ag_pr') comissaoAgPR += (exp.agencyCommission || (freightBruto * 0.015));
+      // Comissões por canal e despesas diretas apuradas para fretes efetivamente faturados
+      if (hasCte) {
+        if (branchKey === 'ag_sp') comissaoAgSP += (exp.agencyCommission || (freightBruto * 0.015));
+        if (branchKey === 'ag_go') comissaoAgGO += (exp.agencyCommission || (freightBruto * 0.015));
+        if (branchKey === 'ag_pr') comissaoAgPR += (exp.agencyCommission || (freightBruto * 0.015));
 
-      comissaoComercial += exp.comissaoComercial || (s.commercialCommission || (freightBruto * 0.002));
-      comissaoUnidade += (freightBruto * 0.0035);
-      comissaoEmbarcador += exp.shipperCommission || (s.shipperCommissionValue || 0);
-      comissaoCliente += (s.realProfitData?.commission || 0);
-      comissaoVendedor += exp.salespersonCommission || 0;
+        comissaoComercial += exp.comissaoComercial || (s.commercialCommission || (freightBruto * 0.002));
+        comissaoUnidade += (freightBruto * 0.0035);
+        comissaoEmbarcador += exp.shipperCommission || (s.shipperCommissionValue || 0);
+        comissaoCliente += (s.realProfitData?.commission || 0);
+        comissaoVendedor += exp.salespersonCommission || 0;
 
-      const driverVal = exp.driverFreight || (s.driverFreightValue || 0);
-      totalDriverFreights += driverVal;
+        const driverVal = exp.driverFreight || (s.driverFreightValue || 0);
+        totalDriverFreights += driverVal;
 
-      // Adiantamento e Saldo aos motoristas
-      const advVal = s.advanceValue !== undefined && s.advanceValue !== null
-        ? Number(s.advanceValue)
-        : (s.advancePercentage ? (driverVal * s.advancePercentage / 100) : (driverVal * 0.7));
+        // Adiantamento e Saldo aos motoristas
+        const advVal = s.advanceValue !== undefined && s.advanceValue !== null
+          ? Number(s.advanceValue)
+          : (s.advancePercentage ? (driverVal * s.advancePercentage / 100) : (driverVal * 0.7));
 
-      const balVal = s.netBalanceValue !== undefined && s.netBalanceValue !== null
-        ? Number(s.netBalanceValue)
-        : (s.balanceToReceiveValue !== undefined && s.balanceToReceiveValue !== null
-            ? Number(s.balanceToReceiveValue)
-            : Math.max(0, driverVal - advVal));
+        const balVal = s.netBalanceValue !== undefined && s.netBalanceValue !== null
+          ? Number(s.netBalanceValue)
+          : (s.balanceToReceiveValue !== undefined && s.balanceToReceiveValue !== null
+              ? Number(s.balanceToReceiveValue)
+              : Math.max(0, driverVal - advVal));
 
-      totalPgAdiantamento += advVal;
-      totalPgSaldo += balVal;
+        totalPgAdiantamento += advVal;
+        totalPgSaldo += balVal;
+      }
     }
 
     // Seção de Impostos e Deduções apurada dinamicamente a partir do taxFilteredShipments
     let taxPedagioTotal = 0;
     for (const s of taxFilteredShipments) {
+      const cteVal = getShipmentCte(s);
+      const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '' && isCteApplicableForStatus(s.status));
+      if (!hasCte) continue;
+
       const cargo = cargoMap.get(s.cargoId);
       const exp = calculateShipmentExpenses(s, cargo);
       const freightBruto = exp.companyFreight || (s.companyFreightRateSnapshot ? s.companyFreightRateSnapshot * (s.shipmentTonnage || 0) : s.driverFreightValue * 1.15);
