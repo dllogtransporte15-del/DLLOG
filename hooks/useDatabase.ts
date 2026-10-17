@@ -9,7 +9,7 @@ import { INITIAL_PERMISSIONS } from '../auth';
 import { DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { 
   fetchClients, fetchOwners, fetchDrivers, fetchVehicles, fetchProducts,
-  fetchCargos, fetchShipments, fetchUsers, fetchTickets, fetchProfilePermissions,
+  fetchCargos, fetchShipments, fetchShipmentById, fetchUsers, fetchTickets, fetchProfilePermissions,
   fetchAppSettings, fetchShipmentLocks, fetchBranches, fetchFreightOffers,
   fetchRiskQueryOptions,
   toShipment, toCargo, toTicket, toFreightOffer, toClient, toOwner, toDriver,
@@ -17,6 +17,7 @@ import {
   backfillShipmentFiscalNumbers,
   backfillAdvanceAndBalanceCalculations
 } from '../lib/db';
+import { OPERATIONS_REALTIME_CHANNEL } from '../services/realtimeOperationsHub';
 import { getAllToolStays, StayRecord } from '../utils/toolStorage';
 import { reconcileAllCargos } from '../utils/cargoBalance';
 
@@ -295,8 +296,8 @@ export function useDatabase(currentUser: User | null) {
     let isSubscribed = true;
     let reconnectTimeoutId: any = null;
     let channelRef: ReturnType<typeof supabase.channel> | null = null;
-    let lastShipmentCheckTs: string | null = null;
-    let lastCargoCheckTs: string | null = null;
+    let lastShipmentCheckFp: string | null = null;
+    let lastCargoCheckFp: string | null = null;
 
     const handlePostgresChange = async (payload: any) => {
       if (!isSubscribed) return;
@@ -568,17 +569,88 @@ export function useDatabase(currentUser: User | null) {
         'profile_permissions', 'app_settings', 'risk_query_options'
       ];
 
-      let ch = supabase.channel('transcunha_rt_' + Date.now());
+      // Canal central compartilhado entre todos os clientes
+      let ch = supabase.channel(OPERATIONS_REALTIME_CHANNEL, {
+        config: {
+          broadcast: { ack: false, self: false },
+        }
+      });
 
-      // Listeners dedicados por tabela para máxima garantia no Supabase Realtime
+      // 1. Broadcast instantâneo WebSocket (recebe alterações diretas de outros usuários em ~50ms)
+      ch = ch.on('broadcast', { event: 'shipment_changed' }, async ({ payload }) => {
+        if (!isSubscribed) return;
+        console.log('[Realtime Hub] ⚡ Broadcast de embarque recebido de outro usuário:', payload);
+        setLastSyncTime(new Date());
+
+        const { action, shipmentId, shipment } = payload || {};
+        if (action === 'delete') {
+          if (shipmentId) {
+            setShipments(prev => prev.filter(s => s.id !== shipmentId));
+          }
+          return;
+        }
+
+        if (shipment && shipment.id) {
+          setShipments(prev => {
+            const exists = prev.find(s => s.id === shipment.id);
+            if (exists) {
+              const merged = { ...exists, ...shipment };
+              return prev.map(s => s.id === shipment.id ? merged : s);
+            }
+            return [shipment, ...prev];
+          });
+        } else if (shipmentId) {
+          const single = await fetchShipmentById(shipmentId);
+          if (single && isSubscribed) {
+            setShipments(prev => {
+              const exists = prev.find(s => s.id === single.id);
+              if (exists) {
+                const merged = { ...exists, ...single };
+                return prev.map(s => s.id === single.id ? merged : s);
+              }
+              return [single, ...prev];
+            });
+          } else if (isSubscribed) {
+            const all = await fetchShipments();
+            setShipments(all);
+          }
+        }
+      });
+
+      ch = ch.on('broadcast', { event: 'cargo_changed' }, async ({ payload }) => {
+        if (!isSubscribed) return;
+        console.log('[Realtime Hub] ⚡ Broadcast de carga recebido de outro usuário:', payload);
+        setLastSyncTime(new Date());
+
+        const { action, cargoId, cargo } = payload || {};
+        if (action === 'delete') {
+          if (cargoId) {
+            setCargos(prev => prev.filter(c => c.id !== cargoId));
+          }
+          return;
+        }
+
+        if (cargo && cargo.id) {
+          setCargos(prev => {
+            const exists = prev.find(c => c.id === cargo.id);
+            if (exists) {
+              const merged = { ...exists, ...cargo };
+              return prev.map(c => c.id === cargo.id ? merged : c);
+            }
+            return [cargo, ...prev];
+          });
+        } else if (isSubscribed) {
+          const all = await fetchCargos();
+          setCargos(all);
+        }
+      });
+
+      // 2. Listeners dedicados por tabela do Postgres Changes
       for (const t of highPriorityTables) {
         ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, (payload) => {
           handlePostgresChange({ ...payload, table: payload.table || t });
         });
       }
-
-      // Listener genérico de schema como salvaguarda
-      ch = ch.on('postgres_changes', { event: '*', schema: 'public' }, handlePostgresChange);
 
       channelRef = ch.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -600,6 +672,49 @@ export function useDatabase(currentUser: User | null) {
 
     subscribeChannel();
 
+    // ── Ouvintes de eventos no mesmo navegador (BroadcastChannel entre abas e CustomEvent) ──
+    const handleLocalBroadcast = (e: any) => {
+      if (!isSubscribed) return;
+      const data = e.data || e.detail;
+      if (!data) return;
+      const type = data.type || (e.type === 'transcunha:shipment_changed' ? 'shipment_changed' : 'cargo_changed');
+      const payload = data.payload || data;
+      if (type === 'shipment_changed') {
+        const { action, shipmentId, shipment } = payload;
+        if (action === 'delete' && shipmentId) {
+          setShipments(prev => prev.filter(s => s.id !== shipmentId));
+        } else if (shipment && shipment.id) {
+          setShipments(prev => {
+            const exists = prev.find(s => s.id === shipment.id);
+            if (exists) return prev.map(s => s.id === shipment.id ? { ...exists, ...shipment } : s);
+            return [shipment, ...prev];
+          });
+        }
+        setLastSyncTime(new Date());
+      } else if (type === 'cargo_changed') {
+        const { action, cargoId, cargo } = payload;
+        if (action === 'delete' && cargoId) {
+          setCargos(prev => prev.filter(c => c.id !== cargoId));
+        } else if (cargo && cargo.id) {
+          setCargos(prev => {
+            const exists = prev.find(c => c.id === cargo.id);
+            if (exists) return prev.map(c => c.id === cargo.id ? { ...exists, ...cargo } : c);
+            return [cargo, ...prev];
+          });
+        }
+        setLastSyncTime(new Date());
+      }
+    };
+
+    const localBc = typeof window !== 'undefined' && 'BroadcastChannel' in window 
+      ? new BroadcastChannel('transcunha_operations_sync') 
+      : null;
+    if (localBc) {
+      localBc.onmessage = handleLocalBroadcast;
+    }
+    window.addEventListener('transcunha:shipment_changed', handleLocalBroadcast);
+    window.addEventListener('transcunha:cargo_changed', handleLocalBroadcast);
+
     // ── Heartbeat inteligente ultraleve e sincronização no foco da janela ──
     const checkTimestampAndSync = async () => {
       if (!isSubscribed || (typeof document !== 'undefined' && document.visibilityState === 'hidden') || isAnyModalActiveRef.current) {
@@ -607,56 +722,58 @@ export function useDatabase(currentUser: User | null) {
       }
 
       try {
-        // Consulta ultraleve de 1 linha: apenas timestamp mais recente de embarque
-        const { data: latestShipment } = await supabase
-          .from('shipments')
-          .select('updated_at')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Consulta ultraleve de contagem e fingerprint dos embarques ativos (apenas id e status, ~24 linhas)
+        const [shipmentsHeadRes, activeShipmentsRes] = await Promise.all([
+          supabase.from('shipments').select('*', { count: 'exact', head: true }),
+          supabase.from('shipments').select('id, status').neq('status', 'Finalizado').neq('status', 'Cancelado')
+        ]);
 
-        const shipmentTs = latestShipment?.updated_at || null;
-        if (shipmentTs && lastShipmentCheckTs && shipmentTs !== lastShipmentCheckTs) {
-          console.log('[Heartbeat Sync] 🔄 Alteração detectada em embarques — sincronizando...');
-          lastShipmentCheckTs = shipmentTs;
+        const sCount = shipmentsHeadRes.count || 0;
+        const sActive = activeShipmentsRes.data || [];
+        const currentShipmentFp = `${sCount}__${sActive.map((r: any) => `${r.id}:${r.status}`).sort().join('|')}`;
+
+        if (currentShipmentFp && lastShipmentCheckFp && currentShipmentFp !== lastShipmentCheckFp) {
+          console.log('[Heartbeat Sync] 🔄 Alteração detectada em status/embarques — sincronizando...');
+          lastShipmentCheckFp = currentShipmentFp;
           const dbShipments = await fetchShipments();
           if (isSubscribed) {
             setShipments(dbShipments);
             setNextIds((prev: any) => ({ ...prev, shipment: getMaxId(dbShipments, 100) }));
             setLastSyncTime(new Date());
           }
-        } else if (shipmentTs) {
-          lastShipmentCheckTs = shipmentTs;
+        } else if (currentShipmentFp) {
+          lastShipmentCheckFp = currentShipmentFp;
         }
 
-        // Consulta ultraleve de 1 linha: apenas timestamp mais recente de cargas
-        const { data: latestCargo } = await supabase
-          .from('cargos')
-          .select('updated_at')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Consulta ultraleve de contagem e fingerprint das cargas em andamento
+        const [cargosHeadRes, activeCargosRes] = await Promise.all([
+          supabase.from('cargos').select('*', { count: 'exact', head: true }),
+          supabase.from('cargos').select('id, status, scheduled_volume, loaded_volume').neq('status', 'Fechada')
+        ]);
 
-        const cargoTs = latestCargo?.updated_at || null;
-        if (cargoTs && lastCargoCheckTs && cargoTs !== lastCargoCheckTs) {
+        const cCount = cargosHeadRes.count || 0;
+        const cActive = activeCargosRes.data || [];
+        const currentCargoFp = `${cCount}__${cActive.map((r: any) => `${r.id}:${r.status}:${r.loaded_volume}`).sort().join('|')}`;
+
+        if (currentCargoFp && lastCargoCheckFp && currentCargoFp !== lastCargoCheckFp) {
           console.log('[Heartbeat Sync] 🔄 Alteração detectada em cargas — sincronizando...');
-          lastCargoCheckTs = cargoTs;
+          lastCargoCheckFp = currentCargoFp;
           const dbCargos = await fetchCargos();
           if (isSubscribed) {
             setCargos(dbCargos);
             setNextIds((prev: any) => ({ ...prev, cargo: getMaxId(dbCargos, 100) }));
             setLastSyncTime(new Date());
           }
-        } else if (cargoTs) {
-          lastCargoCheckTs = cargoTs;
+        } else if (currentCargoFp) {
+          lastCargoCheckFp = currentCargoFp;
         }
       } catch (err) {
-        // Silencioso
+        console.warn('[Heartbeat Sync] Erro na verificação:', err);
       }
     };
 
-    // Heartbeat a cada 5 segundos
-    const HEARTBEAT_INTERVAL_MS = 5000;
+    // Heartbeat regular a cada 4 segundos
+    const HEARTBEAT_INTERVAL_MS = 4000;
     const pollInterval = setInterval(checkTimestampAndSync, HEARTBEAT_INTERVAL_MS);
 
     // Sincronização imediata ao reativar a aba ou focar na janela
@@ -691,6 +808,11 @@ export function useDatabase(currentUser: User | null) {
       document.removeEventListener('visibilitychange', handleFocusOrVisibility);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (localBc) {
+        localBc.close();
+      }
+      window.removeEventListener('transcunha:shipment_changed', handleLocalBroadcast);
+      window.removeEventListener('transcunha:cargo_changed', handleLocalBroadcast);
       if (channelRef) {
         try { supabase.removeChannel(channelRef); } catch {}
         channelRef = null;

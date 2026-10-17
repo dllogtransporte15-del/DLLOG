@@ -6,6 +6,7 @@ import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
 } from '../types';
 import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType } from '../types';
+import { broadcastShipmentChange, broadcastCargoChange } from '../services/realtimeOperationsHub';
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
@@ -1265,6 +1266,17 @@ export async function fetchShipments(): Promise<Shipment[]> {
   }
 }
 
+export async function fetchShipmentById(id: string): Promise<Shipment | null> {
+  try {
+    const { data, error } = await supabase.from('shipments').select('*').eq('id', id).maybeSingle();
+    if (error || !data) return null;
+    return toShipment(data);
+  } catch (error) {
+    console.error('Error fetching shipment by id:', error);
+    return null;
+  }
+}
+
 export async function fetchPaginatedShipments(page: number, limit: number, filters?: { status?: string }): Promise<{ data: Shipment[], count: number }> {
   let query = supabase.from('shipments').select('*', { count: 'exact' });
   
@@ -1533,6 +1545,11 @@ export async function upsertCargo(cargo: Cargo): Promise<void> {
     throw result.error;
   }
   console.log('[upsertCargo] Success for cargo:', cargo.id);
+  broadcastCargoChange({
+    action: 'update',
+    cargoId: cargo.id,
+    cargo
+  });
 }
 
 async function executeShipmentOperationWithFallback(
@@ -1580,11 +1597,25 @@ export async function upsertShipment(shipment: Shipment): Promise<void> {
       (p) => supabase.from('shipments').update(p).eq('id', shipment.id),
       payload
     );
+    broadcastShipmentChange({
+      action: 'update',
+      shipmentId: shipment.id,
+      status: shipment.status,
+      shipment
+    });
   } else {
     await executeShipmentOperationWithFallback(
       (p) => supabase.from('shipments').insert(p),
       payload
     );
+    if (shipment.id) {
+      broadcastShipmentChange({
+        action: 'create',
+        shipmentId: shipment.id,
+        status: shipment.status,
+        shipment
+      });
+    }
   }
 }
 
@@ -1825,7 +1856,13 @@ export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Car
     throw error;
   }
   console.log('[insertCargo] Success for cargo:', data.id);
-  return toCargo(data);
+  const createdCargo = toCargo(data);
+  broadcastCargoChange({
+    action: 'create',
+    cargoId: createdCargo.id,
+    cargo: createdCargo
+  });
+  return createdCargo;
 }
 
 export async function insertShipment(shipment: Shipment): Promise<void> {
@@ -1834,6 +1871,14 @@ export async function insertShipment(shipment: Shipment): Promise<void> {
     (p) => supabase.from('shipments').insert(p),
     payload
   );
+  if (shipment.id) {
+    broadcastShipmentChange({
+      action: 'create',
+      shipmentId: shipment.id,
+      status: shipment.status,
+      shipment
+    });
+  }
 }
 
 export async function saveProfilePermissions(permissions: ProfilePermissions): Promise<void> {
@@ -1866,6 +1911,14 @@ export async function upsertManyShipments(shipments: Shipment[]): Promise<void> 
   if (shipments.length === 0) return;
   const { error } = await supabase.from('shipments').upsert(shipments.map(fromShipment));
   if (error) throw error;
+  for (const s of shipments) {
+    broadcastShipmentChange({
+      action: 'update',
+      shipmentId: s.id,
+      status: s.status,
+      shipment: s
+    });
+  }
 }
 
 export async function upsertManyCargos(cargos: Cargo[]): Promise<void> {
@@ -1937,11 +1990,19 @@ export async function deleteShipmentAttachmentFromStorage(url: string): Promise<
 export async function deleteCargo(id: string): Promise<void> {
   const { error } = await supabase.from('cargos').delete().eq('id', id);
   if (error) throw error;
+  broadcastCargoChange({
+    action: 'delete',
+    cargoId: id
+  });
 }
 
 export async function deleteShipment(id: string): Promise<void> {
   const { error } = await supabase.from('shipments').delete().eq('id', id);
   if (error) throw error;
+  broadcastShipmentChange({
+    action: 'delete',
+    shipmentId: id
+  });
 }
 
 export async function deleteUser(id: string): Promise<void> {
