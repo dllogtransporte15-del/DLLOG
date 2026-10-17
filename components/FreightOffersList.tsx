@@ -1348,6 +1348,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
             setEditingOfferModal(null);
           }}
           editingOffer={editingOfferModal}
+          currentUser={currentUser}
         />
       )}
 

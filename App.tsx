@@ -246,6 +246,7 @@ const App: React.FC = () => {
     stays, setStays,
     freightOffers, setFreightOffers,
     riskQueryOptions, setRiskQueryOptions,
+    loadingOrderModels, setLoadingOrderModels,
     realtimeStatus,
     lastSyncTime,
     loadAllData
@@ -999,9 +1000,9 @@ const App: React.FC = () => {
       // 1. Admin and Demo always see all loads
       if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') return true;
 
-      // 2. Motorista profile: sees all non-suspended loads
+      // 2. Motorista profile: exibir estritamente as cargas cujo status/etapa seja "Cargas em Operação" (CargoStatus.EmAndamento)
       if (currentUser.profile === UserProfile.Motorista) {
-        return c.status !== CargoStatus.Suspensa && c.status !== CargoStatus.Fechada;
+        return c.status === CargoStatus.EmAndamento;
       }
 
       // 3. Client profile specific filtering (must match clientId or secondary CNPJs)
@@ -1173,12 +1174,11 @@ const App: React.FC = () => {
       return;
     }
     try {
-      const isUuid = 'id' in offerData && typeof (offerData as FreightOffer).id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((offerData as FreightOffer).id);
-      const isNew = !isUuid;
-      const uuid = isUuid ? (offerData as FreightOffer).id : crypto.randomUUID();
+      const hasExistingId = 'id' in offerData && Boolean((offerData as FreightOffer).id);
+      const uuid = hasExistingId ? (offerData as FreightOffer).id : crypto.randomUUID();
 
       let displayId = ('displayId' in offerData && (offerData as FreightOffer).displayId) ? (offerData as FreightOffer).displayId : '';
-      if (!displayId || isNew) {
+      if (!displayId) {
         const nextNum = nextIds.freightOffer || 1;
         displayId = formatId(nextNum, 'OFR', 2);
         setNextIds((prev: any) => ({ ...prev, freightOffer: (prev.freightOffer || nextNum) + 1 }));
@@ -1207,6 +1207,7 @@ const App: React.FC = () => {
       });
       
       await upsertFreightOffer(tempOffer);
+      showToast(hasExistingId ? 'Oferta de frete atualizada com sucesso!' : 'Oferta de frete criada com sucesso!', 'success');
     } catch (err) {
       console.error('Erro ao salvar oferta de frete:', err);
       showToast('Erro ao atualizar oferta de frete.', 'error');
@@ -3690,13 +3691,26 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
+    const cleanBranchId = userData.branchId && userData.branchId.trim() !== '' 
+      ? userData.branchId.trim() 
+      : ((userData as any).filialId && (userData as any).filialId.trim() !== '' ? (userData as any).filialId.trim() : undefined);
+
     let saved: User;
     if ('id' in userData) {
-      saved = userData;
-      setUsers(prev => prev.map(u => u.id === userData.id ? { ...u, ...userData } : u));
+      saved = {
+        ...userData,
+        branchId: cleanBranchId,
+        filialId: cleanBranchId,
+      } as User;
+      setUsers(prev => prev.map(u => u.id === userData.id ? saved : u));
     } else { 
       const newId = formatId(nextIds.user, 'USR');
-      saved = { ...userData, id: newId } as User;
+      saved = { 
+        ...userData, 
+        id: newId,
+        branchId: cleanBranchId,
+        filialId: cleanBranchId,
+      } as User;
       setUsers(prev => [saved, ...prev]);
       setNextIds((prev: any) => ({ ...prev, user: prev.user + 1 }));
     }
@@ -4012,7 +4026,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
-          <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} onMergeClients={handleMergeClients} currentUser={currentUser} profilePermissions={profilePermissions} />} />
+          <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} onMergeClients={handleMergeClients} currentUser={currentUser} profilePermissions={profilePermissions} loadingOrderModels={loadingOrderModels} />} />
           <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} vehicles={vehicles} drivers={drivers} shipments={shipments} />} />
           <Route path="/drivers" element={<DriversPage drivers={drivers} setDrivers={setDrivers} onSaveDriver={handleSaveDriver} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
           <Route path="/vehicles" element={<VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />

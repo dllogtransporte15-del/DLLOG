@@ -3,9 +3,9 @@ import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, getShipmentCiotNumber } from '../utils';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
-  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption
+  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel
 } from '../types';
-import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType } from '../types';
+import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS } from '../types';
 import { broadcastShipmentChange, broadcastCargoChange } from '../services/realtimeOperationsHub';
 
 // ─────────────────────────────────────────────
@@ -181,41 +181,50 @@ export const upsertFreightOffer = async (offer: FreightOffer | Omit<FreightOffer
   if (error) throw error;
 };
 
-export const toClient = (row: any): Client => ({
-  id: row.id,
-  razaoSocial: row.razao_social || '',
-  nomeFantasia: row.nome_fantasia || '',
-  cnpj: row.cnpj || '',
-  phone: row.phone || '',
-  email: row.email || '',
-  address: row.address || '',
-  city: row.city || '',
-  state: row.state || '',
-  paymentMethod: row.payment_method || 'Prazo',
-  paymentTerm: typeof row.payment_term === 'number' ? row.payment_term : (parseInt(row.payment_term, 10) || 0),
-  requiresExternalOrder: !!row.requires_external_order,
-  requiresScheduling: !!row.requires_scheduling,
-  salespersonName: row.salesperson_name || '',
-  salespersonCommissionPerTon: row.salesperson_commission_per_ton !== undefined && row.salesperson_commission_per_ton !== null ? Number(row.salesperson_commission_per_ton) : 0,
-});
+export const toClient = (row: any): Client => {
+  const modelId = row.loading_order_model_id || row.ordem_carregamento_model_id || undefined;
+  return {
+    id: row.id,
+    razaoSocial: row.razao_social || '',
+    nomeFantasia: row.nome_fantasia || '',
+    cnpj: row.cnpj || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    address: row.address || '',
+    city: row.city || '',
+    state: row.state || '',
+    paymentMethod: row.payment_method || 'Prazo',
+    paymentTerm: typeof row.payment_term === 'number' ? row.payment_term : (parseInt(row.payment_term, 10) || 0),
+    requiresExternalOrder: !!row.requires_external_order,
+    requiresScheduling: !!row.requires_scheduling,
+    salespersonName: row.salesperson_name || '',
+    salespersonCommissionPerTon: row.salesperson_commission_per_ton !== undefined && row.salesperson_commission_per_ton !== null ? Number(row.salesperson_commission_per_ton) : 0,
+    loadingOrderModelId: modelId,
+    ordemCarregamentoModelId: modelId,
+  };
+};
 
-export const fromClient = (c: Client | Omit<Client, 'id'>) => ({
-  id: (c as Client).id,
-  razao_social: c.razaoSocial,
-  nome_fantasia: c.nomeFantasia,
-  cnpj: c.cnpj,
-  phone: c.phone || '',
-  email: c.email || '',
-  address: c.address || '',
-  city: c.city || '',
-  state: c.state || '',
-  payment_method: c.paymentMethod,
-  payment_term: c.paymentTerm !== undefined && c.paymentTerm !== null ? String(c.paymentTerm) : '0',
-  requires_external_order: c.requiresExternalOrder ?? false,
-  requires_scheduling: c.requiresScheduling ?? false,
-  salesperson_name: c.salespersonName || null,
-  salesperson_commission_per_ton: c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon !== null ? Number(c.salespersonCommissionPerTon) : 0,
-});
+export const fromClient = (c: Client | Omit<Client, 'id'>) => {
+  const modelId = (c as any).loadingOrderModelId || (c as any).ordemCarregamentoModelId || null;
+  return {
+    id: (c as Client).id,
+    razao_social: c.razaoSocial,
+    nome_fantasia: c.nomeFantasia,
+    cnpj: c.cnpj,
+    phone: c.phone || '',
+    email: c.email || '',
+    address: c.address || '',
+    city: c.city || '',
+    state: c.state || '',
+    payment_method: c.paymentMethod,
+    payment_term: c.paymentTerm !== undefined && c.paymentTerm !== null ? String(c.paymentTerm) : '0',
+    requires_external_order: c.requiresExternalOrder ?? false,
+    requires_scheduling: c.requiresScheduling ?? false,
+    salesperson_name: c.salespersonName || null,
+    salesperson_commission_per_ton: c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon !== null ? Number(c.salespersonCommissionPerTon) : 0,
+    loading_order_model_id: modelId,
+  };
+};
 
 export const toOwner = (row: any): Owner => ({
   id: row.id,
@@ -655,7 +664,9 @@ export const toShipment = (row: any): Shipment => {
     bankDetails: row.bank_details,
     advancePercentage: row.advance_percentage !== null && row.advance_percentage !== undefined ? Number(row.advance_percentage) : (docs.advance_percentage !== undefined ? Number(docs.advance_percentage) : undefined),
     advanceValue: row.advance_value !== null ? Number(row.advance_value) : undefined,
-    tollValue: row.toll_value !== null ? Number(row.toll_value) : undefined,
+    tollValue: (row.toll_value !== null && !isNaN(Number(row.toll_value)) && Number(row.toll_value) >= 0 && Number(row.toll_value) <= 25000)
+      ? Number(row.toll_value)
+      : (Number(row.toll_value) > 25000 ? 0 : undefined),
     vehicleTag: row.vehicle_tag,
     companyFreightRateSnapshot: row.company_freight_rate_snapshot !== null ? Number(row.company_freight_rate_snapshot) : undefined,
     driverFreightRateSnapshot: row.driver_freight_rate_snapshot !== null ? Number(row.driver_freight_rate_snapshot) : undefined,
@@ -844,7 +855,9 @@ const fromShipment = (s: Shipment) => {
     bank_details: s.bankDetails ?? null,
     advance_percentage: s.advancePercentage ?? null,
     advance_value: s.advanceValue ?? null,
-    toll_value: s.tollValue ?? null,
+    toll_value: (s.tollValue !== undefined && s.tollValue !== null && !isNaN(Number(s.tollValue)) && Number(s.tollValue) >= 0 && Number(s.tollValue) <= 25000)
+      ? Number(s.tollValue)
+      : (Number(s.tollValue) > 25000 ? 0 : null),
     vehicle_tag: s.vehicleTag ?? null,
     company_freight_rate_snapshot: s.companyFreightRateSnapshot ?? null,
     driver_freight_rate_snapshot: s.driverFreightRateSnapshot ?? null,
@@ -865,6 +878,7 @@ const fromShipment = (s: Shipment) => {
 
 export const toUser = (row: any): User => {
   const perms = typeof row.permissions === 'object' && row.permissions ? row.permissions : {};
+  const branchId = row.branch_id || row.filial_id || row.branchId || undefined;
 
   return {
     id: row.id,
@@ -874,11 +888,12 @@ export const toUser = (row: any): User => {
     active: row.active,
     phone: row.phone,
     password: row.password,
-    clientId: row.client_id,
+    clientId: row.client_id || undefined,
     requirePasswordChange: row.require_password_change,
     authId: row.auth_id,
     passwordUpdatedAt: row.password_updated_at,
-    branchId: row.branch_id,
+    branchId: branchId,
+    filialId: branchId,
     customPermissions: row.permissions,
     hasCommercialCommission: perms.hasCommercialCommission ?? row.has_commercial_commission ?? (row.profile === 'Gerente Comercial'),
     commercialFixedSalary: perms.commercialFixedSalary ?? row.commercial_fixed_salary ?? undefined,
@@ -899,6 +914,7 @@ export const toUser = (row: any): User => {
 export const fromUser = (u: User | Omit<User, 'id'>) => {
   const currentPerms = typeof (u as any).customPermissions === 'object' && (u as any).customPermissions ? (u as any).customPermissions : {};
   const hasComm = u.hasCommercialCommission ?? false;
+  const resolvedBranchId = u.branchId || (u as any).filialId || null;
 
   const permissionsPayload = {
     ...currentPerms,
@@ -925,11 +941,11 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
     active: u.active,
     phone: u.phone,
     password: u.password,
-    client_id: u.clientId,
+    client_id: u.clientId || null,
     require_password_change: u.requirePasswordChange,
     auth_id: u.authId,
     password_updated_at: u.passwordUpdatedAt,
-    branch_id: u.branchId || null,
+    branch_id: resolvedBranchId || null,
     permissions: permissionsPayload,
   };
 };
@@ -1107,7 +1123,14 @@ export const saveClientBranches = async (branchesMap: Record<string, ClientBranc
   }
 };
 
-export const fetchClientExtraConfig = async (): Promise<Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>> => {
+export interface ClientExtraConfig {
+  salespersonName?: string;
+  salespersonCommissionPerTon?: number;
+  loadingOrderModelId?: string;
+  ordemCarregamentoModelId?: string;
+}
+
+export const fetchClientExtraConfig = async (): Promise<Record<string, ClientExtraConfig>> => {
   try {
     const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
     if (data?.permissions?.client_extra_config) {
@@ -1123,7 +1146,7 @@ export const fetchClientExtraConfig = async (): Promise<Record<string, { salespe
   return {};
 };
 
-export const saveClientExtraConfig = async (configMap: Record<string, { salespersonName?: string; salespersonCommissionPerTon?: number }>): Promise<void> => {
+export const saveClientExtraConfig = async (configMap: Record<string, ClientExtraConfig>): Promise<void> => {
   try {
     const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
     const current = data?.permissions || {};
@@ -1149,13 +1172,20 @@ export async function fetchClients(): Promise<Client[]> {
     ]);
     return data.map(toClient).map(c => {
       const extra = extraConfigMap[c.id] || {};
+      const modelId = c.loadingOrderModelId || extra.loadingOrderModelId || extra.ordemCarregamentoModelId || undefined;
       return {
         ...c,
         salespersonName: c.salespersonName || extra.salespersonName || '',
         salespersonCommissionPerTon: (c.salespersonCommissionPerTon !== undefined && c.salespersonCommissionPerTon > 0)
           ? c.salespersonCommissionPerTon
           : (extra.salespersonCommissionPerTon || 0),
-        secondaryCnpjs: branchesMap[c.id] || []
+        loadingOrderModelId: modelId,
+        ordemCarregamentoModelId: modelId,
+        secondaryCnpjs: (branchesMap[c.id] || []).map(b => ({
+          ...b,
+          loadingOrderModelId: b.loadingOrderModelId || b.ordemCarregamentoModelId || undefined,
+          ordemCarregamentoModelId: b.loadingOrderModelId || b.ordemCarregamentoModelId || undefined,
+        }))
       };
     });
   } catch (error) {
@@ -1464,6 +1494,69 @@ export async function deleteRiskQueryOption(id: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────────
+// LOADING ORDER MODELS (Modelos de Ordem de Carregamento)
+// ─────────────────────────────────────────────
+
+export async function fetchLoadingOrderModels(): Promise<LoadingOrderModel[]> {
+  // 1. Try fetching from profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.loading_order_models && Array.isArray(data.permissions.loading_order_models) && data.permissions.loading_order_models.length > 0) {
+      let models: LoadingOrderModel[] = data.permissions.loading_order_models;
+      // Garante que modelos padrão de sistema (como o Consube) estejam sempre presentes
+      const missingDefaults = DEFAULT_LOADING_ORDER_MODELS.filter(def => !models.some(m => m.id === def.id));
+      if (missingDefaults.length > 0) {
+        models = [...models, ...missingDefaults];
+      }
+      try {
+        localStorage.setItem('transcunha_loading_order_models', JSON.stringify(models));
+      } catch {}
+      return models;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not query loading_order_models from profile_permissions:', err);
+  }
+
+  // 2. Fallback to localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_loading_order_models');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const missingDefaults = DEFAULT_LOADING_ORDER_MODELS.filter(def => !parsed.some((m: any) => m.id === def.id));
+        if (missingDefaults.length > 0) {
+          return [...parsed, ...missingDefaults];
+        }
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to DEFAULT_LOADING_ORDER_MODELS
+  return DEFAULT_LOADING_ORDER_MODELS;
+}
+
+export async function saveLoadingOrderModels(models: LoadingOrderModel[]): Promise<void> {
+  // 1. Save to profile_permissions
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      loading_order_models: models,
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving loading_order_models to profile_permissions:', err);
+  }
+
+  // 2. Save to localStorage
+  try {
+    localStorage.setItem('transcunha_loading_order_models', JSON.stringify(models));
+  } catch {}
+}
+
+// ─────────────────────────────────────────────
 // UPSERT (insert or update)
 // ─────────────────────────────────────────────
 
@@ -1482,9 +1575,12 @@ export async function upsertClient(client: Client): Promise<void> {
   // 2. Persist extra config fallback
   try {
     const extraConfigMap = await fetchClientExtraConfig();
+    const modelId = client.loadingOrderModelId || client.ordemCarregamentoModelId || '';
     extraConfigMap[client.id] = {
       salespersonName: client.salespersonName || '',
-      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0
+      salespersonCommissionPerTon: client.salespersonCommissionPerTon || 0,
+      loadingOrderModelId: modelId,
+      ordemCarregamentoModelId: modelId,
     };
     await saveClientExtraConfig(extraConfigMap);
   } catch (err) {
@@ -1501,6 +1597,7 @@ export async function upsertClient(client: Client): Promise<void> {
       const safePayload = { ...payload };
       delete (safePayload as any).salesperson_name;
       delete (safePayload as any).salesperson_commission_per_ton;
+      delete (safePayload as any).loading_order_model_id;
       const { error: retryError } = await supabase.from('clients').upsert(safePayload);
       if (retryError) throw retryError;
     }
@@ -1509,6 +1606,7 @@ export async function upsertClient(client: Client): Promise<void> {
       const safePayload = { ...payload };
       delete (safePayload as any).salesperson_name;
       delete (safePayload as any).salesperson_commission_per_ton;
+      delete (safePayload as any).loading_order_model_id;
       const { error: retryError } = await supabase.from('clients').upsert(safePayload);
       if (retryError) throw retryError;
     } else {

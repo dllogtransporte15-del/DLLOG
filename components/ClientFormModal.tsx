@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import type { Client, ClientBranchCnpj } from '../types';
-import { PaymentMethod } from '../types';
+import type { Client, ClientBranchCnpj, LoadingOrderModel } from '../types';
+import { PaymentMethod, DEFAULT_LOADING_ORDER_MODELS, getLoadingOrderModelById } from '../types';
 import { autoFormatInput } from '../utils/formatters';
-import { Building2, Plus, Trash2, Edit2, Check, X, MapPin, Phone, Mail, ShieldAlert, Sparkles, UserPlus } from 'lucide-react';
+import { Building2, Plus, Trash2, Edit2, Check, X, MapPin, Phone, Mail, ShieldAlert, Sparkles, UserPlus, FileText, CheckCircle2 } from 'lucide-react';
 
 interface ClientFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (client: Client | Omit<Client, 'id'>) => void;
   clientToEdit: Client | null;
+  loadingOrderModels?: LoadingOrderModel[];
 }
 
-const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSave, clientToEdit }) => {
+const ClientFormModal: React.FC<ClientFormModalProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  clientToEdit,
+  loadingOrderModels
+}) => {
   const [activeTab, setActiveTab] = useState<'main' | 'branches'>('main');
   const [showSalesperson, setShowSalesperson] = useState(false);
   
+  const availableModels = (loadingOrderModels && loadingOrderModels.length > 0)
+    ? loadingOrderModels
+    : DEFAULT_LOADING_ORDER_MODELS;
+
   const [client, setClient] = useState<Omit<Client, 'id'>>({
     razaoSocial: '',
     nomeFantasia: '',
@@ -30,6 +41,8 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
     requiresScheduling: false,
     salespersonName: '',
     salespersonCommissionPerTon: 0,
+    loadingOrderModelId: 'mod_padrao_transcunha',
+    ordemCarregamentoModelId: 'mod_padrao_transcunha',
     secondaryCnpjs: [],
   });
 
@@ -52,14 +65,19 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
     requiresScheduling: false,
     salespersonName: '',
     salespersonCommissionPerTon: 0,
+    loadingOrderModelId: '',
+    ordemCarregamentoModelId: '',
   });
 
   useEffect(() => {
     if (clientToEdit) {
+      const selectedModelId = clientToEdit.loadingOrderModelId || clientToEdit.ordemCarregamentoModelId || 'mod_padrao_transcunha';
       setClient({
         ...clientToEdit,
         salespersonName: clientToEdit.salespersonName || '',
         salespersonCommissionPerTon: clientToEdit.salespersonCommissionPerTon || 0,
+        loadingOrderModelId: selectedModelId,
+        ordemCarregamentoModelId: selectedModelId,
         secondaryCnpjs: clientToEdit.secondaryCnpjs || [],
       });
       setShowSalesperson(Boolean(clientToEdit.salespersonName || (clientToEdit.salespersonCommissionPerTon && clientToEdit.salespersonCommissionPerTon > 0)));
@@ -79,6 +97,8 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
         requiresScheduling: false,
         salespersonName: '',
         salespersonCommissionPerTon: 0,
+        loadingOrderModelId: 'mod_padrao_transcunha',
+        ordemCarregamentoModelId: 'mod_padrao_transcunha',
         secondaryCnpjs: [],
       });
       setShowSalesperson(false);
@@ -94,6 +114,12 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
     if (type === 'checkbox') {
       const checked = (e.target as HTMLInputElement).checked;
       setClient(prev => ({ ...prev, [name]: checked }));
+    } else if (name === 'loadingOrderModelId' || name === 'ordemCarregamentoModelId') {
+      setClient(prev => ({
+        ...prev,
+        loadingOrderModelId: value,
+        ordemCarregamentoModelId: value
+      }));
     } else {
       setClient(prev => ({ ...prev, [name]: formattedValue }));
     }
@@ -105,6 +131,12 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
     if (type === 'checkbox') {
       const checked = (e.target as HTMLInputElement).checked;
       setBranchForm(prev => ({ ...prev, [name]: checked }));
+    } else if (name === 'loadingOrderModelId' || name === 'ordemCarregamentoModelId') {
+      setBranchForm(prev => ({
+        ...prev,
+        loadingOrderModelId: value,
+        ordemCarregamentoModelId: value
+      }));
     } else {
       setBranchForm(prev => ({ ...prev, [name]: formattedValue }));
     }
@@ -125,13 +157,20 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
       paymentTerm: client.paymentTerm || 30,
       requiresExternalOrder: client.requiresExternalOrder || false,
       requiresScheduling: client.requiresScheduling || false,
+      loadingOrderModelId: '',
+      ordemCarregamentoModelId: '',
     });
     setEditingBranchId(null);
     setIsAddingBranch(true);
   };
 
   const handleStartEditBranch = (branch: ClientBranchCnpj) => {
-    setBranchForm({ ...branch });
+    const branchModelId = branch.loadingOrderModelId || branch.ordemCarregamentoModelId || '';
+    setBranchForm({
+      ...branch,
+      loadingOrderModelId: branchModelId,
+      ordemCarregamentoModelId: branchModelId,
+    });
     setEditingBranchId(branch.id);
     setIsAddingBranch(true);
   };
@@ -548,7 +587,84 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                   </div>
                 )}
               </div>
-            </div>
+
+              {/* Modelo de Ordem de Carregamento */}
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-primary dark:text-primary-light" />
+                        Modelo de Ordem de Carregamento
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Defina o modelo operacional e layout de impressão para as ordens de carregamento deste cliente.
+                      </p>
+                    </div>
+                    {(() => {
+                      const selModel = availableModels.find(m => m.id === client.loadingOrderModelId) || availableModels.find(m => m.id === 'mod_padrao_transcunha');
+                      return selModel ? (
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0 ${
+                          selModel.status === 'ativo'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300'
+                        }`}>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {selModel.status === 'ativo' ? 'Modelo Ativo' : 'Modelo Inativo'}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                        Modelo Selecionado para o Cliente
+                      </label>
+                      <select
+                        name="loadingOrderModelId"
+                        value={client.loadingOrderModelId || 'mod_padrao_transcunha'}
+                        onChange={handleChange}
+                        className="w-full p-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-900 dark:text-white focus:ring-2 focus:ring-primary shadow-xs"
+                      >
+                        {availableModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.nome} {model.isDefault ? '★ (Padrão do Sistema)' : ''} — [{model.status.toUpperCase()}]
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {(() => {
+                      const selModel = availableModels.find(m => m.id === client.loadingOrderModelId) || availableModels.find(m => m.id === 'mod_padrao_transcunha');
+                      if (!selModel) return null;
+                      return (
+                        <div className="p-3.5 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200/80 dark:border-blue-800/60 rounded-xl space-y-1.5 text-xs animate-fadeIn">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+                              {selModel.nome}
+                            </span>
+                            <span className="font-mono text-[10px] text-gray-500 dark:text-gray-400">
+                              Código: {selModel.id}
+                            </span>
+                          </div>
+                          {selModel.descricao && (
+                            <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
+                              {selModel.descricao}
+                            </p>
+                          )}
+                          {selModel.observacoesPadrao && (
+                            <div className="pt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 font-bold text-[10px]">OBS. PADRÃO</span>
+                              <span>{selModel.observacoesPadrao}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
           ) : (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
@@ -704,6 +820,29 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                         className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
                       />
                     </div>
+
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                        Modelo de Ordem de Carregamento da Filial
+                      </label>
+                      <select
+                        name="loadingOrderModelId"
+                        value={branchForm.loadingOrderModelId || ''}
+                        onChange={handleBranchChange}
+                        className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-600 shadow-xs"
+                      >
+                        <option value="">Herdar da Matriz ({availableModels.find(m => m.id === client.loadingOrderModelId)?.nome || 'Padrão do Sistema'})</option>
+                        {availableModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.nome} ({model.status.toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Opcional: deixe vazio para que esta filial utilize o mesmo modelo configurado na Matriz.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex justify-end gap-2 pt-2">
@@ -747,6 +886,12 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                             {client.city}{client.state ? ` - ${client.state}` : ''}
                           </span>
                         )}
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200">
+                          <FileText className="w-3 h-3" />
+                          Mod. Ordem: {availableModels.find(m => m.id === client.loadingOrderModelId)?.nome || 'Padrão do Sistema'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -800,6 +945,12 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
                                 {branch.phone}
                               </span>
                             )}
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              <FileText className="w-3 h-3" />
+                              Mod. Ordem: {branch.loadingOrderModelId ? (availableModels.find(m => m.id === branch.loadingOrderModelId)?.nome || branch.loadingOrderModelId) : `Herdado (${availableModels.find(m => m.id === client.loadingOrderModelId)?.nome || 'Padrão'})`}
+                            </span>
                           </div>
                         </div>
                       </div>

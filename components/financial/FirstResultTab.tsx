@@ -30,7 +30,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentEffectiveDate, parseDateToYmd } from '../../utils';
+import { getShipmentEffectiveDate, parseDateToYmd, getFinancialPeriodRange, toLocalYmd, FinancialPeriodFilter } from '../../utils';
 
 export interface FirstResultTabProps {
   data: FirstLevelFinancialResult;
@@ -55,8 +55,8 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
-  const [quickFilter, setQuickFilter] = useState<'dia' | 'semana' | 'mes' | 'ano'>('dia');
-  const [taxQuickFilter, setTaxQuickFilter] = useState<'dia' | 'semana' | 'mes' | 'ano'>('dia');
+  const [quickFilter, setQuickFilter] = useState<FinancialPeriodFilter>('mes');
+  const [taxQuickFilter, setTaxQuickFilter] = useState<FinancialPeriodFilter>('mes');
   const [showDetailedDre, setShowDetailedDre] = useState(false);
   const [isFiltering, setIsFiltering] = useState(false);
 
@@ -177,38 +177,44 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
     const valid = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
     if (!valid.length) return [];
 
-    // Se temos filtro rápido selecionado
-    if (quickFilter === 'dia' && selectedDate) {
-      const targetDate = selectedDate;
-      const matched = valid.filter(s => {
-        const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
-        return sDate === targetDate;
-      });
-      // Se houver registros específicos do dia retorna eles, caso contrário traz o conjunto ativo recente
-      if (matched.length > 0) return matched;
-    } else if (quickFilter === 'semana') {
-      const today = selectedDate ? new Date(selectedDate) : new Date();
-      const oneWeekAgo = new Date(today);
-      oneWeekAgo.setDate(today.getDate() - 7);
-      const minDate = oneWeekAgo.toISOString().split('T')[0];
-      const maxDate = today.toISOString().split('T')[0];
-
-      const matched = valid.filter(s => {
-        const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
-        return Boolean(sDate && sDate >= minDate && sDate <= maxDate);
-      });
-      if (matched.length > 0) return matched;
-    } else if (quickFilter === 'mes') {
-      const targetMonth = selectedDate ? selectedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
-      const matched = valid.filter(s => {
-        const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
-        return Boolean(sDate && sDate.startsWith(targetMonth));
-      });
-      if (matched.length > 0) return matched;
+    let refDate = new Date();
+    if (selectedDate) {
+      const [year, month, day] = selectedDate.split('-').map(Number);
+      if (year && month && day) {
+        refDate = new Date(year, month - 1, day);
+      }
     }
 
-    return valid;
+    const { startDate, endDate } = getFinancialPeriodRange(quickFilter, refDate);
+
+    return valid.filter(s => {
+      const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
+      if (!sDate) return false;
+      return sDate >= startDate && sDate <= endDate;
+    });
   }, [shipments, selectedDate, quickFilter]);
+
+  // Filtragem específica para a seção de Impostos / Custos / Descontos
+  const taxFilteredShipments = useMemo(() => {
+    const valid = shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+    if (!valid.length) return [];
+
+    let refDate = new Date();
+    if (selectedDate) {
+      const [year, month, day] = selectedDate.split('-').map(Number);
+      if (year && month && day) {
+        refDate = new Date(year, month - 1, day);
+      }
+    }
+
+    const { startDate, endDate } = getFinancialPeriodRange(taxQuickFilter, refDate);
+
+    return valid.filter(s => {
+      const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
+      if (!sDate) return false;
+      return sDate >= startDate && sDate <= endDate;
+    });
+  }, [shipments, selectedDate, taxQuickFilter]);
 
   // Agregações financeiras completas
   const calculated = useMemo(() => {
@@ -254,7 +260,7 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
     let totalPgSaldo = 0;
     let vehicleCount = 0;
 
-    const list = filteredShipments.length > 0 ? filteredShipments : shipments.filter(s => s.status !== ShipmentStatus.Cancelado);
+    const list = filteredShipments;
 
     for (const s of list) {
       const cargo = cargoMap.get(s.cargoId);
@@ -285,22 +291,14 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
         if (isLoaded) loadedVehiclesMatriz += 1;
       }
 
-      // Demonstrativo de Notas Fiscais
-      const nfVal = s.nfeValue || s.realProfitData?.invoiceValue || exp.invoiceValue || (freightBruto * 7.5);
+      // Demonstrativo de Notas Fiscais (apenas documentos reais, sem multiplicadores sintéticos)
+      const nfVal = s.nfeValue || s.realProfitData?.invoiceValue || exp.invoiceValue || 0;
       totalNfValor += nfVal;
 
-      // Impostos e Descontos
-      icmsTotal += exp.icms || (s.icmsValue || 0);
-      pisCofinsTotal += exp.impostoFederal || (freightBruto * 0.0365);
-      pedagioTotal += (s.tollValue || 0);
-      inssTotal += exp.inssPatronal || 0;
-      irTotal += (s.driverFreightType === 'PF' ? (s.driverFreightValue * 0.015) : 0);
-      seguroRcfTotal += exp.insuranceRcv || 5.0;
-      seguroAcidenteTotal += (exp.insuranceAcidente + exp.insuranceRoubo) || (nfVal * 0.00025);
-      custiTotal += (exp.riskCost + exp.ciot) || 12.5;
-      funruralTotal += (s.driverFreightType === 'PF' ? (s.driverFreightValue * 0.012) : 0);
-      in2277Total += (freightBruto * 0.0065); // Retenções Federais IN 2277
-      outrosCustosTotal += (s.additionalCost?.value || s.realProfitData?.otherCosts || 0);
+      // Pedágio sanitizado (limite de R$ 25.000 para frete rodoviário unitário)
+      const rawToll = Number(s.tollValue);
+      const safeToll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
+      pedagioTotal += safeToll;
 
       // Comissões por canal
       if (branchKey === 'ag_sp') comissaoAgSP += (exp.agencyCommission || (freightBruto * 0.015));
@@ -331,30 +329,38 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
       totalPgSaldo += balVal;
     }
 
-    const totalFaturamento = faturamentoMatriz + faturamentoAgSP + faturamentoAgGO + faturamentoAgPR;
-    const faturamentoGeral = totalFaturamento > 0 ? totalFaturamento : initialData.totalGrossRevenue;
+    // Seção de Impostos e Deduções apurada dinamicamente a partir do taxFilteredShipments
+    let taxPedagioTotal = 0;
+    for (const s of taxFilteredShipments) {
+      const cargo = cargoMap.get(s.cargoId);
+      const exp = calculateShipmentExpenses(s, cargo);
+      const freightBruto = exp.companyFreight || (s.companyFreightRateSnapshot ? s.companyFreightRateSnapshot * (s.shipmentTonnage || 0) : s.driverFreightValue * 1.15);
+      const nfVal = s.nfeValue || s.realProfitData?.invoiceValue || exp.invoiceValue || 0;
 
-    // Se as filiais resultarem zeradas por ausência de dados, divide proporcionalmente para preencher a UI com elegância
-    let finalMatriz = faturamentoMatriz;
-    let finalAgSP = faturamentoAgSP;
-    let finalAgGO = faturamentoAgGO;
-    let finalAgPR = faturamentoAgPR;
+      const rawToll = Number(s.tollValue);
+      const safeToll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
+      taxPedagioTotal += safeToll;
 
-    if (totalFaturamento === 0 && faturamentoGeral > 0) {
-      finalMatriz = faturamentoGeral * 0.45;
-      finalAgSP = faturamentoGeral * 0.20;
-      finalAgGO = faturamentoGeral * 0.20;
-      finalAgPR = faturamentoGeral * 0.15;
+      icmsTotal += exp.icms || (s.icmsValue || 0);
+      pisCofinsTotal += exp.impostoFederal || (freightBruto * 0.0365);
+      inssTotal += exp.inssPatronal || 0;
+      irTotal += (s.driverFreightType === 'PF' ? (s.driverFreightValue * 0.015) : 0);
+      seguroRcfTotal += exp.insuranceRcv || 5.0;
+      seguroAcidenteTotal += (exp.insuranceAcidente + exp.insuranceRoubo) || (nfVal * 0.00025);
+      custiTotal += (exp.riskCost + exp.ciot) || 12.5;
+      funruralTotal += (s.driverFreightType === 'PF' ? (s.driverFreightValue * 0.012) : 0);
+      in2277Total += (freightBruto * 0.0065); // Retenções Federais IN 2277
+      outrosCustosTotal += (s.additionalCost?.value || s.realProfitData?.otherCosts || 0);
     }
 
-    const somaFaturamento = finalMatriz + finalAgSP + finalAgGO + finalAgPR;
+    const somaFaturamento = faturamentoMatriz + faturamentoAgSP + faturamentoAgGO + faturamentoAgPR;
 
     // Demonstrativo
-    const nfValorFinal = totalNfValor > 0 ? totalNfValor : (somaFaturamento * 6.8);
+    const nfValorFinal = totalNfValor;
     const nfValorPlus18 = nfValorFinal * 1.18;
 
     // Custos e Deduções
-    const somaImpostosCustos = icmsTotal + pisCofinsTotal + pedagioTotal + inssTotal + irTotal + 
+    const somaImpostosCustos = icmsTotal + pisCofinsTotal + taxPedagioTotal + inssTotal + irTotal + 
                                seguroRcfTotal + seguroAcidenteTotal + custiTotal + funruralTotal + 
                                in2277Total + outrosCustosTotal;
 
@@ -363,12 +369,13 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
                            comissaoUnidade + comissaoEmbarcador + comissaoCliente + comissaoVendedor;
 
     const percentComissoesSobreFat = somaFaturamento > 0 ? (totalComissoes / somaFaturamento) * 100 : 0;
-    const countVehicles = vehicleCount > 0 ? vehicleCount : (initialData.shipmentCount || 1);
+    const countVehicles = vehicleCount;
     const valorComissaoPorVeiculo = countVehicles > 0 ? totalComissoes / countVehicles : 0;
 
     // Margem Bruta
     const margemBrutaValor = somaFaturamento - totalDriverFreights - pedagioTotal;
-    const margemBrutaPercent = somaFaturamento > 0 ? (margemBrutaValor / somaFaturamento) * 100 : initialData.contributionMarginPercent;
+    const rawMargemBrutaPercent = somaFaturamento > 0 ? (margemBrutaValor / somaFaturamento) * 100 : 0;
+    const margemBrutaPercent = Math.max(-100, Math.min(100, rawMargemBrutaPercent));
 
     // Resultados de Adiantamento e Saldo
     const totalAdiantamentoESaldo = totalPgAdiantamento + totalPgSaldo;
@@ -378,10 +385,10 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
 
     return {
       faturamento: {
-        matriz: finalMatriz,
-        agSp: finalAgSP,
-        agGo: finalAgGO,
-        agPr: finalAgPR,
+        matriz: faturamentoMatriz,
+        agSp: faturamentoAgSP,
+        agGo: faturamentoAgGO,
+        agPr: faturamentoAgPR,
         total: somaFaturamento,
         vehiclesMatriz: loadedVehiclesMatriz,
         vehiclesAgSP: loadedVehiclesAgSP,
@@ -405,7 +412,7 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
       impostosCustos: {
         icms: icmsTotal,
         pisCofins: pisCofinsTotal,
-        pedagio: pedagioTotal,
+        pedagio: taxPedagioTotal,
         inss: inssTotal,
         ir: irTotal,
         seguroRcf: seguroRcfTotal,
@@ -443,7 +450,7 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
         adicionalMaisSaldo: totalAdiantamentoESaldo,
       }
     };
-  }, [filteredShipments, shipments, cargoMap, branches, users, initialData]);
+  }, [filteredShipments, taxFilteredShipments, cargoMap, branches, users]);
 
   const handleApplyFilter = () => {
     setIsFiltering(true);
@@ -522,20 +529,30 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
           </div>
         </div>
 
-        {/* Linha de Subfiltros Rápidos: Dia, Semana, Mês, Ano */}
+        {/* Linha de Subfiltros Rápidos: Hoje, Semana Atual, Mês Atual, Ano Atual */}
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1">Filtros:</span>
-          {(['dia', 'semana', 'mes', 'ano'] as const).map(q => (
+          {[
+            { id: 'hoje', label: 'Hoje' },
+            { id: 'semana', label: 'Semana Atual' },
+            { id: 'mes', label: 'Mês Atual' },
+            { id: 'ano', label: 'Ano Atual' },
+          ].map(q => (
             <button
-              key={q}
-              onClick={() => setQuickFilter(q)}
+              key={q.id}
+              onClick={() => {
+                setQuickFilter(q.id as FinancialPeriodFilter);
+                if (q.id === 'hoje') {
+                  setSelectedDate(toLocalYmd(new Date()));
+                }
+              }}
               className={`px-4 py-1 rounded-full text-xs font-bold transition-all duration-150 cursor-pointer ${
-                quickFilter === q
+                quickFilter === q.id
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              {q === 'dia' ? 'Dia' : q === 'semana' ? 'Semana' : q === 'mes' ? 'Mês' : 'Ano'}
+              {q.label}
             </button>
           ))}
         </div>
@@ -647,7 +664,7 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
         {/* Card 2: Margem Bruta */}
         <div className="lg:col-span-3 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 shadow-sm flex flex-col justify-between">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+            <div className={`w-7 h-7 rounded-full text-white flex items-center justify-center font-black text-xs shrink-0 ${calculated.margemBruta.value >= 0 ? 'bg-emerald-600' : 'bg-rose-600'}`}>
               %
             </div>
             <h2 className="text-sm font-black text-slate-900 dark:text-white leading-tight">
@@ -655,11 +672,15 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
             </h2>
           </div>
 
-          <div className="bg-emerald-50/70 border border-emerald-200/70 dark:bg-emerald-950/30 dark:border-emerald-800/50 rounded-xl p-3 my-auto flex flex-col items-center justify-center text-center">
-            <span className="text-2xl font-black text-emerald-700 dark:text-emerald-300">
+          <div className={`rounded-xl p-3 my-auto flex flex-col items-center justify-center text-center border ${
+            calculated.margemBruta.value >= 0
+              ? 'bg-emerald-50/70 border-emerald-200/70 dark:bg-emerald-950/30 dark:border-emerald-800/50'
+              : 'bg-rose-50/70 border-rose-200/70 dark:bg-rose-950/30 dark:border-rose-800/50'
+          }`}>
+            <span className={`text-2xl font-black ${calculated.margemBruta.value >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
               {formatPercent(calculated.margemBruta.percent)}
             </span>
-            <span className="text-[11px] font-bold text-emerald-600/90 dark:text-emerald-400 mt-0.5">
+            <span className={`text-[11px] font-bold mt-0.5 ${calculated.margemBruta.value >= 0 ? 'text-emerald-600/90 dark:text-emerald-400' : 'text-rose-600/90 dark:text-rose-400'}`}>
               {formatCurrency(calculated.margemBruta.value)}
             </span>
           </div>
@@ -720,19 +741,24 @@ export const FirstResultTab: React.FC<FirstResultTabProps> = ({
             </h2>
           </div>
 
-          {/* Subfiltro de impostos */}
+          {/* Subfiltro de impostos: Hoje, Semana Atual, Mês Atual, Ano Atual */}
           <div className="flex items-center gap-1.5 self-start sm:self-auto">
-            {(['dia', 'semana', 'mes', 'ano'] as const).map(f => (
+            {[
+              { id: 'hoje', label: 'Hoje' },
+              { id: 'semana', label: 'Semana Atual' },
+              { id: 'mes', label: 'Mês Atual' },
+              { id: 'ano', label: 'Ano Atual' },
+            ].map(f => (
               <button
-                key={f}
-                onClick={() => setTaxQuickFilter(f)}
+                key={f.id}
+                onClick={() => setTaxQuickFilter(f.id as FinancialPeriodFilter)}
                 className={`px-3 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                  taxQuickFilter === f
+                  taxQuickFilter === f.id
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
-                {f === 'dia' ? 'Dia' : f === 'semana' ? 'Semana' : f === 'mes' ? 'Mês' : 'Ano'}
+                {f.label}
               </button>
             ))}
           </div>

@@ -268,12 +268,12 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
     return map;
   }, [products]);
 
-  // Available open cargos: todas as cargas que não estiverem Suspensas/Fechadas e tiverem Programação lançada
+  // Available open cargos: estritamente cargas cujo status/etapa seja "Cargas em Operação" (CargoStatus.EmAndamento)
   const availableCargos = useMemo(() => {
     return cargos.filter(c => {
-      const isNotSuspended = c.status !== CargoStatus.Suspensa && c.status !== CargoStatus.Fechada;
+      const isOperational = c.status === CargoStatus.EmAndamento;
       const hasSchedule = Array.isArray(c.dailySchedule) && c.dailySchedule.length > 0;
-      return isNotSuspended && hasSchedule;
+      return isOperational && hasSchedule;
     });
   }, [cargos]);
 
@@ -401,7 +401,7 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
               <div style="font-family:sans-serif; padding:4px;">
                 <h4 style="margin:0 0 4px 0; color:#0f172a; font-weight:bold;">${cargo.origin} → ${cargo.destination}</h4>
                 <p style="margin:2px 0; font-size:12px; color:#475569;">Produto: <b>${prodName}</b></p>
-                <p style="margin:2px 0; font-size:12px; color:#16a34a; font-weight:bold;">R$ ${cargo.driverFreightValuePerTon.toFixed(2)} / ton</p>
+                <p style="margin:2px 0; font-size:12px; color:#16a34a; font-weight:bold;">${cargo.driverFreightValuePerTon > 0 ? `R$ ${cargo.driverFreightValuePerTon.toFixed(2)} / ton` : 'A combinar'}</p>
               </div>
             `);
         });
@@ -561,10 +561,18 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
                       {/* RATE & ACTION BUTTON */}
                       <div className="flex items-center justify-between pt-2">
                         <div>
-                          <span className="text-2xl font-black text-emerald-400">
-                            R$ {cargo.driverFreightValuePerTon.toFixed(2)}
-                          </span>
-                          <span className="text-xs text-slate-400 ml-1">/ ton</span>
+                          {cargo.driverFreightValuePerTon > 0 ? (
+                            <>
+                              <span className="text-2xl font-black text-emerald-400">
+                                R$ {cargo.driverFreightValuePerTon.toFixed(2)}
+                              </span>
+                              <span className="text-xs text-slate-400 ml-1">/ ton</span>
+                            </>
+                          ) : (
+                            <span className="text-xl font-black text-amber-400">
+                              A combinar
+                            </span>
+                          )}
                         </div>
 
                         <button
@@ -904,8 +912,8 @@ const DriverPortal: React.FC<DriverPortalProps> = ({
                         <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
                         <span className="font-bold text-slate-100 text-sm">{cargo.origin} → {cargo.destination}</span>
                       </div>
-                      <div className="text-xs text-emerald-400 font-bold">
-                        R$ {cargo.driverFreightValuePerTon.toFixed(2)} / ton
+                      <div className={`text-xs font-bold ${cargo.driverFreightValuePerTon > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {cargo.driverFreightValuePerTon > 0 ? `R$ ${cargo.driverFreightValuePerTon.toFixed(2)} / ton` : 'A combinar'}
                       </div>
                     </div>
 

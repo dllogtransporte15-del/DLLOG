@@ -302,15 +302,38 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             <span>Trocar Carga</span>
                         </button>
                     )}
-                    {shipment && ![ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro, ShipmentStatus.Cancelado].includes(shipment.status) && (
-                        <button
-                            onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo)}
-                            title="Gerar Ordem de Carregamento (PDF)"
-                            className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md hover:bg-indigo-600 hover:text-white transition-all shadow-sm border border-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800/50"
-                        >
-                            <FileTextIcon size={18} />
-                        </button>
-                    )}
+                    {shipment && ![ShipmentStatus.AguardandoSeguradora, ShipmentStatus.PreCadastro, ShipmentStatus.Cancelado].includes(shipment.status) && (() => {
+                        const linkedClient = clients.find(c => c.id === cargo?.clientId);
+                        const linkedBranch = linkedClient?.secondaryCnpjs?.find(b => b.id === cargo?.clientBranchId || b.cnpj === cargo?.clientCnpj);
+                        const activeLoadingOrderModelId = linkedBranch?.loadingOrderModelId || linkedBranch?.ordemCarregamentoModelId || linkedClient?.loadingOrderModelId || linkedClient?.ordemCarregamentoModelId;
+                        const isConsubeModel = activeLoadingOrderModelId === 'mod_consube';
+
+                        return (
+                            <div className="inline-flex items-center gap-1.5">
+                                <button
+                                    onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo)}
+                                    title={isConsubeModel ? "Gerar Ordem de Carregamento - Modelo Consube (PDF)" : "Gerar Ordem de Carregamento (PDF)"}
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all shadow-sm border ${
+                                        isConsubeModel 
+                                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700/60 hover:bg-amber-500/20' 
+                                            : 'bg-indigo-50 text-indigo-600 rounded-md hover:bg-indigo-600 hover:text-white border-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800/50'
+                                    }`}
+                                >
+                                    <FileTextIcon size={15} />
+                                    <span>{isConsubeModel ? 'Ordem Consube' : 'Ordem de Carga'}</span>
+                                </button>
+                                {!isConsubeModel && (
+                                    <button
+                                        onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo, 'mod_consube')}
+                                        title="Emitir Ordem de Carregamento no Modelo Consube"
+                                        className="inline-flex items-center gap-1 px-2 py-1.5 bg-gray-50 hover:bg-amber-50 text-gray-600 hover:text-amber-700 dark:bg-gray-800 dark:hover:bg-amber-900/30 dark:text-gray-300 dark:hover:text-amber-300 rounded-md text-[11px] font-semibold transition-all border border-gray-200 dark:border-gray-700"
+                                    >
+                                        Mod. Consube
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
                 <p className="text-sm font-mono text-primary dark:text-blue-400 mt-1">{shipment.id}</p>
             </div>

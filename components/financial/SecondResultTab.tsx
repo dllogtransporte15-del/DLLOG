@@ -1,19 +1,56 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { SecondLevelFinancialResult } from '../../utils/financialCalculations';
+import { calculateFirstResult, calculateSecondResult } from '../../utils/financialCalculations';
+import type { Shipment, Cargo, FinancialTransaction } from '../../types';
+import { ShipmentStatus } from '../../types';
+import { getFinancialPeriodRange, getShipmentEffectiveDate, parseDateToYmd, FinancialPeriodFilter } from '../../utils';
 import { Briefcase, Building, PieChart, TrendingUp, Layers, Users } from 'lucide-react';
 
 interface SecondResultTabProps {
   data: SecondLevelFinancialResult;
+  shipments?: Shipment[];
+  cargos?: Cargo[];
+  transactions?: FinancialTransaction[];
 }
 
-export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
+export const SecondResultTab: React.FC<SecondResultTabProps> = ({ 
+  data,
+  shipments = [],
+  cargos = [],
+  transactions = []
+}) => {
+  const [periodFilter, setPeriodFilter] = useState<FinancialPeriodFilter>('mes');
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  const personnelPercent = data.totalGrossRevenue > 0 ? (data.personnelExpenses / data.totalGrossRevenue) * 100 : 0;
-  const operationalPercent = data.totalGrossRevenue > 0 ? (data.operationalExpenses / data.totalGrossRevenue) * 100 : 0;
-  const adminPercent = data.totalGrossRevenue > 0 ? (data.administrativeExpenses / data.totalGrossRevenue) * 100 : 0;
+  // Recalcula dinamicamente com base no período selecionado caso embarques estejam disponíveis
+  const currentResult = useMemo(() => {
+    if (!shipments || shipments.length === 0) return data;
+    const { startDate, endDate } = getFinancialPeriodRange(periodFilter);
+
+    const validShipments = shipments.filter(s => {
+      if (s.status === ShipmentStatus.Cancelado) return false;
+      const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
+      if (!sDate) return false;
+      return sDate >= startDate && sDate <= endDate;
+    });
+
+    const validTransactions = (transactions || []).filter(t => {
+      if (t.status === 'Cancelado') return false;
+      const tDate = t.paymentDate || t.dueDate || t.createdAt?.split('T')[0];
+      if (!tDate) return false;
+      return tDate >= startDate && tDate <= endDate;
+    });
+
+    const first = calculateFirstResult(validShipments, cargos || []);
+    return calculateSecondResult(first, validTransactions);
+  }, [data, shipments, cargos, transactions, periodFilter]);
+
+  const personnelPercent = currentResult.totalGrossRevenue > 0 ? (currentResult.personnelExpenses / currentResult.totalGrossRevenue) * 100 : 0;
+  const operationalPercent = currentResult.totalGrossRevenue > 0 ? (currentResult.operationalExpenses / currentResult.totalGrossRevenue) * 100 : 0;
+  const adminPercent = currentResult.totalGrossRevenue > 0 ? (currentResult.administrativeExpenses / currentResult.totalGrossRevenue) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -31,10 +68,33 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
           </div>
           <div className="text-right bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-white/10 shrink-0">
             <span className="text-xs text-indigo-200 font-semibold block">Margem Operacional</span>
-            <span className="text-3xl font-black text-indigo-300">{data.operatingMarginPercent.toFixed(1)}%</span>
-            <span className="text-xs text-white/70 block mt-0.5">{formatCurrency(data.operatingResult)}</span>
+            <span className="text-3xl font-black text-indigo-300">{currentResult.operatingMarginPercent.toFixed(1)}%</span>
+            <span className="text-xs text-white/70 block mt-0.5">{formatCurrency(currentResult.operatingResult)}</span>
           </div>
         </div>
+      </div>
+
+      {/* Barra de Filtros de Período: Hoje, Semana Atual, Mês Atual, Ano Atual */}
+      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1">Filtros:</span>
+        {[
+          { id: 'hoje', label: 'Hoje' },
+          { id: 'semana', label: 'Semana Atual' },
+          { id: 'mes', label: 'Mês Atual' },
+          { id: 'ano', label: 'Ano Atual' },
+        ].map(f => (
+          <button
+            key={f.id}
+            onClick={() => setPeriodFilter(f.id as FinancialPeriodFilter)}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-150 cursor-pointer ${
+              periodFilter === f.id
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {/* Centros de Custo Cards */}
@@ -42,7 +102,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">Margem de Contribuição</span>
           <div className="text-2xl font-extrabold text-blue-600 dark:text-blue-400 mt-1">
-            {formatCurrency(data.contributionMargin)}
+            {formatCurrency(currentResult.contributionMargin)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             Base vinda do 1º Resultado
@@ -52,7 +112,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">Pessoal & Encargos</span>
           <div className="text-2xl font-extrabold text-rose-600 dark:text-rose-400 mt-1">
-            {formatCurrency(data.personnelExpenses)}
+            {formatCurrency(currentResult.personnelExpenses)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             {personnelPercent.toFixed(1)}% da receita bruta
@@ -62,7 +122,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">Despesas Operacionais / Filiais</span>
           <div className="text-2xl font-extrabold text-amber-600 dark:text-amber-400 mt-1">
-            {formatCurrency(data.operationalExpenses)}
+            {formatCurrency(currentResult.operationalExpenses)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             {operationalPercent.toFixed(1)}% da receita bruta
@@ -72,7 +132,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">Despesas Administrativas</span>
           <div className="text-2xl font-extrabold text-purple-600 dark:text-purple-400 mt-1">
-            {formatCurrency(data.administrativeExpenses)}
+            {formatCurrency(currentResult.administrativeExpenses)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             {adminPercent.toFixed(1)}% da receita bruta
@@ -101,9 +161,9 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
               </span>
             </div>
             <div className="flex items-center gap-6">
-              <span className="text-xs text-emerald-700 font-semibold">{data.contributionMarginPercent.toFixed(1)}%</span>
+              <span className="text-xs text-emerald-700 font-semibold">{currentResult.contributionMarginPercent.toFixed(1)}%</span>
               <span className="font-black text-emerald-700 dark:text-emerald-300 text-base w-36 text-right">
-                {formatCurrency(data.contributionMargin)}
+                {formatCurrency(currentResult.contributionMargin)}
               </span>
             </div>
           </div>
@@ -120,7 +180,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
             <div className="flex items-center gap-6">
               <span className="text-xs text-rose-500 font-medium">{personnelPercent.toFixed(1)}%</span>
               <span className="font-bold text-rose-600 text-sm w-36 text-right">
-                - {formatCurrency(data.personnelExpenses)}
+                - {formatCurrency(currentResult.personnelExpenses)}
               </span>
             </div>
           </div>
@@ -137,7 +197,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
             <div className="flex items-center gap-6">
               <span className="text-xs text-rose-500 font-medium">{operationalPercent.toFixed(1)}%</span>
               <span className="font-bold text-rose-600 text-sm w-36 text-right">
-                - {formatCurrency(data.operationalExpenses)}
+                - {formatCurrency(currentResult.operationalExpenses)}
               </span>
             </div>
           </div>
@@ -154,7 +214,7 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
             <div className="flex items-center gap-6">
               <span className="text-xs text-rose-500 font-medium">{adminPercent.toFixed(1)}%</span>
               <span className="font-bold text-rose-600 text-sm w-36 text-right">
-                - {formatCurrency(data.administrativeExpenses)}
+                - {formatCurrency(currentResult.administrativeExpenses)}
               </span>
             </div>
           </div>
@@ -170,10 +230,10 @@ export const SecondResultTab: React.FC<SecondResultTabProps> = ({ data }) => {
             </div>
             <div className="flex items-center gap-6">
               <span className="text-sm font-black text-indigo-700 dark:text-indigo-300 px-3 py-1 bg-indigo-100 dark:bg-indigo-900/60 rounded-full">
-                {data.operatingMarginPercent.toFixed(1)}%
+                {currentResult.operatingMarginPercent.toFixed(1)}%
               </span>
               <span className="font-black text-indigo-700 dark:text-indigo-300 text-xl w-36 text-right">
-                {formatCurrency(data.operatingResult)}
+                {formatCurrency(currentResult.operatingResult)}
               </span>
             </div>
           </div>

@@ -139,9 +139,16 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
   const operationalLoads = React.useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     return loads.filter(load => {
-      // Oculta cargas suspensas ou fechadas
-      if (load.status === CargoStatus.Suspensa || load.status === CargoStatus.Fechada) {
-        return false;
+      // Regra para perfil Motorista: exibir estritamente as cargas cujo status/etapa seja "Cargas em Operação" (CargoStatus.EmAndamento)
+      if (currentUser.profile === UserProfile.Motorista) {
+        if (load.status !== CargoStatus.EmAndamento) {
+          return false;
+        }
+      } else {
+        // Oculta cargas suspensas ou fechadas para os demais perfis
+        if (load.status === CargoStatus.Suspensa || load.status === CargoStatus.Fechada) {
+          return false;
+        }
       }
       // Oculta cargas sem programação ativa a partir de hoje
       const hasActiveSchedule = Array.isArray(load.dailySchedule) && load.dailySchedule.some(ds => ds.date >= today);
@@ -150,7 +157,7 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       }
       return true;
     });
-  }, [loads]);
+  }, [loads, currentUser.profile]);
 
   const handleFilteredLoadsChange = useCallback((filteredLoads: Cargo[]) => {
     setDisplayedLoads(filteredLoads);
@@ -269,10 +276,12 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const destination = load.destination.toUpperCase();
       const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
       const tollText = hasToll ? ' + Ped' : '';
-      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
+      const priceText = (load.driverFreightValuePerTon && load.driverFreightValuePerTon > 0)
+        ? `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`
+        : 'A combinar';
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
 
-      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
+      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 ${priceText}\t\n🚛 ${bodyTypes} 🚛`;
       
       if (load.originMapLink) {
         text += `\n📍Coleta - ${load.originMapLink}`;
@@ -307,7 +316,9 @@ const OperationalLoadsPage: React.FC<OperationalLoadsPageProps> = ({
       const destination = load.destination;
       const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
       const tollText = hasToll ? ' + Ped' : '';
-      const price = `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
+      const price = (load.driverFreightValuePerTon && load.driverFreightValuePerTon > 0)
+        ? `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`
+        : 'A combinar';
       
       const allowed = load.allowedVehicleTypes || [];
       const vehicleTypes = formatFretebrasVehicleTypes(load.allowedVehicleTypes);

@@ -196,13 +196,14 @@ export function calculateShipmentExpenses(
 
   // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
   // shipment.tollValue é a fonte oficial: quando definido (inclusive 0 = sem pedágio), não cai nos fallbacks de documentos
-  const toll = (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue)))
+  const rawToll = (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue)))
     ? Number(shipment.tollValue)
     : (Number(shipment.realProfitData?.toll) ||
        Number((shipment.documents as any)?.toll_value) ||
        Number((shipment.documents as any)?.valor_pedagio) ||
        Number((shipment.documents as any)?.financeiro?.valorPedagio) ||
        0);
+  const toll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
   const baseInssPatronal = Math.max(0, driverFreight - toll);
   const inssPatronal = isShipmentPf && baseInssPatronal > 0 
     ? Number((baseInssPatronal * config.patronalPfRate).toFixed(2)) 

@@ -1,15 +1,19 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Client, Product, FreightOffer } from '../types';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import type { Client, Product, FreightOffer, ExpedidorRecebedor, User } from '../types';
 import { FreightOfferStatus } from '../types';
 import { 
   XIcon, PackageIcon, MapPinIcon, CalendarIcon, ScaleIcon, PaperclipIcon, 
-  Navigation, Route as RouteIcon, Loader2, AlertCircle, CheckCircle2, Clock, Building2
+  Navigation, Route as RouteIcon, Loader2, AlertCircle, CheckCircle2, Clock, Building2,
+  MapPin, Edit2
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabase';
 import { calculateOfferRoute, type ResolvedWaypoint } from '../services/routeDistanceService';
+import { BRAZILIAN_CITIES } from '../brazilianCities';
+import { getExpedidoresRecebedores, fetchRemoteExpedidoresRecebedores } from '../utils/locationStorage';
+import { QuickLocationModal } from './QuickLocationModal';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -37,6 +41,8 @@ interface FreightOfferModalProps {
   currentClient?: Client;
   onSave: (offer: Omit<FreightOffer, 'id' | 'createdAt'> | FreightOffer) => Promise<void>;
   editingOffer?: FreightOffer | null;
+  locations?: ExpedidorRecebedor[];
+  currentUser?: User | null;
 }
 
 // React Error Boundary to isolate Leaflet map rendering errors
@@ -84,7 +90,7 @@ function MapUpdater({ bounds }: { bounds: L.LatLngBounds | null }) {
 const DEFAULT_CENTER: [number, number] = [-15.7801, -47.9292];
 
 const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
-  isOpen, onClose, clients, products, currentClient, onSave, editingOffer
+  isOpen, onClose, clients, products, currentClient, onSave, editingOffer, locations, currentUser
 }) => {
   const [formData, setFormData] = useState({
     origin: '',
@@ -113,6 +119,41 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
   const [selectedBranchKey, setSelectedBranchKey] = useState<string>('matriz');
   const [selectedClientCnpj, setSelectedClientCnpj] = useState<string>('');
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+
+  // Locations list for quick lookup & datalist
+  const [locationsList, setLocationsList] = useState<ExpedidorRecebedor[]>(() => locations || getExpedidoresRecebedores());
+
+  useEffect(() => {
+    if (locations && locations.length > 0) {
+      setLocationsList(locations);
+    } else {
+      setLocationsList(getExpedidoresRecebedores());
+      fetchRemoteExpedidoresRecebedores().then(remote => {
+        if (remote && remote.length > 0) {
+          setLocationsList(remote);
+        }
+      }).catch(err => console.warn('Erro ao carregar locais remotos:', err));
+    }
+  }, [locations, isOpen]);
+
+  // Modal Rápido de Cadastro de Expedidor/Recebedor
+  const [isQuickLocationModalOpen, setIsQuickLocationModalOpen] = useState(false);
+  const [quickLocationTarget, setQuickLocationTarget] = useState<'origin' | 'destination' | 'via'>('origin');
+  const [quickLocationViaIndex, setQuickLocationViaIndex] = useState<number | null>(null);
+  const [quickLocationInitialName, setQuickLocationInitialName] = useState('');
+  const [quickLocationInitialCity, setQuickLocationInitialCity] = useState('');
+  const [quickLocationInitialMapLink, setQuickLocationInitialMapLink] = useState('');
+  const [quickLocationExisting, setQuickLocationExisting] = useState<ExpedidorRecebedor | null>(null);
+
+  const originLocationData = useMemo(() => {
+    if (!formData.originLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === formData.originLocation?.trim().toLowerCase()) || null;
+  }, [formData.originLocation, locationsList]);
+
+  const destinationLocationData = useMemo(() => {
+    if (!formData.destinationLocation?.trim()) return null;
+    return locationsList.find(l => l.name.trim().toLowerCase() === formData.destinationLocation?.trim().toLowerCase()) || null;
+  }, [formData.destinationLocation, locationsList]);
 
   // Reset modal state when opening/closing or when editingOffer changes
   useEffect(() => {
@@ -235,8 +276,87 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
   // EARLY RETURN FOR CLOSED MODAL MUST BE AFTER ALL HOOKS!
   if (!isOpen) return null;
 
+  const handleOpenQuickLocationModal = (target: 'origin' | 'destination' | 'via', viaIndex?: number) => {
+    setQuickLocationTarget(target);
+    setQuickLocationViaIndex(viaIndex !== undefined ? viaIndex : null);
+
+    let currentName = '';
+    let currentCity = '';
+
+    if (target === 'origin') {
+      currentName = formData.originLocation || '';
+      currentCity = formData.origin || '';
+    } else if (target === 'destination') {
+      currentName = formData.destinationLocation || '';
+      currentCity = formData.destination || '';
+    } else if (target === 'via' && viaIndex !== undefined && additionalDestinations[viaIndex]) {
+      currentName = additionalDestinations[viaIndex].location || '';
+      currentCity = additionalDestinations[viaIndex].city || '';
+    }
+
+    const existing = locationsList.find(l => l.name.trim().toLowerCase() === currentName.trim().toLowerCase()) || null;
+
+    setQuickLocationInitialName(currentName);
+    setQuickLocationInitialCity(currentCity);
+    setQuickLocationInitialMapLink(existing?.mapLink || '');
+    setQuickLocationExisting(existing);
+    setIsQuickLocationModalOpen(true);
+  };
+
+  const handleQuickLocationSaved = (savedLoc: ExpedidorRecebedor) => {
+    setLocationsList(prev => {
+      const exists = prev.some(l => l.id === savedLoc.id || l.name.trim().toLowerCase() === savedLoc.name.trim().toLowerCase());
+      if (exists) {
+        return prev.map(l => (l.id === savedLoc.id || l.name.trim().toLowerCase() === savedLoc.name.trim().toLowerCase()) ? savedLoc : l);
+      }
+      return [savedLoc, ...prev];
+    });
+
+    if (quickLocationTarget === 'origin') {
+      setFormData(prev => ({
+        ...prev,
+        originLocation: savedLoc.name,
+        origin: prev.origin.trim() ? prev.origin : (savedLoc.city ? `${savedLoc.city}${savedLoc.state ? ' - ' + savedLoc.state : ''}` : prev.origin)
+      }));
+    } else if (quickLocationTarget === 'destination') {
+      setFormData(prev => ({
+        ...prev,
+        destinationLocation: savedLoc.name,
+        destination: prev.destination.trim() ? prev.destination : (savedLoc.city ? `${savedLoc.city}${savedLoc.state ? ' - ' + savedLoc.state : ''}` : prev.destination)
+      }));
+    } else if (quickLocationTarget === 'via' && quickLocationViaIndex !== null) {
+      handleAdditionalDestinationChange(quickLocationViaIndex, 'location', savedLoc.name);
+      if (savedLoc.city && !additionalDestinations[quickLocationViaIndex]?.city?.trim()) {
+        handleAdditionalDestinationChange(quickLocationViaIndex, 'city', `${savedLoc.city}${savedLoc.state ? ' - ' + savedLoc.state : ''}`);
+      }
+    }
+    setIsQuickLocationModalOpen(false);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    if (name === 'originLocation' && value) {
+      const match = locationsList.find(l => l.name.trim().toLowerCase() === value.trim().toLowerCase());
+      if (match?.city && !formData.origin.trim()) {
+        setFormData(prev => ({
+          ...prev,
+          originLocation: value,
+          origin: `${match.city}${match.state ? ' - ' + match.state : ''}`
+        }));
+        return;
+      }
+    }
+    if (name === 'destinationLocation' && value) {
+      const match = locationsList.find(l => l.name.trim().toLowerCase() === value.trim().toLowerCase());
+      if (match?.city && !formData.destination.trim()) {
+        setFormData(prev => ({
+          ...prev,
+          destinationLocation: value,
+          destination: `${match.city}${match.state ? ' - ' + match.state : ''}`
+        }));
+        return;
+      }
+    }
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -473,12 +593,60 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                           <MapPinIcon className="h-4 w-4 text-emerald-500" />
                         </div>
-                        <input required type="text" name="origin" value={formData.origin} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Serra do Salitre - MG" />
+                        <input 
+                          required 
+                          type="text" 
+                          name="origin" 
+                          value={formData.origin} 
+                          onChange={handleChange} 
+                          list="cities-list"
+                          className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 shadow-xs" 
+                          placeholder="Ex: Serra do Salitre - MG" 
+                        />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Local da Origem (Exato)</label>
-                      <input type="text" name="originLocation" value={formData.originLocation} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Eurochem / Fazenda Saia Velha" />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">Local da Origem (Exato)</label>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenQuickLocationModal('origin')}
+                          className="px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                          title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                        >
+                          <MapPin className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                          <span>+ Cadastrar Local</span>
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        name="originLocation" 
+                        value={formData.originLocation} 
+                        onChange={handleChange} 
+                        list="expedidores-recebedores-datalist"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 shadow-xs" 
+                        placeholder="Ex: Eurochem / Fazenda Saia Velha" 
+                      />
+
+                      {/* Informações fiscais/contato do local de origem */}
+                      {originLocationData && (
+                        <div className="mt-1 flex items-center justify-between px-2.5 py-1 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/80 dark:border-blue-800 text-[11px] text-blue-900 dark:text-blue-200">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                            <span className="font-semibold truncate">
+                              {originLocationData.documentNumber ? `${originLocationData.documentType}: ${originLocationData.documentNumber}` : 'Local Cadastrado'}
+                              {originLocationData.phone ? ` • Tel: ${originLocationData.phone}${originLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuickLocationModal('origin')}
+                            className="text-blue-600 dark:text-blue-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                          >
+                            <Edit2 className="w-3 h-3" /> Editar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -491,7 +659,16 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <MapPinIcon className="h-4 w-4 text-red-500" />
                           </div>
-                          <input required type="text" name="destination" value={formData.destination} onChange={handleChange} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Luziânia - GO" />
+                          <input 
+                            required 
+                            type="text" 
+                            name="destination" 
+                            value={formData.destination} 
+                            onChange={handleChange} 
+                            list="cities-list"
+                            className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 shadow-xs" 
+                            placeholder="Ex: Luziânia - GO" 
+                          />
                         </div>
                         <button type="button" onClick={handleAddDestination} className="p-2 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Adicionar outro destino">
                           + Via
@@ -499,34 +676,135 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Local do Destino (Exato)</label>
-                      <input type="text" name="destinationLocation" value={formData.destinationLocation} onChange={handleChange} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Rodovia GO 010 km193" />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">Local do Destino (Exato)</label>
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenQuickLocationModal('destination')}
+                          className="px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                          title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                        >
+                          <MapPin className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                          <span>+ Cadastrar Local</span>
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        name="destinationLocation" 
+                        value={formData.destinationLocation} 
+                        onChange={handleChange} 
+                        list="expedidores-recebedores-datalist"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 shadow-xs" 
+                        placeholder="Ex: Rodovia GO 010 km193" 
+                      />
+
+                      {/* Informações fiscais/contato do local de destino */}
+                      {destinationLocationData && (
+                        <div className="mt-1 flex items-center justify-between px-2.5 py-1 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/80 dark:border-blue-800 text-[11px] text-blue-900 dark:text-blue-200">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                            <span className="font-semibold truncate">
+                              {destinationLocationData.documentNumber ? `${destinationLocationData.documentType}: ${destinationLocationData.documentNumber}` : 'Local Cadastrado'}
+                              {destinationLocationData.phone ? ` • Tel: ${destinationLocationData.phone}${destinationLocationData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQuickLocationModal('destination')}
+                            className="text-blue-600 dark:text-blue-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                          >
+                            <Edit2 className="w-3 h-3" /> Editar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Additional Destinations */}
-                  {additionalDestinations.map((dest, idx) => (
-                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-600">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Via / Destino {idx + 1} (Cidade/UF)</label>
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex-1">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <MapPinIcon className="h-4 w-4 text-indigo-500" />
+                  {additionalDestinations.map((dest, idx) => {
+                    const viaLocData = dest.location?.trim()
+                      ? locationsList.find(l => l.name.trim().toLowerCase() === dest.location.trim().toLowerCase()) || null
+                      : null;
+
+                    return (
+                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Via / Destino {idx + 1} (Cidade/UF)</label>
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <MapPinIcon className="h-4 w-4 text-indigo-500" />
+                              </div>
+                              <input 
+                                required 
+                                type="text" 
+                                value={dest.city} 
+                                onChange={e => handleAdditionalDestinationChange(idx, 'city', e.target.value)} 
+                                list="cities-list"
+                                className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 shadow-xs" 
+                                placeholder="Ex: Cristalina - GO" 
+                              />
                             </div>
-                            <input required type="text" value={dest.city} onChange={e => handleAdditionalDestinationChange(idx, 'city', e.target.value)} className="pl-9 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Cristalina - GO" />
+                            <button type="button" onClick={() => handleRemoveDestination(idx)} className="p-2 text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Remover destino">
+                              -
+                            </button>
                           </div>
-                          <button type="button" onClick={() => handleRemoveDestination(idx)} className="p-2 text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors flex-shrink-0 text-xs font-bold" title="Remover destino">
-                            -
-                          </button>
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">Local do Destino Via {idx + 1}</label>
+                            <button 
+                              type="button" 
+                              onClick={() => handleOpenQuickLocationModal('via', idx)}
+                              className="px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 transition-colors text-xs font-bold flex items-center gap-1 shadow-2xs"
+                              title="Cadastrar ou editar dados completos do local (CNPJ/CPF, Telefone, WhatsApp)"
+                            >
+                              <MapPin className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                              <span>+ Cadastrar Local</span>
+                            </button>
+                          </div>
+                          <input 
+                            type="text" 
+                            value={dest.location} 
+                            onChange={e => handleAdditionalDestinationChange(idx, 'location', e.target.value)} 
+                            list="expedidores-recebedores-datalist"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 shadow-xs" 
+                            placeholder="Ex: Silo Central" 
+                          />
+                          {viaLocData && (
+                            <div className="mt-1 flex items-center justify-between px-2.5 py-1 bg-blue-50/80 dark:bg-blue-950/40 rounded-lg border border-blue-200/80 dark:border-blue-800 text-[11px] text-blue-900 dark:text-blue-200">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                <span className="font-semibold truncate">
+                                  {viaLocData.documentNumber ? `${viaLocData.documentType}: ${viaLocData.documentNumber}` : 'Local Cadastrado'}
+                                  {viaLocData.phone ? ` • Tel: ${viaLocData.phone}${viaLocData.isWhatsapp ? ' (Whats)' : ''}` : ''}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuickLocationModal('via', idx)}
+                                className="text-blue-600 dark:text-blue-400 font-extrabold hover:underline shrink-0 ml-2 flex items-center gap-0.5"
+                              >
+                                <Edit2 className="w-3 h-3" /> Editar
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Local do Destino Via {idx + 1}</label>
-                        <input type="text" value={dest.location} onChange={e => handleAdditionalDestinationChange(idx, 'location', e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500" placeholder="Ex: Silo Central" />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+
+                  <datalist id="cities-list">
+                    {BRAZILIAN_CITIES.map(city => <option key={city} value={city} />)}
+                  </datalist>
+
+                  <datalist id="expedidores-recebedores-datalist">
+                    {locationsList.map(loc => (
+                      <option key={loc.id} value={loc.name}>
+                        {loc.city ? `${loc.name} (${loc.city}${loc.state ? '/' + loc.state : ''})` : loc.name}
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
 
                 {/* Cargo Details */}
@@ -791,7 +1069,7 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
                 Rota mapeada: {routeData.distanceKm.toFixed(0)} km em {formatDurationText(routeData.durationMin)}
               </span>
             ) : (
-              <span>Preencha os campos obrigatórios para criar a oferta</span>
+              <span>{editingOffer ? 'Preencha os campos para salvar as alterações' : 'Preencha os campos obrigatórios para criar a oferta'}</span>
             )}
           </div>
           <div className="flex gap-3">
@@ -799,11 +1077,22 @@ const FreightOfferModal: React.FC<FreightOfferModalProps> = ({
               Cancelar
             </button>
             <button type="submit" form="freight-offer-form" disabled={isSubmitting} className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 shadow-md">
-              {isSubmitting ? 'Salvando...' : 'Criar Oferta de Frete'}
+              {isSubmitting ? 'Salvando...' : (editingOffer ? 'Salvar Oferta' : 'Criar Oferta de Frete')}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Quick Location Modal */}
+      <QuickLocationModal
+        isOpen={isQuickLocationModalOpen}
+        onClose={() => setIsQuickLocationModalOpen(false)}
+        onSaved={handleQuickLocationSaved}
+        initialName={quickLocationInitialName}
+        initialCity={quickLocationInitialCity}
+        initialMapLink={quickLocationInitialMapLink}
+        existingLocation={quickLocationExisting}
+      />
     </div>
   );
 };

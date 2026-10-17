@@ -1,15 +1,53 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { ThirdLevelFinancialResult } from '../../utils/financialCalculations';
+import { calculateFirstResult, calculateSecondResult, calculateThirdResult } from '../../utils/financialCalculations';
+import type { Shipment, Cargo, FinancialTransaction } from '../../types';
+import { ShipmentStatus } from '../../types';
+import { getFinancialPeriodRange, getShipmentEffectiveDate, parseDateToYmd, FinancialPeriodFilter } from '../../utils';
 import { Target, TrendingUp, BarChart3, ArrowUpRight, ArrowDownLeft, ShieldCheck, CalendarClock } from 'lucide-react';
 
 interface ThirdResultTabProps {
   data: ThirdLevelFinancialResult;
+  shipments?: Shipment[];
+  cargos?: Cargo[];
+  transactions?: FinancialTransaction[];
 }
 
-export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
+export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ 
+  data,
+  shipments = [],
+  cargos = [],
+  transactions = []
+}) => {
+  const [periodFilter, setPeriodFilter] = useState<FinancialPeriodFilter>('mes');
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
+
+  // Recalcula dinamicamente com base no período selecionado caso embarques estejam disponíveis
+  const currentResult = useMemo(() => {
+    if (!shipments || shipments.length === 0) return data;
+    const { startDate, endDate } = getFinancialPeriodRange(periodFilter);
+
+    const validShipments = shipments.filter(s => {
+      if (s.status === ShipmentStatus.Cancelado) return false;
+      const sDate = getShipmentEffectiveDate(s) || (s.scheduledDate ? parseDateToYmd(s.scheduledDate) : null) || s.createdAt?.split('T')[0];
+      if (!sDate) return false;
+      return sDate >= startDate && sDate <= endDate;
+    });
+
+    const validTransactions = (transactions || []).filter(t => {
+      if (t.status === 'Cancelado') return false;
+      const tDate = t.paymentDate || t.dueDate || t.createdAt?.split('T')[0];
+      if (!tDate) return false;
+      return tDate >= startDate && tDate <= endDate;
+    });
+
+    const first = calculateFirstResult(validShipments, cargos || []);
+    const second = calculateSecondResult(first, validTransactions);
+    return calculateThirdResult(second, validTransactions);
+  }, [data, shipments, cargos, transactions, periodFilter]);
 
   return (
     <div className="space-y-6">
@@ -27,10 +65,33 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
           </div>
           <div className="text-right bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-white/10 shrink-0">
             <span className="text-xs text-emerald-200 font-semibold block">Margem Líquida</span>
-            <span className="text-3xl font-black text-emerald-300">{data.netMarginPercent.toFixed(1)}%</span>
-            <span className="text-xs text-white/70 block mt-0.5">{formatCurrency(data.netResult)}</span>
+            <span className="text-3xl font-black text-emerald-300">{currentResult.netMarginPercent.toFixed(1)}%</span>
+            <span className="text-xs text-white/70 block mt-0.5">{formatCurrency(currentResult.netResult)}</span>
           </div>
         </div>
+      </div>
+
+      {/* Barra de Filtros de Período: Hoje, Semana Atual, Mês Atual, Ano Atual */}
+      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1">Filtros:</span>
+        {[
+          { id: 'hoje', label: 'Hoje' },
+          { id: 'semana', label: 'Semana Atual' },
+          { id: 'mes', label: 'Mês Atual' },
+          { id: 'ano', label: 'Ano Atual' },
+        ].map(f => (
+          <button
+            key={f.id}
+            onClick={() => setPeriodFilter(f.id as FinancialPeriodFilter)}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-150 cursor-pointer ${
+              periodFilter === f.id
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {/* Top Strategic KPIs */}
@@ -38,7 +99,7 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">EBITDA Gerencial</span>
           <div className="text-2xl font-extrabold text-teal-600 dark:text-teal-400 mt-1">
-            {formatCurrency(data.ebitda)}
+            {formatCurrency(currentResult.ebitda)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             Geração de caixa operacional
@@ -48,7 +109,7 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">Despesas Financeiras / Juros</span>
           <div className="text-2xl font-extrabold text-rose-600 dark:text-rose-400 mt-1">
-            {formatCurrency(data.financialExpenses)}
+            {formatCurrency(currentResult.financialExpenses)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             Tarifas bancárias e taxas de antecipação
@@ -58,17 +119,17 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">3º Resultado (Líquido)</span>
           <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
-            {formatCurrency(data.netResult)}
+            {formatCurrency(currentResult.netResult)}
           </div>
           <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1 block">
-            Margem Líquida de {data.netMarginPercent.toFixed(1)}%
+            Margem Líquida de {currentResult.netMarginPercent.toFixed(1)}%
           </span>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
           <span className="text-xs font-semibold text-slate-400 uppercase">Projeção Caixa (30 dias)</span>
-          <div className={`text-2xl font-extrabold mt-1 ${data.projectedCashFlow30d >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}>
-            {formatCurrency(data.projectedCashFlow30d)}
+          <div className={`text-2xl font-extrabold mt-1 ${currentResult.projectedCashFlow30d >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            {formatCurrency(currentResult.projectedCashFlow30d)}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">
             Recebíveis (-) Pagáveis programados
@@ -97,9 +158,9 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
               </span>
             </div>
             <div className="flex items-center gap-6">
-              <span className="text-xs text-indigo-700 font-semibold">{data.operatingMarginPercent.toFixed(1)}%</span>
+              <span className="text-xs text-indigo-700 font-semibold">{currentResult.operatingMarginPercent.toFixed(1)}%</span>
               <span className="font-black text-indigo-700 dark:text-indigo-300 text-base w-36 text-right">
-                {formatCurrency(data.operatingResult)}
+                {formatCurrency(currentResult.operatingResult)}
               </span>
             </div>
           </div>
@@ -115,16 +176,16 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
             </div>
             <div className="flex items-center gap-6">
               <span className="text-xs text-rose-500 font-medium">
-                {data.totalGrossRevenue > 0 ? ((data.financialExpenses / data.totalGrossRevenue) * 100).toFixed(1) : 0}%
+                {currentResult.totalGrossRevenue > 0 ? ((currentResult.financialExpenses / currentResult.totalGrossRevenue) * 100).toFixed(1) : 0}%
               </span>
               <span className="font-bold text-rose-600 text-sm w-36 text-right">
-                - {formatCurrency(data.financialExpenses)}
+                - {formatCurrency(currentResult.financialExpenses)}
               </span>
             </div>
           </div>
 
           {/* Receitas Financeiras */}
-          {data.financialIncomes > 0 && (
+          {currentResult.financialIncomes > 0 && (
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-3 pl-4">
                 <span className="text-emerald-500 font-bold text-sm">(+)</span>
@@ -135,7 +196,7 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
               </div>
               <div className="flex items-center gap-6">
                 <span className="font-bold text-emerald-600 text-sm w-36 text-right">
-                  + {formatCurrency(data.financialIncomes)}
+                  + {formatCurrency(currentResult.financialIncomes)}
                 </span>
               </div>
             </div>
@@ -147,15 +208,15 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
               <div className="w-3.5 h-3.5 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[9px] font-bold">★</div>
               <div>
                 <span className="font-black text-emerald-950 dark:text-emerald-100 text-base">(=) 3º RESULTADO: Resultado Líquido Final da Empresa</span>
-                <span className="block text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">Resultado líquido consolidado à disposição dos sócios e reinvestimento</span>
+                <span className="block text-xs text-emerald-700 dark:text-indigo-300 mt-0.5">Resultado líquido consolidado à disposição dos sócios e reinvestimento</span>
               </div>
             </div>
             <div className="flex items-center gap-6">
               <span className="text-sm font-black text-emerald-700 dark:text-emerald-300 px-3.5 py-1 bg-emerald-100 dark:bg-emerald-900/60 rounded-full">
-                {data.netMarginPercent.toFixed(1)}% Líquido
+                {currentResult.netMarginPercent.toFixed(1)}% Líquido
               </span>
               <span className="font-black text-emerald-700 dark:text-emerald-300 text-2xl w-36 text-right">
-                {formatCurrency(data.netResult)}
+                {formatCurrency(currentResult.netResult)}
               </span>
             </div>
           </div>
@@ -178,21 +239,21 @@ export const ThirdResultTab: React.FC<ThirdResultTabProps> = ({ data }) => {
           <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700">
             <span className="text-xs font-semibold text-slate-500 uppercase">Recebimentos Previstos (30d)</span>
             <div className="text-xl font-bold text-emerald-600 mt-1">
-              {formatCurrency(data.projectedReceivables30d)}
+              {formatCurrency(currentResult.projectedReceivables30d)}
             </div>
           </div>
 
           <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700">
             <span className="text-xs font-semibold text-slate-500 uppercase">Pagamentos Previstos (30d)</span>
             <div className="text-xl font-bold text-rose-600 mt-1">
-              {formatCurrency(data.projectedPayables30d)}
+              {formatCurrency(currentResult.projectedPayables30d)}
             </div>
           </div>
 
           <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700">
             <span className="text-xs font-semibold text-slate-500 uppercase">Saldo Líquido Previsto (30d)</span>
-            <div className={`text-xl font-bold mt-1 ${data.projectedCashFlow30d >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
-              {formatCurrency(data.projectedCashFlow30d)}
+            <div className={`text-xl font-bold mt-1 ${currentResult.projectedCashFlow30d >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+              {formatCurrency(currentResult.projectedCashFlow30d)}
             </div>
           </div>
         </div>

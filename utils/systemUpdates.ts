@@ -21,6 +21,203 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_17_v2_70_77',
+    version: 'v2.70.77',
+    date: '17/10/2026',
+    title: 'Vínculo Estruturado entre Usuários Internos e Filiais',
+    summary: 'Implementada a arquitetura completa de vinculação entre Usuários Internos e Filiais (Branch). Permite associar colaboradores a filiais específicas com persistência direta no Supabase, seleção dinâmica no formulário com espelhamento de acessos e exibição destacada na listagem de usuários com badges e filtro dedicado por unidade.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Vínculo de Filial na Gestão de Usuários Internos',
+        description: 'Adicionado o campo de seleção "Filial" no modal de cadastro e edição de Usuários Internos (UserFormModal.tsx), listando dinamicamente as filiais cadastradas no sistema com indicação de acesso geral para usuários sem filial vinculada.'
+      },
+      {
+        category: 'improvement',
+        title: 'Coluna e Badge de Filial na Tabela de Usuários',
+        description: 'A tabela de usuários (UserTable.tsx) agora conta com uma coluna dedicada para "Filial", exibindo badges elegantes com o nome da unidade para usuários vinculados, "Todas" para usuários com acesso corporativo global e "-" para perfis externos.'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro Dinâmico por Filial na Listagem de Usuários',
+        description: 'Integrado filtro por unidade no UserFilter.tsx e UsersPage.tsx, permitindo segmentar e auditar usuários por filial específica ou listar apenas colaboradores com acesso geral.'
+      },
+      {
+        category: 'security',
+        title: 'Persistência e Mapeamento Consistente no Banco de Dados',
+        description: 'Garantida a compatibilidade de tipos (branchId e filialId), normalização no salvamento (App.tsx) e hidratação bidirecional robusta nos adaptadores toUser e fromUser (lib/db.ts).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_76',
+    version: 'v2.70.76',
+    date: '17/10/2026',
+    title: 'Auditoria e Correção de Distorções Críticas no Módulo Financeiro & Controladoria (1º Resultado)',
+    summary: 'Identificação e resolução definitiva da anomalia de pedágio (R$ 52.2 bilhões) e distorção extrema da Margem Bruta (-13.241.670,1%). O parser de documentos fiscais capturava o CNPJ de concessionárias como pedágio. Implementadas travas de segurança em múltiplas camadas (ingestão, banco de dados, cálculos e interface), além da remoção de multiplicadores fictícios de notas fiscais e estilização adaptativa da margem.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Sanitização do Parser Fiscal e Travas Anti-CNPJ no Pedágio',
+        description: 'Corrigido o regex no fiscalDocParser.ts para rejeitar números precedidos de termos cadastrais (CNPJ, CPF, Inscrição, etc.) e valores com mais de 10 dígitos contínuos. Estabelecido teto de sanidade operacional de R$ 25.000,00 por pedágio de viagem única.'
+      },
+      {
+        category: 'security',
+        title: 'Blindagem de Dados no Adaptador de Banco de Dados (Supabase)',
+        description: 'Adicionada camada de neutralização em lib/db.ts: qualquer registro existente com valor de pedágio aberrante (> R$ 25.000,00) é automaticamente neutralizado para R$ 0,00 na leitura e gravação, impedindo contaminação dos relatórios.'
+      },
+      {
+        category: 'improvement',
+        title: 'Refatoração dos Cálculos e Visualização da Margem Bruta no 1º Resultado',
+        description: 'Eliminado multiplicador sintético de faturamento de NF (frete * 7.5). A Margem Bruta percentual foi blindada contra divisão por zero e limitada a um intervalo coerente [-100%, +100%]. O card da Margem Bruta agora conta com visualização dinâmica (verde para margens saudáveis e vermelho/alerta para margens negativas).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_75',
+    version: 'v2.70.75',
+    date: '17/10/2026',
+    title: 'Remoção de Saldos Fictícios no Módulo Financeiro e Reformulação dos Filtros de Período dos Resultados 1, 2 e 3',
+    summary: 'Eliminação completa dos valores e contas bancárias hardcoded/mockadas do Saldo Bancário, passando a exibir estritamente valores reais integrados ou R$ 0,00 quando sem contas ativas. Reformulação dos filtros de período dos relatórios financeiros (1º, 2º e 3º Resultados) substituindo opções genéricas por "Hoje", "Semana Atual" (Dom a Sáb), "Mês Atual" e "Ano Atual", com cálculo dinâmico de datas e neutralização de quedas indevidas em dados globais.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Remoção de Valores Fictícios no Saldo Bancário',
+        description: 'Removidos todos os dados mockados de contas bancárias (INITIAL_BANK_ACCOUNTS) do Saldo Bancário e da Controladoria Bancária. Se não houver contas ativas ou integração, o sistema exibe "R$ 0,00" e estado vazio instrutivo para novos cadastros, sanitizando também o armazenamento local (localStorage).'
+      },
+      {
+        category: 'feature',
+        title: 'Filtros de Período Estruturados nos Resultados Financeiros (1º, 2º e 3º)',
+        description: 'Substituição das opções genéricas pelos filtros "Hoje" (dia atual), "Semana Atual" (intervalo dinâmico de Domingo a Sábado), "Mês Atual" (primeiro ao último dia do mês corrente) e "Ano Atual" (primeiro ao último dia do ano). Adicionada a função auxiliar getFinancialPeriodRange e vinculação dinâmica nos 1º, 2º e 3º Resultados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Precisão e Sanidade nos Relatórios de Margem e Deduções',
+        description: 'Eliminada a regra de fallback que restaurava todos os embarques históricos quando nenhum registro era encontrado no período filtrado. Adicionada camada de validação e tolerância a distorções de pedágio e impostos nos cálculos do 1º Resultado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_74',
+    version: 'v2.70.74',
+    date: '17/10/2026',
+    title: 'Correção no Fluxo de Edição de Ofertas de Frete e Padronização dos Campos de Localidade Exata',
+    summary: 'Corrigido o fluxo de persistência ao editar ofertas de frete existentes, garantindo o envio correto do handler de salvamento e preservação de identificadores (#OFR). Ajustado o rótulo do botão de ação para "Salvar Oferta" em modo de edição. Padronizados os campos de Local de Origem e Destino exatos com o botão "+ Cadastrar Local", abertura do QuickLocationModal, busca via datalist de expedidores/recebedores e cartões de visualização e edição imediata.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Persistência e Rótulo no Fluxo de Edição de Oferta',
+        description: 'Corrigida a ausência do handler onSaveFreightOffer nas visualizações do Dashboard, garantindo que ofertas existentes salvem alterações no Supabase e estado local sem regerar ID ou displayId. O botão de ação agora exibe "Salvar Oferta" ao invés de "Criar Oferta de Frete" quando em edição.'
+      },
+      {
+        category: 'feature',
+        title: 'Padronização dos Campos de Localidade (Exato) com "+ Cadastrar Local"',
+        description: 'Os campos de Local da Origem (Exato) e Local do Destino (Exato) (além de vias adicionais) agora possuem o botão "+ Cadastrar Local", integração com o QuickLocationModal, sugestão inteligente por datalist (expedidores-recebedores-datalist e cities-list) e cartões com detalhes fiscais/contato e atalho "Editar".'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_73',
+    version: 'v2.70.73',
+    date: '17/10/2026',
+    title: 'Exibição de Frete "A Combinar" e Filtro Restrito de Cargas em Operação para Motoristas',
+    summary: 'Implementada a regra de formatação para fretes iguais a R$ 0,00 exibindo "A combinar" nas oportunidades de carga, cards, mapa e compartilhamentos. Aplicado filtro obrigatório para o perfil de Motorista (Usuários Externos), restringindo estritamente a exibição para "Cargas em Operação" (descartando rascunhos, canceladas, suspensas e concluídas).',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Exibição de Frete "A Combinar"',
+        description: 'Nas telas de Oportunidades de Carga, listagens, cards do portal do motorista, mapa operacional e textos de divulgação, valores de frete zerados (R$ 0,00) agora são expressos como "A combinar" de forma elegante.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtro Estrito de Cargas em Operação para Motoristas',
+        description: 'Para usuários do perfil Motorista (Usuários Externos), as telas de Oportunidades ("Solicitar Embarque") e "Mapa Operacional de Cargas" passam a exibir exclusivamente cargas cujo status seja "Em andamento" / Cargas em Operação, descartando rascunhos, suspensas e fechadas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_72',
+    version: 'v2.70.72',
+    date: '17/10/2026',
+    title: 'Otimização do Cadastro de Usuários Externos e Login sem Exigência de "@"',
+    summary: 'Removidas as opções corporativas (E-mail Corporativo institucional e Espelhar Acesso) da janela de cadastro de Usuários Externos (Motoristas) e eliminada a obrigatoriedade de "@" no identificador de acesso dos usuários, permitindo registro e login simplificados por CPF ou nome de usuário.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Janela de Cadastro Limpa para Usuários Externos (Motoristas)',
+        description: 'Os blocos de configuração de E-mail Corporativo (@transcunhaoficial.com.br) e Espelhar Acesso de Outro Usuário agora são automaticamente ocultados ao cadastrar ou editar motoristas e usuários externos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Remoção da Exigência de "@" no Login de Usuários',
+        description: 'Substituído o campo restrito com validação HTML5 nativa por campo de texto livre com formatação automática de CPF, eliminando a mensagem de bloqueio do navegador ("Inclua um @ no endereço de e-mail").'
+      },
+      {
+        category: 'improvement',
+        title: 'Autenticação Flexível por CPF, Usuário ou E-mail',
+        description: 'A tela de login do sistema foi atualizada para consultar os usuários de forma transparente tanto por CPF (com ou sem pontuação), como por nome de usuário ou e-mail corporativo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_71',
+    version: 'v2.70.71',
+    date: '17/10/2026',
+    title: 'Configuração do Modelo de Ordem de Carregamento Consube com Layout Oficial 1:1',
+    summary: 'Configurado o novo modelo de Ordem de Carregamento "Consube" com fidelidade visual absoluta ao documento operacional impresso. Inclui autorização de terceiro/motorista, composição do veículo (Cavalo, Reboques 1 e 2, Dolly), dados de retirada e pesagem em KG, espécie, remetente, cliente com CNPJ, liberação da gestora de risco (Load Num/DT, ULA, ANTT) e a observação obrigatória em destaque.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Modelo Oficial "Consube" no Catálogo de Modelos',
+        description: 'Disponibilização do modelo "Consube" para seleção individual por cliente (Matriz e filiais), com campos obrigatórios predefinidos e observação padrão obrigatória configurada.'
+      },
+      {
+        category: 'feature',
+        title: 'Emissão de PDF com Layout Tabular Idêntico ao Modelo Consube',
+        description: 'Desenvolvido gerador de PDF sob medida (generateConsubeLoadingOrderPDF) com caixas delimitadas, cabeçalho da transportadora, autorização de terceiro, grade de veículos completa (Cavalo, Reboque 1 e 2, Dolly), dados de carga com Sacos e Peso:KG, remetente, cliente e liberação com ANTT, ULA e Load Num/DT.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atalho Rápido e Detecção Automática em Detalhes do Embarque',
+        description: 'O modal de detalhes do embarque detecta automaticamente se o cliente contratante utiliza o Modelo Consube, exibindo botão personalizado "Ordem Consube" e permitindo emissão sob demanda.'
+      },
+      {
+        category: 'improvement',
+        title: 'Suporte a Campos Especiais (ULA, Load Num, CNH, RG)',
+        description: 'Estruturados os campos de ULA, Load Num/DT e documentação completa de motorista para garantir preenchimento total e sem divergências.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_17_v2_70_70',
+    version: 'v2.70.70',
+    date: '17/10/2026',
+    title: 'Estruturação da Seleção de Modelo de Ordem de Carregamento por Cliente',
+    summary: 'Implementada a arquitetura completa e escalável (banco de dados, contratos de API, tipagem e interfaces de usuário) para permitir vincular modelos de Ordem de Carregamento específicos a cada cliente e filial. Prepara o ecossistema Transcunha para a emissão dinâmica e personalizada de ordens de carregamento conforme as regras de negócio de cada contratante.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Modelo de Ordem de Carregamento no Cadastro do Cliente (Matriz e Filiais)',
+        description: 'Adicionado seletor com dropdown estilizado no formulário de cliente (ClientFormModal), permitindo definir o modelo para a Matriz e selecionar modelos específicos ou herança para filiais cadastradas.'
+      },
+      {
+        category: 'feature',
+        title: 'Estrutura e Catálogo Inicial de Modelos de Ordem de Carregamento',
+        description: 'Criada a tipagem LoadingOrderModel com catálogo de 5 modelos de mercado (Padrão Transcunha, Grãos/Granel, Fertilizantes & Ensacados, Trading/Exportação Porto e Simplificado Ticket) com suporte a persistência dinâmica.'
+      },
+      {
+        category: 'improvement',
+        title: 'Visualização Clara e Badges Informativas na Tabela de Clientes',
+        description: 'A tabela de clientes e a visualização expandida de unidades/filiais agora exibem distintivos e etiquetas claras identificando o Modelo de Ordem de Carregamento vinculado a cada empresa.'
+      },
+      {
+        category: 'improvement',
+        title: 'Persistência Híbrida Segura com Fallback Automático',
+        description: 'Garantida a compatibilidade total com o Supabase Postgres através de persistência em profile_permissions e localStorage com fallback resiliente, impedindo falhas caso colunas ainda não estejam migradas no schema remoto.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_17_v2_70_69',
     version: 'v2.70.69',
     date: '17/10/2026',

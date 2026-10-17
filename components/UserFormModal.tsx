@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { useToast } from '../hooks/useToast';
-import { autoFormatInput } from '../utils/formatters';
-import { X, Copy, CheckCircle2, Mail, Key } from 'lucide-react';
+import { autoFormatInput, formatCPF } from '../utils/formatters';
+import { X, Copy, CheckCircle2, Mail, Key, Building2 } from 'lucide-react';
 import { corporateEmailService } from '../services/corporateEmailService';
 
 interface UserFormModalProps {
@@ -16,9 +16,20 @@ interface UserFormModalProps {
   branches: Branch[];
   users?: User[];
   defaultProfile?: UserProfile;
+  availableProfiles?: UserProfile[];
 }
 
-const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, userToEdit, clients, branches, users, defaultProfile }) => {
+const UserFormModal: React.FC<UserFormModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  userToEdit, 
+  clients, 
+  branches, 
+  users, 
+  defaultProfile,
+  availableProfiles 
+}) => {
   const { showToast } = useToast();
   const [selectedUserToMirror, setSelectedUserToMirror] = useState<string>('');
   const getInitialState = (): Omit<User, 'id'> => ({
@@ -43,6 +54,10 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
 
   const [user, setUser] = useState<Omit<User, 'id' | 'password'> & { password?: string; customPermissions?: any }>(getInitialState());
 
+  const isMotorista = user.profile === UserProfile.Motorista || defaultProfile === UserProfile.Motorista;
+  const isExternalClient = user.profile === UserProfile.Cliente || defaultProfile === UserProfile.Cliente;
+  const showCorporateFeatures = !isMotorista && !isExternalClient;
+
   useEffect(() => {
     if (isOpen) {
         setSelectedUserToMirror('');
@@ -51,6 +66,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             const existingCorpAccount = corporateEmailService.getEmailAccounts().find(a => a.userId === userToEdit.id || (userToEdit.email && a.email.toLowerCase() === userToEdit.email.toLowerCase()));
             setUser({ 
               ...userWithoutPass, 
+              branchId: userToEdit.branchId || (userToEdit as any).filialId || undefined,
               availableForDriverRequests: userToEdit.availableForDriverRequests !== false,
               corporateEmail: userToEdit.corporateEmail || existingCorpAccount?.email || '',
               corporateEmailPassword: userToEdit.corporateEmailPassword || existingCorpAccount?.password || '',
@@ -74,7 +90,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
       ...prev,
       profile: sourceUser.profile,
       clientId: sourceUser.clientId,
-      branchId: sourceUser.branchId,
+      branchId: sourceUser.branchId || (sourceUser as any).filialId || undefined,
       hasCommercialCommission: sourceUser.hasCommercialCommission,
       availableForDriverRequests: sourceUser.availableForDriverRequests !== false,
       agencyRole: sourceUser.agencyRole,
@@ -88,7 +104,17 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    const formattedValue = autoFormatInput(name, value);
+    let formattedValue = autoFormatInput(name, value);
+
+    // Se estiver digitando no campo de login e for dígitos de CPF (ou motorista), formata como CPF
+    if (name === 'email') {
+      const cleanDigits = value.replace(/\D/g, '');
+      if ((isMotorista || cleanDigits.length >= 3) && cleanDigits.length <= 11 && !value.includes('@') && !value.includes('.')) {
+        if (/^\d+$/.test(value.replace(/\D/g, ''))) {
+          formattedValue = formatCPF(value);
+        }
+      }
+    }
 
     let updatedValue: any = formattedValue;
     if (type === 'checkbox') {
@@ -120,7 +146,12 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
       return;
     }
 
-    const userToSave: any = { ...user };
+    const cleanBranchId = user.branchId && user.branchId.trim() !== '' ? user.branchId.trim() : undefined;
+    const userToSave: any = { 
+      ...user,
+      branchId: cleanBranchId,
+      filialId: cleanBranchId,
+    };
 
     if (userToEdit) {
       userToSave.id = userToEdit.id;
@@ -182,139 +213,201 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
-            <input name="name" value={user.name} onChange={handleChange} placeholder="Nome Completo" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
-            <input name="email" value={user.email} onChange={handleChange} type="email" placeholder="Email de Acesso" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" required />
-            <input name="phone" value={user.phone || ''} onChange={handleChange} placeholder="Telefone" className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
-            <input name="password" value={user.password} onChange={handleChange} type="password" placeholder={userToEdit ? 'Nova Senha (deixe em branco para manter)' : 'Senha'} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600" />
-
-            {/* Campo & Configuração: E-mail Corporativo (@transcunhaoficial.com.br) */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Mail className="w-4 h-4 text-blue-600" />
-                  E-mail Corporativo (@transcunhaoficial.com.br)
-                </label>
-                <span className="text-[10px] text-slate-500 font-medium">Administração Integrada</span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Configure a caixa postal institucional deste colaborador para envio de ordens, cotações e acesso ao Webmail.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                    Endereço de E-mail Corporativo
-                  </label>
-                  <input
-                    name="corporateEmail"
-                    value={user.corporateEmail || ''}
-                    onChange={handleChange}
-                    type="email"
-                    placeholder="colaborador@transcunhaoficial.com.br"
-                    className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                      Senha da Caixa Postal
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setUser(prev => ({ ...prev, corporateEmailPassword: corporateEmailService.generateSecurePassword(12) }))}
-                      className="text-[10px] text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                    >
-                      <Key className="w-3 h-3" />
-                      Gerar Senha
-                    </button>
-                  </div>
-                  <input
-                    name="corporateEmailPassword"
-                    value={user.corporateEmailPassword || ''}
-                    onChange={handleChange}
-                    type="text"
-                    placeholder="Senha de acesso ao Webmail"
-                    className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                    Status da Caixa
-                  </label>
-                  <select
-                    name="corporateEmailStatus"
-                    value={user.corporateEmailStatus || 'Ativo'}
-                    onChange={handleChange}
-                    className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
-                  >
-                    <option value="Ativo">Ativo</option>
-                    <option value="Inativo">Inativo</option>
-                    <option value="Bloqueado">Bloqueado</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                    Cota de Armazenamento
-                  </label>
-                  <select
-                    name="corporateEmailQuotaMb"
-                    value={String(user.corporateEmailQuotaMb || 5120)}
-                    onChange={(e) => setUser(prev => ({ ...prev, corporateEmailQuotaMb: parseInt(e.target.value, 10) }))}
-                    className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
-                  >
-                    <option value="2048">2 GB</option>
-                    <option value="5120">5 GB (Padrão)</option>
-                    <option value="10240">10 GB</option>
-                    <option value="20480">20 GB</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          
-            {/* Campo: Espelhar Acesso de Outro Usuário */}
-            <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                  <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  Espelhar Acesso de Outro Usuário
-                </label>
-                <span className="text-[10px] text-blue-700/80 dark:text-blue-300 font-medium">Opcional</span>
-              </div>
-              <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80">
-                Selecione um usuário para clonar automaticamente seu perfil, permissões personalizadas, filial e vínculos.
-              </p>
-              <select
-                value={selectedUserToMirror}
-                onChange={(e) => handleMirrorUser(e.target.value)}
-                className="p-2 w-full text-xs font-medium border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-xs"
-              >
-                <option value="">Selecione um usuário para espelhar acessos...</option>
-                {(users || [])
-                  .filter(u => u.id !== userToEdit?.id)
-                  .map(u => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.profile}) {u.branchId ? `• Filial: ${u.branchId}` : ''} {u.customPermissions ? '• (Permissões Personalizadas)' : ''}
-                    </option>
-                  ))
-                }
-              </select>
-              {selectedUserToMirror && (
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium pt-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Acessos espelhados de: <strong>{(users || []).find(u => u.id === selectedUserToMirror)?.name}</strong></span>
-                </div>
-              )}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                Nome Completo
+              </label>
+              <input 
+                name="name" 
+                value={user.name} 
+                onChange={handleChange} 
+                placeholder="Nome Completo do Usuário" 
+                className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm" 
+                required 
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Perfil de Acesso</label>
-              <select name="profile" value={user.profile} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
-                {Object.values(UserProfile).map(p => <option key={p} value={p}>{p}</option>)}
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                {isMotorista ? 'CPF / Usuário de Acesso' : 'Usuário / E-mail de Acesso'}
+              </label>
+              <input 
+                name="email" 
+                value={user.email} 
+                onChange={handleChange} 
+                type="text" 
+                placeholder={isMotorista ? "000.000.000-00 (CPF do Motorista)" : "Usuário, CPF ou E-mail de Acesso"} 
+                className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm font-mono" 
+                required 
+              />
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                {isMotorista 
+                  ? 'Login do motorista no aplicativo (utilize o CPF ou identificador sem necessidade de "@").' 
+                  : 'Identificador para login (pode ser nome de usuário, CPF ou e-mail, sem obrigatoriedade de "@").'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                  Telefone / WhatsApp
+                </label>
+                <input 
+                  name="phone" 
+                  value={user.phone || ''} 
+                  onChange={handleChange} 
+                  placeholder="(00) 00000-0000" 
+                  className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">
+                  Senha de Acesso
+                </label>
+                <input 
+                  name="password" 
+                  value={user.password} 
+                  onChange={handleChange} 
+                  type="password" 
+                  placeholder={userToEdit ? 'Nova Senha (em branco para manter)' : 'Senha de Acesso'} 
+                  className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm" 
+                />
+              </div>
+            </div>
+
+            {/* Campo & Configuração: E-mail Corporativo (@transcunhaoficial.com.br) - Apenas para Usuários Internos */}
+            {showCorporateFeatures && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Mail className="w-4 h-4 text-blue-600" />
+                    E-mail Corporativo (@transcunhaoficial.com.br)
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-medium">Administração Integrada</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Configure a caixa postal institucional deste colaborador para envio de ordens, cotações e acesso ao Webmail.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Endereço de E-mail Corporativo
+                    </label>
+                    <input
+                      name="corporateEmail"
+                      value={user.corporateEmail || ''}
+                      onChange={handleChange}
+                      type="text"
+                      placeholder="colaborador@transcunhaoficial.com.br"
+                      className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                        Senha da Caixa Postal
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setUser(prev => ({ ...prev, corporateEmailPassword: corporateEmailService.generateSecurePassword(12) }))}
+                        className="text-[10px] text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <Key className="w-3 h-3" />
+                        Gerar Senha
+                      </button>
+                    </div>
+                    <input
+                      name="corporateEmailPassword"
+                      value={user.corporateEmailPassword || ''}
+                      onChange={handleChange}
+                      type="text"
+                      placeholder="Senha de acesso ao Webmail"
+                      className="p-2 w-full text-xs font-mono border rounded dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Status da Caixa
+                    </label>
+                    <select
+                      name="corporateEmailStatus"
+                      value={user.corporateEmailStatus || 'Ativo'}
+                      onChange={handleChange}
+                      className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
+                    >
+                      <option value="Ativo">Ativo</option>
+                      <option value="Inativo">Inativo</option>
+                      <option value="Bloqueado">Bloqueado</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Cota de Armazenamento
+                    </label>
+                    <select
+                      name="corporateEmailQuotaMb"
+                      value={String(user.corporateEmailQuotaMb || 5120)}
+                      onChange={(e) => setUser(prev => ({ ...prev, corporateEmailQuotaMb: parseInt(e.target.value, 10) }))}
+                      className="p-2 w-full text-xs border rounded dark:bg-gray-700 dark:border-gray-600"
+                    >
+                      <option value="2048">2 GB</option>
+                      <option value="5120">5 GB (Padrão)</option>
+                      <option value="10240">10 GB</option>
+                      <option value="20480">20 GB</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          
+            {/* Campo: Espelhar Acesso de Outro Usuário - Apenas para Usuários Internos */}
+            {showCorporateFeatures && (
+              <div className="p-3.5 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                    <Copy className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    Espelhar Acesso de Outro Usuário
+                  </label>
+                  <span className="text-[10px] text-blue-700/80 dark:text-blue-300 font-medium">Opcional</span>
+                </div>
+                <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80">
+                  Selecione um usuário para clonar automaticamente seu perfil, permissões personalizadas, filial e vínculos.
+                </p>
+                <select
+                  value={selectedUserToMirror}
+                  onChange={(e) => handleMirrorUser(e.target.value)}
+                  className="p-2 w-full text-xs font-medium border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-xs"
+                >
+                  <option value="">Selecione um usuário para espelhar acessos...</option>
+                  {(users || [])
+                    .filter(u => u.id !== userToEdit?.id)
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.profile}) {u.branchId ? `• Filial: ${u.branchId}` : ''} {u.customPermissions ? '• (Permissões Personalizadas)' : ''}
+                      </option>
+                    ))
+                  }
+                </select>
+                {selectedUserToMirror && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium pt-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Acessos espelhados de: <strong>{(users || []).find(u => u.id === selectedUserToMirror)?.name}</strong></span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">Perfil de Acesso</label>
+              <select name="profile" value={user.profile} onChange={handleChange} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm">
+                {(availableProfiles || Object.values(UserProfile)).map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
 
@@ -328,14 +421,36 @@ const UserFormModal: React.FC<UserFormModalProps> = ({ isOpen, onClose, onSave, 
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Filial Associada</label>
-            <select name="branchId" value={user.branchId || ''} onChange={handleChange} className="mt-1 p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600">
-              <option value="">Sem filial (Padrão)</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.city}-{b.state})</option>)}
-            </select>
-            <p className="text-[10px] text-gray-500 mt-1">Usuários sem filial verão dados de todas as filiais (perfil admin/diretor).</p>
-          </div>
+          {showCorporateFeatures && (
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-primary" />
+                Filial
+              </label>
+              <select 
+                name="branchId" 
+                value={user.branchId || ''} 
+                onChange={handleChange} 
+                className="p-2 w-full border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer"
+              >
+                <option value="">Todas as Filiais / Sem Filial (Acesso Geral)</option>
+                {branches && branches.length > 0 ? (
+                  branches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.city} - {b.state})
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>Nenhuma filial cadastrada no sistema</option>
+                )}
+              </select>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                {user.branchId 
+                  ? `Usuário vinculado à filial ${branches?.find(b => b.id === user.branchId)?.name || user.branchId}.` 
+                  : 'Usuários sem filial vinculada possuem acesso geral (visão de todas as unidades).'}
+              </p>
+            </div>
+          )}
 
           {/* INFORMATIVO E CONFIGURAÇÃO: PERFIL AGENCIADOR (LÍDER vs EMBARQUE) */}
           {user.profile === UserProfile.Agenciador && (

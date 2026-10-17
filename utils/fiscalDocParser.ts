@@ -917,8 +917,16 @@ export function extractFreightContractValues(text: string): {
       const rawVal = m.length > 2 ? m[2] : m[1];
       if (!rawVal) continue;
       if (gap && foreignFinancialLabel.test(gap)) continue;
+      // Rejeita caso o gap indique CNPJ, Inscrição, CIOT, Número de documento, etc.
+      if (gap && /(CNPJ|INSCRI[ÇC]|CPF|N[ºO]|NUM|C[ÓO]D|REGISTRO|CHAVE|FORNECEDOR)/i.test(gap)) continue;
+      
+      // Rejeita se o valor capturado for na verdade um CNPJ, CIOT ou código (11 ou mais dígitos inteiros)
+      const digitsOnly = rawVal.replace(/\D/g, '');
+      if (digitsOnly.length >= 11) continue;
+
       const val = parseCurrencyPtBr(rawVal);
-      if (val !== undefined && val >= 0) {
+      // Limite de sanidade física: pedágio unitário rodoviário de frete no Brasil não excede R$ 25.000,00
+      if (val !== undefined && val >= 0 && val <= 25000) {
         res.tollValue = val;
         break;
       }
@@ -1759,7 +1767,10 @@ function parseDetailedXml(xmlText: string): DetailedDocumentData | null {
             (parseCurrencyPtBr(getXmlTagValue(doc, 'vCOFINS', 'vCofins')) || 0)
           ) || undefined,
           valorTributosFederais: parseCurrencyPtBr(getXmlTagValue(doc, 'vTotTrib', 'vTribFed')),
-          valorPedagio: parseCurrencyPtBr(getXmlTagValue(doc, 'vPed', 'vValePed')),
+          valorPedagio: (() => {
+            const val = parseCurrencyPtBr(getXmlTagValue(doc, 'vPed', 'vValePed'));
+            return (val !== undefined && val >= 0 && val <= 25000) ? val : undefined;
+          })(),
         },
         seguro: {
           nomeSeguradora: getXmlTagValue(doc, 'xSeg'),

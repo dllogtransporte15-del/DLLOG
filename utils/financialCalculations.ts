@@ -87,8 +87,10 @@ export function calculateFirstResult(shipments: Shipment[], cargos: Cargo[]): Fi
     // Frete Motorista
     totalDriverCosts += (s.driverFreightValue || 0);
 
-    // Pedágio
-    totalTollCosts += (s.tollValue || 0);
+    // Pedágio com limite de sanidade
+    const rawToll = Number(s.tollValue);
+    const safeToll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
+    totalTollCosts += safeToll;
   }
 
   const netRevenue = Math.max(0, totalGrossRevenue - totalTaxes);
@@ -241,7 +243,8 @@ export function buildShipmentControlSheet(
       const companyRate = s.companyFreightRateSnapshot ?? cargo?.companyFreightValuePerTon ?? 0;
       const companyFreightTotal = companyRate > 0 ? (companyRate * ton) : (s.driverFreightValue * 1.15);
       const driverFreightTotal = s.driverFreightValue || 0;
-      const tollValue = s.tollValue || 0;
+      const rawToll = Number(s.tollValue);
+      const tollValue = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
       const advanceValue = s.advanceValue || 0;
       const balanceValue = s.balanceToReceiveValue || Math.max(0, driverFreightTotal - advanceValue);
       const grossMargin = companyFreightTotal - driverFreightTotal - tollValue;

@@ -4,7 +4,7 @@ import ClientTable from '../components/ClientTable';
 import ClientFormModal from '../components/ClientFormModal';
 import MergeClientsModal from '../components/MergeClientsModal';
 import ClientFilter, { ClientFilters } from '../components/ClientFilter';
-import type { Client, User, ProfilePermissions } from '../types';
+import type { Client, User, ProfilePermissions, LoadingOrderModel } from '../types';
 import { PaymentMethod } from '../types';
 import { can } from '../auth';
 import { Merge, Plus, Upload, Download } from 'lucide-react';
@@ -17,6 +17,7 @@ interface ClientsPageProps {
   onMergeClients?: (targetClientId: string, sourceClientIds: string[]) => Promise<void>;
   currentUser: User;
   profilePermissions: ProfilePermissions;
+  loadingOrderModels?: LoadingOrderModel[];
 }
 
 const ClientsPage: React.FC<ClientsPageProps> = ({
@@ -27,6 +28,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
   onMergeClients,
   currentUser,
   profilePermissions,
+  loadingOrderModels,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
@@ -231,6 +233,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
         clients={filteredClients} 
         onEdit={canUpdate ? handleEditClient : undefined} 
         onDelete={canDelete ? handleDeleteClient : undefined} 
+        loadingOrderModels={loadingOrderModels}
       />
 
       <ClientFormModal
@@ -238,6 +241,7 @@ const ClientsPage: React.FC<ClientsPageProps> = ({
         onClose={handleCloseModal}
         onSave={handleSaveClient}
         clientToEdit={clientToEdit}
+        loadingOrderModels={loadingOrderModels}
       />
 
       {onMergeClients && (

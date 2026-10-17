@@ -236,7 +236,7 @@ export const DriverOrderRequestsList: React.FC<DriverOrderRequestsListProps> = (
                     <div className="flex items-center gap-1.5 text-xs">
                       <span className="text-gray-500 dark:text-gray-400">Frete Motorista:</span>
                       <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                        {formatMoney(ratePerTon)}/ton
+                        {ratePerTon > 0 ? `${formatMoney(ratePerTon)}/ton` : 'A combinar'}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">

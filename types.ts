@@ -115,6 +115,7 @@ export interface User {
   authId?: string;
   passwordUpdatedAt?: string;
   branchId?: string;
+  filialId?: string;
   hasCommercialCommission?: boolean;
   commercialFixedSalary?: number;
   commercialMatrizRate?: number;
@@ -163,6 +164,8 @@ export interface ClientBranchCnpj {
   requiresScheduling?: boolean;
   salespersonName?: string;
   salespersonCommissionPerTon?: number;
+  loadingOrderModelId?: string;
+  ordemCarregamentoModelId?: string;
 }
 
 export interface Client {
@@ -182,6 +185,8 @@ export interface Client {
   secondaryCnpjs?: ClientBranchCnpj[];
   salespersonName?: string;
   salespersonCommissionPerTon?: number;
+  loadingOrderModelId?: string;
+  ordemCarregamentoModelId?: string;
 }
 
 export enum OwnerType {
@@ -385,6 +390,8 @@ export interface Cargo {
   isExport?: boolean;
   orderNumber?: string;
   packaging?: string;
+  ulaNumber?: string;
+  loadNum?: string;
 }
 
 
@@ -557,6 +564,12 @@ export interface Shipment {
   driverContact?: string;
   driverCpf?: string;
   driverCnpj?: string;
+  driverCnh?: string;
+  driverCnhRegister?: string;
+  driverCnhExpiry?: string;
+  driverRg?: string;
+  ulaNumber?: string;
+  loadNum?: string;
   embarcadorId: string;
   horsePlate: string;
   trailer1Plate?: string;
@@ -956,5 +969,95 @@ export interface FinancialInvoice {
   
   createdAt: string;
   updatedAt?: string;
+}
+
+export type LoadingOrderModelStatus = 'ativo' | 'inativo';
+
+export interface LoadingOrderModel {
+  id: string;
+  nome: string;
+  descricao?: string;
+  status: LoadingOrderModelStatus;
+  isDefault?: boolean;
+  camposObrigatorios?: string[];
+  observacoesPadrao?: string;
+  layoutTipo?: 'padrao' | 'simplificado' | 'graos' | 'fertilizantes' | 'personalizado' | 'consube';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const DEFAULT_LOADING_ORDER_MODELS: LoadingOrderModel[] = [
+  {
+    id: 'mod_consube',
+    nome: 'Consube',
+    descricao: 'Modelo Consube com cabeçalho oficial, autorização de terceiro/motorista, composição (Cavalo, Reboque 1 e 2, Dolly), dados de retirada/sacos/peso em KG, natureza da carga, remetente, cliente e liberação da gestora de risco.',
+    status: 'ativo',
+    layoutTipo: 'consube',
+    observacoesPadrao: 'PREENCHER OS DADOS SEM O USO DE PONTUAÇÃO.',
+    camposObrigatorios: [
+      'motorista',
+      'cpf',
+      'cnh',
+      'cavalo',
+      'reboque1',
+      'pesoKg',
+      'remetente',
+      'cliente',
+      'liberacaoRisco'
+    ]
+  },
+  {
+    id: 'mod_padrao_transcunha',
+    nome: 'Modelo Padrão Transcunha',
+    descricao: 'Ordem de carregamento completa com dados de transportadora, motorista, veículo, carga e instruções gerais.',
+    status: 'ativo',
+    isDefault: true,
+    layoutTipo: 'padrao',
+  },
+  {
+    id: 'mod_graos_granel',
+    nome: 'Modelo Grãos / Granel',
+    descricao: 'Otimizado para embarque de soja, milho e farelo com campos de classificação, umidade e tolerância de quebra.',
+    status: 'ativo',
+    layoutTipo: 'graos',
+  },
+  {
+    id: 'mod_fertilizantes_ensacados',
+    nome: 'Modelo Fertilizantes & Ensacados',
+    descricao: 'Direcionado a fertilizantes, químicos e carga ensacada com checklist de amarração e lona.',
+    status: 'ativo',
+    layoutTipo: 'fertilizantes',
+  },
+  {
+    id: 'mod_bunge_export',
+    nome: 'Modelo Trading / Exportação (Porto)',
+    descricao: 'Modelo com instruções de agendamento em porto, terminal de descarga e número de booking/DI.',
+    status: 'ativo',
+    layoutTipo: 'personalizado',
+  },
+  {
+    id: 'mod_simplificado_ticket',
+    nome: 'Modelo Simplificado (Ticket / Minuta)',
+    descricao: 'Impressão compacta tipo ticket com dados essenciais para conferência em balança.',
+    status: 'ativo',
+    layoutTipo: 'simplificado',
+  },
+];
+
+export function getLoadingOrderModelById(
+  id?: string,
+  customModels?: LoadingOrderModel[]
+): LoadingOrderModel | undefined {
+  if (!id) return undefined;
+  const list = customModels && customModels.length > 0 ? customModels : DEFAULT_LOADING_ORDER_MODELS;
+  return list.find((m) => m.id === id) || DEFAULT_LOADING_ORDER_MODELS.find((m) => m.id === id);
+}
+
+export function getLoadingOrderModelName(
+  id?: string,
+  customModels?: LoadingOrderModel[]
+): string {
+  const model = getLoadingOrderModelById(id, customModels);
+  return model ? model.nome : 'Padrão do Sistema';
 }
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Branch } from '../types';
 import { UserProfile } from '../types';
 
 export interface UserFilters {
@@ -6,15 +7,17 @@ export interface UserFilters {
   name: string;
   profile: string;
   status: string;
+  branchId?: string;
 }
 
 interface UserFilterProps {
   filters: UserFilters;
   onFilterChange: (filters: UserFilters) => void;
   availableProfiles?: UserProfile[];
+  branches?: Branch[];
 }
 
-const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availableProfiles }) => {
+const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availableProfiles, branches }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     onFilterChange({ ...filters, [name]: value });
@@ -26,15 +29,17 @@ const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availa
       name: '',
       profile: '',
       status: '',
+      branchId: '',
     });
   };
 
-  const isFiltered = filters.id !== '' || filters.name !== '' || filters.profile !== '' || filters.status !== '';
+  const isFiltered = filters.id !== '' || filters.name !== '' || filters.profile !== '' || filters.status !== '' || (filters.branchId !== '' && filters.branchId !== undefined);
   const profilesToRender = availableProfiles && availableProfiles.length > 0 ? availableProfiles : Object.values(UserProfile);
+  const hasBranches = Boolean(branches && branches.length > 0);
 
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md mb-6 border border-gray-200 dark:border-gray-700">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+      <div className={`grid grid-cols-1 md:grid-cols-2 ${hasBranches ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-4 items-end`}>
         {/* ID Filter */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ID</label>
@@ -91,6 +96,25 @@ const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availa
             <option value="inactive">Inativo</option>
           </select>
         </div>
+
+        {/* Filial Filter */}
+        {hasBranches && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Filial</label>
+            <select 
+              name="branchId" 
+              value={filters.branchId || ''} 
+              onChange={handleInputChange} 
+              className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm focus:ring-2 focus:ring-primary focus:border-transparent outline-none cursor-pointer"
+            >
+              <option value="">Todas</option>
+              <option value="none">Sem Filial (Geral)</option>
+              {branches?.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Clear Filters Button */}
         <div>

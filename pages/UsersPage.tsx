@@ -127,8 +127,9 @@ const UsersPage: React.FC<UsersPageProps> = ({
       const nameMatch = !filters.name || (user.name && user.name.toLowerCase().includes(filters.name.toLowerCase()));
       const profileMatch = !filters.profile || user.profile === filters.profile;
       const statusMatch = !filters.status || (filters.status === 'active' ? user.active === true : user.active === false);
+      const branchMatch = !filters.branchId || (filters.branchId === 'none' ? !user.branchId : (user.branchId === filters.branchId || (user as any).filialId === filters.branchId));
 
-      return idMatch && nameMatch && profileMatch && statusMatch;
+      return idMatch && nameMatch && profileMatch && statusMatch && branchMatch;
     });
   }, [users, filters, activeTab]);
 
@@ -282,6 +283,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         filters={filters} 
         onFilterChange={setFilters} 
         availableProfiles={availableProfiles}
+        branches={branches}
       />
 
       <UserTable 
@@ -291,6 +293,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         onInspectUser={isAdmin ? (user) => setUserToInspect(user) : undefined}
         clients={clients}
+        branches={branches}
         showAppOptionColumn={activeTab === 'internal' || activeTab === 'all'}
         onToggleDriverRequests={canUpdateUser ? handleToggleDriverRequests : undefined}
       />
@@ -304,6 +307,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         branches={branches}
         users={users}
         defaultProfile={defaultProfileForNewUser}
+        availableProfiles={availableProfiles}
       />
       
       <PermissionsModal

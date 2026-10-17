@@ -132,6 +132,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
 
   const filteredLoads = useMemo(() => {
     const filtered = loads.filter(load => {
+      if (currentUser.profile === UserProfile.Motorista && load.status !== CargoStatus.EmAndamento) return false;
       if (filterId.length > 0 && !filterId.includes(load.sequenceId?.toString() || '')) return false;
       if (filterClient.length > 0 && !filterClient.includes(getClientName(load.clientId))) return false;
       if (filterProduct.length > 0 && !filterProduct.includes(getProductName(load.productId))) return false;
@@ -648,7 +649,9 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                     <div className="text-[9px] text-gray-400 uppercase font-bold tracking-wider">FRETE</div>
                     {currentUser.profile === UserProfile.Cliente ? (
                       <div className="text-sm font-bold text-primary dark:text-blue-400">
-                        {formatCurrency(load.companyFreightValuePerTon)}{hasCompanyToll ? ' + Ped' : ''}
+                        {load.companyFreightValuePerTon > 0 
+                          ? `${formatCurrency(load.companyFreightValuePerTon)}${hasCompanyToll ? ' + Ped' : ''}` 
+                          : 'A combinar'}
                       </div>
                     ) : (
                       <div className="flex flex-col items-end gap-1">
@@ -656,11 +659,15 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                         <div className="flex items-center justify-end gap-1">
                           <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">PJ</span>
                           <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
-                            {formatCurrency(totalDriverFreightPj)}{hasDriverPjToll ? ' + Ped' : ''}
+                            {totalDriverFreightPj > 0 
+                              ? `${formatCurrency(totalDriverFreightPj)}${hasDriverPjToll ? ' + Ped' : ''}` 
+                              : 'A combinar'}
                           </span>
-                          <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md">
-                            {netMarginPercentagePj}
-                          </span>
+                          {totalDriverFreightPj > 0 && (
+                            <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md">
+                              {netMarginPercentagePj}
+                            </span>
+                          )}
                         </div>
 
                         {/* PF Freight */}
@@ -671,11 +678,15 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                           ) : (
                             <>
                               <span className="text-xs font-extrabold text-orange-700 dark:text-orange-300">
-                                {formatCurrency(totalDriverFreightPf)}{hasDriverPfToll ? ' + Ped' : ''}
+                                {totalDriverFreightPf > 0 
+                                  ? `${formatCurrency(totalDriverFreightPf)}${hasDriverPfToll ? ' + Ped' : ''}` 
+                                  : 'A combinar'}
                               </span>
-                              <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md">
-                                {netMarginPercentagePf}
-                              </span>
+                              {totalDriverFreightPf > 0 && (
+                                <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded-md">
+                                  {netMarginPercentagePf}
+                                </span>
+                              )}
                             </>
                           )}
                         </div>

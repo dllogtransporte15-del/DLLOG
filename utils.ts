@@ -812,3 +812,56 @@ export function normalizeWeightTonnage(raw: number | string | undefined | null):
   }
   return Number(val.toFixed(2));
 }
+
+export type FinancialPeriodFilter = 'hoje' | 'semana' | 'mes' | 'ano';
+
+export interface FinancialDateRange {
+  startDate: string; // Formato YYYY-MM-DD
+  endDate: string;   // Formato YYYY-MM-DD
+}
+
+/**
+ * Converte um objeto Date para string no formato local YYYY-MM-DD
+ */
+export function toLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Retorna o intervalo dinâmico de datas para os relatórios financeiros:
+ * - "hoje": estritamente o dia atual / de referência (YYYY-MM-DD a YYYY-MM-DD)
+ * - "semana": Domingo a Sábado da semana corrente
+ * - "mes": 1º ao último dia do mês corrente
+ * - "ano": 1º ao último dia do ano corrente
+ */
+export function getFinancialPeriodRange(filter: FinancialPeriodFilter, refDate: Date = new Date()): FinancialDateRange {
+  const y = refDate.getFullYear();
+  const m = refDate.getMonth();
+  const d = refDate.getDate();
+
+  switch (filter) {
+    case 'hoje': {
+      const todayStr = toLocalYmd(refDate);
+      return { startDate: todayStr, endDate: todayStr };
+    }
+    case 'semana': {
+      const dayOfWeek = refDate.getDay(); // 0 = Domingo, 6 = Sábado
+      const sunday = new Date(y, m, d - dayOfWeek);
+      const saturday = new Date(y, m, d + (6 - dayOfWeek));
+      return { startDate: toLocalYmd(sunday), endDate: toLocalYmd(saturday) };
+    }
+    case 'mes': {
+      const firstDay = new Date(y, m, 1);
+      const lastDay = new Date(y, m + 1, 0);
+      return { startDate: toLocalYmd(firstDay), endDate: toLocalYmd(lastDay) };
+    }
+    case 'ano': {
+      const firstDay = new Date(y, 0, 1);
+      const lastDay = new Date(y, 11, 31);
+      return { startDate: toLocalYmd(firstDay), endDate: toLocalYmd(lastDay) };
+    }
+  }
+}

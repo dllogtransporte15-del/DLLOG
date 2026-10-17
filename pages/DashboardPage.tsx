@@ -109,7 +109,7 @@ interface DashboardPageProps {
   onUpdateAnttAndBankDetails?: (shipmentId: string, data: { anttOwnerIdentifier: string; bankDetails?: string }) => Promise<void>;
   onUpdatePrice?: (shipmentId: string, data: { newTotal: number, newRate?: number, newCompanyRate?: number }) => void;
   freightOffers?: FreightOffer[];
-  onSaveFreightOffer?: (offer: Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
+  onSaveFreightOffer?: (offer: FreightOffer | Omit<FreightOffer, 'id' | 'createdAt'>) => Promise<void>;
   onAcceptFreightOffer?: (offer: FreightOffer) => void;
   onDeleteFreightOffer?: (offer: FreightOffer) => void;
   onConvertToCargo?: (offer: FreightOffer) => void;
@@ -1383,6 +1383,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               currentUser={currentUser || undefined}
               onDelete={onDeleteFreightOffer}
               onConvertToCargo={onConvertToCargo}
+              onSaveFreightOffer={onSaveFreightOffer}
             />
           </div>
         )}
@@ -1963,6 +1964,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
              currentUser={currentUser || undefined}
             onDelete={onDeleteFreightOffer}
             onConvertToCargo={onConvertToCargo}
+            onSaveFreightOffer={onSaveFreightOffer}
             onUpdateStatus={async (offer, status) => {
               if (onSaveFreightOffer) {
                 const history = addOfferHistory(offer, `Status alterado para "${status}" pelo Cliente.`);
@@ -1978,6 +1980,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
             products={products}
             currentClient={clients.find(c => c.id === currentUser.clientId)}
             onSave={onSaveFreightOffer || (async () => {})}
+            currentUser={currentUser}
           />
         </>
     )

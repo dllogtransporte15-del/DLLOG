@@ -216,21 +216,27 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
         onLogin(userProfile);
 
       } else {
-        const cleanEmail = email.trim().toLowerCase();
+        const inputLogin = email.trim();
+        const cleanEmail = inputLogin.toLowerCase();
         const cleanPassword = password.trim();
+        const cleanDigits = inputLogin.replace(/\D/g, '');
+        const formattedCpf = cleanDigits.length === 11 ? formatCPF(cleanDigits) : '';
 
-        console.log('[LoginPage] Iniciando login interno para:', cleanEmail);
+        console.log('[LoginPage] Iniciando login para:', inputLogin);
         
-        const { data: dbUser, error: dbError } = await supabase
-          .from('app_users')
-          .select('*')
-          .eq('email', cleanEmail)
-          .eq('password', cleanPassword)
-          .single();
+        let query = supabase.from('app_users').select('*').eq('password', cleanPassword);
+        if (formattedCpf) {
+          query = query.or(`email.ilike.${cleanEmail},email.eq.${inputLogin},email.eq.${formattedCpf},email.eq.${cleanDigits}`);
+        } else {
+          query = query.or(`email.ilike.${cleanEmail},email.eq.${inputLogin}`);
+        }
+
+        const { data: dbUserList, error: dbError } = await query;
+        const dbUser = dbUserList && dbUserList.length > 0 ? dbUserList[0] : null;
 
         if (dbError || !dbUser) {
           console.error('[LoginPage] Erro de login:', dbError);
-          setError('Email ou senha inválidos no sistema interno.');
+          setError('Usuário, e-mail ou senha inválidos.');
           setIsLoading(false);
           return;
         }
@@ -242,7 +248,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
           profile: dbUser.profile,
           active: dbUser.active,
           password: dbUser.password,
-          clientId: dbUser.client_id,
+          clientId: dbUser.client_id || undefined,
+          branchId: dbUser.branch_id || undefined,
+          filialId: dbUser.branch_id || undefined,
           requirePasswordChange: dbUser.require_password_change,
           authId: dbUser.auth_id
         };
@@ -874,10 +882,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   {loginType === 'interno' ? (
                     <>
-                      {/* Campo E-mail */}
+                      {/* Campo E-mail / Usuário / CPF */}
                       <div>
                         <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                          E-mail Corporativo
+                          Usuário, E-mail ou CPF
                         </label>
                         <div className="relative">
                           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -886,12 +894,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, companyLogo, prof
                           <input
                             id="email-address"
                             name="email"
-                            type="email"
+                            type="text"
                             required
                             disabled={isLoading}
                             value={email}
                             onChange={e => setEmail(e.target.value)}
-                            placeholder="seu.email@transcunhaoficial.com.br"
+                            placeholder="seu.email@transcunhaoficial.com.br, usuário ou CPF"
                             className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                           />
                         </div>

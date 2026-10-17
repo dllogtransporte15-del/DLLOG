@@ -46,41 +46,7 @@ interface FinancialPageProps {
 const STORAGE_TRANSACTIONS_KEY = 'transcunha_financial_transactions';
 const STORAGE_ACCOUNTS_KEY = 'transcunha_financial_bank_accounts';
 
-const INITIAL_BANK_ACCOUNTS: BankAccount[] = [
-  {
-    id: 'acc_bradesco_1',
-    bankName: 'Bradesco Principal',
-    accountNumber: '45890-2',
-    agency: '1240',
-    accountType: 'corrente',
-    initialBalance: 148500.00,
-    currentBalance: 148500.00,
-    active: true,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'acc_santander_2',
-    bankName: 'Santander Operações',
-    accountNumber: '89102-4',
-    agency: '0321',
-    accountType: 'corrente',
-    initialBalance: 82340.50,
-    currentBalance: 82340.50,
-    active: true,
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'acc_itau_3',
-    bankName: 'Itaú Reserva / Aplicação',
-    accountNumber: '11409-8',
-    agency: '0850',
-    accountType: 'aplicacao',
-    initialBalance: 250000.00,
-    currentBalance: 250000.00,
-    active: true,
-    createdAt: new Date().toISOString()
-  }
-];
+const INITIAL_BANK_ACCOUNTS: BankAccount[] = [];
 
 export const FinancialPage: React.FC<FinancialPageProps> = ({
   shipments,
@@ -99,7 +65,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   const validTabs: FinancialTab[] = [
     'payables', 
     'receivables', 
-    'invoices',
+    'invoices', 
     'ofx', 
     'result-1', 
     'result-2', 
@@ -114,11 +80,19 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
     setSearchParams({ tab });
   };
 
-  // State: Bank Accounts
+  // State: Bank Accounts - Apenas saldos reais vindo do banco/integração (R$ 0,00 caso vazio)
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_ACCOUNTS_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Remove contas mockadas legadas para garantir fidelidade de saldos
+          return parsed.filter((a: any) => 
+            a && a.id !== 'acc_bradesco_1' && a.id !== 'acc_santander_2' && a.id !== 'acc_itau_3'
+          );
+        }
+      }
     } catch (e) {
       console.error('Erro ao ler contas bancárias do localStorage', e);
     }
@@ -484,12 +458,18 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
         {activeTab === 'result-2' && (
           <SecondResultTab
             data={secondLevelResult}
+            shipments={shipments}
+            cargos={cargos}
+            transactions={transactions}
           />
         )}
 
         {activeTab === 'result-3' && (
           <ThirdResultTab
             data={thirdLevelResult}
+            shipments={shipments}
+            cargos={cargos}
+            transactions={transactions}
           />
         )}
 

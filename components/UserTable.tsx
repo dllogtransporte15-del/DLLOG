@@ -1,6 +1,6 @@
 
 import React from 'react';
-import type { User, Client } from '../types';
+import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
 import { WhatsAppIcon } from './icons';
 import { Building2, Smartphone, PhoneOff, Eye, Mail } from 'lucide-react';
@@ -12,11 +12,22 @@ interface UserTableProps {
   onDelete?: (userId: string) => void;
   onInspectUser?: (user: User) => void;
   clients?: Client[];
+  branches?: Branch[];
   showAppOptionColumn?: boolean;
   onToggleDriverRequests?: (user: User) => void;
 }
 
-const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete, onInspectUser, clients, showAppOptionColumn = false, onToggleDriverRequests }) => {
+const UserTable: React.FC<UserTableProps> = ({ 
+  users, 
+  allUsers, 
+  onEdit, 
+  onDelete, 
+  onInspectUser, 
+  clients, 
+  branches,
+  showAppOptionColumn = false, 
+  onToggleDriverRequests 
+}) => {
   const getWhatsAppUrl = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     const finalDigits = (digits.length === 10 || digits.length === 11) ? `55${digits}` : digits;
@@ -37,9 +48,10 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
             <tr>
               <th scope="col" className="w-24 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">ID</th>
               <th scope="col" className="px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Nome</th>
-              <th scope="col" className="px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Email</th>
+              <th scope="col" className="px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Email / Usuário</th>
               <th scope="col" className="w-36 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Telefone</th>
               <th scope="col" className="w-44 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Perfil</th>
+              <th scope="col" className="w-40 px-3 sm:px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Filial</th>
               <th scope="col" className="w-24 px-3 sm:px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">Status</th>
               {showAppOptionColumn && (
                 <th scope="col" className="w-48 px-3 sm:px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 tracking-wider">
@@ -128,6 +140,30 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
                     )}
                   </div>
                 </td>
+                <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                  {isInternal(user.profile) ? (
+                    user.branchId ? (
+                      (() => {
+                        const branch = branches?.find(b => b.id === user.branchId);
+                        return (
+                          <span 
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-xs" 
+                            title={branch ? `${branch.name} (${branch.city} - ${branch.state})` : `Filial ID: ${user.branchId}`}
+                          >
+                            <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="truncate max-w-[140px] font-medium">{branch ? branch.name : user.branchId}</span>
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700/60 dark:text-gray-400 border border-gray-200 dark:border-gray-600" title="Usuário com acesso a todas as filiais">
+                        Todas
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-gray-400 dark:text-gray-600 text-xs">-</span>
+                  )}
+                </td>
                 <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-center">
                   <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${user.active ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
                     {user.active ? 'Ativo' : 'Inativo'}
@@ -196,7 +232,7 @@ const UserTable: React.FC<UserTableProps> = ({ users, allUsers, onEdit, onDelete
           })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={((onEdit || onDelete || onInspectUser) ? 7 : 6) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colSpan={((onEdit || onDelete || onInspectUser) ? 8 : 7) + (showAppOptionColumn ? 1 : 0)} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                   Nenhum usuário encontrado para os filtros selecionados.
                 </td>
               </tr>

@@ -323,12 +323,15 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
         const remainingVolume = load.totalVolume - load.loadedVolume;
         const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
         const tollText = hasToll ? ' + Ped' : '';
+        const priceDisplay = (load.driverFreightValuePerTon && load.driverFreightValuePerTon > 0)
+          ? `R$ ${load.driverFreightValuePerTon.toFixed(2)}${tollText}/ton`
+          : 'A combinar';
         const popupContent = `
             <div class="p-1" style="min-width: 220px;">
                 <h4 class="font-bold text-md text-primary">Carga ${load.sequenceId}</h4>
                 <p class="text-xs text-gray-500 mb-2">${client?.nomeFantasia || 'N/A'} - ${product?.name || 'N/A'}</p>
                 <p class="text-sm"><b>Rota:</b> ${load.origin} &rarr; ${load.destination}</p>
-                <p class="text-sm"><b>Valor:</b> R$ ${load.driverFreightValuePerTon.toFixed(2)}${tollText}/ton</p>
+                <p class="text-sm"><b>Valor:</b> ${priceDisplay}</p>
                 <p class="text-sm"><b>Volume Disp.:</b> ${remainingVolume.toFixed(1)} ton</p>
                 ${!isDemo ? `<button id="create-shipment-btn-${load.id}" class="w-full mt-3 py-1.5 bg-primary text-white text-sm font-semibold rounded hover:bg-primary-dark">Criar Embarque</button>` : ''}
             </div>
@@ -414,9 +417,11 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
       const destination = load.destination.toUpperCase();
       const hasToll = load.driverFreightHasToll || load.freightLegs?.some(l => l.driverFreightHasToll);
       const tollText = hasToll ? ' + Ped' : '';
-      const price = `${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`;
+      const price = (load.driverFreightValuePerTon && load.driverFreightValuePerTon > 0)
+        ? `R$ ${load.driverFreightValuePerTon.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${tollText}`
+        : 'A combinar';
       const bodyTypes = formatAllowedVehicleTypes(load.allowedVehicleTypes);
-      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 R$ ${price}\t\n🚛 ${bodyTypes} 🚛`;
+      let text = `📍 ${origin} x ${destination} \n🌾 ${product} - 💲 ${price}\t\n🚛 ${bodyTypes} 🚛`;
       
       if (load.originLocation) text += `\n🏢 Coleta: ${load.originLocation}`;
       if (load.originMapLink) text += `\n📍Mapa Coleta: ${load.originMapLink}`;
@@ -612,7 +617,9 @@ const OperationalMapPage: React.FC<OperationalMapPageProps> = ({ cargos, shipmen
                       </div>
 
                       <div className="flex justify-between mt-4 pt-3 border-t border-dashed border-gray-200 dark:border-gray-600">
-                        <span className="text-[11px] font-black text-green-600 dark:text-green-400">R$ {load.driverFreightValuePerTon.toFixed(2)}{tollText}</span>
+                        <span className={`text-[11px] font-black ${load.driverFreightValuePerTon > 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                          {load.driverFreightValuePerTon > 0 ? `R$ ${load.driverFreightValuePerTon.toFixed(2)}${tollText}` : 'A combinar'}
+                        </span>
                         <span className="text-[11px] font-black text-gray-700 dark:text-gray-200">{(load.totalVolume - load.loadedVolume).toFixed(1)} <span className="text-[9px] text-gray-400 font-normal">ton</span></span>
                       </div>
                     </div>

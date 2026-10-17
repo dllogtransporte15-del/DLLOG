@@ -60,8 +60,10 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
                     <div>
                         <p className="text-xs text-gray-500">{isMotorista ? 'Valor do Frete' : 'Frete Motorista PJ'}</p>
                         <p className="font-medium text-gray-800 dark:text-gray-200">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)}
-                            {leg.driverFreightHasToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
+                            {leg.driverFreightValuePerTon > 0 
+                                ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTon)
+                                : 'A combinar'}
+                            {leg.driverFreightValuePerTon > 0 && leg.driverFreightHasToll && <span className="ml-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
                         </p>
                     </div>
                     <div>
@@ -70,8 +72,10 @@ const FreightLegDetail: React.FC<{ leg: FreightLeg; index: number; hideSensitive
                             <p className="font-medium text-gray-400 dark:text-gray-500 italic">Desabilitado</p>
                         ) : (
                             <p className="font-medium text-gray-800 dark:text-gray-200">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon)}
-                                {leg.driverFreightPfHasToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
+                                {(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon) > 0
+                                    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon)
+                                    : 'A combinar'}
+                                {(leg.driverFreightValuePerTonPf ?? leg.driverFreightValuePerTon) > 0 && leg.driverFreightPfHasToll && <span className="ml-1 text-xs font-bold text-orange-600 dark:text-orange-400">+ Ped</span>}
                             </p>
                         )}
                     </div>
