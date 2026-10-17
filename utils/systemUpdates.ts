@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_17_v2_70_68',
+    version: 'v2.70.68',
+    date: '17/10/2026',
+    title: 'Refinamento da Leitura de Carta Frete e Correção de Falso Positivo na Nota Fiscal',
+    summary: 'Aprimoramento completo no algoritmo de detecção e extração de documentos fiscais. Eliminado o alerta falso de documento incorreto ao anexar Notas Fiscais que contêm a menção a contratos comerciais de grãos no nome ou conteúdo (ex: "NOTA FISCAL ... - CONTRATO ..."). Adicionado suporte integral ao padrão oficial de Carta Frete / Contrato de Transporte (MaisFrete / e-Frete / NSTECH / Transcunha), extraindo com máxima precisão o número do contrato, CIOT, frete líquido e bruto, tarifa por tonelada, vale-pedágio em tag, adiantamento, cálculo do saldo, dados do motorista, composição veicular (placas e reboques), tonelagem e chave PIX.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Fim do Alerta Falso Positivo de Carta Frete ao Anexar Nota Fiscal',
+        description: 'Reestruturada a precedência do classificador de arquivos. Agora, qualquer arquivo contendo indicadores de Nota Fiscal/DANFE (mesmo vinculado a contratos agrícolas como Bunge, Cargil ou Solida) é reconhecido com prioridade como Nota Fiscal, impedindo bloqueios ou advertências indevidas no modal de anexos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Leitura Real e Completa do Contrato de Frete / Carta Frete',
+        description: 'O extrator OCR e de texto foi refinado para ler com precisão o leiaute padrão MaisFrete / e-Frete: Cláusulas 1.1 (frete total e valor/ton), 1.2/1.3 (origem e destino), 1.6 (peso), 2.2 (pedágio e pedido Sem Parar), 2.4/2.5 (adiantamento 70%), 3.5 (cálculo de saldo, taxas de quebra e frete faltante), além de motorista, CNH, CPF, e composição veicular completa.'
+      },
+      {
+        category: 'feature',
+        title: 'Preenchimento Automático do Formulário com Dados do Contrato',
+        description: 'Ao anexar a Carta Frete, o sistema agora autopreenche no lançamento a tonelagem da carga, o valor do frete e saldo a receber, a chave PIX do contratado e as placas do conjunto transportador sem necessidade de digitação manual.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_16_v2_70_67',
     version: 'v2.70.67',
     date: '16/10/2026',

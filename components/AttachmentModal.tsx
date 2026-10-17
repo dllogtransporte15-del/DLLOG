@@ -1221,6 +1221,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             setCteExtractedTomadorNome(parsed.cteTomadorNome);
             extractedAny = true;
           }
+          if (parsed.loadedTonnage !== undefined && parsed.loadedTonnage > 0 && (typeof loadedTonnage !== 'number' || loadedTonnage <= 0)) {
+            setLoadedTonnage(parsed.loadedTonnage);
+            extractedAny = true;
+          }
+          if (parsed.subtotalSaldoValue !== undefined && parsed.subtotalSaldoValue > 0 && (typeof balanceToReceiveValue !== 'number' || balanceToReceiveValue <= 0)) {
+            setBalanceToReceiveValue(parsed.subtotalSaldoValue);
+            extractedAny = true;
+          }
+          if (parsed.pixKey && !bankDetails) {
+            setBankDetails(parsed.pixKey);
+            extractedAny = true;
+          }
           if (extractedAny) {
             showToast('Informações de frete extraídas do documento com sucesso!', 'success');
           }
@@ -1246,16 +1258,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
     filesToSniff.forEach(({ file, currentCat }) => {
       const byName = detectDocumentTypeFromFileName(file.name);
-      if (byName && (!detectedDocTypes[file.name] || (byName === 'Carta Frete' && detectedDocTypes[file.name] !== 'Carta Frete'))) {
+      if (byName && !detectedDocTypes[file.name]) {
         setDetectedDocTypes(prev => ({ ...prev, [file.name]: byName }));
       }
       extractDetailedDocData(file, currentCat).then(detailed => {
         if (detailed?.documentType && detailed.documentType !== 'Outro') {
           setDetectedDocTypes(prev => {
-            // Se o arquivo tiver nome indicando expressamente Carta Frete, mantém Carta Frete
-            if (byName === 'Carta Frete' && detailed.documentType !== 'Carta Frete') {
-              return prev;
-            }
             if (prev[file.name] !== detailed.documentType) {
               return { ...prev, [file.name]: detailed.documentType };
             }

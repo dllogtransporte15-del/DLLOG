@@ -60,16 +60,19 @@ export interface DetailedDocumentData {
     nome?: string;
     cpf?: string;
     cnh?: string;
+    rg?: string;
   };
 
   // Trajeto e Transporte
   origem?: {
     municipio?: string;
     uf?: string;
+    local?: string;
   };
   destino?: {
     municipio?: string;
     uf?: string;
+    local?: string;
   };
   veiculo?: {
     placaTrator?: string;
@@ -77,6 +80,7 @@ export interface DetailedDocumentData {
     rntrc?: string;
     tipo?: string;
     ufPlaca?: string;
+    totalEixos?: number;
   };
 
   // Carga e Pesos
@@ -89,11 +93,14 @@ export interface DetailedDocumentData {
     quantidadeVolumes?: number;
     especie?: string;
     cubagem?: number;
+    notasFiscaisVinculadas?: string[];
+    previsaoDescarga?: string;
   };
 
   // Valores Financeiros do Frete / Contrato
   financeiro?: {
     valorTotalFrete?: number;
+    valorFretePorTonelada?: number;
     valorTotalServico?: number;
     valorLiquido?: number;
     valorReceber?: number;
@@ -101,6 +108,8 @@ export interface DetailedDocumentData {
     porcentagemAdiantamento?: number;
     valorSaldo?: number;
     valorPedagio?: number;
+    provedorPedagio?: string;
+    numeroPedidoPedagio?: string;
     valorCombustivel?: number;
     descontos?: number;
     baseCalculoIcms?: number;
@@ -116,6 +125,8 @@ export interface DetailedDocumentData {
     formaPagamento?: string;
     dadosBancarios?: string;
     chavePix?: string;
+    valorKgQuebra?: number;
+    valorKgFreteFaltante?: number;
   };
 
   // Seguro
@@ -216,54 +227,91 @@ export function detectDocumentTypeFromFileName(fileName?: string | null): 'MDF-e
   if (!fileName) return null;
   const lower = fileName.toLowerCase().trim();
 
-  // 1. Carta Frete / Contrato: prioridade máxima se o nome indicar contrato ou carta frete
-  if (
-    lower.includes('carta') ||
-    lower.includes('frete') ||
-    lower.includes('contrato') ||
-    lower.includes('_cf_') ||
-    lower.includes('cf_') ||
-    lower.includes('efrete') ||
-    lower.includes('e-frete') ||
-    lower.includes('pamcard') ||
-    lower.includes('repom')
-  ) {
-    // Só descarta se o nome for explicitamente um MDF-e / DAMDFE
-    if (!lower.includes('damdfe') && !lower.includes('manifesto')) {
-      return 'Carta Frete';
-    }
-  }
+  // 1. Termos inequívocos de Nota Fiscal / DANFE (incluindo NF-e de contratos de grãos como "NOTA FISCAL ... CONTRATO ...")
+  const hasNotaFiscalIndicator = (
+    lower.includes('danfe') ||
+    lower.includes('nota fiscal') ||
+    lower.includes('nota_fiscal') ||
+    lower.includes('notafiscal') ||
+    /\bnfe\b/i.test(lower) ||
+    /\bnf-e\b/i.test(lower) ||
+    /\bnf\s*\d+/i.test(lower) ||
+    /\bnota\s*\d+/i.test(lower)
+  );
 
-  // 2. MDF-e: damdfe, damfe, mdfe, mdf-e, manifesto
-  if (
+  // 2. Termos de Conhecimento de Transporte (CT-e / DACTE)
+  const hasCteIndicator = (
+    lower.includes('dacte') ||
+    /\bcte\b/i.test(lower) ||
+    /\bct-e\b/i.test(lower) ||
+    lower.includes('conhecimento')
+  );
+
+  // 3. Termos de Manifesto Eletrônico (MDF-e / DAMDFE)
+  const hasMdfeIndicator = (
     lower.includes('damdfe') ||
     lower.includes('damfe') ||
     lower.includes('mdfe') ||
     lower.includes('mdf-e') ||
     lower.includes('manifesto')
-  ) {
+  );
+
+  // 4. Termos explícitos e específicos de Carta Frete / Contrato de Transporte / e-Frete
+  const hasExplicitCartaFrete = (
+    lower.includes('carta frete') ||
+    lower.includes('carta-frete') ||
+    lower.includes('carta_frete') ||
+    lower.includes('carta de frete') ||
+    lower.includes('contrato de frete') ||
+    lower.includes('contrato de transporte') ||
+    lower.includes('contrato de prestação') ||
+    lower.includes('contrato de prestacao') ||
+    lower.includes('contrato_frete') ||
+    lower.includes('contrato_transporte') ||
+    lower.includes('contrato frete') ||
+    lower.includes('efrete') ||
+    lower.includes('e-frete') ||
+    lower.includes('pamcard') ||
+    lower.includes('repom') ||
+    lower.includes('vale pedagio') ||
+    lower.includes('vale-pedagio') ||
+    lower.includes('vale_pedagio')
+  );
+
+  // Se tiver indicação de Nota Fiscal e NÃO for explicitamente um título de Carta Frete/CT-e/MDF-e, é Nota Fiscal
+  // (ex: "NOTA FISCAL 11754- BUNGE SANTA LUZIA - CONTRATO 9..." é 100% Nota Fiscal)
+  if (hasNotaFiscalIndicator && !hasExplicitCartaFrete && !hasCteIndicator && !hasMdfeIndicator) {
+    return 'Nota Fiscal';
+  }
+
+  // Carta Frete / e-Frete explícita
+  if (hasExplicitCartaFrete && !hasMdfeIndicator && !hasCteIndicator) {
+    return 'Carta Frete';
+  }
+
+  // MDF-e
+  if (hasMdfeIndicator && !hasCteIndicator) {
     return 'MDF-e';
   }
 
-  // 3. CT-e: dacte, cte, ct-e, conhecimento (com limites de palavra para não confundir com ctrc ou nomes genéricos)
-  if (
-    lower.includes('dacte') ||
-    /\bcte\b/i.test(lower) ||
-    /\bct-e\b/i.test(lower) ||
-    lower.includes('conhecimento')
-  ) {
+  // CT-e
+  if (hasCteIndicator && !hasExplicitCartaFrete) {
     return 'CT-e';
   }
 
-  // 4. Nota Fiscal: danfe, nfe, nf-e, nota fiscal, notafiscal
-  if (
-    lower.includes('danfe') ||
-    /\bnfe\b/i.test(lower) ||
-    /\bnf-e\b/i.test(lower) ||
-    lower.includes('nota_fiscal') ||
-    lower.includes('nota fiscal') ||
-    lower.includes('notafiscal')
-  ) {
+  // Se tiver a palavra "contrato" ou "frete" mas SEM qualquer menção a nota fiscal, nfe, danfe
+  if (!hasNotaFiscalIndicator && (
+    lower.includes('contrato') ||
+    lower.includes('frete') ||
+    lower.includes('_cf_') ||
+    lower.includes('cf_') ||
+    lower.includes('ciot')
+  )) {
+    return 'Carta Frete';
+  }
+
+  // Fallback: se tiver indicador de Nota Fiscal mesmo com outros termos ambíguos
+  if (hasNotaFiscalIndicator) {
     return 'Nota Fiscal';
   }
 
@@ -310,14 +358,18 @@ export function detectAttachmentMismatch(
   }
 
   // Se o campo atual for Nota Fiscal:
+  // Se o arquivo tiver indicação de Nota Fiscal no nome ou conteúdo, NUNCA considerar mismatch
   if (isStrictNotaFiscalCategory(currentCatLower)) {
-    if (fileNameType === 'Nota Fiscal' || extractedType === 'Nota Fiscal') {
+    if (
+      fileNameType === 'Nota Fiscal' || 
+      extractedType === 'Nota Fiscal' ||
+      /nota|danfe|\bnfe\b|\bnf-e\b/i.test(file.name)
+    ) {
       return null;
     }
   }
 
   // Prioriza o tipo determinado por conteúdo se conhecido e não genérico ('Outro')
-  // MAS se o nome indicar Carta Frete e o conteúdo tiver sido rotulado ambiguamente como CT-e, respeita Carta Frete
   let detected = (extractedType && extractedType !== 'Outro' && extractedType !== 'CIOT')
     ? (extractedType as 'MDF-e' | 'CT-e' | 'Carta Frete' | 'Nota Fiscal')
     : fileNameType;
@@ -600,7 +652,8 @@ function cleanLegalEntityName(str: string | undefined | null): string | undefine
 function cleanPersonName(str: string | undefined | null): string | undefined {
   if (!str) return undefined;
   let clean = str
-    .replace(/^(?:NOME\s*\/|NOME\s+DO\s+CONDUTOR\s*:?|CONDUTOR\s*:?|MOTORISTA\s*:?|CONTRATADO\s*:?|PROP\.\s*\/|PROP[.\s]+)+/i, '')
+    .replace(/^(?:representado\s+pelo\s+seu\s+motorista\s*:?|NOME\s*\/|NOME\s+DO\s+CONDUTOR\s*:?|CONDUTOR\s*:?|MOTORISTA\s*:?|CONTRATADO\s*:?|PROP\.\s*\/|PROP[.\s]+)+/i, '')
+    .replace(/^(?:Sr\.?\s*|Sra\.?\s*)+/i, '')
     .replace(/(?:CPF|CNH|RG|RENAVAM|RNTRC|PLACA|VEICULO|ENDERE[ÇC]O)[\s\S]*/i, '')
     .replace(/[\n\r]+/g, ' ')
     .trim();
@@ -685,6 +738,9 @@ function extractCteEmissionDateFromText(text: string): string | undefined {
     /DATA\s*(?:E|\/)?\s*HORA\s*(?:DA|DE)?\s*EMISS[ÃA]O[^\d]*(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
     /EMISS[ÃA]O[^\d]*(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
     /DATA\s*(?:DA|DE)?\s*EMISS[ÃA]O[^\d]*(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)/i,
+    /EMITIDO\s+EM\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /DATA\s+(?:DA\s+)?DECLARA[ÇC][ÃA]O\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /DATA\s*(?:DE\s*)?IMPRESS[ÃA]O\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
     /EMISS[ÃA]O[^\d]*(\d{4}-\d{1,2}-\d{1,2}[T\s]\d{2}:\d{2}(?::\d{2})?)/i,
     /(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/,
   ];
@@ -843,6 +899,8 @@ export function extractFreightContractValues(text: string): {
   const tollPatterns = [
     /VALE[- ]?PED[ÁA]GIO([^\d\n]{0,30}?)R?\$\s*([\d.,]+)/i,
     /VALOR\s+(?:DO\s+)?VALE[- ]?PED[ÁA]GIO([^\d\n]{0,30}?)R?\$\s*([\d.,]+)/i,
+    /VPO\s*\(VALE[- ]?PED[ÁA]GIO[^\)]*\)[\s\S]{0,120}?TOTAL[:\s]*R?\$\s*([\d.,]+)/i,
+    /(?:2\.2\s+)?R?\$?\s*([\d.,]+)\s*ped[áa]gio\s+PAGO/i,
     /\bPED[ÁA]GIO([^\d\n]{0,30}?)R?\$\s*([\d.,]+)/i,
     /R?\$\s*([\d.,]+)\s*(?:referente\s+(?:a[o]?\s+)?)?ped[áa]gio/i,
     /(?:[\d.]+\s+)?R?\$\s*([\d.,]+)\s*ped[áa]gio/i,
@@ -871,6 +929,7 @@ export function extractFreightContractValues(text: string): {
   const advancePatterns = [
     /(?:2\.4|2\.5)\s*R?\$?\s*([\d.,]+)\s*referente\s+Adiantamento(?:\s+de\s+viagem)?/i,
     /Total\s+do\s+Adiantamento\s+pago\s*R?\$?\s*([\d.,]+)/i,
+    /efrete:\s*Adiantamento[^\d\n]*R?\$\s*([\d.,]+)/i,
     /R?\$?\s*([\d.,]+)\s*referente\s+Adiantamento\s+de\s+viagem/i,
     /(?:[\d.]+\s+)?R?\$?\s*([\d.,]+)\s*referente\s+Adiantamento/i,
     /(?:efete:|efrete:|e-frete:)?\s*Adiantamento[^\d\n]*R?\$\s*([\d.,]+)/i,
@@ -896,8 +955,10 @@ export function extractFreightContractValues(text: string): {
     res.totalFreightValue = explicitCteServiceTotal;
   } else {
     const totalFreightPatterns = [
+      /1\.1\s+Valor\s+total\s+do\s+frete\s*R?\$?\s*([\d.,]+)/i,
       /(?:VALOR\s+TOTAL\s+(?:DO\s+)?FRETE|VALOR\s+DO\s+FRETE|VALOR\s+TOTAL\s+DA\s+PRESTA[ÇC][ÃA]O|VALOR\s+TOTAL\s+DO\s+SERVI[ÇC]O|VALOR\s+A\s+RECEBER|VLR\s+TOTAL\s+PRESTA[ÇC][ÃA]O|VALOR\s+DA\s+PRESTA[ÇC][ÃA]O|TOTAL\s+DA\s+PRESTA[ÇC][ÃA]O|TOTAL\s+DO\s+SERVI[ÇC]O)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i,
       /(?:VALOR\s+TOTAL\s+(?:DO\s+)?FRETE|VALOR\s+DO\s+FRETE|VALOR\s+TOTAL\s+DA\s+PRESTA[ÇC][ÃA]O|VALOR\s+TOTAL\s+DO\s+SERVI[ÇC]O|VALOR\s+A\s+RECEBER|VALOR\s+DA\s+PRESTA[ÇC][ÃA]O)[^\d\n]*R?\$\s*([\d.,]+)/i,
+      /INFORMA[ÇC][ÕO]ES\s+DO\s+FRETE[\s\S]{0,250}?VALOR\s+TOTAL\s*R?\$\s*([\d.,]+)/i,
       /VALOR\s+TOTAL[^\d\n]*R?\$\s*([\d.,]+)/i,
       /VALOR\s+L[ÍI]QUIDO[^\d\n]*R?\$\s*([\d.,]+)/i,
       /FRETE\s+TOTAL[^\d\n]*R?\$\s*([\d.,]+)/i,
@@ -1028,21 +1089,46 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
   const keyMeta = parseAccessKey44(res.accessKey);
 
   // 2. Determinação Precisa do Tipo de Documento
-  // Detecta se é oficialmente um CT-e / DACTE (prioridade máxima)
+  // 2.1 Detecta se é oficialmente um CT-e / DACTE (prioridade máxima)
   const isCteOfficial = (
     keyMeta?.docType === 'CT-e' ||
     upper.includes('DOCUMENTO AUXILIAR DO CONHECIMENTO DE TRANSPORTE') ||
     upper.includes('CONHECIMENTO DE TRANSPORTE ELETRÔNICO') ||
     isCteDocType(declaredDocType) ||
-    (upper.includes('DACTE') && !upper.includes('CONTRATO DE PRESTAÇÃO DE SERVIÇO') && !upper.includes('CONTRATO DE TRANSPORTE'))
+    (upper.includes('DACTE') && !upper.includes('CONTRATO DE PRESTAÇÃO DE SERVIÇO') && !upper.includes('CONTRATO DE TRANSPORTE') && !upper.includes('CONTRATO DE FRETE'))
   );
 
-  // Detecta se o texto é um Contrato de Frete / Carta Frete oficial
-  const isContratoFreteText = !isCteOfficial && (
+  // 2.2 Detecta se é oficialmente uma Nota Fiscal (NF-e / DANFE)
+  // Nunca confunde com Carta Frete, mesmo que a NF contenha dados contratuais de grãos
+  const isNfeOfficial = !isCteOfficial && (
+    keyMeta?.docType === 'Nota Fiscal' ||
+    upper.includes('DOCUMENTO AUXILIAR DA NOTA FISCAL ELETRÔNICA') ||
+    upper.includes('DOCUMENTO AUXILIAR DA NOTA FISCAL ELETRONICA') ||
+    upper.includes('DANFE') ||
+    (upper.includes('NOTA FISCAL ELETRÔNICA') && !upper.includes('CONTRATO DE PRESTAÇÃO') && !upper.includes('CONTRATO DE FRETE')) ||
+    isNfeDocType(declaredDocType)
+  );
+
+  // 2.3 Detecta se é oficialmente um MDF-e (DAMDFE)
+  const isMdfeOfficial = !isCteOfficial && !isNfeOfficial && (
+    keyMeta?.docType === 'MDF-e' ||
+    upper.includes('DOCUMENTO AUXILIAR DO MANIFESTO') ||
+    upper.includes('MANIFESTO ELETRÔNICO DE DOCUMENTOS') ||
+    upper.includes('MANIFESTO ELETRONICO DE DOCUMENTOS') ||
+    upper.includes('DAMDFE') ||
+    upper.includes('DAMFE') ||
+    isMdfeDocType(declaredDocType)
+  );
+
+  // 2.4 Detecta se o texto é um Contrato de Frete / Carta Frete oficial (layout padrão MaisFrete / e-Frete / NSTECH)
+  const isContratoFreteText = !isCteOfficial && !isNfeOfficial && !isMdfeOfficial && (
     upper.includes('CONTRATO DE PRESTAÇÃO DE SERVIÇO DE TRANSPORTE') ||
     upper.includes('CONTRATO DE PRESTACAO DE SERVICO DE TRANSPORTE') ||
     upper.includes('CONTRATO DE PRESTAÇÃO DE SERVIÇO/FRETE') ||
     upper.includes('CONTRATO DE PRESTACAO DE SERVICO/FRETE') ||
+    upper.includes('CONTRATO DE PRESTAÇÃO DE SERVIÇO') ||
+    upper.includes('CONTRATO DE PRESTACAO DE SERVICO') ||
+    upper.includes('CONTRATO DE TRANSPORTE/FRETE') ||
     upper.includes('CONTRATO DE TRANSPORTE') ||
     upper.includes('CONTRATO DE FRETE') ||
     upper.includes('CARTA FRETE') ||
@@ -1051,19 +1137,28 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     upper.includes('COMPOSICAO DO ADIANTAMENTO DE FRETE') ||
     upper.includes('COMPOSIÇÃO DO SALDO DE FRETE') ||
     upper.includes('COMPOSICAO DO SALDO DE FRETE') ||
+    upper.includes('CÁLCULO DO SALDO DE FRETE') ||
+    upper.includes('CALCULO DO SALDO DE FRETE') ||
     upper.includes('DAS CONDIÇÕES DO FRETE') ||
     upper.includes('DAS CONDICOES DO FRETE') ||
+    upper.includes('DECLARAÇÃO DE OPERAÇÃO DE TRANSPORTE') ||
+    upper.includes('DECLARACAO DE OPERACAO DE TRANSPORTE') ||
+    upper.includes('VALE-PEDÁGIO OBRIGATÓRIO') ||
+    upper.includes('VALE-PEDAGIO OBRIGATORIO') ||
+    upper.includes('EFRETE PIX') ||
+    upper.includes('EFRETE TAG') ||
+    upper.includes('MAISFRETE') ||
     isCartaFreteDocType(declaredDocType)
   );
 
   if (isCteOfficial) {
     res.documentType = 'CT-e';
+  } else if (isNfeOfficial) {
+    res.documentType = 'Nota Fiscal';
+  } else if (isMdfeOfficial) {
+    res.documentType = 'MDF-e';
   } else if (isContratoFreteText) {
     res.documentType = 'Carta Frete';
-  } else if (keyMeta?.docType === 'MDF-e' || upper.includes('DAMDFE') || upper.includes('DAMFE') || upper.includes('MANIFESTO ELETRÔNICO') || isMdfeDocType(declaredDocType)) {
-    res.documentType = 'MDF-e';
-  } else if (keyMeta?.docType === 'Nota Fiscal' || upper.includes('DANFE') || upper.includes('NOTA FISCAL ELETRÔNICA') || upper.includes('DOCUMENTO AUXILIAR DA NOTA') || isNfeDocType(declaredDocType)) {
-    res.documentType = 'Nota Fiscal';
   } else if (declaredDocType && declaredDocType.toUpperCase().includes('CIOT')) {
     res.documentType = 'CIOT';
   } else if (keyMeta) {
@@ -1081,6 +1176,16 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
       res.docNumber = matchPatterns(text, MDFE_PATTERNS);
     } else if (res.documentType === 'Nota Fiscal') {
       res.docNumber = matchPatterns(text, NFE_PATTERNS);
+    } else if (res.documentType === 'Carta Frete') {
+      const mContrato = text.match(/(?:CONTRATO\s+DE\s+PRESTA[ÇC][ÃA]O\s+DE\s+SERVI[ÇC]O\s*(?:\/FRETE)?|CONTRATO\s+DE\s+FRETE|CONDI[ÇC][ÕO]ES\s+DO\s+FRETE)\s*(?:N[º°ú]|N[úu]mero|N°)?\.?\s*([\d]+(?:\/[\d]+)?)/i) ||
+                        text.match(/(?:CTRC\/CT-e\/CE|CTRC|CONTRATO)[\s\S]{0,30}?(?:N[º°ú]|N[úu]mero|N°)?\.?\s*([\d]+(?:\/[\d]+)?)/i) ||
+                        text.match(/\bDOCUMENTO\s+(\d{3,10})\b/i);
+      if (mContrato && mContrato[1]) {
+        res.docNumber = mContrato[1].trim();
+      } else {
+        const mNum = text.match(/(?:CONTRATO|CARTA\s+FRETE|N[º°ú]|N[úu]mero|VIAGEM)[^\d\n]*?(\d{4,12})/i);
+        if (mNum && mNum[1]) res.docNumber = mNum[1];
+      }
     } else {
       const mNum = text.match(/(?:CONTRATO|CARTA\s+FRETE|N[º°ú]|N[úu]mero|VIAGEM)[^\d\n]*?(\d{4,12})/i);
       if (mNum && mNum[1]) res.docNumber = mNum[1];
@@ -1322,8 +1427,147 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     };
   }
 
-  // 14. Cláusula 3.5: Cálculo do Saldo de Frete (PF vs PJ)
+  // 14. Extração Refinada de Cláusulas de Carta Frete / Contrato de Transporte (Layout MaisFrete / e-Frete / NSTECH)
   if (res.documentType === 'Carta Frete') {
+    // 1.1 Valor do Frete por Tonelada (ex: "R$ 154,22 por Tonelada")
+    const mFreteTon = text.match(/R\$\s*([\d.,]+)\s*(?:por\s+Tonelada|p\/\s*(?:Ton|Tonelada))/i) ||
+                      text.match(/([\d.,]+)\s*(?:por\s+Tonelada|p\/\s*(?:Ton|Tonelada))/i);
+    if (mFreteTon && mFreteTon[1]) {
+      const vTon = parseCurrencyPtBr(mFreteTon[1]);
+      if (vTon && vTon > 0) {
+        res.financeiro = res.financeiro || {};
+        res.financeiro.valorFretePorTonelada = vTon;
+      }
+    }
+
+    // 1.2 Local de Carregamento (Origem) e Remetente
+    const mCarregamento = text.match(/(?:1\.2\s+)?Local\s+de\s+carregamento[:\s]+([^\n;]+?)(?:\s+na\s+cidade\s+de\s+|\s+em\s+)([A-ZÀ-Ú\s]+)\/([A-Z]{2})/i);
+    if (mCarregamento) {
+      res.remetente = res.remetente || {};
+      res.remetente.razaoSocial = mCarregamento[1].trim();
+      res.origem = {
+        municipio: mCarregamento[2].trim(),
+        uf: mCarregamento[3].trim(),
+        local: mCarregamento[1].trim()
+      };
+    }
+
+    // 1.3 Local de Destino / Descarga e Destinatário
+    const mDescarga = text.match(/(?:1\.3\s+)?Local\s+de\s+destino(?:\/descarga)?[:\s]+([^\n;]+?)(?:\s+na\s+cidade\s+de\s+|\s+em\s+)([A-ZÀ-Ú\s]+)\/([A-Z]{2})/i);
+    if (mDescarga) {
+      res.destinatario = res.destinatario || {};
+      res.destinatario.razaoSocial = mDescarga[1].trim();
+      res.destino = {
+        municipio: mDescarga[2].trim(),
+        uf: mDescarga[3].trim(),
+        local: mDescarga[1].trim()
+      };
+    }
+
+    // 1.4 Tomador do Serviço do CTe/CTRC
+    const mTomadorContrato = text.match(/(?:1\.4\s+)?Tomador\s+(?:do\s+Servi[çc]o)?(?:\s+do\s+CTe\/CTRC)?[:\s]+(?:(?:\d+)\s*\/\s*)?([^\n;]+)/i);
+    if (mTomadorContrato && mTomadorContrato[1]) {
+      res.tomador = {
+        razaoSocial: cleanLegalEntityName(mTomadorContrato[1]),
+        papel: 'Tomador'
+      };
+    }
+
+    // 1.5 Tipo de Mercadoria / Natureza da Carga
+    const mMercadoria = text.match(/(?:1\.5\s+)?Tipo\s+de\s+mercadoria[:\s]+([^\n;]+)/i) ||
+                        text.match(/NATUREZA\s+DA\s+CARGA[:\s]*(?:(?:\d+)\s*-\s*)?([^\n;]+)/i);
+    if (mMercadoria && mMercadoria[1]) {
+      res.carga = res.carga || {};
+      res.carga.produtoPredominante = mMercadoria[1].replace(/;.*$/, '').trim();
+    }
+
+    // 1.6 Peso Embarcado da Mercadoria
+    const mPesoEmbarcado = text.match(/(?:1\.6\s+)?Peso\s+embarcado(?:\s+da\s+mercadoria)?[:\s]*([\d.,]+)\s*Kgs?/i);
+    if (mPesoEmbarcado && mPesoEmbarcado[1]) {
+      const pEmb = parseWeightKg(mPesoEmbarcado[1]);
+      if (pEmb && pEmb > 0) {
+        res.carga = res.carga || {};
+        res.carga.pesoBrutoKg = pEmb;
+      }
+    }
+
+    // 1.7 Nota(s) Fiscal(is) da Mercadoria
+    const mNfsVinculadas = text.match(/(?:1\.7\s+)?Nota\(?s?\)?\s+fiscal\(?is?\)?(?:\s+da\(?s?\)?\s+mercadoria\(?s?\))?[:\s]*([^\n;]+)/i);
+    if (mNfsVinculadas && mNfsVinculadas[1]) {
+      const rawNfs = mNfsVinculadas[1].trim();
+      const splitNfs = rawNfs.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+      res.carga = res.carga || {};
+      res.carga.notasFiscaisVinculadas = splitNfs;
+      res.notasFiscais = splitNfs.map(num => ({ numero: num }));
+    }
+
+    // 1.9 Previsão de Descarga
+    const mPrevDescarga = text.match(/(?:1\.9\s+)?Data\/Hora\s+prevista\s+para\s+a\s+descarga[:\s]*([^\n;]+)/i);
+    if (mPrevDescarga && mPrevDescarga[1]) {
+      res.carga = res.carga || {};
+      res.carga.previsaoDescarga = mPrevDescarga[1].trim();
+    }
+
+    // 2.2 Provedor de Pedágio e Número de Pedido
+    const mPedagioTag = text.match(/ped[áa]gio\s+PAGO\s+NO\s+CARTAO\/CUPOM[^\n]*?emitido\s+por\s+([^\n;]+)/i) ||
+                        text.match(/(?:emitido\s+por|PROVEDOR[:\s]+)(EFRETE\s+TAG[^\n;]*|Sem\s*Parar|Veloe|ConectCar|MoveMais)/i);
+    if (mPedagioTag && mPedagioTag[1]) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.provedorPedagio = mPedagioTag[1].trim();
+    }
+    const mPedidoPedagio = text.match(/(?:NR\.?\s*PEDIDO|N[º°]\s+Pedido\s+Sem\s+Parar|VPO[^\d\n]*?)[:\s]*(\d{8,16})/i);
+    if (mPedidoPedagio && mPedidoPedagio[1]) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.numeroPedidoPedagio = mPedidoPedagio[1].trim();
+    }
+
+    // Pagamento / Chave PIX
+    const mPixContrato = text.match(/PIX\s*(?:\([^\)]*\))?[:\s]*([\d./-]{11,18}|\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b)/i) ||
+                         text.match(/CPF\/CNPJ\s+CREDITADO[:\s]*([\d./-]{11,18})/i);
+    if (mPixContrato && mPixContrato[1]) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.chavePix = mPixContrato[1].trim();
+    }
+    if (upper.includes('EFRETE PIX')) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.formaPagamento = 'EFRETE PIX';
+    } else if (upper.includes('EFRETE')) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.formaPagamento = 'EFRETE';
+    }
+
+    // Motorista Contratado
+    const mMotoristaContrato = text.match(/representado\s+pelo\s+seu\s+motorista\s+(?:Sr\.?\s*)?([A-ZÀ-Ú\s]{4,40})(?:,|\s+CPF)/i) ||
+                               text.match(/INFORMA[ÇC][ÕO]ES\s+DO\s+MOTORISTA[\s\S]{0,60}?NOME\s+([A-ZÀ-Ú\s]{4,40})/i);
+    const mCpfMotorista = text.match(/(?:motorista[^\n]*?CPF|INFORMA[ÇC][ÕO]ES\s+DO\s+MOTORISTA[\s\S]{0,60}?CPF)[^\d\n]*?([\d.-]{11,14})/i);
+    const mCnhMotorista = text.match(/Nr\.?\s*CNH[^\d\n]*?(\d{8,12})/i);
+    const mRgMotorista = text.match(/RG[^\d\n]*?([A-Z0-9.-]{4,15})/i);
+
+    if (mMotoristaContrato || mCpfMotorista || mCnhMotorista) {
+      res.motorista = {
+        nome: cleanPersonName(mMotoristaContrato?.[1]) || res.motorista?.nome,
+        cpf: mCpfMotorista?.[1]?.trim() || res.motorista?.cpf,
+        cnh: mCnhMotorista?.[1]?.trim() || res.motorista?.cnh,
+        rg: mRgMotorista?.[1]?.trim() || res.motorista?.rg,
+      };
+    }
+
+    // Veículo e Reboques na Carta Frete
+    const allPlacas = Array.from(new Set((text.match(/\b([A-Z]{3}[0-9][0-9A-Z][0-9]{2}|[A-Z]{3}-\d{4})\b/g) || []).map(p => p.replace('-', '').toUpperCase())));
+    if (allPlacas.length > 0) {
+      res.veiculo = res.veiculo || {};
+      res.veiculo.placaTrator = res.veiculo.placaTrator || allPlacas[0];
+      if (allPlacas.length > 1) {
+        res.veiculo.placasReboque = allPlacas.filter(p => p !== res.veiculo?.placaTrator);
+      }
+    }
+    const mEixos = text.match(/TOTAL\s+DE\s+EIXOS[:\s]*(\d+)/i) || text.match(/EIXOS[:\s]*(\d+)/i);
+    if (mEixos && mEixos[1]) {
+      res.veiculo = res.veiculo || {};
+      res.veiculo.totalEixos = parseInt(mEixos[1], 10);
+    }
+
+    // 3.5 Cláusula 3.5: Cálculo do Saldo de Frete
     // 3.5.1 Saldo Original
     const m351 = text.match(/(?:3\.5\.1|3\.5\s+C[ÁA]LCULO[^\n]*?3\.5\.1|Saldo\s+Original)[^\d\n]*?R?\$\s*([\d.,]+)/i);
     const val351 = parseCurrencyPtBr(m351?.[1]);
@@ -1351,13 +1595,28 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     // 3.5.12 Valor Quebra por Kg
     const m3512Kg = text.match(/(?:3\.5\.12|Quebra\s*\/?\s*Avaria)[^\n]*?x\s*R?\$\s*([\d.,]+)/i);
     const val3512Kg = parseCurrencyPtBr(m3512Kg?.[1]);
+    if (val3512Kg) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.valorKgQuebra = val3512Kg;
+    }
 
     // 3.5.13 Valor Frete Faltante por Kg
     const m3513Kg = text.match(/(?:3\.5\.13|Diferen[çc]a\s+do\s+Frete)[^\n]*?x\s*R?\$\s*([\d.,]+)/i);
     const val3513Kg = parseCurrencyPtBr(m3513Kg?.[1]);
+    if (val3513Kg) {
+      res.financeiro = res.financeiro || {};
+      res.financeiro.valorKgFreteFaltante = val3513Kg;
+    }
 
     // Detecta se é PJ (CNPJ contratado ou indicação de ETC / PJ) ou PF
-    const isPj = upper.includes('PESSOA JURÍDICA') || upper.includes('PESSOA JURIDICA') || upper.includes('TIPO: PJ') || !!text.match(/(?:CONTRATADO|MOTORISTA)[\s\S]{0,40}?CNPJ[:\s]*\d{2}\.\d{3}\.\d{3}/i);
+    const isPj = upper.includes('PESSOA JURÍDICA') ||
+                 upper.includes('PESSOA JURIDICA') ||
+                 upper.includes('TIPO: PJ') ||
+                 upper.includes('TIPO CONTRATADO ETC') ||
+                 upper.includes('TIPO CONTRATADO: ETC') ||
+                 upper.includes('EQUIPARADO A TAC NÃO') ||
+                 upper.includes('EQUIPARADO A TAC: NÃO') ||
+                 !!text.match(/CONTRATADO[\s\S]{0,60}?CNPJ[^\d\n]*?\d{2}\.\d{3}\.\d{3}/i);
 
     const tipoPessoa = isPj ? 'PJ' : 'PF';
 
@@ -1785,6 +2044,18 @@ export interface FiscalDocNumbers {
   cteTomadorNome?: string;
   cteTomadorCnpj?: string;
   cteRemetente?: string;
+  cartaFreteDocNumber?: string;
+  pixKey?: string;
+  loadedTonnage?: number;
+  driverFreightRatePerTon?: number;
+  valorKgQuebra?: number;
+  valorKgFreteFaltante?: number;
+  driverName?: string;
+  driverCpf?: string;
+  driverCnh?: string;
+  truckPlate?: string;
+  trailerPlates?: string[];
+  carrierRntrc?: string;
 }
 
 export async function extractFiscalDocNumbers(
@@ -1849,6 +2120,43 @@ export async function extractFiscalDocNumbers(
 
           if (netDriverFreight !== undefined && result.driverFreightValue === undefined) {
             result.driverFreightValue = netDriverFreight;
+          }
+
+          if (detailed.docNumber && !result.cartaFreteDocNumber) {
+            result.cartaFreteDocNumber = detailed.docNumber;
+          }
+          if (detailed.carga?.pesoBrutoKg && !result.loadedTonnage) {
+            result.loadedTonnage = Number((detailed.carga.pesoBrutoKg / 1000).toFixed(3));
+          }
+          if (detailed.financeiro?.valorFretePorTonelada && !result.driverFreightRatePerTon) {
+            result.driverFreightRatePerTon = detailed.financeiro.valorFretePorTonelada;
+          }
+          if (detailed.financeiro?.chavePix && !result.pixKey) {
+            result.pixKey = detailed.financeiro.chavePix;
+          }
+          if (detailed.motorista?.nome && !result.driverName) {
+            result.driverName = detailed.motorista.nome;
+          }
+          if (detailed.motorista?.cpf && !result.driverCpf) {
+            result.driverCpf = detailed.motorista.cpf;
+          }
+          if (detailed.motorista?.cnh && !result.driverCnh) {
+            result.driverCnh = detailed.motorista.cnh;
+          }
+          if (detailed.veiculo?.placaTrator && !result.truckPlate) {
+            result.truckPlate = detailed.veiculo.placaTrator;
+          }
+          if (detailed.veiculo?.placasReboque && (!result.trailerPlates || result.trailerPlates.length === 0)) {
+            result.trailerPlates = detailed.veiculo.placasReboque;
+          }
+          if (detailed.veiculo?.rntrc && !result.carrierRntrc) {
+            result.carrierRntrc = detailed.veiculo.rntrc;
+          }
+          if (detailed.calculoSaldoFrete?.valorKgQuebra && !result.valorKgQuebra) {
+            result.valorKgQuebra = detailed.calculoSaldoFrete.valorKgQuebra;
+          }
+          if (detailed.calculoSaldoFrete?.valorKgFreteFaltante && !result.valorKgFreteFaltante) {
+            result.valorKgFreteFaltante = detailed.calculoSaldoFrete.valorKgFreteFaltante;
           }
         }
         if (isStrictNotaFiscalCategory(docType)) {
@@ -1984,6 +2292,43 @@ export async function extractFiscalDocNumbersFromUrls(
 
           if (netDriverFreight !== undefined && result.driverFreightValue === undefined) {
             result.driverFreightValue = netDriverFreight;
+          }
+
+          if (detailed.docNumber && !result.cartaFreteDocNumber) {
+            result.cartaFreteDocNumber = detailed.docNumber;
+          }
+          if (detailed.carga?.pesoBrutoKg && !result.loadedTonnage) {
+            result.loadedTonnage = Number((detailed.carga.pesoBrutoKg / 1000).toFixed(3));
+          }
+          if (detailed.financeiro?.valorFretePorTonelada && !result.driverFreightRatePerTon) {
+            result.driverFreightRatePerTon = detailed.financeiro.valorFretePorTonelada;
+          }
+          if (detailed.financeiro?.chavePix && !result.pixKey) {
+            result.pixKey = detailed.financeiro.chavePix;
+          }
+          if (detailed.motorista?.nome && !result.driverName) {
+            result.driverName = detailed.motorista.nome;
+          }
+          if (detailed.motorista?.cpf && !result.driverCpf) {
+            result.driverCpf = detailed.motorista.cpf;
+          }
+          if (detailed.motorista?.cnh && !result.driverCnh) {
+            result.driverCnh = detailed.motorista.cnh;
+          }
+          if (detailed.veiculo?.placaTrator && !result.truckPlate) {
+            result.truckPlate = detailed.veiculo.placaTrator;
+          }
+          if (detailed.veiculo?.placasReboque && (!result.trailerPlates || result.trailerPlates.length === 0)) {
+            result.trailerPlates = detailed.veiculo.placasReboque;
+          }
+          if (detailed.veiculo?.rntrc && !result.carrierRntrc) {
+            result.carrierRntrc = detailed.veiculo.rntrc;
+          }
+          if (detailed.calculoSaldoFrete?.valorKgQuebra && !result.valorKgQuebra) {
+            result.valorKgQuebra = detailed.calculoSaldoFrete.valorKgQuebra;
+          }
+          if (detailed.calculoSaldoFrete?.valorKgFreteFaltante && !result.valorKgFreteFaltante) {
+            result.valorKgFreteFaltante = detailed.calculoSaldoFrete.valorKgFreteFaltante;
           }
         }
         if (isStrictNotaFiscalCategory(docType)) {
