@@ -714,6 +714,8 @@ export interface Ticket {
   history: TicketHistory[];
   cargoId?: string;
   shipmentId?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
 }
 
 export interface ShipmentLock {

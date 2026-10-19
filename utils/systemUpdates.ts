@@ -21,6 +21,54 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_19_v2_70_81',
+    version: 'v2.70.81',
+    date: '19/10/2026',
+    title: 'Anexo de Arquivos em Chamados com Pré-visualização e Download',
+    summary: 'Implementado campo para anexar arquivos e fotos (PDF, Imagens, Documentos até 25MB) diretamente no formulário de abertura de chamados. Os destinatários e responsáveis contam agora com opções imediatas para Visualizar o documento em tela cheia (DocumentPreviewModal) ou Baixar o arquivo diretamente para o computador.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Campo de Upload de Arquivos ao Abrir Chamado',
+        description: 'Adicionado seletor de arquivos no formulário de criação de chamados com suporte a fotos, documentos e PDFs de até 25MB, upload automático no storage de nuvem com fallback resiliente e visualização do nome/tamanho selecionado.'
+      },
+      {
+        category: 'feature',
+        title: 'Botões de Visualização e Download para o Usuário Destinatário',
+        description: 'Ao expandir o chamado, o usuário destinatário tem acesso ao card do anexo com os botões "Visualizar" (abre pré-visualização completa com zoom, impressão e tela cheia) e "Baixar" (download direto com nome original).'
+      },
+      {
+        category: 'improvement',
+        title: 'Indicador Visual "Com Anexo" na Listagem de Chamados',
+        description: 'Os chamados com arquivos anexados recebem um badge destacado na lista do Painel de Chamados, facilitando a identificação imediata de ocorrências com documentação anexada.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_80',
+    version: 'v2.70.80',
+    date: '19/10/2026',
+    title: 'Disponibilização Direta do Painel de Chamados e Abertura de Suporte na Barra Superior',
+    summary: 'Adicionados atalhos visíveis e de acesso rápido para o Painel de Chamados e o formulário de abertura de chamados ("+ Abrir Novo Chamado") diretamente na barra de navegação superior (TopNavBar), no menu do perfil do usuário e no menu mobile, permitindo registrar incidentes, ocorrências e dúvidas a qualquer momento com vinculação opcional a Cargas ou Embarques.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Botão de Chamados com Indicador de Pendências na TopNavBar',
+        description: 'Inserido botão direto "Chamados" ao lado de Novidades e Notificações com ícone de atendimento e indicador visual (badge) de chamados pendentes atribuídos ao usuário logado.'
+      },
+      {
+        category: 'improvement',
+        title: 'Opção "Painel de Chamados" e "+ Abrir Novo Chamado" no Menu do Usuário',
+        description: 'Disponibilizado no dropdown de perfil e no menu mobile o acesso ao Painel de Chamados completo (filtros, atendimento, histórico) e atalho rápido para abrir um novo chamado imediatamente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Abertura Direta no Modo Criação de Chamado',
+        description: 'O modal de chamados agora aceita inicialização direta no modo de formulário, exibindo os campos de título, descrição, nível de urgência, direcionamento e vínculo opcional a cargas e embarques.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_17_v2_70_79',
     version: 'v2.70.79',
     date: '17/10/2026',

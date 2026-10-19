@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { can } from '../auth';
+import { can, isDemoUser } from '../auth';
 import NotificationBell from './NotificationBell';
 import { DashboardIcon } from './icons/DashboardIcon';
 import { ClientsIcon } from './icons/ClientsIcon';
@@ -22,7 +22,7 @@ import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe, Headphones } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -35,7 +35,7 @@ interface TopNavBarProps {
   setCurrentPage: (page: Page) => void;
   profilePermissions: ProfilePermissions;
   companyLogo: string | null;
-  onOpenTickets: () => void;
+  onOpenTickets: (initialCreate?: boolean) => void;
   tickets: Ticket[];
   shipments?: Shipment[];
   freightOffers?: FreightOffer[];
@@ -396,6 +396,22 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                 <span className="hidden 2xl:inline text-[11px]">Novidades</span>
               </button>
 
+              {/* Botão de Chamados / Suporte */}
+              <button
+                type="button"
+                onClick={() => onOpenTickets(false)}
+                title="Painel de Chamados e Suporte"
+                className="p-1.5 xl:px-2.5 xl:py-1 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+              >
+                <Headphones className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="hidden 2xl:inline text-[11px]">Chamados</span>
+                {myOpenTicketsCount > 0 && (
+                  <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-extrabold text-white bg-red-500 rounded-full animate-pulse shadow-sm min-w-[16px] leading-none">
+                    {myOpenTicketsCount}
+                  </span>
+                )}
+              </button>
+
               <div className="shrink-0">
                 <NotificationBell
                   user={user}
@@ -429,6 +445,36 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
               </button>
               {openDropdown === 'user' && (
                 <div className="absolute mt-2 w-56 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                    <button 
+                      onClick={() => {
+                        handleDropdownToggle('user');
+                        onOpenTickets(false);
+                      }} 
+                      className="w-full text-left flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                    >
+                        <div className="flex items-center gap-3">
+                          <Headphones className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" />
+                          <span>Painel de Chamados</span>
+                        </div>
+                        {myOpenTicketsCount > 0 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500 text-white shadow-sm">
+                            {myOpenTicketsCount} pendente{myOpenTicketsCount > 1 ? 's' : ''}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">Suporte</span>
+                        )}
+                    </button>
+                    {!isDemoUser(user) && (
+                      <button 
+                        onClick={() => {
+                          handleDropdownToggle('user');
+                          onOpenTickets(true);
+                        }} 
+                        className="w-full text-left flex items-center justify-between px-4 py-2 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all cursor-pointer pl-11 font-medium"
+                      >
+                          <span>+ Abrir Novo Chamado</span>
+                      </button>
+                    )}
                     <button 
                       onClick={() => {
                         handleDropdownToggle('user');
@@ -599,6 +645,34 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                    </div>
                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
                 </button>
+                <button
+                   onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onOpenTickets(false);
+                   }}
+                   className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                   <div className="flex items-center">
+                      <Headphones className="w-5 h-5 mr-3 text-blue-500" />
+                      Painel de Chamados
+                   </div>
+                   {myOpenTicketsCount > 0 && (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500 text-white">
+                        {myOpenTicketsCount}
+                      </span>
+                   )}
+                </button>
+                {!isDemoUser(user) && (
+                   <button
+                      onClick={() => {
+                         setIsMobileMenuOpen(false);
+                         onOpenTickets(true);
+                      }}
+                      className="w-full flex items-center px-3 py-1.5 pl-11 rounded-md text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                   >
+                      + Abrir Novo Chamado
+                   </button>
+                )}
                 <button
                    onClick={onLogout}
                    className="w-full flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"

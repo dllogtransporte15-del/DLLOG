@@ -954,12 +954,21 @@ export const toTicket = (row: any): Ticket => {
   let cleanDesc = row.description || '';
   const cargoMatch = cleanDesc.match(/\[CARGO_ID:\s*(.*?)\]/);
   const shipmentMatch = cleanDesc.match(/\[SHIPMENT_ID:\s*(.*?)\]/);
+  const attachmentUrlMatch = cleanDesc.match(/\[ATTACHMENT_URL:\s*(.*?)\]/);
+  const attachmentNameMatch = cleanDesc.match(/\[ATTACHMENT_NAME:\s*(.*?)\]/);
   
   const cargoId = cargoMatch ? cargoMatch[1] : undefined;
   const shipmentId = shipmentMatch ? shipmentMatch[1] : undefined;
+  const attachmentUrl = attachmentUrlMatch ? attachmentUrlMatch[1] : (row.attachment_url || undefined);
+  const attachmentName = attachmentNameMatch ? attachmentNameMatch[1] : (row.attachment_name || undefined);
 
-  if (cargoMatch || shipmentMatch) {
-    cleanDesc = cleanDesc.replace(/\[CARGO_ID:\s*.*?\]/g, '').replace(/\[SHIPMENT_ID:\s*.*?\]/g, '').trim();
+  if (cargoMatch || shipmentMatch || attachmentUrlMatch || attachmentNameMatch) {
+    cleanDesc = cleanDesc
+      .replace(/\[CARGO_ID:\s*.*?\]/g, '')
+      .replace(/\[SHIPMENT_ID:\s*.*?\]/g, '')
+      .replace(/\[ATTACHMENT_URL:\s*.*?\]/g, '')
+      .replace(/\[ATTACHMENT_NAME:\s*.*?\]/g, '')
+      .trim();
   }
 
   return {
@@ -974,6 +983,8 @@ export const toTicket = (row: any): Ticket => {
     history: row.history || [],
     cargoId,
     shipmentId,
+    attachmentUrl,
+    attachmentName,
   };
 };
 
@@ -982,6 +993,8 @@ export const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdA
   const ticketObj = t as Ticket;
   if (ticketObj.cargoId) finalDesc += `\n\n[CARGO_ID: ${ticketObj.cargoId}]`;
   if (ticketObj.shipmentId) finalDesc += `\n\n[SHIPMENT_ID: ${ticketObj.shipmentId}]`;
+  if (ticketObj.attachmentUrl) finalDesc += `\n\n[ATTACHMENT_URL: ${ticketObj.attachmentUrl}]`;
+  if (ticketObj.attachmentName) finalDesc += `\n\n[ATTACHMENT_NAME: ${ticketObj.attachmentName}]`;
 
   return {
     id: ticketObj.id,

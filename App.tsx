@@ -192,6 +192,7 @@ const App: React.FC = () => {
   const setCurrentPage = (page: Page) => navigate(`/${page}`);
 
   const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
+  const [ticketModalInitialCreate, setTicketModalInitialCreate] = useState(false);
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
   const [offerToConvert, setOfferToConvert] = useState<FreightOffer | null>(null);
   const [offerForNewShipment, setOfferForNewShipment] = useState<FreightOffer | null>(null);
@@ -4193,7 +4194,10 @@ const App: React.FC = () => {
         setCurrentPage={setCurrentPage}
         profilePermissions={profilePermissions}
         companyLogo={companyLogo}
-        onOpenTickets={() => setIsTicketModalOpen(true)}
+        onOpenTickets={(initialCreate?: boolean) => {
+          setTicketModalInitialCreate(!!initialCreate);
+          setIsTicketModalOpen(true);
+        }}
         tickets={tickets}
         shipments={shipments}
         freightOffers={freightOffers}
@@ -4224,7 +4228,11 @@ const App: React.FC = () => {
        />
        <TicketModal
         isOpen={isTicketModalOpen}
-        onClose={() => setIsTicketModalOpen(false)}
+        onClose={() => {
+          setIsTicketModalOpen(false);
+          setTicketModalInitialCreate(false);
+        }}
+        initialCreate={ticketModalInitialCreate}
         tickets={tickets}
         users={users}
         currentUser={currentUser}
