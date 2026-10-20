@@ -21,6 +21,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_20_v2_70_93',
+    version: 'v2.70.93',
+    date: '20/10/2026',
+    title: 'Validação de Adiantamento PG Restrita ao Status "Ag. Adiantamento"',
+    summary: 'O bloqueio de avanço e aviso de divergência entre o "Adiantamento PG" do sistema e o "Adiantamento de viagem" da Carta Frete agora atuam exclusivamente na etapa de "Ag. Adiantamento", liberando normalmente o avanço nas demais etapas fiscais e operacionais.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Restrição da Divergência de Adiantamento ao Status "Ag. Adiantamento"',
+        description: 'A validação obrigatória que exige equivalência entre o Adiantamento PG e o adiantamento de viagem da Carta Frete passa a atuar única e exclusivamente quando o embarque estiver no status "Ag. Adiantamento".'
+      },
+      {
+        category: 'improvement',
+        title: 'Liberação do Salvar e Avançar nas Demais Etapas (Aguardando Fiscal)',
+        description: 'Eliminado o travamento e avisos de divergência de adiantamento durante a validação fiscal e demais fases que antecedem o adiantamento de viagem.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_20_v2_70_92',
     version: 'v2.70.92',
     date: '20/10/2026',

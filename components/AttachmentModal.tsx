@@ -889,7 +889,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return calc.advanceInAccountValue > 0 ? calc.advanceInAccountValue : (Number(advanceValue) || 0);
   }, [loadedTonnage, shipment.shipmentTonnage, shipment.driverFreightRateSnapshot, cargo?.driverFreightValuePerTon, shipment.driverFreightValue, advancePercentage, tollValue, shipment.driverFreightType, shipment.anttModality, advanceValue]);
 
+  const isAguardandoFiscal = shipment.status === ShipmentStatus.AguardandoFiscal;
+  const isAguardandoAdiantamento = shipment.status === ShipmentStatus.AguardandoAdiantamento;
+
   const advanceDivergenceInfo = React.useMemo(() => {
+    if (!isAguardandoAdiantamento) return null;
     if (!cartaFreteExtractedAdvance || cartaFreteExtractedAdvance <= 0) return null;
     const currentAdv = Number(advanceValue) || 0;
     const diffCurrent = Math.abs(currentAdv - cartaFreteExtractedAdvance);
@@ -908,17 +912,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       };
     }
     return null;
-  }, [cartaFreteExtractedAdvance, advanceValue, systemCalculatedAdvance, advanceDecision]);
+  }, [isAguardandoAdiantamento, cartaFreteExtractedAdvance, advanceValue, systemCalculatedAdvance, advanceDecision]);
 
-  const isAguardandoFiscal = shipment.status === ShipmentStatus.AguardandoFiscal;
   const hasUnresolvedWeightDivergence = isAguardandoFiscal && !!weightDivergenceInfo && weightDecision === 'unresolved';
   const hasUnresolvedFreightDivergence = isAguardandoFiscal && !!freightDivergenceInfo && freightDecision === 'unresolved';
   const hasUnresolvedCompanyFreightDivergence = isAguardandoFiscal && !!companyFreightDivergenceInfo && companyFreightDecision === 'unresolved';
   const hasUnresolvedIcmsDivergence = isAguardandoFiscal && !!icmsDivergenceInfo && icmsDecision === 'unresolved';
   const hasUnresolvedTollDivergence = isAguardandoFiscal && !!tollDivergenceInfo && tollDecision === 'unresolved';
   const hasUnresolvedTomadorDivergence = !!tomadorDivergenceInfo && tomadorDecision === 'unresolved';
-  const hasUnresolvedAdvanceDivergence = !!advanceDivergenceInfo && (advanceDecision === 'unresolved' || Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00);
-  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedCompanyFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTollDivergence || hasUnresolvedTomadorDivergence || hasUnresolvedAdvanceDivergence;
+  const hasUnresolvedAdvanceDivergence = isAguardandoAdiantamento && !!advanceDivergenceInfo && (advanceDecision === 'unresolved' || Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00);
+  const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedCompanyFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTollDivergence || hasUnresolvedTomadorDivergence;
 
   const hasAttachmentMismatch = React.useMemo(() => {
     for (const [cat, list] of Object.entries(multiFiles)) {
@@ -985,6 +988,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         7000
       );
     }
+  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!companyFreightDivergenceInfo, !!icmsDivergenceInfo, !!tollDivergenceInfo, !!tomadorDivergenceInfo]);
+
+  // Alerta em tempo real quando houver divergência no Aguardando Adiantamento
+  useEffect(() => {
+    if (!isOpen || !isAguardandoAdiantamento) return;
     if (advanceDivergenceInfo) {
       showToast(
         `⚠️ Divergência no Adiantamento: "Adiantamento PG" (${formatCurrency(advanceDivergenceInfo.systemAdvance)}) difere do referente Adiantamento de viagem da Carta Frete (${formatCurrency(advanceDivergenceInfo.cartaFreteAdvance)}). Corrija para liberar o avanço.`,
@@ -992,7 +1000,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         7000
       );
     }
-  }, [isOpen, isAguardandoFiscal, !!weightDivergenceInfo, !!freightDivergenceInfo, !!companyFreightDivergenceInfo, !!icmsDivergenceInfo, !!tollDivergenceInfo, !!tomadorDivergenceInfo, !!advanceDivergenceInfo]);
+  }, [isOpen, isAguardandoAdiantamento, !!advanceDivergenceInfo]);
 
   useEffect(() => {
     if (isOpen) {
@@ -2040,7 +2048,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
-    if (hasUnresolvedAdvanceDivergence) {
+    if (isAguardandoAdiantamento && hasUnresolvedAdvanceDivergence) {
       showToast(`⚠️ Divergência no Adiantamento: "Adiantamento PG" (${formatCurrency(Number(advanceValue) || 0)}) deve ser igual ao "referente Adiantamento de viagem" da Carta Frete (${formatCurrency(cartaFreteExtractedAdvance || 0)}). Corrija o valor para liberar o avanço.`, 'warning');
       setError('Adiantamento PG deve ser igual ao referente Adiantamento de viagem da carta frete antes de salvar e avançar.');
       return;
@@ -3639,72 +3647,13 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     </div>
                   )}
 
-                  {/* Divergência 5: Adiantamento PG (Sistema vs Carta Frete - Referente Adiantamento de Viagem) */}
-                  {advanceDivergenceInfo && (
-                    <div className={`p-4 rounded-xl border-2 transition-all ${
-                      hasUnresolvedAdvanceDivergence
-                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
-                        : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600'
-                    }`}>
-                      <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-lg shrink-0 ${
-                          hasUnresolvedAdvanceDivergence
-                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
-                            : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                        }`}>
-                          {hasUnresolvedAdvanceDivergence ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                              💵 Validação de Adiantamento: Sistema vs Carta Frete
-                            </h4>
-                            <span className="text-xs px-2.5 py-0.5 bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 rounded-full font-bold">
-                              Diferença: {advanceDivergenceInfo.diffFormatted}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                            Regra obrigatória: <strong>"Adiantamento PG"</strong> deve ser igual ao <strong>"referente Adiantamento de viagem"</strong> da Carta Frete. O botão <em>Salvar e Avançar</em> está travado até a correção.
-                          </p>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
-                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Adiantamento PG no Sistema:</span>
-                              <span className="text-base font-bold text-gray-900 dark:text-white">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(advanceDivergenceInfo.systemAdvance)}
-                              </span>
-                            </div>
-                            <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <span className="text-gray-500 dark:text-gray-400 block font-medium">Adiantamento de Viagem (Carta Frete):</span>
-                              <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(advanceDivergenceInfo.cartaFreteAdvance)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={handleCorrectAdvanceToCartaFrete}
-                              className="px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500"
-                            >
-                              <Check className="w-4 h-4" />
-                              <span>✓ Corrigir Adiantamento PG para R$ {advanceDivergenceInfo.cartaFreteAdvance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Carta Frete)</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Feedback positivo se houver documentos e nenhuma divergência pendente */}
                   {((cteWeightTon > 0 && !weightDivergenceInfo) || (weightDivergenceInfo && weightDecision !== 'unresolved')) &&
                    ((cartaFreteExtractedFreight && !freightDivergenceInfo) || (freightDivergenceInfo && freightDecision !== 'unresolved')) &&
                    ((cteExtractedServiceTotal && !companyFreightDivergenceInfo) || (companyFreightDivergenceInfo && companyFreightDecision !== 'unresolved')) &&
                    ((cteExtractedIcms && !icmsDivergenceInfo) || (icmsDivergenceInfo && icmsDecision !== 'unresolved')) &&
                    ((docExtractedToll && !tollDivergenceInfo) || (tollDivergenceInfo && tollDecision !== 'unresolved')) &&
-                   (!tomadorDivergenceInfo || tomadorDecision !== 'unresolved') &&
-                   (!advanceDivergenceInfo || !hasUnresolvedAdvanceDivergence) && (
+                   (!tomadorDivergenceInfo || tomadorDecision !== 'unresolved') && (
                     <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span className="font-medium">
@@ -4730,7 +4679,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
                       (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
                       hasUnresolvedFiscalDivergence ||
-                      hasUnresolvedAdvanceDivergence ||
+                      (isAguardandoAdiantamento && hasUnresolvedAdvanceDivergence) ||
                       hasAttachmentMismatch
                     }
                     className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(
@@ -4739,7 +4688,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
                       (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
                       hasUnresolvedFiscalDivergence ||
-                      hasUnresolvedAdvanceDivergence ||
+                      (isAguardandoAdiantamento && hasUnresolvedAdvanceDivergence) ||
                       hasAttachmentMismatch
                     )
                         ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-none'
@@ -4757,7 +4706,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       ⚠️ Corrija os documentos anexados em campos incorretos (ex: MDF-e em Carta Frete) para liberar o avanço
                     </div>
                   )}
-                  {hasUnresolvedAdvanceDivergence ? (
+                  {isAguardandoAdiantamento && hasUnresolvedAdvanceDivergence ? (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-amber-950 text-amber-200 border border-amber-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
                       ⚠️ O Adiantamento PG precisa ser igual ao referente Adiantamento de viagem da Carta Frete ({formatCurrency(cartaFreteExtractedAdvance || 0)}) para liberar o avanço
                     </div>
