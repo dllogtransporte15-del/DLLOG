@@ -817,7 +817,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 overscroll-contain">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all overscroll-contain">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 max-w-6xl w-full max-h-[94vh] md:h-[88vh] flex flex-col border border-gray-100 dark:border-gray-700 transition-all overscroll-contain">
         
         {/* Title */}
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
@@ -1465,7 +1465,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                             </span>
                         )}
                     </div>
-                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-2">
+                    <div className="space-y-1.5 max-h-72 overflow-y-auto pr-2">
                         {(load.dailySchedule || []).length > 0 ? (
                             (load.dailySchedule || []).map(entry => (
                                 <div key={entry.date} className="flex justify-between items-center p-2.5 border border-gray-200 rounded-lg dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xs">
@@ -1535,7 +1535,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </div>
 
                     {/* Tabela / Lista em Linhas */}
-                    <div className="max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                    <div className="max-h-72 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
                         {filteredInternalUsers.length > 0 ? (
                             filteredInternalUsers.map((u) => {
                                 const isAllowed = (load.allowedUserIds || []).includes(u.id);

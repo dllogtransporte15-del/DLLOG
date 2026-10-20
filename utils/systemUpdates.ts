@@ -21,6 +21,251 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_19_v2_70_91',
+    version: 'v2.70.91',
+    date: '19/10/2026',
+    title: 'Acesso Direto aos Detalhes da Carga e do Embarque Vinculados nos Chamados',
+    summary: 'Ao clicar em "Acessar Carga Vinculada" ou "Acessar Embarque Vinculado" em qualquer chamado, o sistema agora redireciona diretamente para a tela operacional e abre automaticamente o modal de detalhes completos correspondente para identificação imediata.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Abertura Direta do Modal de Detalhes da Carga',
+        description: 'Ao clicar no botão "Acessar Carga Vinculada", o sistema navega até a tela de Cargas e abre imediatamente a janela com todos os dados da carga vinculada (origem, destino, pernas de frete, cliente, produto e histórico).'
+      },
+      {
+        category: 'feature',
+        title: 'Abertura Direta do Modal de Detalhes do Embarque',
+        description: 'Ao clicar no botão "Acessar Embarque Vinculado", o sistema navega para a tela de Embarques e abre instantaneamente o modal detalhado do embarque (valores, adiantamento, motorista, placas, CTE e documentação anexada).'
+      },
+      {
+        category: 'improvement',
+        title: 'Integração e Fechamento Automático do Modal de Chamados',
+        description: 'Transição ágil e limpa: o modal de chamados é fechado automaticamente ao navegar, direcionando o foco do operador para os detalhes do registro vinculado sem fricção.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_90',
+    version: 'v2.70.90',
+    date: '19/10/2026',
+    title: 'Cabeçalho e Endereço da Filial São Paulo nas Ordens de Carregamento para Cargas com Origem em SP',
+    summary: 'Configuração oficial dos dados cadastrais e endereço da Filial de São Paulo (TRANSCUNHA TRANSPORTES E LOGISTICA FILIAL SP - Ipaussu/SP) em todas as Ordens de Carregamento para cargas com origem em SP (UF SP), completando a cobertura operacional dos estados de GO, MG e SP.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Emissão com Dados Oficiais da Filial São Paulo (Ipaussu/SP)',
+        description: 'Quando a carga tiver origem no estado de São Paulo (UF SP), a Ordem de Carregamento passa a emitir: "TRANSCUNHA TRANSPORTES E LOGISTICA FILIAL SP", "CNPJ: 36.203.306/0002-73 - IE: 357033425116" e "RUA JOAO OLIMPIO DA SILVA, 20, JARDIM COCAJA II - IPAUSSU/SP - 18950-546 - (35)99103-0469".'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção Inteligente de Origem SP e Chaveamento Automático',
+        description: 'Implementado o analisador `isSpOrigin` com detecção precisa de siglas UF (/SP, - SP, , SP), identificação do estado de São Paulo e principais polos paulistas (Ipaussu, Santos, Ourinhos, Campinas, Ribeirão Preto, Assis, etc.).'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificador Visual "SP" no Modal de Detalhes do Embarque',
+        description: 'O botão de emissão da Ordem de Carga e Mod. Consube exibe uma badge roxa "SP" com tooltip confirmando a emissão pela Filial Ipaussu/SP quando a carga tem origem em São Paulo.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_89',
+    version: 'v2.70.89',
+    date: '19/10/2026',
+    title: 'Cabeçalho e Endereço da Matriz Minas Gerais nas Ordens de Carregamento para Cargas com Origem em MG',
+    summary: 'Configuração oficial dos dados cadastrais e endereço da Matriz de Minas Gerais (TRANSCUNHA TRANSPORTES E LOGISTICA LTDA - Pratápolis/MG) em todas as Ordens de Carregamento para cargas com origem em MG (e padrão corporativo), com fidelidade total ao layout impresso.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Emissão com Dados Oficiais da Matriz Minas Gerais (Pratápolis/MG)',
+        description: 'Quando a carga tiver origem no estado de Minas Gerais (UF MG) ou padrão corporativo, a Ordem de Carregamento passa a emitir: "TRANSCUNHA TRANSPORTES E LOGISTICA LTDA", "CNPJ: 36.203.306/0001-92 - IE: 36577990000" e "R PADRE LICINIO, 105, CENTRO - PRATAPOLIS/MG - 37970-000 - (35)99103-0469".'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção Inteligente de Origem MG e Roteamento Multiestadual',
+        description: 'Implementado o analisador `isMinasOrigin` com detecção de siglas UF (/MG, - MG, , MG), identificação do estado de Minas Gerais e polos mineiros, permitindo chaveamento dinâmico e preciso entre a Filial Goiás (Catalão/GO) e a Matriz Minas Gerais (Pratápolis/MG).'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificador Visual "MG" no Modal de Detalhes do Embarque',
+        description: 'O botão de emissão da Ordem de Carga e Mod. Consube exibe uma badge azul-celeste "MG" quando o embarque possui origem em Minas Gerais, orientando os operadores com máxima clareza.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_88',
+    version: 'v2.70.88',
+    date: '19/10/2026',
+    title: 'Cabeçalho e Endereço da Filial Goiás nas Ordens de Carregamento para Cargas com Origem em GO',
+    summary: 'Configuração automática em todas as ordens de carregamento (layout Consube e layout padrão) para emissão dos dados cadastrais e endereço oficial da Filial de Goiás (TRANSCUNHA TRANSPORTES E LOGISTICA GOIAS - Catalão/GO) sempre que a carga tiver origem no estado de Goiás (UF GO).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Emissão com Dados Oficiais da Filial Goiás (Catalão/GO)',
+        description: 'Quando a carga tiver origem no estado de Goiás (UF GO), o cabeçalho e as assinaturas da Ordem de Carregamento passam a emitir: "TRANSCUNHA TRANSPORTES E LOGISTICA GOIAS", "CNPJ: 36.203.306/0004-35 - IE: 204719070" e "RUA 26, 365, VILA MARGON - CATALAO/GO - 75711-040 - (35)99103-0469".'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção Inteligente de Origem GO em Múltiplos Formatos',
+        description: 'Criado mecanismo robusto `isGoiasOrigin` capaz de detectar origem no estado de Goiás a partir da sigla UF (/GO, - GO, , GO, GO), nome do estado e principais polos (Catalão, Rio Verde, Jataí, Anápolis, Goiânia, Cristalina, etc.), diferenciando com segurança de municípios de outros estados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificador Visual "GO" no Modal de Detalhes do Embarque',
+        description: 'O botão de emissão da Ordem de Carga / Ordem Consube no modal do embarque exibe um distintivo verde "GO" e tooltip informativo confirmando a emissão pela Filial Catalão/GO.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_87',
+    version: 'v2.70.87',
+    date: '19/10/2026',
+    title: 'Refinamento dos Chamados: Auditoria de Prazos (SLA), Preservação do Histórico e Prevenção de Perdas',
+    summary: 'Aprimoramento completo no sistema de chamados (tickets). Implementado gerador de identificadores com sequência única e verificação direta no banco com retry automático para impedir sobreposição entre operadores, cópia de segurança em cache de emergência local para garantir que nenhum dado seja perdido, bloqueio de auditoria contra exclusão de chamados em aberto, novos filtros com contadores em tempo real e rastreamento minucioso de carimbos de data/hora (horário solicitado, 1º atendimento, conclusão e tempo total de SLA).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Prevenção Absoluta Contra Perda de Chamados e Colisão de IDs',
+        description: 'Desenvolvido o mecanismo `insertUniqueTicket` que valida em tempo real o maior ID no Supabase e no cache local antes da gravação com retentativas automáticas, impedindo que chamados criados concorrentemente por operadores (como o usuário Dione) se sobreponham ou sumam.'
+      },
+      {
+        category: 'feature',
+        title: 'Painel de Auditoria e Prazos de Atendimento (SLA)',
+        description: 'Adicionado painel de auditoria estruturado exibindo com exatidão o horário em que o chamado foi solicitado, o horário do primeiro atendimento com SLA de resposta, o horário de conclusão com tempo total até resolução, e os responsáveis por cada transição.'
+      },
+      {
+        category: 'security',
+        title: 'Bloqueio de Auditoria Contra Exclusão de Chamados Abertos',
+        description: 'Impedida a exclusão acidental de chamados que estejam "Abertos" ou "Em Atendimento", garantindo que todo histórico corporativo seja preservado integralmente para conformidade e auditoria.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtros com Contadores e Preservação da Aba "Meus Chamados"',
+        description: 'Adicionados botões de filtro com badges numéricos ("Todos", "Abertos", "Em Atendimento", "Resolvidos", "Fechados" e "Meus Chamados"). A aba "Meus Chamados" agora mantém todos os chamados criados ou atribuídos ao usuário sem ocultar itens concluídos.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_86',
+    version: 'v2.70.86',
+    date: '19/10/2026',
+    title: 'Ampliação e Otimização Visual da Janela de Cadastro/Edição de Carga',
+    summary: 'A janela modal de cadastro e edição de carga (Editar Carga / Nova Carga) foi ampliada em aproximadamente 30%, aumentando a largura máxima para 1.152px (max-w-6xl) e expandindo a altura útil (md:h-[88vh] max-h-[94vh]), com maior visibilidade para a timeline de programação e lista de permissões.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Ampliação Dimensional de 30%',
+        description: 'Ajustada a largura máxima de max-w-4xl (896px) para max-w-6xl (1.152px) e altura útil para md:h-[88vh], proporcionando uma área de visualização muito mais ampla e confortável.'
+      },
+      {
+        category: 'improvement',
+        title: 'Maior Área Útil para a Timeline de Programação',
+        description: 'Expandida a altura máxima das listas internas de timeline diária e visibilidade de usuários (max-h-72), permitindo visualizar mais dias e operadores sem necessidade de rolagem excessiva.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_85',
+    version: 'v2.70.85',
+    date: '19/10/2026',
+    title: 'Condicionamento do Status "Ag. Agend. ou Troca/nfe" à Exigência de Agendamento',
+    summary: 'O fluxo de status dos embarques foi parametrizado para que a etapa "Ag. Agend. ou Troca/nfe" seja executada apenas quando a carga possuir a opção "Exige Agendamento" ligada. Cargas sem exigência de agendamento avançam diretamente para "Ag. Descarga", reduzindo etapas desnecessárias.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Avanço Direto para "Ag. Descarga"',
+        description: 'Quando a carga não exigir agendamento (campo "Exige Agendamento" desligado), o avanço operacional a partir de "Ag. Adiantamento" (ou "Ag. Fiscal" com 0% de adiantamento) pula a etapa de agendamento e transiciona direto para "Ag. Descarga".'
+      },
+      {
+        category: 'improvement',
+        title: 'Linha do Tempo e Stepper Adaptativos',
+        description: 'A timeline de fases do embarque (ShipmentStagesTimeline) agora oculta a etapa "Ag. Agend. ou Troca/nfe" para cargas que não exigem agendamento, exibindo apenas as etapas pertinentes ao ciclo real.'
+      },
+      {
+        category: 'improvement',
+        title: 'Reversão Precisa de Status',
+        description: 'A ação de reversão de status reconhece o salto de etapa e retorna o embarque diretamente para "Ag. Adiantamento" (ou "Ag. Fiscal"), garantindo integridade no fluxo reverso.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_84',
+    version: 'v2.70.84',
+    date: '19/10/2026',
+    title: 'Correção Ágil e Ajuste Manual de Divergência de Vale-Pedágio',
+    summary: 'Implementada funcionalidade para resolução de divergências de vale-pedágio diretamente no painel de automação de custos do CT-e. O operador agora pode aplicar o valor extraído dos documentos com 1 clique ou definir um valor personalizado com recálculo automático de deduções, bases tributáveis e lucro real.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Correção de Divergência em 1 Clique',
+        description: 'Ao detectar divergência entre o valor de pedágio do embarque e o documento fiscal extraído (CT-e / MDF-e / Vale-Pedágio), é exibido o botão "Corrigir p/ R$ [valor]" para equiparação instantânea.'
+      },
+      {
+        category: 'feature',
+        title: 'Edição Manual e Personalizada do Pedágio',
+        description: 'Disponibilizado botão para ajuste manual inline com campo monetário, botão de atalho para valor do documento, confirmação (Enter / Salvar) e cancelamento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Persistência no Supabase e Recálculo Automático',
+        description: 'Ajuste do pedágio atualiza automaticamente tollValue, realProfitData, histórico de auditoria do embarque e recalcula instantaneamente as deduções (impostos, CIOT, frete motorista líquido e lucro líquido real).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_83',
+    version: 'v2.70.83',
+    date: '19/10/2026',
+    title: 'Configuração de Permissões e Acessos do Perfil Gerenciadora de Risco',
+    summary: 'O perfil Gerenciadora de Risco foi equalizado com as funções e privilégios administrativos de nível Admin, incluindo visualização global de cargas e embarques, edição de preços de frete, avanço e reversão de status operacionais, gestão de filiais e controle do painel de monitoramento do sistema. Foram mantidas estritamente bloqueadas as janelas de Financeiro e Relatórios, assim como todos os comandos de exclusão do sistema.',
+    items: [
+      {
+        category: 'security',
+        title: 'Privilégios Administrativos com Restrição Segura de Acesso',
+        description: 'O perfil Gerenciadora de Risco passa a ter permissões plenas de criação, leitura e edição em todos os módulos operacionais e de cadastro, mantendo bloqueados os módulos de Financeiro e Relatórios.'
+      },
+      {
+        category: 'security',
+        title: 'Bloqueio Estrito dos Comandos de Excluir',
+        description: 'Comandos de exclusão de registros (embarques, cargas, clientes, filiais, usuários, produtos, rotas, anexos, ofertas e chamados) foram integralmente bloqueados no frontend e nos handlers operacionais para o perfil Gerenciadora de Risco.'
+      },
+      {
+        category: 'feature',
+        title: 'Avanço e Reversão de Status e Edição de Preços',
+        description: 'Liberadas as ações de avanço em qualquer etapa operacional, reversão estrita de status e alteração de preços e tarifas de frete para usuários da Gerenciadora de Risco.'
+      },
+      {
+        category: 'improvement',
+        title: 'Visibilidade Global e Seletor de Visão do Dashboard',
+        description: 'Concedido acesso à visão global de cargas e embarques de todas as filiais e ao seletor de modos de visualização (geral, fiscal, financeiro, supervisor) no Dashboard.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_19_v2_70_82',
+    version: 'v2.70.82',
+    date: '19/10/2026',
+    title: 'Ocultação de Central de Alertas, Chamados e Atualizações para Perfil Cliente',
+    summary: 'Ajustada a interface de navegação e permissões visuais para usuários logados com perfil Cliente. As funções "Central de Alertas", "Atualização do Sistema" e "Chamados" foram completamente ocultadas dos menus superior, dropdown de usuário, menu mobile, tabelas operacionais e popups automáticos.',
+    items: [
+      {
+        category: 'security',
+        title: 'Ocultação da Central de Alertas para o Perfil Cliente',
+        description: 'O ícone do sino, sintetizador de som de notificações e o dropdown da Central de Alertas foram ocultados e desativados para o perfil Cliente.'
+      },
+      {
+        category: 'security',
+        title: 'Ocultação de Chamados e Painel de Suporte para o Perfil Cliente',
+        description: 'Ocultados o botão direto "Chamados" na barra superior, os atalhos de "Painel de Chamados" e "+ Abrir Novo Chamado" no menu do usuário e no menu mobile, além dos badges de chamados em tabelas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ocultação de Atualizações do Sistema para o Perfil Cliente',
+        description: 'Ocultados o botão de Novidades na barra de navegação, a opção de histórico de versões no menu do usuário e a abertura automática do modal de atualizações do sistema para usuários com perfil Cliente.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_19_v2_70_81',
     version: 'v2.70.81',
     date: '19/10/2026',

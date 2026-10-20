@@ -55,13 +55,15 @@ import DriverPortal from './components/DriverPortal';
 import NewShipmentModal from './components/NewShipmentModal';
 import SystemUpdateModal from './components/SystemUpdateModal';
 import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
+import CargoDetailsModal from './components/CargoDetailsModal';
+import ShipmentDetailsModal from './components/ShipmentDetailsModal';
 import { shouldShowUpdateModal } from './utils/systemUpdates';
 import { dispatchShipmentWhatsAppTrigger, ShipmentWhatsAppTriggerType } from './services/shipmentWhatsAppAutomation';
 import { reconcileCargoWithShipments, calculateCargoBalance } from './utils/cargoBalance';
 
 import {
   upsertClient, upsertOwner, upsertDriver, upsertVehicle, upsertCargo, insertCargo,
-  upsertShipment, insertShipment, upsertUser, upsertTicket, saveProfilePermissions,
+  upsertShipment, insertShipment, upsertUser, upsertTicket, insertUniqueTicket, saveProfilePermissions,
   upsertManyDrivers, upsertManyVehicles, upsertManyShipments, upsertManyCargos,
   uploadShipmentAttachment, getShipmentAttachmentUrl,
   saveAppSettings,
@@ -198,6 +200,8 @@ const App: React.FC = () => {
   const [offerForNewShipment, setOfferForNewShipment] = useState<FreightOffer | null>(null);
   const [isSelectEmbarcadorModalOpen, setIsSelectEmbarcadorModalOpen] = useState(false);
   const [selectedCargoForRequest, setSelectedCargoForRequest] = useState<Cargo | null>(null);
+  const [selectedCargoForDetails, setSelectedCargoForDetails] = useState<Cargo | null>(null);
+  const [selectedShipmentForDetails, setSelectedShipmentForDetails] = useState<Shipment | null>(null);
 
   // Theme Mode ('dark' or 'light')
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
@@ -254,6 +258,16 @@ const App: React.FC = () => {
   } = useDatabase(currentUser);
 
   const { showToast } = useToast();
+  const currentCargoForDetails = useMemo(() => {
+    if (!selectedCargoForDetails) return null;
+    return cargos.find(c => c.id === selectedCargoForDetails.id) || selectedCargoForDetails;
+  }, [cargos, selectedCargoForDetails]);
+
+  const currentShipmentForDetails = useMemo(() => {
+    if (!selectedShipmentForDetails) return null;
+    return shipments.find(s => s.id === selectedShipmentForDetails.id) || selectedShipmentForDetails;
+  }, [shipments, selectedShipmentForDetails]);
+
   const [locations, setLocations] = useState<ExpedidorRecebedor[]>(() => getExpedidoresRecebedores());
 
   // Sincronizar locais extraídos das cargas cadastradas
@@ -271,6 +285,14 @@ const App: React.FC = () => {
   };
 
   const handleDeleteLocation = async (id: string) => {
+    if (isDemoUser(currentUser)) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir registros.', 'warning');
+      return;
+    }
     const updated = await deleteExpedidorRecebedor(id);
     setLocations(updated);
     showToast("Local removido com sucesso!", 'info');
@@ -296,14 +318,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (currentUser?.id && !isLoading) {
-      if (shouldShowUpdateModal(currentUser.id)) {
+      if (currentUser?.profile !== UserProfile.Cliente && shouldShowUpdateModal(currentUser.id)) {
         const timer = setTimeout(() => {
           setIsUpdateModalOpen(true);
         }, 800);
         return () => clearTimeout(timer);
       }
     }
-  }, [currentUser?.id, isLoading]);
+  }, [currentUser?.id, currentUser?.profile, isLoading]);
 
   // Sincronizar o Código ATUA histórico dos motoristas cadastrados
   useEffect(() => {
@@ -379,6 +401,10 @@ const App: React.FC = () => {
   const handleDeleteRiskQueryOption = async (optionId: string) => {
     if (isDemoUser(currentUser)) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir modalidades de consulta.', 'warning');
       return;
     }
     try {
@@ -544,6 +570,7 @@ const App: React.FC = () => {
 
     const isAllowedProfile = 
       currentUser.profile === UserProfile.Admin ||
+      currentUser.profile === UserProfile.GerenciadoraDeRisco ||
       currentUser.profile === UserProfile.Diretor ||
       currentUser.profile === UserProfile.Comercial ||
       currentUser.profile === UserProfile.Supervisor ||
@@ -913,39 +940,65 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
-    const newId = formatId(nextIds.ticket, 'TCK');
-    const newTicket: Ticket = {
-      ...ticketData,
-      id: newId,
-      status: TicketStatus.Aberto,
-      createdById: currentUser.id,
-      createdAt: new Date().toISOString(),
-      history: [{
+
+    try {
+      const assignedUser = users.find(u => u.id === ticketData.assignedToId);
+      const assignedName = assignedUser?.name || 'Responsável';
+      const nowIso = new Date().toISOString();
+
+      const createdTicket = await insertUniqueTicket({
+        ...ticketData,
+        status: TicketStatus.Aberto,
+        createdById: currentUser.id,
+        createdAt: nowIso,
+        history: [{
           userId: currentUser.id,
-          timestamp: new Date().toISOString(),
-          comment: `Chamado criado e atribuído a ${users.find(u => u.id === ticketData.assignedToId)?.name || 'N/A'}.`
-      }],
-    };
-    setTickets((prev: Ticket[]) => [newTicket, ...prev]);
-    setNextIds((prev: any) => ({ ...prev, ticket: prev.ticket + 1 }));
-    try { await upsertTicket(newTicket); } catch(err) { console.error('Erro ao salvar ticket:', err); }
-  }
+          timestamp: nowIso,
+          comment: `Chamado aberto por ${currentUser.name} e direcionado para ${assignedName}.`,
+          newStatus: TicketStatus.Aberto,
+        }],
+      });
+
+      // Atualiza o estado da lista de chamados com segurança
+      setTickets((prev: Ticket[]) => [createdTicket, ...prev.filter(t => t.id !== createdTicket.id)]);
+      
+      const numSeq = parseInt(createdTicket.id.replace(/\D/g, ''), 10);
+      if (!isNaN(numSeq)) {
+        setNextIds((prev: any) => ({ ...prev, ticket: Math.max(prev.ticket || 1, numSeq + 1) }));
+      }
+
+      showToast(`Chamado ${createdTicket.id} criado com sucesso e registrado na auditoria!`, 'success');
+    } catch (err: any) {
+      console.error('[handleSaveTicket] Erro ao criar chamado:', err);
+      showToast(`Aviso: Erro ao sincronizar com o servidor (${err?.message || 'rede'}), mas salvo com segurança localmente.`, 'warning');
+    }
+  };
 
   const handleDeleteTicket = async (ticketId: string) => {
     if (isDemoUser(currentUser)) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
-    if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
-    if (window.confirm('Tem certeza que deseja excluir este chamado?')) {
-      setTickets((prev: Ticket[]) => prev.filter(t => t.id !== ticketId));
-      try {
-        await deleteTicket(ticketId);
-        showToast('Chamado excluído com sucesso.', 'success');
-      } catch (err) {
-        console.error('Erro ao excluir ticket:', err);
-        showToast('Erro ao excluir chamado.', 'error');
-      }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir chamados.', 'warning');
+      return;
+    }
+
+    const ticketToDelete = tickets.find(t => t.id === ticketId);
+    if (ticketToDelete && (ticketToDelete.status === TicketStatus.Aberto || ticketToDelete.status === TicketStatus.EmAndamento)) {
+      showToast('⛔ Bloqueio de Auditoria: Chamados "Abertos" ou "Em Atendimento" não podem ser excluídos. Eles devem permanecer no histórico.', 'warning');
+      return;
+    }
+
+    if (!window.confirm("Tem certeza que deseja excluir permanentemente este chamado concluído? Todos os registros de auditoria serão removidos.")) return;
+    
+    setTickets((prev: Ticket[]) => prev.filter(t => t.id !== ticketId));
+    try {
+      await deleteTicket(ticketId);
+      showToast('Chamado excluído com sucesso.', 'success');
+    } catch (err) {
+      console.error('Erro ao excluir ticket:', err);
+      showToast('Erro ao excluir chamado.', 'error');
     }
   };
 
@@ -960,24 +1013,69 @@ const App: React.FC = () => {
     if (!ticketToUpdate) return;
 
     const oldStatus = ticketToUpdate.status;
+    const nowIso = new Date().toISOString();
+
     let finalComment = comment.trim();
     if (!finalComment) {
       finalComment = newStatus === TicketStatus.Resolvido
         ? 'Chamado marcado como resolvido.'
-        : `Status alterado para ${newStatus}.`;
+        : (newStatus === TicketStatus.Fechado ? 'Chamado finalizado/fechado.' : `Status alterado para ${newStatus}.`);
+    }
+
+    // Identifica e registra carimbos de data/hora de auditoria e responsáveis
+    let startedAt = ticketToUpdate.startedAt;
+    let startedById = ticketToUpdate.startedById;
+    let resolvedAt = ticketToUpdate.resolvedAt;
+    let resolvedById = ticketToUpdate.resolvedById;
+    let closedAt = ticketToUpdate.closedAt;
+    let closedById = ticketToUpdate.closedById;
+
+    if (newStatus === TicketStatus.EmAndamento && !startedAt) {
+      startedAt = nowIso;
+      startedById = currentUser.id;
+    }
+
+    if (newStatus === TicketStatus.Resolvido) {
+      resolvedAt = nowIso;
+      resolvedById = currentUser.id;
+    }
+
+    if (newStatus === TicketStatus.Fechado) {
+      closedAt = nowIso;
+      closedById = currentUser.id;
+    }
+
+    // Calcula durações de SLA
+    const createdAtMs = new Date(ticketToUpdate.createdAt).getTime();
+    let timeToAttendMs = ticketToUpdate.timeToAttendMs;
+    let timeToResolveMs = ticketToUpdate.timeToResolveMs;
+
+    if (startedAt && (!timeToAttendMs || timeToAttendMs <= 0)) {
+      timeToAttendMs = new Date(startedAt).getTime() - createdAtMs;
+    }
+    if ((resolvedAt || closedAt) && (!timeToResolveMs || timeToResolveMs <= 0)) {
+      timeToResolveMs = new Date(resolvedAt || closedAt!).getTime() - createdAtMs;
     }
 
     const newHistoryEntry: TicketHistory = {
       userId: currentUser.id,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
       comment: finalComment,
       oldStatus,
       newStatus,
     };
 
-    const updatedTicket = { 
+    const updatedTicket: Ticket = { 
       ...ticketToUpdate, 
-      status: newStatus, 
+      status: newStatus,
+      startedAt,
+      startedById,
+      resolvedAt,
+      resolvedById,
+      closedAt,
+      closedById,
+      timeToAttendMs,
+      timeToResolveMs,
       history: [...ticketToUpdate.history, newHistoryEntry] 
     };
 
@@ -987,8 +1085,10 @@ const App: React.FC = () => {
 
     try {
       await upsertTicket(updatedTicket);
-    } catch (err) {
+      showToast(`Chamado ${ticketId} atualizado para "${newStatus}"!`, 'success');
+    } catch (err: any) {
       console.error('Erro ao atualizar ticket:', err);
+      showToast(`Erro ao sincronizar atualização no banco: ${err?.message || 'Falha de conexão'}`, 'error');
     }
   };
 
@@ -998,8 +1098,8 @@ const App: React.FC = () => {
     if (!currentUser) return [];
 
     return cargos.filter(c => {
-      // 1. Admin and Demo always see all loads
-      if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') return true;
+      // 1. Admin, Gerenciadora de Risco and Demo always see all loads
+      if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo') return true;
 
       // 2. Motorista profile: exibir estritamente as cargas cujo status/etapa seja "Cargas em Operação" (CargoStatus.EmAndamento)
       if (currentUser.profile === UserProfile.Motorista) {
@@ -1022,11 +1122,11 @@ const App: React.FC = () => {
 
       // 4. Filter by allowed user IDs if defined on cargo (Admin, Diretor, Fiscal & Financeiro have global access)
       if (c.allowedUserIds && c.allowedUserIds.length > 0) {
-        if (!c.allowedUserIds.includes(currentUser.id) && ![UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
+        if (!c.allowedUserIds.includes(currentUser.id) && ![UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
           return false;
         }
       } else if (c.allowedProfiles && c.allowedProfiles.length > 0) {
-        if (!c.allowedProfiles.includes(currentUser.profile) && ![UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
+        if (!c.allowedProfiles.includes(currentUser.profile) && ![UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
           return false;
         }
       }
@@ -1064,8 +1164,8 @@ const App: React.FC = () => {
       return shipments.filter(s => s.embarcadorId === currentUser.id || s.createdById === currentUser.id || (currentUser.branchId && s.branchId === currentUser.branchId));
     }
 
-    // Admin, Demo & Financeiro see all shipments (Financeiro requires company-wide visibility for advances, balances, receipts and settlement)
-    if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo' || currentUser.profile === UserProfile.Financeiro) {
+    // Admin, Gerenciadora de Risco, Demo & Financeiro see all shipments
+    if (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || currentUser.profile === UserProfile.Demonstracao || (currentUser.profile as string) === 'Demo' || currentUser.profile === UserProfile.Financeiro) {
       return shipments;
     }
 
@@ -1335,6 +1435,10 @@ const App: React.FC = () => {
   const handleDeleteFreightOffer = async (offer: FreightOffer) => {
     if (isDemoUser(currentUser)) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir ofertas de frete.', 'warning');
       return;
     }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
@@ -1921,6 +2025,10 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir anexos.', 'warning');
+      return;
+    }
     
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !shipment.documents) return;
@@ -2053,6 +2161,7 @@ const App: React.FC = () => {
     const relatedCargoForTransition = findCargoById(cargos, originalShipment.cargoId);
     const relatedProductForTransition = findProductForCargo(products, relatedCargoForTransition);
     const productRequiresRiskForTransition = checkRequiresRiskManagement(relatedCargoForTransition, relatedProductForTransition);
+    const cargoRequiresScheduling = Boolean(relatedCargoForTransition?.requiresScheduling);
 
     let nextStatus: ShipmentStatus | undefined;
 
@@ -2071,19 +2180,20 @@ const App: React.FC = () => {
         // 4 - Ag. Nota -> 5 - Ag. Fiscal
         nextStatus = ShipmentStatus.AguardandoFiscal;
     } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
-        // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7 apenas se explicitamente 0% de adiantamento)
+        // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7/8 se explicitamente 0% de adiantamento)
         const advPct = advancePercentage !== undefined ? advancePercentage : (originalShipment.advancePercentage !== undefined ? originalShipment.advancePercentage : 70);
         const is0PercentAdvance = advPct === 0;
 
         if (is0PercentAdvance) {
-            // Pula "6 - Ag. Adiantamento" e vai direto para "7 - Ag. Agend. ou Troca/nfe"
-            nextStatus = ShipmentStatus.AguardandoAgendamento;
+            // Pula "6 - Ag. Adiantamento"
+            // Para em "7 - Ag. Agend. ou Troca/nfe" apenas se a carga tiver "Exige Agendamento" ligada; caso contrário vai direto para "8 - Ag. Descarga"
+            nextStatus = cargoRequiresScheduling ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
         } else {
             nextStatus = ShipmentStatus.AguardandoAdiantamento;
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
-        // 6 - Ag. Adiantamento -> 7 - Ag. Agend. ou Troca/nfe
-        nextStatus = ShipmentStatus.AguardandoAgendamento;
+        // 6 - Ag. Adiantamento -> 7 - Ag. Agend. ou Troca/nfe apenas se a carga tiver "Exige Agendamento" ligada; senão vai direto para 8 - Ag. Descarga
+        nextStatus = cargoRequiresScheduling ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
     } else if (originalShipment.status === ShipmentStatus.AguardandoAgendamento) {
         // 7 - Ag. Agend. ou Troca/nfe -> 8 - Ag. Descarga
         nextStatus = ShipmentStatus.AguardandoDescarga;
@@ -2129,14 +2239,14 @@ const App: React.FC = () => {
         isUserAllowed = [UserProfile.GerenciadoraDeRisco, UserProfile.Admin, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.Financeiro].includes(currentUser.profile);
         alertMessage = 'Apenas o perfil Gerenciadora de Risco, Embarcador ou Administrador do Sistema pode avançar embarques neste status.';
     } else if (currentStatus === ShipmentStatus.AguardandoDescarga) {
-        isUserAllowed = [UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro, UserProfile.Agenciador, UserProfile.Motorista].includes(currentUser.profile);
+        isUserAllowed = [UserProfile.Embarcador, UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro, UserProfile.Agenciador, UserProfile.Motorista, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile);
         alertMessage = 'Você não tem permissão para anexar o comprovante de descarga.';
     } else if (currentStatus === ShipmentStatus.ValidacaoTicket) {
-        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Fiscal, Supervisor, Diretor, Comercial, Financeiro ou Administrador do Sistema podem validar o ticket do embarque (bloqueado para Embarcador).';
+        isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Financeiro, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Fiscal, Supervisor, Diretor, Comercial, Financeiro, Gerenciadora de Risco ou Administrador do Sistema podem validar o ticket do embarque (bloqueado para Embarcador).';
     } else if (currentStatus === ShipmentStatus.AguardandoAdiantamento || currentStatus === ShipmentStatus.AguardandoPagamentoSaldo || currentStatus === ShipmentStatus.Finalizado) {
-        isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Fiscal, UserProfile.Comercial].includes(currentUser.profile);
-        alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor, Fiscal, Comercial ou Administrador do Sistema podem realizar esta ação.';
+        isUserAllowed = [UserProfile.Financeiro, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Fiscal, UserProfile.Comercial, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile);
+        alertMessage = 'Apenas os perfis Financeiro, Diretor, Supervisor, Fiscal, Comercial, Gerenciadora de Risco ou Administrador do Sistema podem realizar esta ação.';
     }
 
 
@@ -2522,7 +2632,6 @@ const App: React.FC = () => {
 
     let createdTicket: Ticket | undefined;
     if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
-        const newTicketId = formatId(nextIds.ticket, 'TCK');
         const commentMsg = `Chamado criado automaticamente após o envio do comprovante de descarga pelo motorista ${currentUser.name}.`;
         const assignedToId = originalShipment.embarcadorId || '';
 
@@ -2531,15 +2640,14 @@ const App: React.FC = () => {
                                      (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
         const targetStatusText = is100PercentAdvance ? '"Finalizado"' : '"Ag. Saldo"';
 
-        createdTicket = {
-            id: newTicketId,
+        try {
+          createdTicket = await insertUniqueTicket({
             title: `Confirmação de Descarga - Embarque ${shipmentId}`,
             description: `O motorista ${currentUser.name} anexou o Comprovante de Descarga para o embarque ${shipmentId}.\nPor favor, confirme o peso descarregado (Informado pelo motorista: ${unloadedTonnage ? unloadedTonnage + ' Ton' : 'Não informado'}) e altere o status do embarque para ${targetStatusText}.`,
             status: TicketStatus.Aberto,
             priority: TicketPriority.Alta,
             createdById: currentUser.id,
             assignedToId: assignedToId,
-            createdAt: new Date().toISOString(),
             shipmentId: shipmentId,
             cargoId: originalShipment.cargoId,
             history: [{
@@ -2547,7 +2655,10 @@ const App: React.FC = () => {
                 timestamp: new Date().toISOString(),
                 comment: commentMsg
             }]
-        };
+          });
+        } catch (ticketErr) {
+          console.warn('[handleUpdateShipmentAttachment] Aviso ao criar chamado de descarga com insertUniqueTicket:', ticketErr);
+        }
     }
 
     // 4. Persist to Supabase
@@ -2555,9 +2666,6 @@ const App: React.FC = () => {
       await upsertShipment(updatedShipment);
       if (updatedCargo) {
         await upsertCargo(updatedCargo);
-      }
-      if (createdTicket) {
-        await upsertTicket(createdTicket);
       }
       if (updatedDriverToRestrict) {
         await upsertDriver(updatedDriverToRestrict);
@@ -2571,8 +2679,11 @@ const App: React.FC = () => {
       }
       if (createdTicket) {
         const ticketToUpdate = createdTicket;
-        setTickets((prev: Ticket[]) => [ticketToUpdate, ...prev]);
-        setNextIds((prev: any) => ({ ...prev, ticket: prev.ticket + 1 }));
+        setTickets((prev: Ticket[]) => [ticketToUpdate, ...prev.filter(t => t.id !== ticketToUpdate.id)]);
+        const numSeq = parseInt(ticketToUpdate.id.replace(/\D/g, ''), 10);
+        if (!isNaN(numSeq)) {
+          setNextIds((prev: any) => ({ ...prev, ticket: Math.max(prev.ticket || 1, numSeq + 1) }));
+        }
       }
       if (updatedDriverToRestrict) {
         const driverToUpdate = updatedDriverToRestrict;
@@ -2627,9 +2738,9 @@ const App: React.FC = () => {
           autoTrigger = 'risk_approved';
         } else if (
           originalShipment.status === ShipmentStatus.AguardandoFiscal && 
-          (nextStatus === ShipmentStatus.AguardandoAdiantamento || nextStatus === ShipmentStatus.AguardandoAgendamento)
+          (nextStatus === ShipmentStatus.AguardandoAdiantamento || nextStatus === ShipmentStatus.AguardandoAgendamento || nextStatus === ShipmentStatus.AguardandoDescarga)
         ) {
-          // GATILHO 3: Saída de "Aguardando Fiscal" para "Aguardando Adiantamento" (Envio de Documentação + PDFs)
+          // GATILHO 3: Saída de "Aguardando Fiscal" para "Aguardando Adiantamento" / etapas seguintes (Envio de Documentação + PDFs)
           autoTrigger = 'fiscal_emitted';
         } else if (
           originalShipment.status === ShipmentStatus.AguardandoAdiantamento && 
@@ -2911,9 +3022,9 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
-    const isAdmin = currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema';
+    const isAdmin = currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || (currentUser.profile as string) === 'Administrador do Sistema';
     if (!isAdmin) {
-      showToast('Apenas Administradores do Sistema têm permissão para alterar o preço do frete.', 'error');
+      showToast('Apenas Administradores do Sistema e Gerenciadora de Risco têm permissão para alterar o preço do frete.', 'error');
       return;
     }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
@@ -3256,6 +3367,10 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir clientes.', 'warning');
+      return;
+    }
     try {
       await deleteClient(clientId);
       setClients(prev => prev.filter(c => c.id !== clientId));
@@ -3446,6 +3561,10 @@ const App: React.FC = () => {
   const handleDeleteProduct = async (productId: string) => {
     if (isDemoUser(currentUser)) {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (currentUser?.profile === UserProfile.GerenciadoraDeRisco) {
+      showToast('Perfil Gerenciadora de Risco não possui permissão para excluir produtos.', 'warning');
       return;
     }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
@@ -3794,8 +3913,8 @@ const App: React.FC = () => {
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !currentUser) return;
     
-    if (![UserProfile.Admin, UserProfile.Diretor].includes(currentUser.profile)) {
-        showToast("Apenas administradores ou diretores podem reverter o status.", 'warning');
+    if (![UserProfile.Admin, UserProfile.Diretor, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile)) {
+        showToast("Apenas administradores, diretores ou gerenciadora de risco podem reverter o status.", 'warning');
         return;
     }
 
@@ -3818,7 +3937,15 @@ const App: React.FC = () => {
         case ShipmentStatus.ValidacaoTicket: // 9
           return ShipmentStatus.AguardandoDescarga; // 8
         case ShipmentStatus.AguardandoDescarga: // 8
-          return ShipmentStatus.AguardandoAgendamento; // 7
+          {
+            const relCargo = findCargoById(cargos, s.cargoId);
+            const cargoRequiresScheduling = Boolean(relCargo?.requiresScheduling);
+            if (!cargoRequiresScheduling) {
+              // Se a carga NÃO exigia agendamento (pulou Ag. Agend. ou Troca/nfe), reverte para Ag. Adiantamento (ou Ag. Fiscal se 0% adv)
+              return is0PctAdv ? ShipmentStatus.AguardandoFiscal : ShipmentStatus.AguardandoAdiantamento;
+            }
+            return ShipmentStatus.AguardandoAgendamento; // 7
+          }
         case ShipmentStatus.AguardandoAgendamento: // 7
           // Se foi 0% adiantamento (pulou Ag. Adiantamento), volta direto para 5 - Ag. Fiscal
           return is0PctAdv ? ShipmentStatus.AguardandoFiscal : ShipmentStatus.AguardandoAdiantamento;
@@ -4195,6 +4322,7 @@ const App: React.FC = () => {
         profilePermissions={profilePermissions}
         companyLogo={companyLogo}
         onOpenTickets={(initialCreate?: boolean) => {
+          if (currentUser?.profile === UserProfile.Cliente) return;
           setTicketModalInitialCreate(!!initialCreate);
           setIsTicketModalOpen(true);
         }}
@@ -4212,7 +4340,11 @@ const App: React.FC = () => {
         onAcceptOrderRequest={handleAcceptOrderRequestFromNotification}
         onRefuseOrderRequest={handleRefuseOrderRequestFromNotification}
         onSaveFreightOffer={handleSaveFreightOffer}
-        onOpenUpdates={() => setIsUpdateModalOpen(true)}
+        onOpenUpdates={() => {
+          if (currentUser?.profile !== UserProfile.Cliente) {
+            setIsUpdateModalOpen(true);
+          }
+        }}
       />
       <main className="relative z-10 flex-1 overflow-y-auto overscroll-contain" style={{ zoom: 0.72 }}>
         <div className="w-full px-4 sm:px-6 lg:px-8 pt-6 pb-36 sm:pb-12" style={{ paddingBottom: 'max(9rem, env(safe-area-inset-bottom, 0px) + 7rem)' }}>
@@ -4227,7 +4359,7 @@ const App: React.FC = () => {
          cargo={selectedCargoForRequest}
        />
        <TicketModal
-        isOpen={isTicketModalOpen}
+        isOpen={isTicketModalOpen && currentUser?.profile !== UserProfile.Cliente}
         onClose={() => {
           setIsTicketModalOpen(false);
           setTicketModalInitialCreate(false);
@@ -4241,11 +4373,61 @@ const App: React.FC = () => {
         onDelete={handleDeleteTicket}
         cargos={cargos}
         shipments={shipments}
-        onNavigateTo={(type) => {
-          if (type === 'cargo') setCurrentPage('loads');
-          if (type === 'shipment') setCurrentPage('shipments');
+        onNavigateTo={(type, id) => {
+          setIsTicketModalOpen(false);
+          if (type === 'cargo') {
+            const targetCargo = findCargoById(cargos, id) || cargos.find(c => c.id === id || String(c.sequenceId) === String(id) || `CRG-${c.sequenceId}` === id);
+            if (targetCargo) {
+              setSelectedCargoForDetails(targetCargo);
+            } else {
+              showToast('Carga vinculada não encontrada.', 'warning');
+            }
+            setCurrentPage('loads');
+          }
+          if (type === 'shipment') {
+            const targetShipment = shipments.find(s => s.id === id || s.orderId === id);
+            if (targetShipment) {
+              setSelectedShipmentForDetails(targetShipment);
+            } else {
+              showToast('Embarque vinculado não encontrado.', 'warning');
+            }
+            setCurrentPage('shipments');
+          }
         }}
       />
+      {currentCargoForDetails && (
+        <CargoDetailsModal
+          isOpen={!!currentCargoForDetails}
+          onClose={() => setSelectedCargoForDetails(null)}
+          cargo={currentCargoForDetails}
+          client={clients.find(c => c.id === currentCargoForDetails.clientId)}
+          product={products.find(p => p.id === currentCargoForDetails.productId)}
+          commercialUser={users.find(u => u.id === currentCargoForDetails.createdById)}
+          stays={stays}
+          shipments={shipments}
+          currentUser={currentUser || undefined}
+        />
+      )}
+      {currentShipmentForDetails && (
+        <ShipmentDetailsModal
+          isOpen={!!currentShipmentForDetails}
+          onClose={() => setSelectedShipmentForDetails(null)}
+          shipment={currentShipmentForDetails}
+          cargo={findCargoById(cargos, currentShipmentForDetails.cargoId) || undefined}
+          currentUser={currentUser}
+          onUpdatePrice={handleUpdateShipmentPrice}
+          onUpdateShipmentData={handleUpdateShipmentData}
+          onAddAttachments={handleAddShipmentAttachments}
+          onSwapCargo={handleSwapCargo}
+          cargos={cargos}
+          clients={clients}
+          products={products}
+          companyLogo={companyLogo}
+          vehicles={vehicles}
+          users={users}
+          onDeleteAttachment={handleDeleteShipmentAttachment}
+        />
+      )}
       {offerForNewShipment && (
         <NewShipmentModal
           isOpen={!!offerForNewShipment}
@@ -4283,7 +4465,7 @@ const App: React.FC = () => {
         />
       )}
       <SystemUpdateModal 
-        isOpen={isUpdateModalOpen} 
+        isOpen={isUpdateModalOpen && currentUser?.profile !== UserProfile.Cliente} 
         onClose={() => setIsUpdateModalOpen(false)} 
         currentUser={currentUser} 
       />

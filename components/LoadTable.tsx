@@ -397,7 +397,7 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
                         </button>
                       )}
 
-                      {tickets.some(t => t.cargoId === load.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
+                      {currentUser?.profile !== UserProfile.Cliente && tickets.some(t => t.cargoId === load.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
                         <span className="text-red-500 ml-0.5 inline-flex items-center" title="Chamado(s) Aberto(s)">
                           <AlertCircle className="w-4 h-4" />
                         </span>

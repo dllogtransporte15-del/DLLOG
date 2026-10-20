@@ -700,6 +700,7 @@ export interface TicketHistory {
   comment: string;
   oldStatus?: TicketStatus;
   newStatus?: TicketStatus;
+  durationText?: string;
 }
 
 export interface Ticket {
@@ -716,6 +717,14 @@ export interface Ticket {
   shipmentId?: string;
   attachmentUrl?: string;
   attachmentName?: string;
+  startedAt?: string;
+  startedById?: string;
+  resolvedAt?: string;
+  resolvedById?: string;
+  closedAt?: string;
+  closedById?: string;
+  timeToAttendMs?: number;
+  timeToResolveMs?: number;
 }
 
 export interface ShipmentLock {

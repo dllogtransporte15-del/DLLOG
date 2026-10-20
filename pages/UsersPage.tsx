@@ -78,7 +78,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
     status: '',
   });
 
-  const isAdmin = currentUser.profile === UserProfile.Admin;
+  const isAdmin = currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco;
 
   const canCreateUser = can('create', currentUser, 'users-register', profilePermissions);
   const canUpdateUser = can('update', currentUser, 'users-register', profilePermissions);

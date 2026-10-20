@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { SYSTEM_RELEASES, LATEST_SYSTEM_RELEASE, markUpdateAsSeen, SystemRelease } from '../utils/systemUpdates';
 import type { User } from '../types';
+import { UserProfile } from '../types';
 
 interface SystemUpdateModalProps {
   isOpen: boolean;
@@ -29,7 +30,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
   const [selectedRelease, setSelectedRelease] = useState<SystemRelease>(LATEST_SYSTEM_RELEASE);
   const [activeTab, setActiveTab] = useState<'latest' | 'history'>('latest');
 
-  if (!isOpen) return null;
+  if (!isOpen || currentUser?.profile === UserProfile.Cliente) return null;
 
   const handleDismiss = () => {
     if (currentUser?.id) {

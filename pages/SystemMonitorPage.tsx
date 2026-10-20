@@ -183,7 +183,7 @@ const SystemMonitorPage: React.FC<SystemMonitorPageProps> = ({ currentUser, prof
             </div>
         </div>
 
-        {currentUser?.profile === UserProfile.Admin && (
+        {(currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.GerenciadoraDeRisco) && (
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 mt-6">
                 <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
                     <Globe className="w-5 h-5 text-indigo-500" />

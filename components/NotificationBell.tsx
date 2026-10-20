@@ -113,6 +113,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   // Avaliar todos os alertas aplicáveis ao usuário logado
   const activeAlerts = useMemo(() => {
+    if (user.profile === UserProfile.Cliente) return [];
     const alerts: SystemAlert[] = [];
     const now = Date.now();
 
@@ -120,7 +121,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isFiscal = user.profile === UserProfile.Fiscal;
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
     const isFinanceiro = user.profile === UserProfile.Financeiro;
-    const isAdminOrDiretor = !isDemo && (user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor);
+    const isAdminOrDiretor = !isDemo && (user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor || user.profile === UserProfile.GerenciadoraDeRisco);
     const isCommercialOrSupervisor = !isDemo && [
       UserProfile.Comercial,
       UserProfile.GerenteComercial,
@@ -128,7 +129,6 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       UserProfile.Admin,
       UserProfile.Diretor
     ].includes(user.profile);
-    const isClient = user.profile === UserProfile.Cliente && !!user.clientId;
     const isMotorista = user.profile === UserProfile.Motorista;
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
@@ -238,39 +238,6 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
             timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
             urgency: 'warning',
             targetPage: 'freight-offers-history',
-            relatedId: offer.id
-          });
-        }
-      });
-    }
-
-    // 2.1 RETORNO AO CLIENTE: Avisar cliente quando transportadora responder cotação
-    if (isClient) {
-      freightOffers.forEach(offer => {
-        if (offer.driverId || offer.clientId !== user.clientId) return;
-        const product = productMap.get(offer.productId);
-        const productName = product?.name || 'Mercadoria';
-
-        if (offer.status === FreightOfferStatus.AnaliseCliente) {
-          alerts.push({
-            id: `client_price_${offer.id}`,
-            type: 'client_freight_offer',
-            title: 'Preço de Frete Disponível',
-            message: `A transportadora enviou o valor de R$ ${(offer.freightValuePerTon || 0).toFixed(2)}/ton para ${productName}.`,
-            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
-            urgency: 'warning',
-            targetPage: 'dashboard',
-            relatedId: offer.id
-          });
-        } else if (offer.status === FreightOfferStatus.Contraproposta) {
-          alerts.push({
-            id: `client_counter_${offer.id}`,
-            type: 'client_freight_offer',
-            title: 'Contraproposta da Transportadora',
-            message: `Nova contraproposta de R$ ${(offer.counterOfferValue || 0).toFixed(2)}/ton para sua oferta.`,
-            timestamp: offer.history?.[offer.history.length - 1]?.timestamp || offer.createdAt,
-            urgency: 'warning',
-            targetPage: 'dashboard',
             relatedId: offer.id
           });
         }
@@ -391,6 +358,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       UserProfile.Comercial,
       UserProfile.GerenteComercial,
       UserProfile.Admin,
+      UserProfile.GerenciadoraDeRisco,
       UserProfile.Diretor,
       UserProfile.Agenciador,
       UserProfile.Embarcador,
@@ -445,7 +413,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
   // Disparar som de alerta sonoro quando novos alertas chegarem ou periodicamente
   useEffect(() => {
-    if (totalCount === 0) {
+    if (user.profile === UserProfile.Cliente || totalCount === 0) {
       lastAlertIdsRef.current.clear();
       return;
     }
@@ -499,6 +467,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       setDecisionOffer(matchedOffer);
     }
   };
+
+  if (user.profile === UserProfile.Cliente) {
+    return null;
+  }
 
   return (
     <>

@@ -830,6 +830,157 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     }
   };
 
+  // Vale-Pedágio editável / correção de divergência
+  const [customToll, setCustomToll] = React.useState<number | undefined>(undefined);
+  const [isEditingToll, setIsEditingToll] = React.useState(false);
+  const [tollInput, setTollInput] = React.useState<string>('');
+  const [isSavingToll, setIsSavingToll] = React.useState(false);
+  const [justSavedToll, setJustSavedToll] = React.useState(false);
+
+  React.useEffect(() => {
+    if (shipment.tollValue !== undefined && shipment.tollValue !== null) {
+      setCustomToll(Number(shipment.tollValue));
+    } else if (shipment.realProfitData?.toll !== undefined) {
+      setCustomToll(Number(shipment.realProfitData.toll));
+    } else {
+      setCustomToll(undefined);
+    }
+  }, [shipment.tollValue, shipment.realProfitData?.toll, shipment.id]);
+
+  const handleApplyDocToll = async (targetToll: number) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setIsSavingToll(true);
+    try {
+      const validNum = Math.max(0, Number(targetToll.toFixed(2)));
+      setCustomToll(validNum);
+      setIsEditingToll(false);
+      setJustSavedToll(true);
+      setTimeout(() => setJustSavedToll(false), 4000);
+
+      const oldToll = toll;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: currentUser?.id || 'system',
+        timestamp: new Date().toISOString(),
+        description: `Vale-Pedágio corrigido para o valor do documento fiscal: de "${formatBrl(oldToll)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        toll: validNum,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        toll_value: validNum,
+        valor_pedagio: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        tollValue: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          tollValue: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Vale-Pedágio corrigido para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao corrigir Vale-Pedágio:', err);
+      showToast('Erro ao corrigir Vale-Pedágio.', 'error');
+    } finally {
+      setIsSavingToll(false);
+    }
+  };
+
+  const handleStartEditToll = () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    const currentNum = customToll !== undefined ? customToll : toll;
+    setTollInput(currentNum > 0 ? String(currentNum) : (autoToll && autoToll > 0 ? String(autoToll) : ''));
+    setIsEditingToll(true);
+  };
+
+  const handleSaveCustomToll = async () => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setIsSavingToll(true);
+    try {
+      const parsedVal = parseCurrencyInput(tollInput);
+      const validNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : Number(parsedVal.toFixed(2));
+
+      setCustomToll(validNum);
+      setIsEditingToll(false);
+      setJustSavedToll(true);
+      setTimeout(() => setJustSavedToll(false), 4000);
+
+      const oldToll = toll;
+      const historyEntry: HistoryLog = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        userId: currentUser?.id || 'system',
+        timestamp: new Date().toISOString(),
+        description: `Vale-Pedágio editado manualmente: de "${formatBrl(oldToll)}" para "${formatBrl(validNum)}".`
+      };
+
+      const updatedHistory = [...(shipment.history || []), historyEntry];
+      const updatedRealProfitData = {
+        ...(shipment.realProfitData || {}),
+        toll: validNum,
+      };
+
+      const updatedDocs = {
+        ...(shipment.documents || {}),
+        toll_value: validNum,
+        valor_pedagio: validNum,
+        real_profit_data: updatedRealProfitData
+      };
+
+      const updatedShipment: Shipment = {
+        ...shipment,
+        tollValue: validNum,
+        realProfitData: updatedRealProfitData as any,
+        history: updatedHistory,
+        documents: updatedDocs
+      };
+
+      await upsertShipment(updatedShipment);
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          tollValue: validNum,
+          realProfitData: updatedRealProfitData as any,
+          history: updatedHistory,
+          documents: updatedDocs
+        });
+      }
+
+      showToast(`Vale-Pedágio atualizado para ${formatBrl(validNum)} com sucesso!`, 'success');
+    } catch (err) {
+      console.error('Erro ao salvar Vale-Pedágio:', err);
+      showToast('Erro ao salvar Vale-Pedágio.', 'error');
+    } finally {
+      setIsSavingToll(false);
+    }
+  };
+
   // 1. CTe Frete Bruto / Frete Empresa
   const companyRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const parsedPropTonnage = loadedTonnage !== undefined && loadedTonnage !== '' ? Number(loadedTonnage) : undefined;
@@ -1510,14 +1661,16 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
 
   // 8. Vale-Pedágio (Informativo da Carta Frete / TAG / Formulário / Embarque)
   const parsedPropToll = tollValue !== undefined && tollValue !== '' ? Number(tollValue) : undefined;
-  // Prioridade: valor digitado no formulário > tollValue do embarque (inclusive 0 = sem pedágio) > leitura automática > realProfitData
-  const toll = (parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0)
-    ? parsedPropToll
-    : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
-        ? Number(shipment.tollValue)
-        : (autoToll !== undefined && autoToll > 0
-            ? autoToll
-            : (shipment.realProfitData?.toll || 0)));
+  // Prioridade: valor editado/corrigido no painel > valor digitado no formulário > tollValue do embarque (inclusive 0 = sem pedágio) > leitura automática > realProfitData
+  const toll = (customToll !== undefined && !isNaN(customToll))
+    ? customToll
+    : ((parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0)
+        ? parsedPropToll
+        : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
+            ? Number(shipment.tollValue)
+            : (autoToll !== undefined && autoToll > 0
+                ? autoToll
+                : (shipment.realProfitData?.toll || 0))));
 
   const isExplicitPj = selectedRegime === 'Lucro Real / Presumido' || selectedRegime === 'Lucro Real' || selectedRegime === 'Lucro Presumido' || selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI' || selectedRegime === 'PJ' || selectedRegime === 'ETC' || shipment.driverFreightType === 'PJ' || shipment.anttModality === 'ETC';
   const isShipmentPf = !isExplicitPj && (selectedRegime === 'PF' || selectedRegime === 'TAC' || shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC');
@@ -2596,21 +2749,134 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             </div>
 
             {/* Vale-Pedágio: (Informativo da Carta Frete / TAG) */}
-            <div className="p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between">
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border shadow-2xs flex flex-col justify-between transition-all ${
+              isEditingToll
+                ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/20'
+                : 'border-slate-200/90 dark:border-slate-700/80'
+            }`}>
               <div className="flex items-center justify-between gap-1 mb-0.5">
                 <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Vale-Pedágio:</span>
                 <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 shrink-0">
                   Informativo
                 </span>
               </div>
-              <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
-                {formatBrl(toll)}
-              </div>
-              {autoToll !== undefined && Math.abs(autoToll - toll) > 1.00 && (
-                <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800" title="Divergência entre o Vale-Pedágio do sistema e o documento fiscal">
-                  <AlertTriangle className="w-3 h-3 shrink-0" />
-                  <span>Divergência Doc: {formatBrl(autoToll)}</span>
+
+              {isEditingToll ? (
+                <div className="space-y-1.5 mt-0.5 animate-in fade-in duration-150">
+                  <div className="relative">
+                    <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">R$</span>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="0,00"
+                      value={tollInput}
+                      onChange={(e) => setTollInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveCustomToll();
+                        if (e.key === 'Escape') setIsEditingToll(false);
+                      }}
+                      disabled={isSavingToll}
+                      className="w-full text-xs font-bold font-mono pl-6 pr-1.5 py-0.5 rounded border border-amber-400 bg-amber-50/40 dark:bg-slate-700 dark:border-amber-500 text-slate-800 dark:text-white outline-hidden focus:ring-1 focus:ring-amber-500/40"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveCustomToll}
+                        disabled={isSavingToll}
+                        className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-bold rounded shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Salvar valor do Vale-Pedágio"
+                      >
+                        {isSavingToll ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                        <span>Salvar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingToll(false)}
+                        disabled={isSavingToll}
+                        className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-[9px] font-medium rounded transition-all cursor-pointer"
+                        title="Cancelar"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+
+                    {autoToll !== undefined && autoToll > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTollInput(String(autoToll));
+                        }}
+                        disabled={isSavingToll}
+                        className="text-[8px] font-bold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer"
+                        title={`Preencher com o valor do documento (${formatBrl(autoToll)})`}
+                      >
+                        Usar Doc ({formatBrl(autoToll)})
+                      </button>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between gap-1">
+                    <div className="text-xs font-bold font-mono text-amber-600 dark:text-amber-400">
+                      {formatBrl(toll)}
+                    </div>
+                    {!isDemo && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditToll}
+                        className="text-[8px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-0.5 font-medium"
+                        title="Editar valor do Vale-Pedágio manualmente"
+                      >
+                        <Pencil className="w-2 h-2" />
+                        <span>editar</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {justSavedToll && (
+                    <div className="mt-1 flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 animate-in fade-in">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>Valor atualizado</span>
+                    </div>
+                  )}
+
+                  {autoToll !== undefined && Math.abs(autoToll - toll) > 1.00 && (
+                    <div className="mt-1.5 flex flex-col gap-1.5 text-[10px] bg-amber-50 dark:bg-amber-950/40 p-2 rounded-md border border-amber-300 dark:border-amber-700/80 shadow-2xs animate-in fade-in duration-200" title="Divergência entre o Vale-Pedágio do sistema e o documento fiscal">
+                      <div className="flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span className="truncate">Divergência Doc: {formatBrl(autoToll)}</span>
+                      </div>
+                      {!isDemo && (
+                        <div className="flex items-center gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyDocToll(autoToll)}
+                            disabled={isSavingToll}
+                            className="flex-1 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 active:scale-95 px-2 py-1 rounded shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1 disabled:opacity-50"
+                            title={`Corrigir o Vale-Pedágio para o valor do documento fiscal (${formatBrl(autoToll)})`}
+                          >
+                            {isSavingToll ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            <span>Corrigir p/ {formatBrl(autoToll)}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleStartEditToll}
+                            disabled={isSavingToll}
+                            className="text-[9px] font-semibold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-1.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-0.5"
+                            title="Digitar outro valor manualmente"
+                          >
+                            <Pencil className="w-2.5 h-2.5" />
+                            <span>Outro</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

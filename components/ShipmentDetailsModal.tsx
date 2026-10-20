@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod, AnttModality, EtcTaxRegime } from '../types';
-import { generateLoadingOrderPDF } from '../utils/pdfGenerator';
+import { generateLoadingOrderPDF, isGoiasOrigin, isMinasOrigin, isSpOrigin } from '../utils/pdfGenerator';
 import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
@@ -150,7 +150,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
 
   const isDemo = isDemoUser(currentUser);
   const isFinalized = shipment.status === ShipmentStatus.Finalizado;
-  const isAdmin = currentUser?.profile === UserProfile.Admin;
+  const isAdmin = currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.GerenciadoraDeRisco;
   const isDiretoria = currentUser?.profile === UserProfile.Diretor;
   const canEdit = !isDemo && !!onUpdatePrice && (
     (isFinalized ? isAdmin : currentUser?.profile !== UserProfile.Embarcador)
@@ -307,12 +307,20 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         const linkedBranch = linkedClient?.secondaryCnpjs?.find(b => b.id === cargo?.clientBranchId || b.cnpj === cargo?.clientCnpj);
                         const activeLoadingOrderModelId = linkedBranch?.loadingOrderModelId || linkedBranch?.ordemCarregamentoModelId || linkedClient?.loadingOrderModelId || linkedClient?.ordemCarregamentoModelId;
                         const isConsubeModel = activeLoadingOrderModelId === 'mod_consube';
+                        const isGoias = cargo ? isGoiasOrigin(cargo, shipment) : false;
+                        const isSp = cargo ? isSpOrigin(cargo, shipment) : false;
+                        const isMinas = cargo ? isMinasOrigin(cargo, shipment) : false;
+                        const originBranchTitle = isGoias ? ' - Filial Catalão/GO' : isSp ? ' - Filial Ipaussu/SP' : isMinas ? ' - Matriz Pratápolis/MG' : '';
 
                         return (
                             <div className="inline-flex items-center gap-1.5">
                                 <button
                                     onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo)}
-                                    title={isConsubeModel ? "Gerar Ordem de Carregamento - Modelo Consube (PDF)" : "Gerar Ordem de Carregamento (PDF)"}
+                                    title={
+                                        isConsubeModel 
+                                            ? `Gerar Ordem de Carregamento - Modelo Consube (PDF${originBranchTitle})` 
+                                            : `Gerar Ordem de Carregamento (PDF${originBranchTitle})`
+                                    }
                                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all shadow-sm border ${
                                         isConsubeModel 
                                             ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700/60 hover:bg-amber-500/20' 
@@ -321,14 +329,44 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 >
                                     <FileTextIcon size={15} />
                                     <span>{isConsubeModel ? 'Ordem Consube' : 'Ordem de Carga'}</span>
+                                    {isGoias && (
+                                        <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700" title="Origem Goiás - Emissão Filial Catalão/GO">
+                                            GO
+                                        </span>
+                                    )}
+                                    {isSp && (
+                                        <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black rounded bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-700" title="Origem São Paulo - Emissão Filial Ipaussu/SP">
+                                            SP
+                                        </span>
+                                    )}
+                                    {isMinas && (
+                                        <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-300 dark:border-sky-700" title="Origem Minas Gerais - Emissão Matriz Pratápolis/MG">
+                                            MG
+                                        </span>
+                                    )}
                                 </button>
                                 {!isConsubeModel && (
                                     <button
                                         onClick={() => cargo && generateLoadingOrderPDF(shipment, cargo, clients, products, vehicles, companyLogo, 'mod_consube')}
-                                        title="Emitir Ordem de Carregamento no Modelo Consube"
+                                        title={`Emitir Ordem de Carregamento no Modelo Consube${originBranchTitle}`}
                                         className="inline-flex items-center gap-1 px-2 py-1.5 bg-gray-50 hover:bg-amber-50 text-gray-600 hover:text-amber-700 dark:bg-gray-800 dark:hover:bg-amber-900/30 dark:text-gray-300 dark:hover:text-amber-300 rounded-md text-[11px] font-semibold transition-all border border-gray-200 dark:border-gray-700"
                                     >
-                                        Mod. Consube
+                                        <span>Mod. Consube</span>
+                                        {isGoias && (
+                                            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400">
+                                                (GO)
+                                            </span>
+                                        )}
+                                        {isSp && (
+                                            <span className="text-[9px] font-black text-purple-600 dark:text-purple-400">
+                                                (SP)
+                                            </span>
+                                        )}
+                                        {isMinas && (
+                                            <span className="text-[9px] font-black text-sky-600 dark:text-sky-400">
+                                                (MG)
+                                            </span>
+                                        )}
                                     </button>
                                 )}
                             </div>

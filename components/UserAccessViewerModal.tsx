@@ -232,7 +232,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
     if (simulatedUser.profile === UserProfile.Embarcador || simulatedUser.profile === UserProfile.Agenciador) {
       return shipments.filter(s => s.embarcadorId === simulatedUser.id || s.createdById === simulatedUser.id || (simulatedUser.branchId && s.branchId === simulatedUser.branchId));
     }
-    if (simulatedUser.profile === UserProfile.Admin || simulatedUser.profile === UserProfile.Financeiro || simulatedUser.profile === UserProfile.Demonstracao || (simulatedUser.profile as string) === 'Demo') {
+    if (simulatedUser.profile === UserProfile.Admin || simulatedUser.profile === UserProfile.GerenciadoraDeRisco || simulatedUser.profile === UserProfile.Financeiro || simulatedUser.profile === UserProfile.Demonstracao || (simulatedUser.profile as string) === 'Demo') {
       return shipments;
     }
     const visibleCargoIds = new Set(simulatedVisibleLoads.map(c => c.id));

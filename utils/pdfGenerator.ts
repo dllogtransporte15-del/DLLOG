@@ -53,6 +53,335 @@ export const addPdfLogo = (
   }
 };
 
+/**
+ * Informações cadastrais e endereço da Filial Goiás (Catalão/GO)
+ */
+export const COMPANY_GOIAS_INFO = {
+  name: 'TRANSCUNHA TRANSPORTES E LOGISTICA GOIAS',
+  cnpj: '36.203.306/0004-35',
+  ie: '204719070',
+  address: 'RUA 26, 365, VILA MARGON',
+  cityState: 'CATALAO/GO',
+  cep: '75711-040',
+  phone: '(35)99103-0469',
+  cnpjLine: 'CNPJ: 36.203.306/0004-35 - IE: 204719070',
+  addressLine: 'RUA 26, 365, VILA MARGON - CATALAO/GO - 75711-040 - (35)99103-0469',
+  branchLabel: 'FILIAL CATALÃO/GO',
+};
+
+/**
+ * Informações cadastrais e endereço da Matriz Minas Gerais (Pratápolis/MG)
+ */
+export const COMPANY_MINAS_INFO = {
+  name: 'TRANSCUNHA TRANSPORTES E LOGISTICA LTDA',
+  cnpj: '36.203.306/0001-92',
+  ie: '36577990000',
+  address: 'R PADRE LICINIO, 105, CENTRO',
+  cityState: 'PRATAPOLIS/MG',
+  cep: '37970-000',
+  phone: '(35)99103-0469',
+  cnpjLine: 'CNPJ: 36.203.306/0001-92 - IE: 36577990000',
+  addressLine1: 'R PADRE LICINIO, 105, CENTRO -',
+  addressLine2: 'PRATAPOLIS/MG - 37970-000 - (35)99103-0469',
+  addressLine: 'R PADRE LICINIO, 105, CENTRO - PRATAPOLIS/MG - 37970-000 - (35)99103-0469',
+  branchLabel: 'MATRIZ PRATÁPOLIS/MG',
+};
+
+/**
+ * Informações cadastrais e endereço da Filial São Paulo (Ipaussu/SP)
+ */
+export const COMPANY_SP_INFO = {
+  name: 'TRANSCUNHA TRANSPORTES E LOGISTICA FILIAL SP',
+  cnpj: '36.203.306/0002-73',
+  ie: '357033425116',
+  address: 'RUA JOAO OLIMPIO DA SILVA, 20, JARDIM COCAJA II',
+  cityState: 'IPAUSSU/SP',
+  cep: '18950-546',
+  phone: '(35)99103-0469',
+  cnpjLine: 'CNPJ: 36.203.306/0002-73 - IE: 357033425116',
+  addressLine1: 'RUA JOAO OLIMPIO DA SILVA, 20, JARDIM',
+  addressLine2: 'COCAJA II - IPAUSSU/SP - 18950-546 - (35)99103-0469',
+  addressLine: 'RUA JOAO OLIMPIO DA SILVA, 20, JARDIM COCAJA II - IPAUSSU/SP - 18950-546 - (35)99103-0469',
+  branchLabel: 'FILIAL IPAUSSU/SP',
+};
+
+/**
+ * Informações cadastrais e endereço padrão da Matriz
+ */
+export const COMPANY_MATRIZ_INFO = COMPANY_MINAS_INFO;
+
+/**
+ * Identifica se a carga possui origem no estado de Goiás (UF GO).
+ */
+export const isGoiasOrigin = (cargo?: Cargo | null, shipment?: Shipment | null): boolean => {
+  if (!cargo && !shipment) return false;
+
+  // Extrair apenas os textos referentes à ORIGEM
+  const originParts: string[] = [];
+  if (cargo?.origin) originParts.push(cargo.origin);
+  if (cargo?.originLocation) originParts.push(cargo.originLocation);
+  if ((shipment as any)?.origin) originParts.push((shipment as any).origin);
+  if ((shipment as any)?.originLocation) originParts.push((shipment as any).originLocation);
+
+  // Se rota no embarque, pegar apenas o trecho de origem (antes do delimitador)
+  const route = (shipment as any)?.route;
+  if (route && typeof route === 'string') {
+    const originFromRoute = route.split(/->|➔|>|→/)[0]?.trim();
+    if (originFromRoute) originParts.push(originFromRoute);
+  }
+
+  const originText = originParts.join(' ').trim();
+  if (!originText) return false;
+
+  const normalized = originText
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  // 1. Verificação explícita por UF GO ou Estado de Goiás
+  if (
+    /\bGO\b/.test(normalized) ||
+    /\bGOIAS\b/.test(normalized) ||
+    normalized.includes('/GO') ||
+    normalized.includes('-GO') ||
+    normalized.includes('(GO)') ||
+    normalized.includes('ESTADO DE GOIAS')
+  ) {
+    return true;
+  }
+
+  // Se tiver outra UF explicitada (ex: MT, MS, MG, SP, PR, SC, RS, etc.), não é Goiás
+  if (/\b(MT|MS|MG|SP|PR|SC|RS|BA|RJ|ES|TO|PA|MA|PI|CE|RN|PB|PE|AL|SE|AM|RO|AC|RR|AP|DF)\b/.test(normalized)) {
+    return false;
+  }
+
+  // 2. Principais cidades e polos em Goiás caso a sigla do estado tenha sido omitida
+  const goiasCities = [
+    'CATALAO',
+    'RIO VERDE',
+    'JATAI',
+    'GOIANIA',
+    'ANAPOLIS',
+    'ITUMBIARA',
+    'CRISTALINA',
+    'GOIANIRA',
+    'GOIATUBA',
+    'MONTIVIDIU',
+    'ACREUNA',
+    'SANTA HELENA DE GOIAS',
+    'MINEIROS',
+    'FORMOSA',
+    'LUZIANIA',
+    'SENADOR CANEDO',
+    'TRINDADE',
+    'APARECIDA DE GOIANIA',
+    'QUIRINOPOLIS',
+    'CALDAS NOVAS',
+    'MORRINHOS',
+    'PIRACANJUBA',
+    'BOM JESUS DE GOIAS',
+    'IPAMERI',
+    'SILVANIA',
+    'VIANOPOLIS',
+    'ORIZONA',
+    'PIRES DO RIO',
+    'CHAPADAO DO CEU',
+    'SAO SIMAO'
+  ];
+
+  for (const city of goiasCities) {
+    if (normalized.includes('RIO VERDE DE MATO GROSSO') || normalized.includes('LUCAS DO RIO VERDE')) {
+      continue;
+    }
+    if (new RegExp(`\\b${city}\\b`).test(normalized)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Identifica se a carga possui origem no estado de Minas Gerais (UF MG).
+ */
+export const isMinasOrigin = (cargo?: Cargo | null, shipment?: Shipment | null): boolean => {
+  if (!cargo && !shipment) return false;
+
+  const originParts: string[] = [];
+  if (cargo?.origin) originParts.push(cargo.origin);
+  if (cargo?.originLocation) originParts.push(cargo.originLocation);
+  if ((shipment as any)?.origin) originParts.push((shipment as any).origin);
+  if ((shipment as any)?.originLocation) originParts.push((shipment as any).originLocation);
+
+  const route = (shipment as any)?.route;
+  if (route && typeof route === 'string') {
+    const originFromRoute = route.split(/->|➔|>|→/)[0]?.trim();
+    if (originFromRoute) originParts.push(originFromRoute);
+  }
+
+  const originText = originParts.join(' ').trim();
+  if (!originText) return false;
+
+  const normalized = originText
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  // 1. Verificação explícita por UF MG ou Estado de Minas Gerais
+  if (
+    /\bMG\b/.test(normalized) ||
+    /\bMINAS GERAIS\b/.test(normalized) ||
+    normalized.includes('/MG') ||
+    normalized.includes('-MG') ||
+    normalized.includes('(MG)') ||
+    normalized.includes('ESTADO DE MINAS')
+  ) {
+    return true;
+  }
+
+  // Se tiver outra UF explicitada (ex: GO, MT, MS, SP, PR, SC, RS, etc.), não é MG
+  if (/\b(GO|MT|MS|SP|PR|SC|RS|BA|RJ|ES|TO|PA|MA|PI|CE|RN|PB|PE|AL|SE|AM|RO|AC|RR|AP|DF)\b/.test(normalized)) {
+    return false;
+  }
+
+  // 2. Principais cidades e polos de Minas Gerais caso UF tenha sido omitida
+  const minasCities = [
+    'PRATAPOLIS',
+    'POCOS DE CALDAS',
+    'PASSOS',
+    'UBERLANDIA',
+    'UBERABA',
+    'ARAGUARI',
+    'PATOS DE MINAS',
+    'ALFENAS',
+    'VARGINHA',
+    'LAVRAS',
+    'BELO HORIZONTE',
+    'POUSO ALEGRE',
+    'UNAI',
+    'PARACATU',
+    'IBIA',
+    'ARAXA',
+    'ITUIUTABA',
+    'FRUTAL',
+    'CAMPOS ALTOS',
+    'SAO SEBASTIAO DO PARAISO',
+    'GUAXUPE',
+    'MUZAMBINHO',
+    'MONTE SANTO DE MINAS',
+    'NOVA RESENDE',
+    'FORMIGA',
+    'DIVINOPOLIS'
+  ];
+
+  for (const city of minasCities) {
+    if (new RegExp(`\\b${city}\\b`).test(normalized)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Identifica se a carga possui origem no estado de São Paulo (UF SP).
+ */
+export const isSpOrigin = (cargo?: Cargo | null, shipment?: Shipment | null): boolean => {
+  if (!cargo && !shipment) return false;
+
+  const originParts: string[] = [];
+  if (cargo?.origin) originParts.push(cargo.origin);
+  if (cargo?.originLocation) originParts.push(cargo.originLocation);
+  if ((shipment as any)?.origin) originParts.push((shipment as any).origin);
+  if ((shipment as any)?.originLocation) originParts.push((shipment as any).originLocation);
+
+  const route = (shipment as any)?.route;
+  if (route && typeof route === 'string') {
+    const originFromRoute = route.split(/->|➔|>|→/)[0]?.trim();
+    if (originFromRoute) originParts.push(originFromRoute);
+  }
+
+  const originText = originParts.join(' ').trim();
+  if (!originText) return false;
+
+  const normalized = originText
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  // 1. Verificação explícita por UF SP ou Estado de São Paulo
+  if (
+    /\bSP\b/.test(normalized) ||
+    /\bSAO PAULO\b/.test(normalized) ||
+    normalized.includes('/SP') ||
+    normalized.includes('-SP') ||
+    normalized.includes('(SP)') ||
+    normalized.includes('ESTADO DE SAO PAULO')
+  ) {
+    return true;
+  }
+
+  // Se tiver outra UF explicitada (ex: GO, MG, MT, MS, PR, SC, RS, etc.), não é SP
+  if (/\b(GO|MG|MT|MS|PR|SC|RS|BA|RJ|ES|TO|PA|MA|PI|CE|RN|PB|PE|AL|SE|AM|RO|AC|RR|AP|DF)\b/.test(normalized)) {
+    return false;
+  }
+
+  // 2. Principais cidades e polos de São Paulo caso UF tenha sido omitida
+  const spCities = [
+    'IPAUSSU',
+    'SANTOS',
+    'SAO PAULO',
+    'CAMPINAS',
+    'RIBEIRAO PRETO',
+    'SOROCABA',
+    'SAO JOSE DO RIO PRETO',
+    'BAURU',
+    'PIRACICABA',
+    'ARARAQUARA',
+    'FRANCA',
+    'BARRETOS',
+    'OURINHOS',
+    'MARILIA',
+    'ASSIS',
+    'PRESIDENTE PRUDENTE',
+    'LIMEIRA',
+    'PAULINIA',
+    'CUBATAO',
+    'GUARULHOS',
+    'CATANDUVA',
+    'JABOTICABAL',
+    'SERTAOZINHO',
+    'BEBEDOURO',
+    'JAU',
+    'BOTUCATU',
+    'AVARE',
+    'LENCOIS PAULISTA',
+    'SANTA CRUZ DO RIO PARDO'
+  ];
+
+  for (const city of spCities) {
+    if (new RegExp(`\\b${city}\\b`).test(normalized)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Obtém a informação de endereço e dados cadastrais aplicáveis à carga e embarque.
+ */
+export const getEffectiveCompanyInfo = (cargo?: Cargo | null, shipment?: Shipment | null) => {
+  if (isGoiasOrigin(cargo, shipment)) {
+    return { ...COMPANY_GOIAS_INFO, uf: 'GO' as const };
+  }
+  if (isSpOrigin(cargo, shipment)) {
+    return { ...COMPANY_SP_INFO, uf: 'SP' as const };
+  }
+  // Padrão ou origem MG: Filial/Matriz Minas Gerais (Pratápolis/MG)
+  return { ...COMPANY_MINAS_INFO, uf: 'MG' as const };
+};
+
 export const generateConsubeLoadingOrderPDF = (
   shipment: Shipment,
   cargo: Cargo,
@@ -66,6 +395,10 @@ export const generateConsubeLoadingOrderPDF = (
     unit: 'mm',
     format: 'a4',
   });
+
+  const companyInfo = getEffectiveCompanyInfo(cargo, shipment);
+  const isGo = companyInfo.uf === 'GO';
+  const isSp = companyInfo.uf === 'SP';
 
   const client = clients.find((c) => c.id === cargo.clientId);
   const branch = client?.secondaryCnpjs?.find(b => b.id === cargo.clientBranchId || b.cnpj === cargo.clientCnpj);
@@ -115,14 +448,33 @@ export const generateConsubeLoadingOrderPDF = (
   doc.rect(margin + leftColWidth, currentY, rightColWidth, headerHeight);
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("TRANSCUNHA TRANSPORTES E LOGÍSTICA", margin + leftColWidth + rightColWidth / 2, currentY + 8, { align: 'center' });
+  doc.setFontSize(11);
+  const centerX = margin + leftColWidth + rightColWidth / 2;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text("CNPJ: 57.359.600/0001-68 - RUA MONTEIRO LOBATO, 325 - VILA NOVA", margin + leftColWidth + rightColWidth / 2, currentY + 13, { align: 'center' });
-  doc.text("POÇOS DE CALDAS/MG - CEP: 37701-110 - FONE: (35) 99882-9694 / 3721-0000", margin + leftColWidth + rightColWidth / 2, currentY + 17, { align: 'center' });
-  doc.text("DADOS DA TRANSPORTADORA (ENDEREÇO, TELEFONE, ENTRE OUTROS...)", margin + leftColWidth + rightColWidth / 2, currentY + 21, { align: 'center' });
+  if (isGo) {
+    doc.text(companyInfo.name, centerX, currentY + 8, { align: 'center' });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(companyInfo.cnpjLine, centerX, currentY + 14, { align: 'center' });
+    doc.setFontSize(7.5);
+    doc.text(companyInfo.addressLine, centerX, currentY + 19, { align: 'center' });
+  } else if (isSp) {
+    // São Paulo (Ipaussu/SP) - 4 linhas idênticas ao modelo oficial da imagem
+    doc.text(companyInfo.name, centerX, currentY + 6.5, { align: 'center' });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.text(companyInfo.cnpjLine, centerX, currentY + 11.5, { align: 'center' });
+    doc.text(COMPANY_SP_INFO.addressLine1, centerX, currentY + 16, { align: 'center' });
+    doc.text(COMPANY_SP_INFO.addressLine2, centerX, currentY + 20.5, { align: 'center' });
+  } else {
+    // Minas Gerais (Pratápolis/MG)
+    doc.text(companyInfo.name, centerX, currentY + 6.5, { align: 'center' });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.text(companyInfo.cnpjLine, centerX, currentY + 11.5, { align: 'center' });
+    doc.text(COMPANY_MINAS_INFO.addressLine1, centerX, currentY + 16, { align: 'center' });
+    doc.text(COMPANY_MINAS_INFO.addressLine2, centerX, currentY + 20.5, { align: 'center' });
+  }
 
   currentY += headerHeight;
 
@@ -139,7 +491,7 @@ export const generateConsubeLoadingOrderPDF = (
   doc.text("ORDEM DE CARREGAMENTO", margin + 3, currentY + 4.8);
 
   const cleanOcNum = shipment.id.replace(/\D/g, '') || shipment.id || cargo.sequenceId;
-  const branchName = branch?.nomeFantasia || branch?.city || 'MATRIZ POÇOS DE CALDAS';
+  const branchName = branch?.nomeFantasia || branch?.city || companyInfo.branchLabel;
   const emissionDate = new Date().toLocaleDateString('pt-BR');
 
   doc.setFontSize(8.5);
@@ -329,7 +681,7 @@ export const generateConsubeLoadingOrderPDF = (
   // Assinatura da Transcunha
   doc.line(margin + 105, currentY + 12, margin + 180, currentY + 12);
   doc.setFontSize(7.5);
-  doc.text("TRANSCUNHA TRANSPORTES E LOGÍSTICA", margin + 142.5, currentY + 16, { align: 'center' });
+  doc.text(companyInfo.name, margin + 142.5, currentY + 16, { align: 'center' });
   doc.setFontSize(7);
   doc.text("EMISSOR RESPONSÁVEL / AUTORIZADO", margin + 142.5, currentY + 20, { align: 'center' });
 
@@ -389,12 +741,17 @@ export const generateLoadingOrderPDF = (
   }
 
   // Company Info Header (Under the logo)
+  const companyInfo = getEffectiveCompanyInfo(cargo, shipment);
+
   doc.setFontSize(8);
   doc.setTextColor(secondaryGray[0], secondaryGray[1], secondaryGray[2]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.text(companyInfo.name, margin, 27);
   doc.setFont("helvetica", "normal");
-  doc.text("CNPJ: 57.359.600/0001-68", margin, 28);
-  doc.text("Rua Monteiro Lobato, 325 - Vila Nova - Poços de Caldas/MG - 37701-110", margin, 32);
-  doc.text("Autorização de Carregamento de Transportes", margin, 36);
+  doc.setFontSize(7.5);
+  doc.text(companyInfo.cnpjLine, margin, 31);
+  doc.text(companyInfo.addressLine, margin, 35);
 
   // Document ID & Date (Top Right)
   doc.setFontSize(10);
@@ -404,6 +761,9 @@ export const generateLoadingOrderPDF = (
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}`, pageWidth - margin, 24, { align: 'right' });
+  doc.setFont("helvetica", "bold");
+  doc.text(`Filial: ${companyInfo.branchLabel}`, pageWidth - margin, 30, { align: 'right' });
+  doc.setFont("helvetica", "normal");
 
   // Divider
   doc.setDrawColor(accentBlue[0], accentBlue[1], accentBlue[2]);
@@ -523,15 +883,14 @@ export const generateLoadingOrderPDF = (
   // Authority signature
   doc.line(pageWidth - margin - 80, footerY, pageWidth - margin, footerY);
   doc.setFontSize(8);
-  doc.text("TRANSCUNHA LOGÍSTICA", pageWidth - margin - 40, footerY + 5, { align: 'center' });
+  doc.text(companyInfo.name, pageWidth - margin - 40, footerY + 5, { align: 'center' });
   doc.setFontSize(7);
   doc.text("AUTORIZAÇÃO DE CARREGAMENTO", pageWidth - margin - 40, footerY + 9, { align: 'center' });
 
   // Final Footer Note
   doc.setFontSize(7);
   doc.setTextColor(150);
-  const footerText = "Este documento é exclusivo para controle interno de carregamento da TRANSCUNHA LOGÍSTICA. As informações aqui contidas são confidenciais.";
-  doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
+  const footerText = `Este documento é exclusivo para controle interno de carregamento da ${companyInfo.name}. As informações aqui contidas são confidenciais.`;
   doc.text(footerText, pageWidth / 2, pageHeight - 10, { align: 'center' });
 
   // Save PDF

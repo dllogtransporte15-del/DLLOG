@@ -5,7 +5,7 @@ import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/
 import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel
 } from '../types';
-import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS } from '../types';
+import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS, TicketStatus } from '../types';
 import { broadcastShipmentChange, broadcastCargoChange } from '../services/realtimeOperationsHub';
 
 // ─────────────────────────────────────────────
@@ -956,20 +956,85 @@ export const toTicket = (row: any): Ticket => {
   const shipmentMatch = cleanDesc.match(/\[SHIPMENT_ID:\s*(.*?)\]/);
   const attachmentUrlMatch = cleanDesc.match(/\[ATTACHMENT_URL:\s*(.*?)\]/);
   const attachmentNameMatch = cleanDesc.match(/\[ATTACHMENT_NAME:\s*(.*?)\]/);
+  const startedAtMatch = cleanDesc.match(/\[STARTED_AT:\s*(.*?)\]/);
+  const startedByIdMatch = cleanDesc.match(/\[STARTED_BY:\s*(.*?)\]/);
+  const resolvedAtMatch = cleanDesc.match(/\[RESOLVED_AT:\s*(.*?)\]/);
+  const resolvedByIdMatch = cleanDesc.match(/\[RESOLVED_BY:\s*(.*?)\]/);
+  const closedAtMatch = cleanDesc.match(/\[CLOSED_AT:\s*(.*?)\]/);
+  const closedByIdMatch = cleanDesc.match(/\[CLOSED_BY:\s*(.*?)\]/);
   
   const cargoId = cargoMatch ? cargoMatch[1] : undefined;
   const shipmentId = shipmentMatch ? shipmentMatch[1] : undefined;
   const attachmentUrl = attachmentUrlMatch ? attachmentUrlMatch[1] : (row.attachment_url || undefined);
   const attachmentName = attachmentNameMatch ? attachmentNameMatch[1] : (row.attachment_name || undefined);
 
-  if (cargoMatch || shipmentMatch || attachmentUrlMatch || attachmentNameMatch) {
-    cleanDesc = cleanDesc
-      .replace(/\[CARGO_ID:\s*.*?\]/g, '')
-      .replace(/\[SHIPMENT_ID:\s*.*?\]/g, '')
-      .replace(/\[ATTACHMENT_URL:\s*.*?\]/g, '')
-      .replace(/\[ATTACHMENT_NAME:\s*.*?\]/g, '')
-      .trim();
+  let startedAt = startedAtMatch ? startedAtMatch[1] : undefined;
+  let startedById = startedByIdMatch ? startedByIdMatch[1] : undefined;
+  let resolvedAt = resolvedAtMatch ? resolvedAtMatch[1] : undefined;
+  let resolvedById = resolvedByIdMatch ? resolvedByIdMatch[1] : undefined;
+  let closedAt = closedAtMatch ? closedAtMatch[1] : undefined;
+  let closedById = closedByIdMatch ? closedByIdMatch[1] : undefined;
+
+  const history = Array.isArray(row.history) ? row.history : [];
+
+  // Fallback / historical extraction from history logs if tags were not present
+  if (!startedAt) {
+    const attendLog = history.find((h: any) => h.newStatus === TicketStatus.EmAndamento || (h.comment && h.comment.toLowerCase().includes('atendimento')));
+    if (attendLog) {
+      startedAt = attendLog.timestamp;
+      startedById = attendLog.userId;
+    }
   }
+
+  if (!resolvedAt) {
+    const resolveLog = history.find((h: any) => h.newStatus === TicketStatus.Resolvido || (h.comment && h.comment.toLowerCase().includes('resolvido')));
+    if (resolveLog) {
+      resolvedAt = resolveLog.timestamp;
+      resolvedById = resolveLog.userId;
+    }
+  }
+
+  if (!closedAt) {
+    const closeLog = history.find((h: any) => h.newStatus === TicketStatus.Fechado || (h.comment && h.comment.toLowerCase().includes('fechado')));
+    if (closeLog) {
+      closedAt = closeLog.timestamp;
+      closedById = closeLog.userId;
+    }
+  }
+
+  // Calculate durations (SLA)
+  let timeToAttendMs: number | undefined = undefined;
+  let timeToResolveMs: number | undefined = undefined;
+  const createdAtMs = row.created_at ? new Date(row.created_at).getTime() : undefined;
+
+  if (createdAtMs && startedAt) {
+    const sMs = new Date(startedAt).getTime();
+    if (!isNaN(sMs) && sMs >= createdAtMs) {
+      timeToAttendMs = sMs - createdAtMs;
+    }
+  }
+
+  const endMsStr = resolvedAt || closedAt;
+  if (createdAtMs && endMsStr) {
+    const eMs = new Date(endMsStr).getTime();
+    if (!isNaN(eMs) && eMs >= createdAtMs) {
+      timeToResolveMs = eMs - createdAtMs;
+    }
+  }
+
+  // Clean description from metadata tags
+  cleanDesc = cleanDesc
+    .replace(/\[CARGO_ID:\s*.*?\]/g, '')
+    .replace(/\[SHIPMENT_ID:\s*.*?\]/g, '')
+    .replace(/\[ATTACHMENT_URL:\s*.*?\]/g, '')
+    .replace(/\[ATTACHMENT_NAME:\s*.*?\]/g, '')
+    .replace(/\[STARTED_AT:\s*.*?\]/g, '')
+    .replace(/\[STARTED_BY:\s*.*?\]/g, '')
+    .replace(/\[RESOLVED_AT:\s*.*?\]/g, '')
+    .replace(/\[RESOLVED_BY:\s*.*?\]/g, '')
+    .replace(/\[CLOSED_AT:\s*.*?\]/g, '')
+    .replace(/\[CLOSED_BY:\s*.*?\]/g, '')
+    .trim();
 
   return {
     id: row.id,
@@ -980,11 +1045,19 @@ export const toTicket = (row: any): Ticket => {
     createdById: row.created_by_id,
     assignedToId: row.assigned_to_id,
     createdAt: row.created_at,
-    history: row.history || [],
+    history,
     cargoId,
     shipmentId,
     attachmentUrl,
     attachmentName,
+    startedAt,
+    startedById,
+    resolvedAt,
+    resolvedById,
+    closedAt,
+    closedById,
+    timeToAttendMs,
+    timeToResolveMs,
   };
 };
 
@@ -995,6 +1068,12 @@ export const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdA
   if (ticketObj.shipmentId) finalDesc += `\n\n[SHIPMENT_ID: ${ticketObj.shipmentId}]`;
   if (ticketObj.attachmentUrl) finalDesc += `\n\n[ATTACHMENT_URL: ${ticketObj.attachmentUrl}]`;
   if (ticketObj.attachmentName) finalDesc += `\n\n[ATTACHMENT_NAME: ${ticketObj.attachmentName}]`;
+  if (ticketObj.startedAt) finalDesc += `\n\n[STARTED_AT: ${ticketObj.startedAt}]`;
+  if (ticketObj.startedById) finalDesc += `\n\n[STARTED_BY: ${ticketObj.startedById}]`;
+  if (ticketObj.resolvedAt) finalDesc += `\n\n[RESOLVED_AT: ${ticketObj.resolvedAt}]`;
+  if (ticketObj.resolvedById) finalDesc += `\n\n[RESOLVED_BY: ${ticketObj.resolvedById}]`;
+  if (ticketObj.closedAt) finalDesc += `\n\n[CLOSED_AT: ${ticketObj.closedAt}]`;
+  if (ticketObj.closedById) finalDesc += `\n\n[CLOSED_BY: ${ticketObj.closedById}]`;
 
   return {
     id: ticketObj.id,
@@ -1350,12 +1429,50 @@ export async function fetchUsers(): Promise<User[]> {
 }
 
 export async function fetchTickets(): Promise<Ticket[]> {
+  let dbTickets: Ticket[] = [];
   try {
     const data = await fetchAllRows('tickets', 'created_at', { ascending: false });
-    return data.map(toTicket);
+    dbTickets = data.map(toTicket);
+    // Cacheia tickets do banco localmente
+    try {
+      localStorage.setItem('transcunha_tickets_cache', JSON.stringify(dbTickets));
+    } catch {}
   } catch (error) {
-    return handleAuthError(error, []);
+    console.warn('[fetchTickets] Falha ao consultar Supabase, recuperando do cache local:', error);
+    try {
+      const cached = localStorage.getItem('transcunha_tickets_cache');
+      if (cached) {
+        dbTickets = JSON.parse(cached);
+      }
+    } catch {}
+    if (dbTickets.length === 0) {
+      return handleAuthError(error, []);
+    }
   }
+
+  // AUDITORIA / RECUPERAÇÃO: Verifica se há chamados no cache de emergência que não constam no Supabase
+  try {
+    const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+    if (emergencyRaw) {
+      const emergencyList: Ticket[] = JSON.parse(emergencyRaw);
+      const dbIds = new Set(dbTickets.map(t => t.id));
+      const missingInDb = emergencyList.filter(t => !dbIds.has(t.id));
+
+      if (missingInDb.length > 0) {
+        console.log(`[fetchTickets] Encontrado(s) ${missingInDb.length} chamado(s) no cache de emergência. Sincronizando...`);
+        // Junta os chamados para que nunca sumam da interface do usuário
+        dbTickets = [...missingInDb, ...dbTickets];
+        // Envia para o banco de dados em segundo plano
+        missingInDb.forEach(t => {
+          upsertTicket(t).catch(e => console.warn(`[fetchTickets] Erro ao sincronizar chamado ${t.id}:`, e));
+        });
+      }
+    }
+  } catch (syncErr) {
+    console.warn('[fetchTickets] Erro ao inspecionar cache de emergência:', syncErr);
+  }
+
+  return dbTickets;
 }
 
 export async function fetchBranches(): Promise<Branch[]> {
@@ -1909,8 +2026,103 @@ export async function upsertBranch(branch: Branch): Promise<void> {
   if (error) throw error;
 }
 
+export async function insertUniqueTicket(ticketData: Omit<Ticket, 'id' | 'history' | 'createdAt'> & { id?: string; createdAt?: string; history?: any[] }): Promise<Ticket> {
+  // 1. Inspeciona tickets existentes no Supabase para garantir sequência única absoluta
+  let maxSeq = 0;
+  try {
+    const { data: dbTickets } = await supabase.from('tickets').select('id');
+    if (dbTickets && Array.isArray(dbTickets)) {
+      dbTickets.forEach(r => {
+        const num = parseInt(String(r.id).replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      });
+    }
+  } catch (err) {
+    console.warn('[insertUniqueTicket] Aviso ao consultar tickets existentes no banco:', err);
+  }
+
+  // Também verifica cache de emergência local
+  try {
+    const cachedStr = localStorage.getItem('transcunha_emergency_tickets');
+    if (cachedStr) {
+      const cached = JSON.parse(cachedStr);
+      if (Array.isArray(cached)) {
+        cached.forEach((t: any) => {
+          const num = parseInt(String(t.id).replace(/\D/g, ''), 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        });
+      }
+    }
+  } catch {}
+
+  let candidateSeq = Math.max(maxSeq + 1, 1);
+  const nowIso = ticketData.createdAt || new Date().toISOString();
+
+  // Retry com incremento progressivo para garantir que NENHUM chamado sobrescreva outro
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const generatedId = `TCK-${String(candidateSeq).padStart(3, '0')}`;
+    const newTicket: Ticket = {
+      ...ticketData,
+      id: generatedId,
+      createdAt: nowIso,
+      history: ticketData.history && ticketData.history.length > 0 ? ticketData.history : [{
+        userId: ticketData.createdById,
+        timestamp: nowIso,
+        comment: 'Chamado aberto e registrado na auditoria.'
+      }]
+    };
+
+    const payload = fromTicket(newTicket);
+
+    // Salva cópia de emergência local ANTES da chamada de rede
+    try {
+      const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+      const emergencyList: Ticket[] = emergencyRaw ? JSON.parse(emergencyRaw) : [];
+      const updatedEmergency = [newTicket, ...emergencyList.filter(e => e.id !== newTicket.id)];
+      localStorage.setItem('transcunha_emergency_tickets', JSON.stringify(updatedEmergency));
+    } catch {}
+
+    const { error } = await supabase.from('tickets').insert(payload);
+    if (!error) {
+      console.log(`[insertUniqueTicket] Chamado ${generatedId} gravado com sucesso no Supabase.`);
+      // Atualiza também o cache geral
+      try {
+        const cacheRaw = localStorage.getItem('transcunha_tickets_cache');
+        const list: Ticket[] = cacheRaw ? JSON.parse(cacheRaw) : [];
+        localStorage.setItem('transcunha_tickets_cache', JSON.stringify([newTicket, ...list.filter(t => t.id !== newTicket.id)]));
+      } catch {}
+      return newTicket;
+    }
+
+    // Se houve conflito de ID (já existente), tenta próximo número
+    if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('already exists')) {
+      console.warn(`[insertUniqueTicket] Conflito de ID ${generatedId}. Incrementando número para tentativa ${attempt + 1}...`);
+      candidateSeq++;
+      continue;
+    }
+
+    console.error('[insertUniqueTicket] Erro crítico ao inserir chamado:', error);
+    throw error;
+  }
+
+  throw new Error('Não foi possível gerar um identificador único para o chamado após 5 tentativas.');
+}
+
 export async function upsertTicket(ticket: Ticket): Promise<void> {
   const payload = fromTicket(ticket);
+  
+  // Atualiza cache de emergência local imediatamente
+  try {
+    const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+    const emergencyList: Ticket[] = emergencyRaw ? JSON.parse(emergencyRaw) : [];
+    const updatedEmergency = [ticket, ...emergencyList.filter(e => e.id !== ticket.id)];
+    localStorage.setItem('transcunha_emergency_tickets', JSON.stringify(updatedEmergency));
+
+    const cacheRaw = localStorage.getItem('transcunha_tickets_cache');
+    const list: Ticket[] = cacheRaw ? JSON.parse(cacheRaw) : [];
+    localStorage.setItem('transcunha_tickets_cache', JSON.stringify([ticket, ...list.filter(t => t.id !== ticket.id)]));
+  } catch {}
+
   const { error } = await supabase.from('tickets').upsert(payload);
   if (error) {
     console.error('[upsertTicket] Error details:', error);
@@ -1919,6 +2131,20 @@ export async function upsertTicket(ticket: Ticket): Promise<void> {
 }
 
 export async function deleteTicket(id: string): Promise<void> {
+  try {
+    // Remove do cache local
+    const emergencyRaw = localStorage.getItem('transcunha_emergency_tickets');
+    if (emergencyRaw) {
+      const emergencyList: Ticket[] = JSON.parse(emergencyRaw);
+      localStorage.setItem('transcunha_emergency_tickets', JSON.stringify(emergencyList.filter(e => e.id !== id)));
+    }
+    const cacheRaw = localStorage.getItem('transcunha_tickets_cache');
+    if (cacheRaw) {
+      const list: Ticket[] = JSON.parse(cacheRaw);
+      localStorage.setItem('transcunha_tickets_cache', JSON.stringify(list.filter(t => t.id !== id)));
+    }
+  } catch {}
+
   const { error } = await supabase.from('tickets').delete().eq('id', id);
   if (error) {
     console.error('[deleteTicket] Error details:', error);

@@ -189,6 +189,8 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     const doesNotRequireGr = !checkRequiresRiskManagement(cargo, product);
     const omitSeguradora = doesNotRequireGr && shipment.status !== ShipmentStatus.AguardandoSeguradora;
 
+    const omitAgendamento = !cargo?.requiresScheduling && shipment.status !== ShipmentStatus.AguardandoAgendamento;
+
     let list = STAGES_DEFINITIONS;
     if (omitSeguradora) {
       list = list.filter(s => s.status !== ShipmentStatus.AguardandoSeguradora);
@@ -198,6 +200,9 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
     }
     if (omitAdiantamento) {
       list = list.filter(s => s.status !== ShipmentStatus.AguardandoAdiantamento);
+    }
+    if (omitAgendamento) {
+      list = list.filter(s => s.status !== ShipmentStatus.AguardandoAgendamento);
     }
 
     return list.map((s, idx) => ({

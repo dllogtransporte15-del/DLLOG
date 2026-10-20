@@ -131,7 +131,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
   const canPerformSpecialActions = !isDemo && currentUser && allowedProfilesForActions.includes(currentUser.profile);
   
-  const canEditPrice = !isDemo && currentUser && (currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema');
+  const canEditPrice = !isDemo && currentUser && (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || (currentUser.profile as string) === 'Administrador do Sistema');
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
   const canTransferShipment = (canUpdate || currentUser.profile === UserProfile.Supervisor) && canPerformSpecialActions;
   const isClient = currentUser.profile === UserProfile.Cliente;
@@ -265,15 +265,14 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
     const currentStatus = shipment.status;
     const userProfile = currentUser.profile;
 
-    if (userProfile === UserProfile.Admin) return defaultResponse;
+    if (userProfile === UserProfile.Admin || userProfile === UserProfile.GerenciadoraDeRisco) return defaultResponse;
 
     if (currentStatus === ShipmentStatus.PreCadastro) {
-        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Agenciador, UserProfile.GerenciadoraDeRisco].includes(userProfile)) return defaultResponse;
+        if ([UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Agenciador].includes(userProfile)) return defaultResponse;
         return { allowed: false, reason: 'Apenas Gerenciadora de Risco, Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Admin podem avançar este status.' };
     }
 
     if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
-        if (userProfile === UserProfile.GerenciadoraDeRisco) return defaultResponse;
         return { allowed: false, reason: 'Apenas o perfil Gerenciadora de Risco ou Administrador do Sistema pode avançar embarques neste status.' };
     }
 

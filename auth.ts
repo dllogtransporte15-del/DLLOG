@@ -18,7 +18,23 @@ const createPermissions = (pages: Page[], readOnly = false): { [key in Page]?: C
   return permissions;
 };
 
+const createPermissionsWithoutDelete = (pages: Page[]): { [key in Page]?: CrudPermissions } => {
+  const permissions: { [key in Page]?: CrudPermissions } = {};
+  for (const page of allPages) {
+    const canAccess = pages.includes(page);
+    permissions[page] = {
+      read: canAccess,
+      create: canAccess,
+      update: canAccess,
+      delete: false,
+    };
+  }
+  return permissions;
+};
+
 const supervisorAndDiretorPages = allPages.filter(p => p !== 'appearance');
+const gerenciadoraDeRiscoPages = allPages.filter(p => p !== 'financial' && p !== 'reports');
+
 export const INITIAL_PERMISSIONS: ProfilePermissions = {
   [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'locations', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'freight-offers-history', 'risk-management', 'risk-query-types', 'messenger']),
   [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types'], true),
@@ -29,7 +45,7 @@ export const INITIAL_PERMISSIONS: ProfilePermissions = {
   [UserProfile.Supervisor]: createPermissions(supervisorAndDiretorPages),
   [UserProfile.Diretor]: createPermissions(supervisorAndDiretorPages, true),
   [UserProfile.Motorista]: createPermissions(['operational-loads', 'shipment-history'], true),
-  [UserProfile.GerenciadoraDeRisco]: createPermissions(['dashboard', 'shipments', 'shipment-history', 'load-history', 'operational-loads', 'operational-map', 'reports', 'drivers', 'vehicles', 'loads', 'locations', 'clients', 'products', 'owners', 'embarcadores', 'risk-management', 'risk-query-types', 'whatsapp']),
+  [UserProfile.GerenciadoraDeRisco]: createPermissionsWithoutDelete(gerenciadoraDeRiscoPages),
   [UserProfile.Demonstracao]: createPermissions(allPages, true),
 };
 
@@ -41,22 +57,6 @@ if (INITIAL_PERMISSIONS[UserProfile.Fiscal] && INITIAL_PERMISSIONS[UserProfile.F
 if (INITIAL_PERMISSIONS[UserProfile.Embarcador] && INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']) {
     INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.create = true;
 }
-
-// Specifically ensure 'update' and 'create' permissions for 'GerenciadoraDeRisco' profile
-if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]) {
-    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']) {
-        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']!.update = true;
-        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-management']!.create = true;
-    }
-    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']) {
-        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']!.update = true;
-        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['risk-query-types']!.create = true;
-    }
-    if (INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['shipments']) {
-        INITIAL_PERMISSIONS[UserProfile.GerenciadoraDeRisco]!['shipments']!.update = true;
-    }
-}
-
 
 export const isDemoUser = (user: User | null | undefined): boolean => {
   if (!user) return false;
@@ -83,6 +83,17 @@ export const can = (
 
   // Admin can do everything, always.
   if (user.profile === UserProfile.Admin) return true;
+
+  // Gerenciadora de Risco: same functions and permissions as Admin,
+  // EXCEPT: access to 'financial' and 'reports', and any 'delete' commands.
+  if (user.profile === UserProfile.GerenciadoraDeRisco) {
+    if (page === 'financial' || page === 'reports') return false;
+    if (action === 'delete') return false;
+    if (user.customPermissions && user.customPermissions[page]) {
+      return Boolean(user.customPermissions[page]![action]);
+    }
+    return true;
+  }
 
   // Explicitly block 'reports' for 'Fiscal' profile as requested, overriding DB
   if (user.profile === UserProfile.Fiscal && page === 'reports') return false;

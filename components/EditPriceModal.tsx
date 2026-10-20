@@ -47,7 +47,7 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
     }
   };
 
-  const isAdmin = currentUser.profile === UserProfile.Admin || (currentUser.profile as string) === 'Administrador do Sistema';
+  const isAdmin = currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || (currentUser.profile as string) === 'Administrador do Sistema';
   const canEditCompanyPrice = isAdmin;
   const canEditDriverPrice = isAdmin;
 

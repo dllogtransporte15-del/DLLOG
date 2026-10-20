@@ -29,7 +29,7 @@ interface TicketModalProps {
   onDelete: (ticketId: string) => void;
   cargos?: Cargo[];
   shipments?: Shipment[];
-  onNavigateTo?: (type: 'cargo' | 'shipment') => void;
+  onNavigateTo?: (type: 'cargo' | 'shipment', id?: string) => void;
   initialCreate?: boolean;
 }
 
@@ -538,13 +538,13 @@ const TicketModal: React.FC<TicketModalProps> = ({ isOpen, onClose, tickets, use
                                    {(ticket.cargoId || ticket.shipmentId) && (
                                      <div className="flex gap-2 flex-wrap">
                                        {ticket.cargoId && (
-                                         <button onClick={(e) => { e.stopPropagation(); onClose(); onNavigateTo?.('cargo'); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-md text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-800/50">
+                                         <button onClick={(e) => { e.stopPropagation(); onClose(); onNavigateTo?.('cargo', ticket.cargoId); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded-md text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-800/50">
                                            <Package size={14} /> Acessar Carga Vinculada
                                            <ExternalLink size={14} className="ml-1 opacity-70" />
                                          </button>
                                        )}
                                        {ticket.shipmentId && (
-                                         <button onClick={(e) => { e.stopPropagation(); onClose(); onNavigateTo?.('shipment'); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 rounded-md text-sm font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors border border-indigo-200 dark:border-indigo-800/50">
+                                         <button onClick={(e) => { e.stopPropagation(); onClose(); onNavigateTo?.('shipment', ticket.shipmentId); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 rounded-md text-sm font-medium hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors border border-indigo-200 dark:border-indigo-800/50">
                                            <Truck size={14} /> Acessar Embarque Vinculado
                                            <ExternalLink size={14} className="ml-1 opacity-70" />
                                          </button>
