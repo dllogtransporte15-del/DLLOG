@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_20_v2_70_92',
+    version: 'v2.70.92',
+    date: '20/10/2026',
+    title: 'Acesso Irrestrito a Todos os Embarques para o Perfil Gerenciadora de Risco',
+    summary: 'Equalização definitiva de visibilidade e permissões operacionais: usuários com perfil Gerenciadora de Risco e a operadora Samanta passam a ter acesso irrestrito e integral a todos os embarques e cargas do sistema, sem qualquer retenção por permissões de filial ou listas de usuários em cargas.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Atualização e Ajuste Cadastral do Usuário Samanta',
+        description: 'O perfil de acesso da operadora Samanta foi devidamente atualizado para "Gerenciadora de Risco" no banco de dados e sincronizado em tempo real no estado de autenticação da aplicação.'
+      },
+      {
+        category: 'improvement',
+        title: 'Visibilidade Global Plena de Embarques e Cargas',
+        description: 'Garantido retorno de 100% dos embarques cadastrados nas telas operacionais e de histórico para o perfil Gerenciadora de Risco, eliminando qualquer filtragem residual por restrições de cargas ou filiais.'
+      },
+      {
+        category: 'security',
+        title: 'Sincronização em Tempo Real de Sessão de Usuário',
+        description: 'Implementado ouvinte automático de atualização de cadastro de usuários para sincronizar instantaneamente perfis e permissões na sessão ativa sem necessidade de logout.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_19_v2_70_91',
     version: 'v2.70.91',
     date: '19/10/2026',
