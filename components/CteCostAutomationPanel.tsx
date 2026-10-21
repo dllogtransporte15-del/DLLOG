@@ -1690,9 +1690,13 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     : 'PJ (6,5136% • Manut. ICMS Exportação)';
 
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+  const tonVal = Number(tonnage) || Number(shipment.shipmentTonnage) || 0;
+  const calculatedDriverFreight = (driverRate > 0 && tonVal > 0) ? Number((driverRate * tonVal).toFixed(2)) : 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
     ? shipment.realProfitData.driverFreight
-    : (shipment.driverFreightValue || (driverRate * tonnage));
+    : ((calculatedDriverFreight > 0 && shipment.driverFreightValue && Math.abs(Number(shipment.driverFreightValue) - calculatedDriverFreight) > 5.00 && shipment.driverFreightRateSnapshot)
+        ? calculatedDriverFreight
+        : (Number(shipment.driverFreightValue) || calculatedDriverFreight));
 
   // Bases de Frete Líquidas de Pedágio (Conforme regra do ERP)
   const baseFreteEmpresa = Math.max(0, cteGrossFreight - toll);

@@ -2941,6 +2941,12 @@ const App: React.FC = () => {
         }
     } else if (data.driverFreightRateSnapshot !== undefined && data.driverFreightRateSnapshot !== shipmentToUpdate.driverFreightRateSnapshot) {
         updatedDriverFreight = rateToUse * targetTonnage;
+    } else if (data.driverFreightValue === undefined && rateToUse > 0 && targetTonnage > 0) {
+        // Blindagem contra divergência/corrupção de frete motorista bruto em cargas por tonelada
+        const contractualCalc = Number((rateToUse * targetTonnage).toFixed(2));
+        if (updatedDriverFreight && Math.abs(updatedDriverFreight - contractualCalc) > 5.00) {
+            updatedDriverFreight = contractualCalc;
+        }
     }
 
     const updatedDocs = {

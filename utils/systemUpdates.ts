@@ -21,6 +21,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_20_v2_70_94',
+    version: 'v2.70.94',
+    date: '20/10/2026',
+    title: 'Equalização do Frete Motorista CEL-742 e Blindagem Contratual Contra Descompasso de Pedágio',
+    summary: 'Correção do Frete Motorista Bruto do embarque CEL-742 para R$ 3.336,90 (47,67 ton × R$ 70,00) e implementação de blindagem sistemática no cálculo do DRE, painel de automação CT-e e modal de anexos para que o frete bruto sempre respeite a taxa contratual por tonelada, evitando descompassos quando o pedágio for reajustado.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Equalização do Frete Motorista no Embarque CEL-742',
+        description: 'O valor do frete bruto do embarque CEL-742 foi corrigido de R$ 3.139,30 para R$ 3.336,90, harmonizando o DRE e a automação do CT-e com a Carta Frete líquida (R$ 3.126,30) e o pedágio (R$ 210,60).'
+      },
+      {
+        category: 'improvement',
+        title: 'Blindagem de Frete Contratual por Tonelada no DRE e Relatórios',
+        description: 'Implementada regra preventiva no painel de automação de custos (CT-e) e na calculadora de despesas operacionais para garantir que cargas com taxa por tonelada sempre priorizem a taxa contratual em caso de divergência com valor bruto legado.'
+      },
+      {
+        category: 'fix',
+        title: 'Prevenção de Race Condition de Pedágio na Carta Frete',
+        description: 'O salvamento de divergência da Carta Frete no modal de anexos agora utiliza dinamicamente o pedágio final atualizado do documento e sincroniza diretamente com o frete bruto contratual.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_20_v2_70_93',
     version: 'v2.70.93',
     date: '20/10/2026',

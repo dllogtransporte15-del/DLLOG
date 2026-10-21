@@ -719,7 +719,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
   // Frete Motorista no Sistema: considerar frete total motorista sem o valor do pedágio
   const systemDriverFreight = React.useMemo(() => {
-    const currentToll = Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0;
+    const currentToll = (docExtractedToll !== undefined && docExtractedToll > 0)
+      ? docExtractedToll
+      : (Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0);
     const rate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
     const ton = Number(shipment.shipmentTonnage) || 0;
     const calculatedFreight = (rate > 0 && ton > 0) ? Number((rate * ton).toFixed(2)) : 0;
@@ -727,13 +729,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       ? calculatedFreight
       : (Number(shipment.driverFreightValue) || calculatedFreight);
     return Number(Math.max(0, totalFreight - currentToll).toFixed(2));
-  }, [shipment.driverFreightValue, shipment.driverFreightRateSnapshot, cargo?.driverFreightValuePerTon, shipment.shipmentTonnage, tollValue, shipment.tollValue, shipment.documents]);
+  }, [shipment.driverFreightValue, shipment.driverFreightRateSnapshot, cargo?.driverFreightValuePerTon, shipment.shipmentTonnage, tollValue, shipment.tollValue, shipment.documents, docExtractedToll]);
 
   const freightDivergenceInfo = React.useMemo(() => {
     if (!cartaFreteExtractedFreight || cartaFreteExtractedFreight <= 0 || systemDriverFreight <= 0) return null;
 
     // Carta Frete Anexada: considerar frete total motorista sem o valor do pedágio
-    const currentToll = Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0;
+    const currentToll = (docExtractedToll !== undefined && docExtractedToll > 0)
+      ? docExtractedToll
+      : (Number(tollValue) || Number(shipment.tollValue) || Number((shipment.documents as any)?.valor_pedagio) || Number((shipment.documents as any)?.toll_value) || 0);
     const netCartaFreteFreight = calculateNetCartaFreteFreight({
       rawFreight: cartaFreteExtractedFreight,
       toll: currentToll,
@@ -753,7 +757,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       };
     }
     return null;
-  }, [cartaFreteExtractedFreight, systemDriverFreight, tollValue, advanceValue, advancePercentage, shipment.tollValue, shipment.advanceValue, shipment.advancePercentage, shipment.driverFreightValue, shipment.documents]);
+  }, [cartaFreteExtractedFreight, systemDriverFreight, tollValue, advanceValue, advancePercentage, shipment.tollValue, shipment.advanceValue, shipment.advancePercentage, shipment.driverFreightValue, shipment.documents, docExtractedToll]);
 
   // Frete Empresa: Comparação entre Sistema e CT-e (VALOR TOTAL DO SERVIÇO - CTE vs Total Frete Emp)
   const systemCompanyFreight = React.useMemo(() => {
@@ -2222,6 +2226,22 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       }
     }
 
+    const finalTollToSave = (isAguardandoFiscal && tollDecision === 'use_doc' && tollDivergenceInfo) 
+      ? tollDivergenceInfo.docToll 
+      : ((docExtractedToll !== undefined && docExtractedToll > 0) ? docExtractedToll : (shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(tollValue || 0) : effectiveToll));
+
+    const tonToUse = (isAguardandoFiscal && weightDecision === 'use_cte' && weightDivergenceInfo)
+      ? weightDivergenceInfo.cteTon
+      : (ticketLoadedWeightTon || Number(loadedTonnage) || Number(shipment.shipmentTonnage) || 0);
+    const rateToUse = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+    const contractualGrossFreight = (rateToUse > 0 && tonToUse > 0) ? Number((rateToUse * tonToUse).toFixed(2)) : 0;
+    const resolvedFreightWithToll = freightDivergenceInfo ? Number((freightDivergenceInfo.cartaFreteFreight + (finalTollToSave || 0)).toFixed(2)) : 0;
+    const finalDriverFreightToSave = (isAguardandoFiscal && freightDecision === 'use_carta_frete' && freightDivergenceInfo)
+      ? ((contractualGrossFreight > 0 && Math.abs(resolvedFreightWithToll - contractualGrossFreight) <= 2.00)
+          ? contractualGrossFreight
+          : resolvedFreightWithToll)
+      : undefined;
+
     setError('');
     setIsSaving(true);
     try {
@@ -2231,9 +2251,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         loadedTonnage: shipment.status === ShipmentStatus.AguardandoCarregamento 
           ? Number(loadedTonnage) 
           : (isAguardandoFiscal && weightDecision === 'use_cte' && weightDivergenceInfo ? weightDivergenceInfo.cteTon : undefined),
-        driverFreightValue: (isAguardandoFiscal && freightDecision === 'use_carta_frete' && freightDivergenceInfo) 
-          ? Number((freightDivergenceInfo.cartaFreteFreight + (effectiveToll || 0)).toFixed(2)) 
-          : undefined,
+        driverFreightValue: finalDriverFreightToSave,
         icmsValue: (isAguardandoFiscal && icmsDecision === 'use_cte' && icmsDivergenceInfo) 
           ? icmsDivergenceInfo.cteIcms 
           : (isAguardandoFiscal && cteExtractedIcms !== undefined && !icmsDivergenceInfo ? cteExtractedIcms : undefined),

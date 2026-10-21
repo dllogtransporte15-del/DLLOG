@@ -86,9 +86,12 @@ export function calculateShipmentExpenses(
 
   // 2. Frete Motorista
   const driverRate = shipment.driverFreightRateSnapshot || cargo?.driverFreightValuePerTon || 0;
+  const calculatedDriverFreight = (driverRate > 0 && tonnage > 0) ? Number((driverRate * tonnage).toFixed(2)) : 0;
   const driverFreight = shipment.realProfitData?.driverFreight !== undefined && shipment.realProfitData.driverFreight > 0
     ? shipment.realProfitData.driverFreight 
-    : (shipment.driverFreightValue || (driverRate > 0 && tonnage > 0 ? Number((driverRate * tonnage).toFixed(2)) : 0));
+    : ((calculatedDriverFreight > 0 && shipment.driverFreightValue && Math.abs(Number(shipment.driverFreightValue) - calculatedDriverFreight) > 5.00 && shipment.driverFreightRateSnapshot)
+        ? calculatedDriverFreight
+        : (Number(shipment.driverFreightValue) || calculatedDriverFreight));
 
   // Perfil PF vs PJ (PJ / ETC é 100% isento de INSS Patronal / CPRB)
   const isExplicitPj = shipment.driverFreightType === 'PJ' || 
