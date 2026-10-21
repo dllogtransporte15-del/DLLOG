@@ -115,7 +115,10 @@ export const resolveShipmentPaymentInfo = (shipment: Shipment): ShipmentPaymentD
   let type: 'pix' | 'carta_frete' | 'deposito' | 'outro' = 'pix';
   let label = 'PIX - E-FRETE';
 
-  if (upper.includes('CARTA') || upper.includes('SMS')) {
+  if (upper.includes('LIVRE')) {
+    type = 'outro';
+    label = 'PAGAMENTO LIVRE';
+  } else if (upper.includes('CARTA') || upper.includes('SMS')) {
     type = 'carta_frete';
     label = 'SMS CARTA FRETE';
   } else if (

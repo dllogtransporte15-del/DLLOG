@@ -21,6 +21,68 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_20_v2_70_97',
+    version: 'v2.70.97',
+    date: '20/10/2026',
+    title: 'Inclusão da Nova Modalidade de Pagamento "PAGAMENTO LIVRE"',
+    summary: 'Adicionada a opção "PAGAMENTO LIVRE" nas formas de pagamento do motorista, permitindo negociação direta e flexível de pagamento tanto no cadastro de novos embarques quanto na edição rápida da tela de detalhes do embarque.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Nova Opção "PAGAMENTO LIVRE"',
+        description: 'Disponibilizado o botão e opção de seleção "PAGAMENTO LIVRE" no seletor de formas de pagamento do motorista.'
+      },
+      {
+        category: 'improvement',
+        title: 'Flexibilidade de Preenchimento',
+        description: 'Na modalidade Pagamento Livre, o preenchimento de Chave Pix e dados bancários torna-se opcional, permitindo acordos comerciais customizados sem travas de validação obrigatória.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_20_v2_70_96',
+    version: 'v2.70.96',
+    date: '20/10/2026',
+    title: 'Permissão de Reajuste do Frete Motorista para Embarcadores, Agenciadores e Comercial (+R$ 5,00)',
+    summary: 'Configurada permissão operacional para que os perfis Embarcador, Agenciador e Comercial possam ajustar o valor do frete do motorista em qualquer embarque em até R$ 5,00 a mais do valor base colocado na carga. O Frete Empresa permanece de acesso restrito ao Administrador, e qualquer tentativa de ultrapassar o teto é imediatamente bloqueada com avisos claros.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Permissão de Alteração de Preço Operacional',
+        description: 'Usuários com perfil Embarcador, Agenciador e Comercial agora têm acesso à ação "Alterar Preço" na listagem de embarques e na tela de detalhes.'
+      },
+      {
+        category: 'security',
+        title: 'Teto Máximo de R$ 5,00 sobre o Valor da Carga',
+        description: 'Validação rigorosa no frontend e backend que limita o aumento do frete motorista a no máximo R$ 5,00/ton acima do valor estipulado na carga original.'
+      },
+      {
+        category: 'improvement',
+        title: 'Painel Informativo e Bloqueio Visual no Modal',
+        description: 'O modal de alteração de preço exibe painel informativo com a identificação do perfil, valor base da carga e teto máximo permitido, alertando em tempo real se o valor exceder a margem autorizada.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_20_v2_70_95',
+    version: 'v2.70.95',
+    date: '20/10/2026',
+    title: 'Correção de Falso Positivo na Validação de Adiantamento da Carta Frete',
+    summary: 'Eliminada a condição que acusava divergência de adiantamento com valores idênticos. A validação agora compara de forma direta e estrita o valor preenchido no sistema com o adiantamento da Carta Frete, liberando o avanço sem travas quando ambos já forem iguais.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Eliminação de Divergência Falsa com Valores Idênticos',
+        description: 'Removida a comparação secundária com o cálculo teórico quando o valor do Adiantamento PG no sistema já for idêntico ao valor extraído da Carta Frete (ex: R$ 2.188,41 = R$ 2.188,41).'
+      },
+      {
+        category: 'improvement',
+        title: 'Liberação Imediata de Salvar e Avançar',
+        description: 'Garantido que nenhuma mensagem de bloqueio ou banner de divergência seja exibido caso o adiantamento já esteja perfeitamente preenchido conforme a Carta Frete.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_20_v2_70_94',
     version: 'v2.70.94',
     date: '20/10/2026',

@@ -146,6 +146,7 @@ export enum DriverPaymentMethod {
   PixEFrete = "PIX - E-FRETE",
   DepositoConta = "DEPOSITO EM CONTA",
   SmsCartaFrete = "SMS CARTA FRETE",
+  PagamentoLivre = "PAGAMENTO LIVRE",
 }
 
 export interface ClientBranchCnpj {

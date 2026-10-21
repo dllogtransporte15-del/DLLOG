@@ -901,22 +901,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     if (!cartaFreteExtractedAdvance || cartaFreteExtractedAdvance <= 0) return null;
     const currentAdv = Number(advanceValue) || 0;
     const diffCurrent = Math.abs(currentAdv - cartaFreteExtractedAdvance);
-    const diffCalc = Math.abs(systemCalculatedAdvance - cartaFreteExtractedAdvance);
 
     // Se o valor de Adiantamento PG no sistema for diferente do Adiantamento de viagem da Carta Frete (> R$ 1,00)
-    // ou se o cálculo teórico do sistema divergir e a resolução não tiver sido confirmada
-    if (diffCurrent > 1.00 || (diffCalc > 1.00 && advanceDecision === 'unresolved')) {
-      const diff = diffCurrent > 1.00 ? diffCurrent : diffCalc;
+    if (diffCurrent > 1.00) {
       return {
-        systemAdvance: currentAdv > 0 ? currentAdv : systemCalculatedAdvance,
+        systemAdvance: currentAdv,
         systemCalculatedAdvance,
         cartaFreteAdvance: cartaFreteExtractedAdvance,
-        diff,
-        diffFormatted: `R$ ${diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        diff: diffCurrent,
+        diffFormatted: `R$ ${diffCurrent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       };
     }
     return null;
-  }, [isAguardandoAdiantamento, cartaFreteExtractedAdvance, advanceValue, systemCalculatedAdvance, advanceDecision]);
+  }, [isAguardandoAdiantamento, cartaFreteExtractedAdvance, advanceValue, systemCalculatedAdvance]);
 
   const hasUnresolvedWeightDivergence = isAguardandoFiscal && !!weightDivergenceInfo && weightDecision === 'unresolved';
   const hasUnresolvedFreightDivergence = isAguardandoFiscal && !!freightDivergenceInfo && freightDecision === 'unresolved';
@@ -924,7 +921,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const hasUnresolvedIcmsDivergence = isAguardandoFiscal && !!icmsDivergenceInfo && icmsDecision === 'unresolved';
   const hasUnresolvedTollDivergence = isAguardandoFiscal && !!tollDivergenceInfo && tollDecision === 'unresolved';
   const hasUnresolvedTomadorDivergence = !!tomadorDivergenceInfo && tomadorDecision === 'unresolved';
-  const hasUnresolvedAdvanceDivergence = isAguardandoAdiantamento && !!advanceDivergenceInfo && (advanceDecision === 'unresolved' || Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00);
+  const hasUnresolvedAdvanceDivergence = isAguardandoAdiantamento && !!advanceDivergenceInfo && Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00;
   const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedCompanyFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTollDivergence || hasUnresolvedTomadorDivergence;
 
   const hasAttachmentMismatch = React.useMemo(() => {

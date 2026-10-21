@@ -136,7 +136,8 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   const allowedProfilesForActions = [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.GerenciadoraDeRisco];
   const canPerformSpecialActions = !isDemo && currentUser && (allowedProfilesForActions.includes(currentUser.profile) || isGerenciadora);
   
-  const canEditPrice = !isDemo && currentUser && (currentUser.profile === UserProfile.Admin || isGerenciadora || (currentUser.profile as string) === 'Administrador do Sistema');
+  const isOperationalPriceEditor = currentUser?.profile ? [UserProfile.Embarcador, UserProfile.Agenciador, UserProfile.Comercial].includes(currentUser.profile) : false;
+  const canEditPrice = !isDemo && currentUser && (currentUser.profile === UserProfile.Admin || isGerenciadora || (currentUser.profile as string) === 'Administrador do Sistema' || isOperationalPriceEditor);
   const canCancelShipment = canPerformSpecialActions && (canDelete || currentUser.profile === UserProfile.Fiscal || currentUser.profile === UserProfile.Supervisor);
   const canTransferShipment = (canUpdate || currentUser.profile === UserProfile.Supervisor) && canPerformSpecialActions;
   const isClient = currentUser.profile === UserProfile.Cliente;
@@ -387,6 +388,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
             onSave={handleSavePrice}
             shipment={selectedShipment}
             currentUser={currentUser}
+            cargo={cargos.find(c => c.id === selectedShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === selectedShipment.cargoId))}
         />
       )}
       {selectedShipment && (

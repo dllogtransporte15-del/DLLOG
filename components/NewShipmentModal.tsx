@@ -1112,8 +1112,8 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       vehicleSetType: vehicleSetType || undefined,
       vehicleBodyType: vehicleBodyType || undefined,
       paymentMethod,
-      pixKey: paymentMethod === DriverPaymentMethod.PixEFrete ? pixKey : undefined,
-      bankDetails: (paymentMethod === DriverPaymentMethod.DepositoConta || bankDetails) ? bankDetails : undefined,
+      pixKey: (paymentMethod === DriverPaymentMethod.PixEFrete || paymentMethod === DriverPaymentMethod.PagamentoLivre) ? (pixKey.trim() || undefined) : undefined,
+      bankDetails: (paymentMethod === DriverPaymentMethod.DepositoConta || paymentMethod === DriverPaymentMethod.PagamentoLivre || bankDetails) ? (bankDetails.trim() || undefined) : undefined,
       advancePercentage: calc.advancePercentage,
       advanceValue: calc.advanceInAccountValue,
       tollValue: 0,
@@ -1526,7 +1526,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <button
                         type="button"
                         onClick={() => setPaymentMethod(DriverPaymentMethod.PixEFrete)}
@@ -1549,7 +1549,7 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                             : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
                         }`}
                     >
-                        <span className="text-sm">🏦 DEPÓSITO EM CONTA</span>
+                        <span className="text-sm">🏦 DEPÓSITO CONTA</span>
                         <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Dados Bancários</span>
                     </button>
 
@@ -1564,6 +1564,19 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                     >
                         <span className="text-sm">📱 SMS CARTA FRETE</span>
                         <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Carta Frete</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setPaymentMethod(DriverPaymentMethod.PagamentoLivre)}
+                        className={`p-3 rounded-xl border text-center transition-all text-xs font-bold flex flex-col items-center justify-center gap-1 ${
+                            paymentMethod === DriverPaymentMethod.PagamentoLivre
+                            ? 'border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/20'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300'
+                        }`}
+                    >
+                        <span className="text-sm">🔓 PAGAMENTO LIVRE</span>
+                        <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Negociação Direta</span>
                     </button>
                 </div>
 
@@ -1602,6 +1615,40 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
                 {paymentMethod === DriverPaymentMethod.SmsCartaFrete && (
                     <div className="p-3 bg-purple-50/50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800 rounded-xl text-xs text-purple-800 dark:text-purple-300 flex items-center gap-2">
                         <span>ℹ️ Pagamento via SMS Carta Frete para o condutor.</span>
+                    </div>
+                )}
+
+                {paymentMethod === DriverPaymentMethod.PagamentoLivre && (
+                    <div className="space-y-3">
+                        <div className="p-3 bg-amber-50/50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                            <span>ℹ️ Pagamento Livre: modalidade flexível / negociada diretamente com o motorista. Chave Pix e dados bancários são opcionais.</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Chave Pix (Opcional)
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={pixKey} 
+                                    onChange={(e) => setPixKey(e.target.value)} 
+                                    placeholder="Chave Pix se houver..." 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                    Dados Bancários / Observações (Opcional)
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={bankDetails} 
+                                    onChange={(e) => setBankDetails(e.target.value)} 
+                                    placeholder="Banco/conta ou obs..." 
+                                    className="p-2.5 w-full border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                />
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

@@ -3061,8 +3061,15 @@ const App: React.FC = () => {
       (currentUser.profile as string) === 'Gerenciadora de Risco' ||
       Boolean(currentUser.name && (currentUser.name.toLowerCase().includes('samanta') || currentUser.name.toLowerCase().includes('samantha'))) ||
       Boolean(currentUser.email && (currentUser.email.toLowerCase().includes('samanta') || currentUser.email.toLowerCase().includes('samantha')));
-    if (!isAdmin) {
-      showToast('Apenas Administradores do Sistema e Gerenciadora de Risco têm permissão para alterar o preço do frete.', 'error');
+
+    const isOperationalEditor = [
+      UserProfile.Embarcador,
+      UserProfile.Agenciador,
+      UserProfile.Comercial
+    ].includes(currentUser.profile);
+
+    if (!isAdmin && !isOperationalEditor) {
+      showToast('Apenas Administradores do Sistema, Gerenciadora de Risco, Embarcadores, Agenciadores e Comercial têm permissão para alterar o preço do frete.', 'error');
       return;
     }
     const shipmentToUpdate = shipments.find(s => s.id === shipmentId);
@@ -3070,6 +3077,26 @@ const App: React.FC = () => {
 
     const ton = shipmentToUpdate.shipmentTonnage || 0;
     const resolvedRate = data.newRate !== undefined ? data.newRate : shipmentToUpdate.driverFreightRateSnapshot;
+
+    // Validação de teto para perfis operacionais: no máximo até R$ 5,00 a mais do valor colocado na carga
+    if (!isAdmin && isOperationalEditor) {
+      const cargo = cargos.find(c => c.id === shipmentToUpdate.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToUpdate.cargoId));
+      const cargoBaseRate = (cargo?.driverFreightValuePerTon !== undefined && cargo.driverFreightValuePerTon > 0)
+        ? cargo.driverFreightValuePerTon
+        : (shipmentToUpdate.driverFreightRateSnapshot || (ton > 0 ? shipmentToUpdate.driverFreightValue / ton : 0));
+      const maxAllowedRate = Number((cargoBaseRate + 5.00).toFixed(2));
+
+      if (resolvedRate !== undefined && resolvedRate > maxAllowedRate + 0.001) {
+        showToast(`Permissão operacional excedida: ${currentUser.profile} pode aumentar no máximo até R$ 5,00 a mais do valor da carga (Teto permitido: R$ ${maxAllowedRate.toFixed(2)}/ton).`, 'error');
+        return;
+      }
+
+      if (ton > 0 && data.newTotal > (maxAllowedRate * ton) + 0.01) {
+        showToast(`Permissão operacional excedida: o total informado excede o limite máximo de R$ 5,00 a mais por tonelada da carga.`, 'error');
+        return;
+      }
+    }
+
     const finalTotal = (resolvedRate !== undefined && resolvedRate > 0 && ton > 0)
       ? Number((resolvedRate * ton).toFixed(2))
       : data.newTotal;
@@ -3087,7 +3114,7 @@ const App: React.FC = () => {
       historyMsgParts.push(`Taxa do motorista alterada de "${oldRateFormatted}" para "${newRateFormatted}".`);
     }
 
-    if (data.newCompanyRate !== undefined) {
+    if (isAdmin && data.newCompanyRate !== undefined) {
       const oldCompanyRateFormatted = (shipmentToUpdate.companyFreightRateSnapshot || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       const newCompanyRateFormatted = data.newCompanyRate.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       updateObj.companyFreightRateSnapshot = data.newCompanyRate;

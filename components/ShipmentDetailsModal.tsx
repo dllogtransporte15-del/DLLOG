@@ -109,8 +109,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     try {
       await onUpdateShipmentData(shipment.id, { 
         paymentMethod: inlinePaymentMethod,
-        pixKey: inlinePaymentMethod === DriverPaymentMethod.PixEFrete ? inlinePixKey : (shipment.pixKey || undefined),
-        bankDetails: (inlinePaymentMethod === DriverPaymentMethod.DepositoConta || inlineBankDetails) ? inlineBankDetails : (shipment.bankDetails || undefined)
+        pixKey: (inlinePaymentMethod === DriverPaymentMethod.PixEFrete || inlinePaymentMethod === DriverPaymentMethod.PagamentoLivre) ? inlinePixKey : (shipment.pixKey || undefined),
+        bankDetails: (inlinePaymentMethod === DriverPaymentMethod.DepositoConta || inlinePaymentMethod === DriverPaymentMethod.PagamentoLivre || inlineBankDetails) ? inlineBankDetails : (shipment.bankDetails || undefined)
       });
       setIsEditingPaymentMethod(false);
     } catch (err) {
@@ -149,11 +149,22 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   };
 
   const isDemo = isDemoUser(currentUser);
-  const isFinalized = shipment.status === ShipmentStatus.Finalizado;
-  const isAdmin = currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.GerenciadoraDeRisco;
+  const isAdmin = currentUser?.profile === UserProfile.Admin ||
+    currentUser?.profile === UserProfile.GerenciadoraDeRisco ||
+    (currentUser?.profile as string) === 'Administrador do Sistema' ||
+    (currentUser?.profile as string) === 'Gerenciadora de Risco' ||
+    Boolean(currentUser?.name && (currentUser.name.toLowerCase().includes('samanta') || currentUser.name.toLowerCase().includes('samantha'))) ||
+    Boolean(currentUser?.email && (currentUser.email.toLowerCase().includes('samanta') || currentUser.email.toLowerCase().includes('samantha')));
   const isDiretoria = currentUser?.profile === UserProfile.Diretor;
+
+  const isOperationalPriceEditor = currentUser?.profile ? [
+    UserProfile.Embarcador,
+    UserProfile.Agenciador,
+    UserProfile.Comercial
+  ].includes(currentUser.profile) : false;
+
   const canEdit = !isDemo && !!onUpdatePrice && (
-    (isFinalized ? isAdmin : currentUser?.profile !== UserProfile.Embarcador)
+    (isFinalized ? isAdmin : (isAdmin || isOperationalPriceEditor))
   );
 
   const isBeforeAdvanceStatus = [
@@ -184,6 +195,15 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const companyRateSnapshot = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const commissionPerTon = Number(cargo?.salespersonCommissionPerTon) || 0;
 
+  // Valor original colocado na carga (R$/ton) e teto de +R$ 5,00 para perfis operacionais
+  const cargoBaseDriverRate = (cargo?.driverFreightValuePerTon !== undefined && cargo.driverFreightValuePerTon > 0)
+    ? cargo.driverFreightValuePerTon
+    : (driverRateSnapshot || 0);
+
+  const maxAllowedDriverRate = isAdmin 
+    ? Infinity 
+    : Number((cargoBaseDriverRate + 5.00).toFixed(2));
+
   const staysList = Array.isArray(shipmentStays) ? shipmentStays : [];
   const approvedStaysValue = staysList.reduce((acc, stay) => acc + (Number(stay.approvedValue) || 0), 0);
   const driverPaidStaysValue = staysList.reduce((acc, stay) => acc + (Number(stay.driverPaidValue) || 0), 0);
@@ -203,11 +223,15 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const handleSave = () => {
     if (isDemo) return;
     if (onUpdatePrice) {
-      const newTotal = editRate * tonnage;
+      if (!isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001) {
+        alert(`O frete do motorista não pode ultrapassar ${formatCurrency(maxAllowedDriverRate)}/ton (R$ 5,00 a mais que o valor colocado na carga).`);
+        return;
+      }
+      const newTotal = Number((editRate * tonnage).toFixed(2));
       onUpdatePrice(shipment.id, {
         newTotal,
         newRate: editRate,
-        newCompanyRate: editCompanyRate
+        newCompanyRate: isAdmin ? editCompanyRate : undefined
       });
       setIsEditing(false);
     }
@@ -251,6 +275,10 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     if (isDemo) return;
     if (onUpdateShipmentData) {
       const finalRate = editedData.driverFreightRateSnapshot !== undefined ? editedData.driverFreightRateSnapshot : driverRateSnapshot;
+      if (!isAdmin && isOperationalPriceEditor && finalRate > maxAllowedDriverRate + 0.001) {
+        alert(`O frete do motorista não pode ultrapassar ${formatCurrency(maxAllowedDriverRate)}/ton (R$ 5,00 a mais que o valor colocado na carga).`);
+        return;
+      }
       const finalTon = editedData.shipmentTonnage !== undefined ? editedData.shipmentTonnage : tonnage;
       const finalTotal = finalRate * finalTon;
       onUpdateShipmentData(shipment.id, {
@@ -652,19 +680,42 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                         step="0.01"
                                         value={editRate}
                                         onChange={(e) => setEditRate(Number(e.target.value))}
-                                        className="w-full p-2 text-sm border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                                        className={`w-full p-2 text-sm border rounded dark:bg-gray-800 dark:text-white ${
+                                          !isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001 
+                                            ? 'border-red-500 dark:border-red-500 bg-red-50/20' 
+                                            : 'dark:border-gray-600'
+                                        }`}
                                     />
+                                    {isOperationalPriceEditor && !isAdmin && (
+                                        <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1">
+                                            Limite operacional: máx. {formatCurrency(maxAllowedDriverRate)}/ton (+R$ 5,00 da carga)
+                                        </p>
+                                    )}
+                                    {!isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001 && (
+                                        <p className="text-[10px] text-red-600 dark:text-red-400 font-bold mt-0.5">
+                                            ⚠️ Ultrapassa o teto permitido de {formatCurrency(maxAllowedDriverRate)}/ton.
+                                        </p>
+                                    )}
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$ / Ton)</label>
-                                    <input 
-                                        type="number" 
-                                        step="0.01"
-                                        value={editCompanyRate}
-                                        onChange={(e) => setEditCompanyRate(Number(e.target.value))}
-                                        className="w-full p-2 text-sm border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-                                    />
-                                </div>
+                                {isAdmin ? (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Frete Empresa (R$ / Ton)</label>
+                                        <input 
+                                            type="number" 
+                                            step="0.01"
+                                            value={editCompanyRate}
+                                            onChange={(e) => setEditCompanyRate(Number(e.target.value))}
+                                            className="w-full p-2 text-sm border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-1">Frete Empresa (R$ / Ton)</label>
+                                        <div className="w-full p-2 text-sm border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/60 rounded text-gray-500 dark:text-gray-400">
+                                            {formatCurrency(companyRateSnapshot)}/ton (Restrito ao Administrador)
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t dark:border-gray-600 mt-2">
                                 <div className="text-sm">
@@ -673,7 +724,17 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded">Cancelar</button>
-                                    <button onClick={handleSave} className="px-3 py-1.5 text-xs font-bold bg-primary text-white rounded hover:bg-primary/90 shadow-sm">Salvar Alterações</button>
+                                    <button 
+                                      onClick={handleSave} 
+                                      disabled={!isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001}
+                                      className={`px-3 py-1.5 text-xs font-bold rounded shadow-sm transition ${
+                                        !isAdmin && isOperationalPriceEditor && editRate > maxAllowedDriverRate + 0.001
+                                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700'
+                                          : 'bg-primary text-white hover:bg-primary/90'
+                                      }`}
+                                    >
+                                      Salvar Alterações
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -899,6 +960,22 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                     className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                                     value={inlineBankDetails}
                                                     onChange={e => setInlineBankDetails(e.target.value)}
+                                                    disabled={isSavingPaymentMethod}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {inlinePaymentMethod === DriverPaymentMethod.PagamentoLivre && (
+                                            <div className="space-y-2">
+                                                <div className="p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                                                    <span>ℹ️ Pagamento Livre: modalidade livre/direta negociada com o motorista.</span>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Chave Pix (opcional)..."
+                                                    className="w-full p-1.5 text-xs border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono"
+                                                    value={inlinePixKey}
+                                                    onChange={e => setInlinePixKey(e.target.value)}
                                                     disabled={isSavingPaymentMethod}
                                                 />
                                             </div>
