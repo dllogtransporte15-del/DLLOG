@@ -21,6 +21,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_21_v2_70_98',
+    version: 'v2.70.98',
+    date: '21/10/2026',
+    title: 'Correção na Visualização de Detalhes do Embarque',
+    summary: 'Correção de erro de execução (isFinalized is not defined) que disparava a tela de recuperação ao abrir a janela de Detalhes do Embarque.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Restauração da Modal de Detalhes',
+        description: 'Corrigida a verificação de status do embarque na modal de detalhes, restabelecendo a abertura imediata ao clicar no ID do embarque.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_20_v2_70_97',
     version: 'v2.70.97',
     date: '20/10/2026',

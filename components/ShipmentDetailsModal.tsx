@@ -149,6 +149,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   };
 
   const isDemo = isDemoUser(currentUser);
+  const isFinalized = shipment.status === ShipmentStatus.Finalizado;
   const isAdmin = currentUser?.profile === UserProfile.Admin ||
     currentUser?.profile === UserProfile.GerenciadoraDeRisco ||
     (currentUser?.profile as string) === 'Administrador do Sistema' ||
