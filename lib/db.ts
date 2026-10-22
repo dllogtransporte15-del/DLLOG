@@ -3,10 +3,11 @@ import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, getShipmentCiotNumber } from '../utils';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
-  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel
+  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel, RdoRequestRecord, RdoConfig
 } from '../types';
 import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS, TicketStatus } from '../types';
-import { broadcastShipmentChange, broadcastCargoChange, broadcastTicketChange } from '../services/realtimeOperationsHub';
+import { broadcastShipmentChange, broadcastCargoChange, broadcastTicketChange, broadcastRdoChange } from '../services/realtimeOperationsHub';
+
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
@@ -2591,4 +2592,218 @@ export async function releaseShipmentLock(shipmentId: string, userId: string): P
     throw error;
   }
 }
+
+// ─────────────────────────────────────────────
+// RDO NACIONAL: ANÁLISE CADASTRAL & PARECERES
+// ─────────────────────────────────────────────
+
+export const toRdoRequest = (row: any): RdoRequestRecord => ({
+  id: row.id,
+  codigo: Number(row.codigo || 0),
+  shipmentId: row.shipment_id || undefined,
+  driverId: row.driver_id || undefined,
+  cpf: row.cpf || '',
+  nome: row.nome || '',
+  nomeDaMae: row.nome_da_mae || undefined,
+  dataDeNascimento: row.data_nascimento || undefined,
+  documentoDoProprietario: row.documento_proprietario || undefined,
+  nomeDoProprietario: row.nome_proprietario || undefined,
+  placaDoCavalo: row.placa_cavalo || undefined,
+  status: (row.status as any) || 'pendente',
+  parecer: row.parecer !== null && row.parecer !== undefined ? Number(row.parecer) : undefined,
+  observacao: row.observacao || undefined,
+  cnhUrl: row.cnh_url || undefined,
+  createdAt: row.created_at || new Date().toISOString(),
+  updatedAt: row.updated_at || undefined,
+  concludedAt: row.concluded_at || undefined,
+  createdById: row.created_by || undefined,
+  createdByName: row.created_by_name || undefined,
+  rawResponse: row.raw_response || undefined,
+  rawWebhookPayload: row.raw_webhook_payload || undefined,
+});
+
+export const fromRdoRequest = (req: RdoRequestRecord): any => ({
+  id: req.id,
+  codigo: req.codigo,
+  shipment_id: req.shipmentId || null,
+  driver_id: req.driverId || null,
+  cpf: req.cpf,
+  nome: req.nome,
+  nome_da_mae: req.nomeDaMae || null,
+  data_nascimento: req.dataDeNascimento || null,
+  documento_proprietario: req.documentoDoProprietario || null,
+  nome_proprietario: req.nomeDoProprietario || null,
+  placa_cavalo: req.placaDoCavalo || null,
+  status: req.status,
+  parecer: req.parecer !== undefined && req.parecer !== null ? req.parecer : null,
+  observacao: req.observacao || null,
+  cnh_url: req.cnhUrl || null,
+  created_at: req.createdAt,
+  updated_at: req.updatedAt || new Date().toISOString(),
+  concluded_at: req.concludedAt || null,
+  created_by: req.createdById || null,
+  created_by_name: req.createdByName || null,
+  raw_response: req.rawResponse || null,
+  raw_webhook_payload: req.rawWebhookPayload || null,
+});
+
+const DEFAULT_RDO_CONFIG: RdoConfig = {
+  apiToken: '',
+  callbackToken: '',
+  apiUrl: 'https://painel.mrbsolucoes.com.br',
+  clientName: 'TRANSCUNHA TRANSPORTES',
+  enabled: true,
+  autoApproveInRisk: true,
+};
+
+export async function fetchRdoConfig(): Promise<RdoConfig> {
+  // 1. Try profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.rdo_config) {
+      const config = { ...DEFAULT_RDO_CONFIG, ...data.permissions.rdo_config };
+      try {
+        localStorage.setItem('transcunha_rdo_config', JSON.stringify(config));
+      } catch {}
+      return config;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch rdo_config from profile_permissions:', err);
+  }
+
+  // 2. Fallback to localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_rdo_config');
+    if (saved) {
+      return { ...DEFAULT_RDO_CONFIG, ...JSON.parse(saved) };
+    }
+  } catch {}
+
+  return DEFAULT_RDO_CONFIG;
+}
+
+export async function saveRdoConfig(config: RdoConfig): Promise<void> {
+  // 1. Save to profile_permissions (id: 1)
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      rdo_config: config,
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving rdo_config to profile_permissions:', err);
+  }
+
+  // 2. Save to localStorage
+  try {
+    localStorage.setItem('transcunha_rdo_config', JSON.stringify(config));
+  } catch {}
+}
+
+export async function fetchRdoRequests(): Promise<RdoRequestRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('rdo_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const records = data.map(toRdoRequest);
+      try {
+        localStorage.setItem('transcunha_rdo_requests', JSON.stringify(records));
+      } catch {}
+      return records;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch rdo_requests table:', err);
+  }
+
+  // Fallback to localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_rdo_requests');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function upsertRdoRequest(record: RdoRequestRecord): Promise<void> {
+  try {
+    const payload = fromRdoRequest(record);
+    const { error } = await supabase.from('rdo_requests').upsert(payload);
+    if (error) {
+      console.warn('[DB] Warning upserting rdo_requests:', error);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception upserting rdo_requests:', err);
+  }
+
+  // Update local storage
+  try {
+    const current = await fetchRdoRequests();
+    const idx = current.findIndex(r => r.id === record.id);
+    let nextList: RdoRequestRecord[];
+    if (idx >= 0) {
+      nextList = [...current];
+      nextList[idx] = record;
+    } else {
+      nextList = [record, ...current];
+    }
+    localStorage.setItem('transcunha_rdo_requests', JSON.stringify(nextList));
+  } catch {}
+
+  // Broadcast realtime update
+  broadcastRdoChange({
+    action: record.parecer !== undefined ? 'parecer_received' : 'update',
+    idSolicitacao: record.id,
+    codigo: record.codigo,
+    cpf: record.cpf,
+    status: record.status,
+    parecer: record.parecer,
+    observacao: record.observacao,
+    shipmentId: record.shipmentId,
+  });
+}
+
+export async function updateRdoRequestParecer(
+  idSolicitacao: string, 
+  parecer: 0 | 1, 
+  observacao?: string | null, 
+  rawPayload?: any
+): Promise<RdoRequestRecord | null> {
+  const currentRequests = await fetchRdoRequests();
+  const existing = currentRequests.find(r => r.id === idSolicitacao || (rawPayload?.cpf && r.cpf.replace(/\D/g, '') === String(rawPayload.cpf).replace(/\D/g, '')));
+
+  const updatedRecord: RdoRequestRecord = existing ? {
+    ...existing,
+    parecer,
+    status: parecer === 0 ? 'aprovado' : 'consta_informacao',
+    observacao: observacao || undefined,
+    concludedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    rawWebhookPayload: rawPayload,
+  } : {
+    id: idSolicitacao,
+    codigo: 0,
+    cpf: rawPayload?.cpf || '',
+    nome: rawPayload?.nome || '',
+    documentoDoProprietario: rawPayload?.documentoDoProprietario,
+    nomeDoProprietario: rawPayload?.nomeDoProprietario,
+    placaDoCavalo: rawPayload?.placa,
+    status: parecer === 0 ? 'aprovado' : 'consta_informacao',
+    parecer,
+    observacao: observacao || undefined,
+    createdAt: new Date().toISOString(),
+    concludedAt: new Date().toISOString(),
+    rawWebhookPayload: rawPayload,
+  };
+
+  await upsertRdoRequest(updatedRecord);
+  return updatedRecord;
+}
+
 

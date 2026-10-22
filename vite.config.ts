@@ -41,6 +41,50 @@ export default defineConfig({
         });
       }
     },
+    {
+      name: 'rdo-nacional-proxy-endpoint',
+      configureServer(server) {
+        server.middlewares.use('/api/rdo-nacional/solicitacoes', async (req, res) => {
+          if (req.method === 'OPTIONS') {
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Headers', '*');
+            res.statusCode = 200;
+            res.end();
+            return;
+          }
+          if (req.method !== 'POST') {
+            res.statusCode = 405;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Method not allowed' }));
+            return;
+          }
+
+          let bodyStr = '';
+          req.on('data', chunk => { bodyStr += chunk; });
+          req.on('end', async () => {
+            const token = req.headers['x-access-token'] || process.env.VITE_RDO_API_TOKEN;
+            try {
+              const upstream = await fetch('https://painel.mrbsolucoes.com.br/api/integracao/solicitacoes', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-access-token': String(token || '').trim(),
+                },
+                body: bodyStr,
+              });
+              const data = await upstream.text();
+              res.statusCode = upstream.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(data);
+            } catch (err: any) {
+              res.statusCode = 502;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err?.message || 'Upstream connection error' }));
+            }
+          });
+        });
+      }
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],

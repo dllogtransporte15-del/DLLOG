@@ -37,6 +37,8 @@ import ShipmentDetailsModal from '../components/ShipmentDetailsModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EditRiskQueryModal from '../components/EditRiskQueryModal';
 import RiskQueryTypesPage from './RiskQueryTypesPage';
+import { RdoNacionalModal } from '../components/RdoNacionalModal';
+
 
 interface RiskManagementPageProps {
   shipments: Shipment[];
@@ -146,6 +148,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
 }) => {
   // Tabs: 'operational' | 'analytics' | 'query_types'
   const [activeTab, setActiveTab] = useState<'operational' | 'analytics' | 'query_types'>('operational');
+  const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
   const isDemo = isDemoUser(currentUser);
 
   // Global / Quick Filters
@@ -898,6 +901,16 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
               Modalidades de Consulta
             </button>
           </div>
+
+          {/* Botão RDO Nacional */}
+          <button
+            onClick={() => setIsRdoModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            title="Abrir painel de análise cadastral e triagem do RDO Nacional (MRB Soluções)"
+          >
+            <ShieldCheck className="w-4 h-4 text-white" />
+            RDO Nacional
+          </button>
 
           {/* Export Buttons */}
           <button
@@ -1912,13 +1925,14 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         />
       )}
 
-      {/* Document Preview Modal */}
-      <DocumentPreviewModal
-        isOpen={!!previewDocument}
-        onClose={() => setPreviewDocument(null)}
-        fileUrl={previewDocument?.url || null}
-        fileName={previewDocument?.name}
-        category={previewDocument?.category}
+      {/* RDO Nacional Modal */}
+      <RdoNacionalModal
+        isOpen={isRdoModalOpen}
+        onClose={() => setIsRdoModalOpen(false)}
+        shipments={shipments}
+        drivers={drivers}
+        vehicles={vehicles}
+        currentUser={currentUser}
       />
     </div>
   );

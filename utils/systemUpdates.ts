@@ -21,6 +21,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_21_v2_72_0',
+    version: 'v2.72.0',
+    date: '21/10/2026',
+    title: 'Integração Oficial com RDO Nacional (MRB Soluções) — Triagem Cadastral e Pareceres',
+    summary: 'Implementada a integração bidirecional com a API do Rdo Nacional (MRB Soluções) para submissão de análises cadastrais de motoristas e recebimento automático de pareceres via Webhook em tempo real.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Painel de Triagem RDO Nacional e Submissão Inteligente',
+        description: 'Novo painel dedicado com auto-preenchimento por embarque ou motorista, conversão automática de CNH para Base64, e submissão direta para a fila de triagem da MRB Soluções.'
+      },
+      {
+        category: 'feature',
+        title: 'Webhook Push de Pareceres em Tempo Real',
+        description: 'Endpoint seguro em /api/rdo-nacional/parecer com autenticação por token de callback, atualização automática de pareceres ("Sem Restrição" ou "Consta Informação") e preenchimento de código de liberação no embarque.'
+      },
+      {
+        category: 'improvement',
+        title: 'Acesso Direto no Gerenciamento de Risco, Embarques e Motoristas',
+        description: 'Botão de consulta rápida em 1 clique na etapa "Ag. Seguradora" do embarque, no painel de Gerenciamento de Risco e no Cadastro de Motoristas.'
+      },
+      {
+        category: 'security',
+        title: 'Gestão Segura de Tokens e Proxy de Comunicação',
+        description: 'Aba de configurações no painel para informar Token de Integração e Token de Callback, com proxy serverless evitando bloqueios de CORS e protegendo credenciais.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_21_v2_71_0',
     version: 'v2.71.0',
     date: '21/10/2026',

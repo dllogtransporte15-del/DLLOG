@@ -159,3 +159,50 @@ export function broadcastTicketChange(data: TicketBroadcastPayload): void {
     console.warn('[Operations Realtime Hub] Erro ao disparar broadcast de chamado:', err);
   }
 }
+
+export interface RdoBroadcastPayload {
+  action: 'create' | 'update' | 'parecer_received';
+  idSolicitacao: string;
+  codigo?: number;
+  cpf?: string;
+  status?: string;
+  parecer?: number;
+  observacao?: string;
+  shipmentId?: string;
+  timestamp?: number;
+}
+
+/**
+ * Transmite uma notificação de mudança ou retorno de parecer do RDO Nacional para os usuários conectados.
+ */
+export function broadcastRdoChange(data: RdoBroadcastPayload): void {
+  try {
+    const payloadWithTs = {
+      ...data,
+      timestamp: data.timestamp || Date.now()
+    };
+
+    const channel = getOperationsRealtimeChannel();
+    channel.send({
+      type: 'broadcast',
+      event: 'rdo_changed',
+      payload: payloadWithTs
+    }).catch(err => {
+      console.warn('[Operations Realtime Hub] Falha ao enviar broadcast de RDO:', err);
+    });
+
+    if (localBroadcast) {
+      localBroadcast.postMessage({
+        type: 'rdo_changed',
+        payload: payloadWithTs
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('transcunha:rdo_changed', { detail: payloadWithTs }));
+    }
+  } catch (err) {
+    console.warn('[Operations Realtime Hub] Erro ao disparar broadcast de RDO:', err);
+  }
+}
+

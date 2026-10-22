@@ -1075,3 +1075,76 @@ export function getLoadingOrderModelName(
   return model ? model.nome : 'Padrão do Sistema';
 }
 
+// ==========================================
+// RDO NACIONAL (INTEGRAÇÃO DE ANÁLISE CADASTRAL)
+// ==========================================
+
+export type RdoExtensaoArquivo = 'pdf' | 'png' | 'jpg' | 'jpeg';
+
+export type RdoStatus = 'pendente' | 'aprovado' | 'consta_informacao' | 'erro';
+
+export interface RdoSolicitacaoPayload {
+  nomeDoCliente?: string;
+  cpf: string;
+  nome: string;
+  nomeDaMae?: string;
+  dataDeNascimento?: string; // AAAA-MM-DD
+  documentoDoProprietario?: string;
+  nomeDoProprietario?: string;
+  placaDoCavalo?: string;
+  cnhBase64?: string;
+  cnhExtensao?: RdoExtensaoArquivo;
+}
+
+export interface RdoSolicitacaoResponse {
+  id: string; // GUID da solicitação
+  codigo: number; // Código sequencial
+  message?: string;
+}
+
+export interface RdoParecerWebhookPayload {
+  idSolicitacao: string;
+  parecer: 0 | 1; // 0: Sem restrição, 1: Consta informação
+  observacao?: string | null;
+  cpf: string;
+  nome: string;
+  documentoDoProprietario?: string;
+  nomeDoProprietario?: string;
+  placa?: string;
+}
+
+export interface RdoRequestRecord {
+  id: string; // GUID
+  codigo: number;
+  shipmentId?: string;
+  driverId?: string;
+  cpf: string;
+  nome: string;
+  nomeDaMae?: string;
+  dataDeNascimento?: string;
+  documentoDoProprietario?: string;
+  nomeDoProprietario?: string;
+  placaDoCavalo?: string;
+  status: RdoStatus;
+  parecer?: number; // 0 ou 1
+  observacao?: string;
+  cnhUrl?: string;
+  createdAt: string;
+  updatedAt?: string;
+  concludedAt?: string;
+  createdById?: string;
+  createdByName?: string;
+  rawResponse?: any;
+  rawWebhookPayload?: any;
+}
+
+export interface RdoConfig {
+  apiToken: string;
+  callbackToken: string;
+  apiUrl: string;
+  clientName: string;
+  enabled: boolean;
+  autoApproveInRisk?: boolean;
+}
+
+

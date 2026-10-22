@@ -8,6 +8,9 @@ import ShipmentHistoryModal from '../components/ShipmentHistoryModal';
 import type { Driver, Owner, User, ProfilePermissions, Shipment, Cargo } from '../types';
 import { DriverClassification } from '../types';
 import { can } from '../auth';
+import { ShieldCheck } from 'lucide-react';
+import { RdoNacionalModal } from '../components/RdoNacionalModal';
+
 
 // For reading XLS files
 declare const XLSX: any;
@@ -35,8 +38,10 @@ const DriversPage: React.FC<DriversPageProps> = ({
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
   const [driverToEdit, setDriverToEdit] = useState<Driver | null>(null);
   const [selectedDriverForHistory, setSelectedDriverForHistory] = useState<Driver | null>(null);
+
   
   const [filters, setFilters] = useState<DriverFilters>({
     id: '',
@@ -301,6 +306,13 @@ const DriversPage: React.FC<DriversPageProps> = ({
   return (
     <>
       <Header title="Cadastro de Motoristas">
+        <button
+          onClick={() => setIsRdoModalOpen(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+        >
+          <ShieldCheck className="w-4 h-4" />
+          RDO Nacional
+        </button>
         {canCreate && (
             <>
                 <button onClick={handleImportClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Importar</button>
@@ -344,6 +356,15 @@ const DriversPage: React.FC<DriversPageProps> = ({
         shipments={driverShipmentHistory}
         cargos={cargos}
         title={`Histórico de Embarques - ${selectedDriverForHistory?.name}`}
+      />
+
+      <RdoNacionalModal
+        isOpen={isRdoModalOpen}
+        onClose={() => setIsRdoModalOpen(false)}
+        drivers={drivers}
+        shipments={shipments}
+        owners={owners}
+        currentUser={currentUser}
       />
     </>
   );

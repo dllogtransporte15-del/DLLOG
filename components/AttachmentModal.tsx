@@ -15,6 +15,8 @@ import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
 import { CancelAndSubstituteCteModal } from './CancelAndSubstituteCteModal';
 import { calculateAdvanceAndBalance, calculateTacTaxDeductions } from '../utils/freightCalculation';
 import { calculateFreightBalance } from '../utils/freightBalanceCalculator';
+import { RdoNacionalModal } from './RdoNacionalModal';
+
 
 interface AttachmentModalProps {
   isOpen: boolean;
@@ -458,6 +460,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [route, setRoute] = useState('');
   const [riskReleaseCode, setRiskReleaseCode] = useState('');
   const [riskQueryType, setRiskQueryType] = useState<string>('');
+  const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
+
   const [grStatus, setGrStatus] = useState<'aprovado' | 'reprovado' | 'reprovado_restrito'>('aprovado');
   const [codigoAtua, setCodigoAtua] = useState<string>('');
   const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
@@ -3740,6 +3744,34 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   </select>
                 </div>
 
+                {/* Banner de Integração Direta RDO Nacional */}
+                <div className="flex flex-wrap items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-blue-50/90 via-sky-50/70 to-indigo-50/90 dark:from-blue-950/40 dark:via-gray-900 dark:to-indigo-950/40 border border-blue-200 dark:border-blue-800 shadow-xs gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-blue-600 text-white shadow-xs">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        Triagem RDO Nacional (MRB Soluções)
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 font-bold">API</span>
+                      </h5>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Submeta este motorista para análise cadastral na fila de triagem ou consulte o parecer recebido
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsRdoModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Consultar / Triagem RDO</span>
+                  </button>
+                </div>
+
+
                 {grStatus === 'aprovado' ? (
                   <>
                     <FileInput
@@ -4811,6 +4843,21 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               Object.assign(shipment, updatedShipment);
             }}
             onUpdateShipmentData={onUpdateShipmentData}
+          />
+        )}
+
+        {/* Modal RDO Nacional integrado ao Embarque */}
+        {isRdoModalOpen && (
+          <RdoNacionalModal
+            isOpen={isRdoModalOpen}
+            onClose={() => setIsRdoModalOpen(false)}
+            currentUser={currentUser}
+            initialShipmentId={shipment.id}
+            onSelectApprovedCode={(code) => {
+              setRiskReleaseCode(code);
+              setRiskQueryType('RDO Nacional');
+              setGrStatus('aprovado');
+            }}
           />
         )}
       </div>
