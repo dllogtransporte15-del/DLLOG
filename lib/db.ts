@@ -6,7 +6,7 @@ import type {
   Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel
 } from '../types';
 import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS, TicketStatus } from '../types';
-import { broadcastShipmentChange, broadcastCargoChange } from '../services/realtimeOperationsHub';
+import { broadcastShipmentChange, broadcastCargoChange, broadcastTicketChange } from '../services/realtimeOperationsHub';
 
 // ─────────────────────────────────────────────
 // HELPERS: Map DB rows (snake_case) ↔ App types (camelCase)
@@ -956,6 +956,8 @@ export const toTicket = (row: any): Ticket => {
   const shipmentMatch = cleanDesc.match(/\[SHIPMENT_ID:\s*(.*?)\]/);
   const attachmentUrlMatch = cleanDesc.match(/\[ATTACHMENT_URL:\s*(.*?)\]/);
   const attachmentNameMatch = cleanDesc.match(/\[ATTACHMENT_NAME:\s*(.*?)\]/);
+  const audioUrlMatch = cleanDesc.match(/\[AUDIO_URL:\s*(.*?)\]/);
+  const audioDurationMatch = cleanDesc.match(/\[AUDIO_DURATION:\s*(.*?)\]/);
   const startedAtMatch = cleanDesc.match(/\[STARTED_AT:\s*(.*?)\]/);
   const startedByIdMatch = cleanDesc.match(/\[STARTED_BY:\s*(.*?)\]/);
   const resolvedAtMatch = cleanDesc.match(/\[RESOLVED_AT:\s*(.*?)\]/);
@@ -967,6 +969,8 @@ export const toTicket = (row: any): Ticket => {
   const shipmentId = shipmentMatch ? shipmentMatch[1] : undefined;
   const attachmentUrl = attachmentUrlMatch ? attachmentUrlMatch[1] : (row.attachment_url || undefined);
   const attachmentName = attachmentNameMatch ? attachmentNameMatch[1] : (row.attachment_name || undefined);
+  const audioUrl = audioUrlMatch ? audioUrlMatch[1] : (row.audio_url || undefined);
+  const audioDurationSeconds = audioDurationMatch ? Number(audioDurationMatch[1]) : (row.audio_duration_seconds ? Number(row.audio_duration_seconds) : undefined);
 
   let startedAt = startedAtMatch ? startedAtMatch[1] : undefined;
   let startedById = startedByIdMatch ? startedByIdMatch[1] : undefined;
@@ -1028,6 +1032,8 @@ export const toTicket = (row: any): Ticket => {
     .replace(/\[SHIPMENT_ID:\s*.*?\]/g, '')
     .replace(/\[ATTACHMENT_URL:\s*.*?\]/g, '')
     .replace(/\[ATTACHMENT_NAME:\s*.*?\]/g, '')
+    .replace(/\[AUDIO_URL:\s*.*?\]/g, '')
+    .replace(/\[AUDIO_DURATION:\s*.*?\]/g, '')
     .replace(/\[STARTED_AT:\s*.*?\]/g, '')
     .replace(/\[STARTED_BY:\s*.*?\]/g, '')
     .replace(/\[RESOLVED_AT:\s*.*?\]/g, '')
@@ -1050,6 +1056,8 @@ export const toTicket = (row: any): Ticket => {
     shipmentId,
     attachmentUrl,
     attachmentName,
+    audioUrl,
+    audioDurationSeconds,
     startedAt,
     startedById,
     resolvedAt,
@@ -1068,6 +1076,8 @@ export const fromTicket = (t: Ticket | Omit<Ticket, 'id' | 'history' | 'createdA
   if (ticketObj.shipmentId) finalDesc += `\n\n[SHIPMENT_ID: ${ticketObj.shipmentId}]`;
   if (ticketObj.attachmentUrl) finalDesc += `\n\n[ATTACHMENT_URL: ${ticketObj.attachmentUrl}]`;
   if (ticketObj.attachmentName) finalDesc += `\n\n[ATTACHMENT_NAME: ${ticketObj.attachmentName}]`;
+  if (ticketObj.audioUrl) finalDesc += `\n\n[AUDIO_URL: ${ticketObj.audioUrl}]`;
+  if (ticketObj.audioDurationSeconds) finalDesc += `\n\n[AUDIO_DURATION: ${ticketObj.audioDurationSeconds}]`;
   if (ticketObj.startedAt) finalDesc += `\n\n[STARTED_AT: ${ticketObj.startedAt}]`;
   if (ticketObj.startedById) finalDesc += `\n\n[STARTED_BY: ${ticketObj.startedById}]`;
   if (ticketObj.resolvedAt) finalDesc += `\n\n[RESOLVED_AT: ${ticketObj.resolvedAt}]`;
@@ -2091,6 +2101,14 @@ export async function insertUniqueTicket(ticketData: Omit<Ticket, 'id' | 'histor
         const list: Ticket[] = cacheRaw ? JSON.parse(cacheRaw) : [];
         localStorage.setItem('transcunha_tickets_cache', JSON.stringify([newTicket, ...list.filter(t => t.id !== newTicket.id)]));
       } catch {}
+
+      // Dispara broadcast instantâneo WebSocket para todos os usuários
+      broadcastTicketChange({
+        action: 'create',
+        ticketId: generatedId,
+        ticket: newTicket
+      });
+
       return newTicket;
     }
 
@@ -2128,6 +2146,14 @@ export async function upsertTicket(ticket: Ticket): Promise<void> {
     console.error('[upsertTicket] Error details:', error);
     throw error;
   }
+
+  // Notifica instantaneamente todos os usuários e abas abertas
+  broadcastTicketChange({
+    action: 'update',
+    ticketId: ticket.id,
+    status: ticket.status,
+    ticket
+  });
 }
 
 export async function deleteTicket(id: string): Promise<void> {
@@ -2150,6 +2176,11 @@ export async function deleteTicket(id: string): Promise<void> {
     console.error('[deleteTicket] Error details:', error);
     throw error;
   }
+
+  broadcastTicketChange({
+    action: 'delete',
+    ticketId: id
+  });
 }
 
 export async function insertCargo(cargo: Cargo | Omit<Cargo, 'id'>): Promise<Cargo> {

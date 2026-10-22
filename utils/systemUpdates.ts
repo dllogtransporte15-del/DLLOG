@@ -21,6 +21,49 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_21_v2_71_0',
+    version: 'v2.71.0',
+    date: '21/10/2026',
+    title: 'Novo Painel de Chamados com Sub-Fases, Gravação de Áudio e Realtime Avançado',
+    summary: 'Refinamento completo do Painel de Chamados com separação entre chamados "A Atender" e "Em Atendimento", sincronização instantânea em tempo real via WebSocket, gravação e reprodução de mensagens de voz explicativas, alternância entre visualização em Grid e Lista, e ampliação visual com filtros avançados.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sub-Fases: Chamados a Atender vs Em Atendimento',
+        description: 'Separação clara sob a aba de Abertos entre solicitações aguardando início ("A Atender") e aquelas já assumidas por um operador ("Em Atendimento").'
+      },
+      {
+        category: 'feature',
+        title: 'Gravação e Reprodução de Áudio Explicativo',
+        description: 'Opção de gravar mensagens de voz pelo microfone ao abrir um chamado e player integrado para o destinatário reproduzir com controle de velocidade (1x, 1.5x, 2x).'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização em Tempo Real (Realtime Instantâneo)',
+        description: 'Atualização automática e imediata no painel via Supabase WebSocket e Broadcast Channel quando qualquer usuário criar, atender, resolver ou fechar chamados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Modos de Visualização (Grid e Lista) e Expansão Visual',
+        description: 'Janela 20% mais ampla e botão para alternar dinamicamente entre visualização compacta em Lista e cartões detalhados em Grid, além de filtros avançados por texto, prioridade, responsável e anexos.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_21_v2_70_99',
+    version: 'v2.70.99',
+    date: '21/10/2026',
+    title: 'Flexibilização de Anexo para o Ticket de Descarga',
+    summary: 'Removido o bloqueio de arquivo duplicado exclusivamente para o Ticket de Descarga e Comprovante de Descarga, permitindo anexar, substituir e atualizar comprovantes de pesagem sem travas de duplicidade.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Livre Anexo e Substituição no Ticket de Descarga',
+        description: 'Desativada a trava de documento duplicado para os campos de Ticket de Descarga e Comprovante de Descarga na validação e conferência de peso.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_21_v2_70_98',
     version: 'v2.70.98',
     date: '21/10/2026',

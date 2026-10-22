@@ -67,6 +67,18 @@ const allowedDocsForClient = [
   'Comprovante de Descarga'
 ];
 
+export const isDischargeTicketCategory = (categoryOrLabel?: string, currentStatus?: ShipmentStatus): boolean => {
+  if (currentStatus === ShipmentStatus.ValidacaoTicket || currentStatus === ShipmentStatus.AguardandoDescarga) {
+    return true;
+  }
+  if (!categoryOrLabel) return false;
+  const lower = categoryOrLabel.toLowerCase().trim();
+  if (lower.includes('descarga')) return true;
+  if (lower.includes('validação de ticket') || lower.includes('validacao de ticket') || lower.includes('valid. de ticket')) return true;
+  if (lower.includes('ticket de balança') || lower.includes('ticket de balanca')) return true;
+  return false;
+};
+
 const FileInput: React.FC<{
   label: string;
   onFileChange: (files: FileList | File[] | null) => void;
@@ -78,6 +90,7 @@ const FileInput: React.FC<{
   detectedTypesMap?: Record<string, string>;
   availableTargetCategories?: string[];
   checkDuplicateFile?: (file: File, targetCategory: string) => { isDuplicate: boolean; foundLocation: string; originalName?: string } | null;
+  bypassDuplicateCheck?: boolean;
 }> = ({
   label,
   onFileChange,
@@ -89,6 +102,7 @@ const FileInput: React.FC<{
   detectedTypesMap,
   availableTargetCategories,
   checkDuplicateFile,
+  bypassDuplicateCheck,
 }) => {
   const id = `file-upload-${label.replace(/\s/g, '-')}`;
   const [isDragging, setIsDragging] = useState(false);
@@ -105,21 +119,25 @@ const FileInput: React.FC<{
     const validFiles: File[] = [];
 
     for (const f of fileArray) {
-      // 1. Checagem contra duplicidade no próprio campo atual
-      const isAlreadyInField = files.some(
-        existing => existing !== f && existing.name.trim().toLowerCase() === f.name.trim().toLowerCase()
-      );
-      if (isAlreadyInField) {
-        showToast(
-          `⛔ Arquivo Duplicado Bloqueado: O arquivo "${f.name}" já foi selecionado no campo "${label}".`,
-          'error',
-          8000
+      const isDischargeTicket = bypassDuplicateCheck || isDischargeTicketCategory(label);
+
+      // 1. Checagem contra duplicidade no próprio campo atual (ignorado para ticket de descarga)
+      if (!isDischargeTicket) {
+        const isAlreadyInField = files.some(
+          existing => existing !== f && existing.name.trim().toLowerCase() === f.name.trim().toLowerCase()
         );
-        continue;
+        if (isAlreadyInField) {
+          showToast(
+            `⛔ Arquivo Duplicado Bloqueado: O arquivo "${f.name}" já foi selecionado no campo "${label}".`,
+            'error',
+            8000
+          );
+          continue;
+        }
       }
 
-      // 2. Checagem contra duplicidade global (demais campos e documentos já salvos no embarque)
-      if (checkDuplicateFile) {
+      // 2. Checagem contra duplicidade global (demais campos e documentos já salvos no embarque, ignorado para ticket de descarga)
+      if (!isDischargeTicket && checkDuplicateFile) {
         const dupCheck = checkDuplicateFile(f, label);
         if (dupCheck?.isDuplicate) {
           showToast(
@@ -1285,6 +1303,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
   // Validador universal de documentos duplicados para travar tentativas de anexo repetido
   const checkDuplicateFile = React.useCallback((file: File, targetCategory: string): { isDuplicate: boolean; foundLocation: string; originalName?: string } | null => {
+    // REGRA ESPECÍFICA: Não bloqueia arquivos duplicados para o ticket de descarga (permite substituição e novos tickets)
+    if (isDischargeTicketCategory(targetCategory, shipment?.status)) {
+      return null;
+    }
+
     const normNewName = file.name.trim().toLowerCase();
     const cleanNormNewName = normNewName.replace(/[^a-z0-9]/g, '');
 
@@ -1413,7 +1436,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     }
     const fileArray = Array.from(f);
     const cat = targetCategory || documentName || 'Documento';
+    const isDischarge = isDischargeTicketCategory(cat, shipment?.status);
     const validFiles = fileArray.filter(file => {
+      if (isDischarge) return true;
       const dup = checkDuplicateFile(file, cat);
       if (dup?.isDuplicate) {
         showToast(`⛔ Arquivo Duplicado Bloqueado: O documento "${file.name}" já está ${dup.foundLocation}. Não é permitido anexar o mesmo documento duplicado.`, 'error', 8000);
@@ -2211,8 +2236,11 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       }, { silent: true });
     }
 
-    // Validação final de bloqueio caso haja qualquer arquivo duplicado em filesToAttach
+    // Validação final de bloqueio caso haja qualquer arquivo duplicado em filesToAttach (ignorado para ticket de descarga)
     for (const [docCategory, files] of Object.entries(filesToAttach)) {
+      if (isDischargeTicketCategory(docCategory, shipment?.status)) {
+        continue;
+      }
       for (const file of files) {
         const dup = checkDuplicateFile(file, docCategory);
         if (dup?.isDuplicate) {
@@ -4092,6 +4120,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   onFileChange={(f) => handleSingleFilesChange(f, documentName)}
                   onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
                   checkDuplicateFile={checkDuplicateFile}
+                  bypassDuplicateCheck={true}
                 />
                 <div>
                   <label className="block text-sm font-medium mb-1">Peso Descarregado (Ton)</label>
@@ -4180,6 +4209,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       onFileChange={(f) => handleSingleFilesChange(f, "Ticket de Descarga")}
                       onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
                       checkDuplicateFile={checkDuplicateFile}
+                      bypassDuplicateCheck={true}
                     />
                   </div>
                 </div>

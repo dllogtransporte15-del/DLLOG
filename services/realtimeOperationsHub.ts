@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { Shipment, Cargo } from '../types';
+import type { Shipment, Cargo, Ticket } from '../types';
 
 export const OPERATIONS_REALTIME_CHANNEL = 'transcunha_operations_hub';
 
@@ -15,6 +15,14 @@ export interface CargoBroadcastPayload {
   action: 'create' | 'update' | 'delete';
   cargoId: string;
   cargo?: Cargo;
+  timestamp?: number;
+}
+
+export interface TicketBroadcastPayload {
+  action: 'create' | 'update' | 'delete' | 'status_change' | 'attend';
+  ticketId: string;
+  status?: string;
+  ticket?: Ticket;
   timestamp?: number;
 }
 
@@ -115,5 +123,39 @@ export function broadcastCargoChange(data: CargoBroadcastPayload): void {
     }
   } catch (err) {
     console.warn('[Operations Realtime Hub] Erro ao disparar broadcast de carga:', err);
+  }
+}
+
+/**
+ * Transmite uma notificação de mudança de chamado para TODOS os outros usuários conectados via WebSocket.
+ */
+export function broadcastTicketChange(data: TicketBroadcastPayload): void {
+  try {
+    const payloadWithTs = {
+      ...data,
+      timestamp: data.timestamp || Date.now()
+    };
+
+    const channel = getOperationsRealtimeChannel();
+    channel.send({
+      type: 'broadcast',
+      event: 'ticket_changed',
+      payload: payloadWithTs
+    }).catch(err => {
+      console.warn('[Operations Realtime Hub] Falha ao enviar broadcast de chamado:', err);
+    });
+
+    if (localBroadcast) {
+      localBroadcast.postMessage({
+        type: 'ticket_changed',
+        payload: payloadWithTs
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('transcunha:ticket_changed', { detail: payloadWithTs }));
+    }
+  } catch (err) {
+    console.warn('[Operations Realtime Hub] Erro ao disparar broadcast de chamado:', err);
   }
 }

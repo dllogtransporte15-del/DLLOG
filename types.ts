@@ -718,6 +718,8 @@ export interface Ticket {
   shipmentId?: string;
   attachmentUrl?: string;
   attachmentName?: string;
+  audioUrl?: string;
+  audioDurationSeconds?: number;
   startedAt?: string;
   startedById?: string;
   resolvedAt?: string;

@@ -657,6 +657,34 @@ export function useDatabase(currentUser: User | null) {
         }
       });
 
+      ch = ch.on('broadcast', { event: 'ticket_changed' }, async ({ payload }) => {
+        if (!isSubscribed) return;
+        console.log('[Realtime Hub] ⚡ Broadcast de chamado recebido de outro usuário:', payload);
+        setLastSyncTime(new Date());
+
+        const { action, ticketId, ticket } = payload || {};
+        if (action === 'delete') {
+          if (ticketId) {
+            setTickets(prev => prev.filter(t => t.id !== ticketId));
+          }
+          return;
+        }
+
+        if (ticket && ticket.id) {
+          setTickets(prev => {
+            const exists = prev.find(t => t.id === ticket.id);
+            if (exists) {
+              const merged = { ...exists, ...ticket };
+              return prev.map(t => t.id === ticket.id ? merged : t);
+            }
+            return [ticket, ...prev];
+          });
+        } else if (isSubscribed) {
+          const all = await fetchTickets();
+          setTickets(all);
+        }
+      });
+
       // 2. Listeners dedicados por tabela do Postgres Changes
       for (const t of highPriorityTables) {
         ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, (payload) => {
