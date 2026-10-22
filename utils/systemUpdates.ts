@@ -21,6 +21,40 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_22_v2_73_0',
+    version: 'v2.73.0',
+    date: '22/10/2026',
+    title: 'Modernização Visual e Funcional do Mapa Operacional, Relatório de Embarcadores e Relatório de Clientes',
+    summary: 'Refinamento completo de front-end com design de alta performance, glassmorphism, KPIs executivos em tempo real, traçado de rotas interativo no mapa e detalhamento aprofundado nos relatórios de embarcadores e clientes por filial.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Mapa Operacional Logístico com Traçado de Rotas e Inspetor Interativo',
+        description: 'Implementado inspetor completo de cargas no rodapé com cálculo de distância, progresso de carregamento, tipos de veículos e carrocerias permitidas, traçado de linha vetorial animada (L.polyline) entre Origem e Destino, alternador de camadas (Satélite Esri, Dark Matter e Street OSM), botão de criação rápida de embarque e compartilhamento formatado via WhatsApp.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtro por Raio Integrado e Barra de Rolagem Dedicada nas Cargas',
+        description: 'O filtro operacional por raio agora permanece fixado permanentemente na janela superior da barra lateral mesmo com a visualização das cargas ativas, com slider dinâmico e presets rápidos (50km a 500km). O campo de cargas disponíveis conta agora com uma barra de rolagem dedicada, visível e de alta precisão.'
+      },
+      {
+        category: 'feature',
+        title: 'Redesenho Executivo do Relatório de Embarcadores',
+        description: 'Novo banner de métricas executivas consolidadas (Embarcadores Ativos, Embarques Auditados com CT-e, Volume Efetivado, Comissões Totais com controle de permissão e Taxa de Eficiência), cards individuais de operadores com avatar em gradiente, barra de progresso de finalização, busca em tempo real e modal de listagem com ticker financeiro consolidado.'
+      },
+      {
+        category: 'feature',
+        title: 'Redesenho Corporativo do Relatório de Clientes e Filiais',
+        description: 'Painel executivo com faturamento consolidado, margens operacionais, volume transportado e suporte a visão corporativa unificada com desdobramento por cada filial e CNPJ secundário, botões de PDF e Listagem individuais por filial e modal com filtros refinados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Experiência Visual e Micro-interações Modernas',
+        description: 'Paleta visual refinada compatível com modo escuro e claro, badges de status com codificação de cores intuitiva, placas de veículos estilizadas no padrão Mercosul e tabelas com tipografia limpa e responsiva.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_21_v2_72_0',
     version: 'v2.72.0',
     date: '21/10/2026',
