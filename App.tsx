@@ -157,6 +157,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   discountValue: 'Desconto por Quebra',
   netBalanceValue: 'Saldo Líquido',
   isBreakageWaived: 'Quebra Abonada',
+  driverExtraPaymentsTotal: 'Acréscimos Avulsos ao Motorista',
   route: 'Rota do Motorista',
   paymentMethod: 'Forma de Pagamento',
   pixKey: 'Chave Pix',
@@ -2879,6 +2880,7 @@ const App: React.FC = () => {
       'riskQueryType', 'riskQueryCost', 'riskReleaseCode',
       'advancePercentage', 'advanceValue', 'tollValue',
       'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived',
+      'driverExtraPaymentsTotal',
       'route', 'paymentMethod', 'pixKey', 'cancellationReason'
     ];
 
@@ -2889,7 +2891,7 @@ const App: React.FC = () => {
         let oldVal = rawOld !== undefined && rawOld !== null && rawOld !== '' ? String(rawOld) : 'Não informado';
         let newVal = rawNew !== undefined && rawNew !== null && rawNew !== '' ? String(rawNew) : 'Não informado';
 
-        if (['driverFreightValue', 'advanceValue', 'tollValue', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'federalTax', 'generatedCredit', 'riskQueryCost', 'nfeValue'].includes(field)) {
+        if (['driverFreightValue', 'driverExtraPaymentsTotal', 'advanceValue', 'tollValue', 'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'federalTax', 'generatedCredit', 'riskQueryCost', 'nfeValue'].includes(field)) {
           oldVal = rawOld !== undefined && rawOld !== null ? `R$ ${Number(rawOld).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
           newVal = rawNew !== undefined && rawNew !== null ? `R$ ${Number(rawNew).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00';
         } else if (['shipmentTonnage', 'unloadedTonnage'].includes(field)) {
@@ -2962,6 +2964,8 @@ const App: React.FC = () => {
       ...(data.riskReleaseCode !== undefined ? { risk_release_code: data.riskReleaseCode } : {}),
       ...(data.isFederalTaxManual !== undefined ? { is_federal_tax_manual: data.isFederalTaxManual } : {}),
       ...(data.federalTax !== undefined ? { federal_tax: data.federalTax, imposto_federal: data.federalTax } : {}),
+      ...(data.driverExtraPayments !== undefined ? { driver_extra_payments: data.driverExtraPayments } : {}),
+      ...(data.driverExtraPaymentsTotal !== undefined ? { driver_extra_payments_total: data.driverExtraPaymentsTotal } : {}),
       ...(data.realProfitData !== undefined ? { real_profit_data: data.realProfitData } : {}),
     };
 

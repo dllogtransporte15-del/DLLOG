@@ -124,12 +124,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
   // 1. Processar Notas Fiscais a Pagar
   const invoicePayables = useMemo(() => {
-    return (invoices || []).map(inv => {
+    return (invoices || [])
+      .filter(inv => inv.status !== 'Cancelado' && inv.status !== 'Somente Volume')
+      .map(inv => {
       const isOverdue = inv.status === 'Atrasado' || (inv.status === 'Pendente' && inv.dueDate < todayStr);
       const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = inv.status === 'Pago' ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente';
 
       return {
         id: inv.id,
+        documentType: inv.documentType || 'Nota Fiscal',
         invoiceNumber: inv.invoiceNumber,
         series: inv.series,
         supplierName: inv.supplierName,
@@ -291,11 +294,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
     if (activeSection === 'all' || activeSection === 'invoices') {
       filteredInvoices.forEach(inv => {
+        const isFatura = inv.documentType === 'Fatura';
         list.push({
           id: `inv_${inv.id}`,
           kind: 'invoice',
-          docNumber: `NF nº ${inv.invoiceNumber}`,
-          title: `NF-e ${inv.supplierName}`,
+          docNumber: isFatura ? `Fatura nº ${inv.invoiceNumber}` : `NF nº ${inv.invoiceNumber}`,
+          title: isFatura ? `Fatura ${inv.supplierName}` : `NF-e ${inv.supplierName}`,
           entityName: inv.supplierName,
           categoryOrCenter: `${inv.costCenterName} • ${inv.costTypeName}`,
           dueDate: inv.dueDate,
@@ -437,7 +441,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             }`}
           >
             <FileText className="w-4 h-4 text-emerald-400" />
-            <span>Notas Fiscais a Pagar</span>
+            <span>Notas Fiscais / Faturas a Pagar</span>
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">
               {invoicePayables.length}
             </span>
@@ -714,6 +718,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                               {item.kind === 'invoice' && item.originalItem?.id && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 font-mono font-bold border border-blue-200 dark:border-blue-800 shrink-0">
                                   {item.originalItem.id}
+                                </span>
+                              )}
+                              {item.kind === 'invoice' && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border shrink-0 ${
+                                  item.originalItem?.documentType === 'Fatura'
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                }`}>
+                                  {item.originalItem?.documentType === 'Fatura' ? 'Fatura' : 'NF'}
                                 </span>
                               )}
                               <span className="font-bold text-slate-900 dark:text-white block">

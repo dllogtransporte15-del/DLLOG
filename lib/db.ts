@@ -3,10 +3,10 @@ import { extractFiscalDocNumbersFromUrls } from '../utils/fiscalDocParser';
 import { isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, getShipmentCiotNumber } from '../utils';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from '../utils/freightCalculation';
 import type {
-  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel, RdoRequestRecord, RdoConfig
+  Client, ClientBranchCnpj, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Ticket, ProfilePermissions, ShipmentLock, Branch, FreightOffer, RiskQueryOption, LoadingOrderModel, RdoRequestRecord, RdoConfig, SigaConfig, SigaRequestRecord
 } from '../types';
 import { DEFAULT_RISK_QUERY_OPTIONS, FreightCalculationType, DEFAULT_LOADING_ORDER_MODELS, TicketStatus } from '../types';
-import { broadcastShipmentChange, broadcastCargoChange, broadcastTicketChange, broadcastRdoChange } from '../services/realtimeOperationsHub';
+import { broadcastShipmentChange, broadcastCargoChange, broadcastTicketChange, broadcastRdoChange, broadcastSigaChange } from '../services/realtimeOperationsHub';
 
 
 // ─────────────────────────────────────────────
@@ -725,6 +725,10 @@ export const toShipment = (row: any): Shipment => {
     shipperCommissionEnabled: row.shipper_commission_enabled !== null && row.shipper_commission_enabled !== undefined ? Boolean(row.shipper_commission_enabled) : (docs.shipper_commission_enabled !== undefined ? Boolean(docs.shipper_commission_enabled) : undefined),
     shipperCommissionRatePerTon: row.shipper_commission_rate_per_ton !== null && row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : (docs.shipper_commission_rate_per_ton !== undefined ? Number(docs.shipper_commission_rate_per_ton) : undefined),
     shipperCommissionValue: row.shipper_commission_value !== null && row.shipper_commission_value !== undefined ? Number(row.shipper_commission_value) : (docs.shipper_commission_value !== undefined ? Number(docs.shipper_commission_value) : undefined),
+    driverExtraPayments: row.driver_extra_payments || docs.driver_extra_payments || docs.driverExtraPayments || undefined,
+    driverExtraPaymentsTotal: row.driver_extra_payments_total !== null && row.driver_extra_payments_total !== undefined 
+      ? Number(row.driver_extra_payments_total) 
+      : (docs.driver_extra_payments_total !== undefined ? Number(docs.driver_extra_payments_total) : (docs.driverExtraPaymentsTotal !== undefined ? Number(docs.driverExtraPaymentsTotal) : undefined)),
   };
 };
 
@@ -823,6 +827,8 @@ const fromShipment = (s: Shipment) => {
     shipper_commission_enabled: s.shipperCommissionEnabled !== undefined ? s.shipperCommissionEnabled : (s.documents?.shipper_commission_enabled ?? null),
     shipper_commission_rate_per_ton: s.shipperCommissionRatePerTon !== undefined ? s.shipperCommissionRatePerTon : (s.documents?.shipper_commission_rate_per_ton ?? null),
     shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : (s.documents?.shipper_commission_value ?? null),
+    driver_extra_payments: s.driverExtraPayments ?? (s.documents?.driver_extra_payments ?? null),
+    driver_extra_payments_total: s.driverExtraPaymentsTotal !== undefined ? s.driverExtraPaymentsTotal : (s.documents?.driver_extra_payments_total ?? null),
     owner_name: s.ownerName !== undefined ? s.ownerName : (s.documents?.owner_name ?? null),
     owner_contact: s.ownerContact !== undefined ? s.ownerContact : (s.documents?.owner_contact ?? null),
   };
@@ -2804,6 +2810,201 @@ export async function updateRdoRequestParecer(
 
   await upsertRdoRequest(updatedRecord);
   return updatedRecord;
+}
+
+// ─────────────────────────────────────────────
+// SIGA GR (Gerenciadora de Risco REST/JSON v1)
+// ─────────────────────────────────────────────
+
+export const DEFAULT_SIGA_CONFIG: SigaConfig = {
+  environment: 'staging',
+  apiUrl: 'https://api.staging.sigagr.com.br',
+  email: '',
+  password: '',
+  requesterEmail: '',
+  businessUnit: '',
+  customerBranch: '',
+  enabled: true,
+  autoApproveInRisk: true,
+};
+
+export async function fetchSigaConfig(): Promise<SigaConfig> {
+  // 1. Tenta carregar de profile_permissions (id: 1)
+  try {
+    const { data, error } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    if (!error && data?.permissions?.siga_config) {
+      const config = { ...DEFAULT_SIGA_CONFIG, ...data.permissions.siga_config };
+      try {
+        localStorage.setItem('transcunha_siga_config', JSON.stringify(config));
+      } catch {}
+      return config;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch siga_config from profile_permissions:', err);
+  }
+
+  // 2. Fallback para localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_siga_config');
+    if (saved) {
+      return { ...DEFAULT_SIGA_CONFIG, ...JSON.parse(saved) };
+    }
+  } catch {}
+
+  return DEFAULT_SIGA_CONFIG;
+}
+
+export async function saveSigaConfig(config: SigaConfig): Promise<void> {
+  // 1. Salva em profile_permissions (id: 1)
+  try {
+    const { data } = await supabase.from('profile_permissions').select('permissions').eq('id', 1).single();
+    const current = data?.permissions || {};
+    const updated = {
+      ...current,
+      siga_config: config,
+    };
+    await supabase.from('profile_permissions').upsert({ id: 1, permissions: updated });
+  } catch (err) {
+    console.warn('[DB] Error saving siga_config to profile_permissions:', err);
+  }
+
+  // 2. Salva em localStorage
+  try {
+    localStorage.setItem('transcunha_siga_config', JSON.stringify(config));
+  } catch {}
+}
+
+export async function fetchSigaRequests(): Promise<SigaRequestRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('siga_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const records = data.map((r: any): SigaRequestRecord => ({
+        id: r.id,
+        processNumber: r.process_number,
+        state: r.state,
+        productName: r.product_name,
+        shipmentId: r.shipment_id || undefined,
+        driverId: r.driver_id || undefined,
+        driverName: r.driver_name,
+        driverCpf: r.driver_cpf,
+        truckPlate: r.truck_plate,
+        vehicleType: r.vehicle_type,
+        origin: r.origin || undefined,
+        destination: r.destination || undefined,
+        loadCost: r.load_cost !== null && r.load_cost !== undefined ? Number(r.load_cost) : undefined,
+        denialReason: r.denial_reason || undefined,
+        issuesCount: r.issues_count || 0,
+        unsolvedIssuesCount: r.unsolved_issues_count || 0,
+        commentsCount: r.comments_count || 0,
+        expiresAt: r.expires_at || undefined,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at || r.created_at,
+        concludedAt: r.concluded_at || undefined,
+        createdById: r.created_by_id || undefined,
+        createdByName: r.created_by_name || undefined,
+        rawAnalysis: r.raw_analysis || undefined,
+      }));
+      try {
+        localStorage.setItem('transcunha_siga_requests', JSON.stringify(records));
+      } catch {}
+      return records;
+    }
+  } catch (err) {
+    console.warn('[DB] Could not fetch siga_requests table, falling back to localStorage:', err);
+  }
+
+  // Fallback para localStorage
+  try {
+    const saved = localStorage.getItem('transcunha_siga_requests');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function upsertSigaRequest(record: SigaRequestRecord): Promise<void> {
+  try {
+    const payload = {
+      id: record.id,
+      process_number: record.processNumber,
+      state: record.state,
+      product_name: record.productName,
+      shipment_id: record.shipmentId || null,
+      driver_id: record.driverId || null,
+      driver_name: record.driverName,
+      driver_cpf: record.driverCpf,
+      truck_plate: record.truckPlate,
+      vehicle_type: record.vehicleType,
+      origin: record.origin || null,
+      destination: record.destination || null,
+      load_cost: record.loadCost ?? null,
+      denial_reason: record.denialReason || null,
+      issues_count: record.issuesCount || 0,
+      unsolved_issues_count: record.unsolvedIssuesCount || 0,
+      comments_count: record.commentsCount || 0,
+      expires_at: record.expiresAt || null,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt || new Date().toISOString(),
+      concluded_at: record.concludedAt || null,
+      created_by_id: record.createdById || null,
+      created_by_name: record.createdByName || null,
+      raw_analysis: record.rawAnalysis || null,
+    };
+    const { error } = await supabase.from('siga_requests').upsert(payload);
+    if (error) {
+      console.warn('[DB] Note: Could not upsert into siga_requests table (using local/state storage):', error.message);
+    }
+  } catch (err) {
+    console.warn('[DB] Exception upserting siga_requests:', err);
+  }
+
+  // Atualiza local storage
+  try {
+    const current = await fetchSigaRequests();
+    const idx = current.findIndex(r => r.id === record.id || r.processNumber === record.processNumber);
+    let nextList: SigaRequestRecord[];
+    if (idx >= 0) {
+      nextList = [...current];
+      nextList[idx] = record;
+    } else {
+      nextList = [record, ...current];
+    }
+    localStorage.setItem('transcunha_siga_requests', JSON.stringify(nextList));
+  } catch {}
+
+  // Broadcast realtime update
+  broadcastSigaChange({
+    action: record.state === 'approved' || record.state === 'denied' || record.state === 'authorized_by_manager' ? 'status_change' : 'update',
+    processNumber: record.processNumber,
+    state: record.state,
+    driverCpf: record.driverCpf,
+    truckPlate: record.truckPlate,
+    shipmentId: record.shipmentId,
+    driverId: record.driverId,
+  });
+}
+
+export async function deleteSigaRequest(idOrProcessNumber: string): Promise<void> {
+  try {
+    await supabase.from('siga_requests').delete().or(`id.eq.${idOrProcessNumber},process_number.eq.${idOrProcessNumber}`);
+  } catch {}
+
+  try {
+    const current = await fetchSigaRequests();
+    const filtered = current.filter(r => r.id !== idOrProcessNumber && r.processNumber !== idOrProcessNumber);
+    localStorage.setItem('transcunha_siga_requests', JSON.stringify(filtered));
+  } catch {}
+
+  broadcastSigaChange({
+    action: 'delete',
+    processNumber: idOrProcessNumber
+  });
 }
 
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, ClientBranchCnpj, PaymentMethod, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData, CancelledCteRecord } from '../types';
-import { upsertClient, upsertCargo } from '../lib/db';
+import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, ClientBranchCnpj, PaymentMethod, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData, CancelledCteRecord, DriverExtraPayment } from '../types';
+import { upsertClient, upsertCargo, uploadShipmentAttachment } from '../lib/db';
 import { isDemoUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
@@ -8,7 +8,7 @@ import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData, parseWeightKg, isStrictNotaFiscalCategory, calculateNetCartaFreteFreight, detectDocumentTypeFromFileName, detectAttachmentMismatch, DocMismatchInfo, isCteDocType, isCartaFreteDocType } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
 import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
-import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3, ArrowRightLeft, Lock, RotateCcw } from 'lucide-react';
+import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3, ArrowRightLeft, Lock, RotateCcw, Plus, Coins, Clock, Calendar, UploadCloud, Clipboard } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
@@ -16,6 +16,7 @@ import { CancelAndSubstituteCteModal } from './CancelAndSubstituteCteModal';
 import { calculateAdvanceAndBalance, calculateTacTaxDeductions } from '../utils/freightCalculation';
 import { calculateFreightBalance } from '../utils/freightBalanceCalculator';
 import { RdoNacionalModal } from './RdoNacionalModal';
+import { SigaGrModal } from './SigaGrModal';
 
 
 interface AttachmentModalProps {
@@ -461,6 +462,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [riskReleaseCode, setRiskReleaseCode] = useState('');
   const [riskQueryType, setRiskQueryType] = useState<string>('');
   const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
+  const [isSigaModalOpen, setIsSigaModalOpen] = useState(false);
 
   const [grStatus, setGrStatus] = useState<'aprovado' | 'reprovado' | 'reprovado_restrito'>('aprovado');
   const [codigoAtua, setCodigoAtua] = useState<string>('');
@@ -501,6 +503,184 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const [docExtractedToll, setDocExtractedToll] = useState<number | undefined>(undefined);
   const [tollDecision, setTollDecision] = useState<'unresolved' | 'use_doc' | 'keep_system'>('unresolved');
   const [tomadorDecision, setTomadorDecision] = useState<'unresolved' | 'adjust_to_cte' | 'link_branch' | 'keep_system'>('unresolved');
+
+  // Acréscimos Avulsos ao Motorista (Diárias, Estadia, Bônus, Ajuda de Custo)
+  const [driverExtraPayments, setDriverExtraPayments] = useState<DriverExtraPayment[]>(() => {
+    return shipment.driverExtraPayments || (shipment.documents as any)?.driver_extra_payments || [];
+  });
+  const [isAddingExtraPayment, setIsAddingExtraPayment] = useState(false);
+  const [extraAmount, setExtraAmount] = useState('');
+  const [extraReason, setExtraReason] = useState<string>('Diária / Estadia');
+  const [extraDescription, setExtraDescription] = useState('');
+  const [extraPaymentMethod, setExtraPaymentMethod] = useState<string>('PIX');
+  const [extraPaidAt, setExtraPaidAt] = useState<string>(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
+  const [extraReceiptFile, setExtraReceiptFile] = useState<File | null>(null);
+  const [extraReceiptPreview, setExtraReceiptPreview] = useState<string | null>(null);
+  const [isSavingExtra, setIsSavingExtra] = useState(false);
+
+  useEffect(() => {
+    if (shipment) {
+      setDriverExtraPayments(shipment.driverExtraPayments || (shipment.documents as any)?.driver_extra_payments || []);
+    }
+  }, [shipment.id, shipment.driverExtraPayments, shipment.documents]);
+
+  const isEligibleForDriverExtra = [
+    ShipmentStatus.AguardandoDescarga,
+    ShipmentStatus.ValidacaoTicket,
+    ShipmentStatus.AguardandoPagamentoSaldo,
+    ShipmentStatus.Finalizado,
+    'Ag. Descarga',
+    'Aguardando Descarga',
+    'Valid. de Ticket',
+    'Validação de Ticket',
+    'Ag. Saldo',
+    'Aguardando Pagamento de Saldo',
+    'Finalizado'
+  ].includes(shipment.status as any);
+
+  const totalDriverExtraPayments = React.useMemo(() => {
+    return Number(driverExtraPayments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0).toFixed(2));
+  }, [driverExtraPayments]);
+
+  const handlePasteExtraReceipt = (e: React.ClipboardEvent | ClipboardEvent) => {
+    const items = (e as any).clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          setExtraReceiptFile(file);
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            setExtraReceiptPreview(ev.target?.result as string);
+          };
+          reader.readAsDataURL(file);
+          showToast('Comprovante colado da área de transferência!', 'success');
+        }
+      }
+    }
+  };
+
+  const handleExtraReceiptFileSelect = (file: File | null) => {
+    if (!file) {
+      setExtraReceiptFile(null);
+      setExtraReceiptPreview(null);
+      return;
+    }
+    setExtraReceiptFile(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setExtraReceiptPreview(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setExtraReceiptPreview(file.name);
+    }
+  };
+
+  const handleSaveExtraPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rawVal = extraAmount.replace(/\./g, '').replace(',', '.');
+    const parsedAmt = parseFloat(rawVal);
+    if (isNaN(parsedAmt) || parsedAmt <= 0) {
+      showToast('Informe um valor válido para o acréscimo.', 'warning');
+      return;
+    }
+
+    setIsSavingExtra(true);
+    try {
+      let receiptUrl: string | undefined = undefined;
+      let receiptFileName: string | undefined = undefined;
+
+      if (extraReceiptFile) {
+        receiptFileName = extraReceiptFile.name;
+        try {
+          receiptUrl = await uploadShipmentAttachment(shipment.id, 'Comprovante_Acrescimo_Motorista', extraReceiptFile);
+        } catch (upErr) {
+          console.warn('Fallback para conversão dataUrl local do comprovante:', upErr);
+          receiptUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target?.result as string || '');
+            reader.readAsDataURL(extraReceiptFile);
+          });
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      const newPayment: DriverExtraPayment = {
+        id: `dep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        amount: Number(parsedAmt.toFixed(2)),
+        reason: extraReason,
+        description: extraDescription.trim() || undefined,
+        receiptUrl,
+        receiptFileName,
+        paymentMethod: extraPaymentMethod,
+        paidAt: extraPaidAt || nowIso,
+        createdAt: nowIso,
+        createdByName: currentUser.name || 'Usuário',
+        createdByUserId: currentUser.id,
+        createdByRole: currentUser.profile,
+      };
+
+      const updatedList = [...driverExtraPayments, newPayment];
+      const newTotal = Number(updatedList.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0).toFixed(2));
+
+      if (onUpdateShipmentData) {
+        await onUpdateShipmentData(shipment.id, {
+          driverExtraPayments: updatedList,
+          driverExtraPaymentsTotal: newTotal,
+          realProfitData: {
+            ...(shipment.realProfitData || {}),
+            driverSurcharge: newTotal,
+          } as any,
+        });
+      }
+
+      setDriverExtraPayments(updatedList);
+      setIsAddingExtraPayment(false);
+      setExtraAmount('');
+      setExtraDescription('');
+      setExtraReceiptFile(null);
+      setExtraReceiptPreview(null);
+      showToast(`Acréscimo de R$ ${parsedAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} registrado e abatido do lucro com sucesso!`, 'success');
+    } catch (err: any) {
+      console.error('Erro ao salvar acréscimo:', err);
+      showToast('Ocorreu um erro ao salvar o acréscimo avulso.', 'error');
+    } finally {
+      setIsSavingExtra(false);
+    }
+  };
+
+  const handleDeleteExtraPayment = async (paymentId: string) => {
+    const payment = driverExtraPayments.find(p => p.id === paymentId);
+    if (!payment) return;
+
+    if (!window.confirm(`Deseja remover o lançamento de acréscimo de R$ ${payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${payment.reason})?`)) {
+      return;
+    }
+
+    const updatedList = driverExtraPayments.filter(p => p.id !== paymentId);
+    const newTotal = Number(updatedList.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0).toFixed(2));
+
+    if (onUpdateShipmentData) {
+      await onUpdateShipmentData(shipment.id, {
+        driverExtraPayments: updatedList,
+        driverExtraPaymentsTotal: newTotal,
+        realProfitData: {
+          ...(shipment.realProfitData || {}),
+          driverSurcharge: newTotal,
+        } as any,
+      });
+    }
+
+    setDriverExtraPayments(updatedList);
+    showToast('Acréscimo removido com sucesso.', 'info');
+  };
 
   const ticketFiles: string[] = React.useMemo(() => {
     if (!shipment.documents) return [];
@@ -3771,6 +3951,33 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   </button>
                 </div>
 
+                {/* Banner de Integração Direta SIGA GR */}
+                <div className="flex flex-wrap items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-blue-50/90 dark:from-indigo-950/40 dark:via-gray-900 dark:to-blue-950/40 border border-indigo-200 dark:border-indigo-800 shadow-xs gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-xs">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        SIGA GR (Gerenciadora de Risco)
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 font-bold">REST+JSON v1</span>
+                      </h5>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Crie ou acompanhe a análise no SIGA GR com envio de CNH, CRLV e validação de perfil de risco
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSigaModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Consultar / Enviar ao SIGA GR</span>
+                  </button>
+                </div>
+
 
                 {grStatus === 'aprovado' ? (
                   <>
@@ -4617,6 +4824,372 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
               />
             )}
 
+            {/* PAINEL DE ACRÉSCIMOS / PAGAMENTOS AVULSOS AO MOTORISTA (A PARTIR DE AG. DESCARGA EM DIANTE) */}
+            {isEligibleForDriverExtra && (
+              <div className="mt-6 border-t border-slate-200 dark:border-slate-800 pt-5 space-y-4">
+                {/* Cabeçalho do Card */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-blue-500/10 border border-amber-200 dark:border-amber-900/40">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                      <Coins className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wide">
+                          Acréscimos / Pagamentos Avulsos ao Motorista
+                        </h4>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                          Custo Adicional • Abatido do Lucro
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                        Lançamento de diárias, estadias, bônus e ajudas de custo com comprovante anexado, registro de hora/usuário e abatimento no resultado final.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                    {totalDriverExtraPayments > 0 && (
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold uppercase">Total Acréscimos</span>
+                        <span className="text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                          R$ {totalDriverExtraPayments.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingExtraPayment(!isAddingExtraPayment)}
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer ${
+                        isAddingExtraPayment
+                          ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 hover:bg-slate-300'
+                          : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20 hover:scale-[1.02]'
+                      }`}
+                    >
+                      {isAddingExtraPayment ? (
+                        <>
+                          <X className="w-4 h-4" /> Cancelar Lançamento
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4" /> Adicionar Acréscimo
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Formulário de Novo Acréscimo Avulso */}
+                {isAddingExtraPayment && (
+                  <form onSubmit={handleSaveExtraPayment} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border-2 border-amber-400/50 dark:border-amber-600/50 shadow-lg space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                      <span className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <DollarSign className="w-4 h-4 text-amber-500" />
+                        Lançar Novo Pagamento Avulso ao Motorista
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        Registrado por: <strong>{currentUser.name}</strong> ({currentUser.profile})
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {/* Valor */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Valor do Pagamento (R$) <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
+                          <input
+                            type="text"
+                            required
+                            placeholder="0,00"
+                            value={extraAmount}
+                            onChange={(e) => setExtraAmount(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 rounded-xl text-sm font-bold font-mono border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Motivo / Finalidade */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Motivo / Finalidade <span className="text-rose-500">*</span>
+                        </label>
+                        <select
+                          value={extraReason}
+                          onChange={(e) => setExtraReason(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="Diária / Estadia">Diária / Estadia</option>
+                          <option value="Ajuda de Custo">Ajuda de Custo</option>
+                          <option value="Adicional de Descarga">Adicional de Descarga</option>
+                          <option value="Bônus Operacional">Bônus Operacional</option>
+                          <option value="Reembolso de Despesas">Reembolso de Despesas</option>
+                          <option value="Outro">Outro Acréscimo</option>
+                        </select>
+                      </div>
+
+                      {/* Data e Hora do Pagamento */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Data e Hora do Pagamento <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={extraPaidAt}
+                          onChange={(e) => setExtraPaidAt(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      {/* Forma de Pagamento */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Forma de Pagamento
+                        </label>
+                        <select
+                          value={extraPaymentMethod}
+                          onChange={(e) => setExtraPaymentMethod(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="PIX">PIX</option>
+                          <option value="Transferência Bancária">Transferência Bancária</option>
+                          <option value="Dinheiro em Espécie">Dinheiro em Espécie</option>
+                          <option value="Cartão Frete / Abastecimento">Cartão Frete / Abastecimento</option>
+                          <option value="Outro">Outro</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Anexo de Comprovante de Pagamento com Botão Colar Imagem */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Comprovante de Pagamento / Recibo do Acréscimo
+                      </label>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <label className="flex-1 flex items-center justify-center gap-2 p-2.5 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/50 transition-colors">
+                          <UploadCloud className="w-4 h-4 text-amber-500" />
+                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            {extraReceiptFile ? extraReceiptFile.name : 'Clique para procurar comprovante (PDF ou imagem)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept=".pdf,image/*"
+                            onChange={(e) => handleExtraReceiptFileSelect(e.target.files?.[0] || null)}
+                            className="hidden"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const clipItems = await navigator.clipboard.read();
+                              for (const item of clipItems) {
+                                const imgType = item.types.find(t => t.startsWith('image/'));
+                                if (imgType) {
+                                  const blob = await item.getType(imgType);
+                                  const file = new File([blob], `comprovante_${Date.now()}.png`, { type: imgType });
+                                  handleExtraReceiptFileSelect(file);
+                                  showToast('Imagem colada com sucesso!', 'success');
+                                  return;
+                                }
+                              }
+                              showToast('Nenhuma imagem encontrada na área de transferência. Use Ctrl+C em uma imagem e clique novamente.', 'info');
+                            } catch (err) {
+                              showToast('Pressione Ctrl+V em qualquer lugar da tela para colar o comprovante copiado.', 'info');
+                            }
+                          }}
+                          className="px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                          title="Colar comprovante copiado da área de transferência"
+                        >
+                          <Clipboard className="w-4 h-4 text-blue-500" />
+                          <span>Colar Imagem (Ctrl+V)</span>
+                        </button>
+
+                        {extraReceiptFile && (
+                          <button
+                            type="button"
+                            onClick={() => handleExtraReceiptFileSelect(null)}
+                            className="p-2.5 rounded-xl border border-rose-200 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 transition-colors cursor-pointer"
+                            title="Remover anexo"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {extraReceiptPreview && (
+                        <div className="mt-2 p-2 bg-slate-100 dark:bg-slate-800/80 rounded-xl flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
+                          <span className="flex items-center gap-2 truncate">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <span className="truncate">Comprovante carregado: <strong>{extraReceiptFile?.name || 'Imagem colada'}</strong></span>
+                          </span>
+                          {extraReceiptPreview.startsWith('data:image/') && (
+                            <img src={extraReceiptPreview} alt="Prévia" className="h-8 w-12 object-cover rounded border border-slate-300 dark:border-slate-700 shrink-0" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Descrição / Justificativa */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Descrição / Justificativa (Opcional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={extraDescription}
+                        onChange={(e) => setExtraDescription(e.target.value)}
+                        placeholder="Ex: Motorista aguardou 2 dias a mais para descarregar conforme combinado com a fazenda..."
+                        className="w-full px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    {/* Auditoria e Botões */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-500" />
+                        O valor será deduzido do resultado e registrado permanentemente com data, hora e usuário.
+                      </span>
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingExtraPayment(false);
+                            setExtraReceiptFile(null);
+                            setExtraReceiptPreview(null);
+                          }}
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSavingExtra}
+                          className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/30 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {isSavingExtra ? (
+                            <>
+                              <LoaderIcon className="w-4 h-4 animate-spin" /> Salvando...
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4" /> Confirmar e Salvar Acréscimo
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
+
+                {/* Lista de Acréscimos Lançados */}
+                {driverExtraPayments.length === 0 ? (
+                  <div className="p-3.5 rounded-xl bg-slate-50/70 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 text-center">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Nenhum valor avulso de acréscimo lançado para este motorista até o momento.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {driverExtraPayments.map((p) => {
+                      const reasonColor =
+                        p.reason.toLowerCase().includes('diária') || p.reason.toLowerCase().includes('estadia')
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                          : p.reason.toLowerCase().includes('ajuda')
+                          ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                          : p.reason.toLowerCase().includes('descarga')
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                          : p.reason.toLowerCase().includes('bônus') || p.reason.toLowerCase().includes('bonus')
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                          : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700';
+
+                      const formattedPaidAt = (() => {
+                        try {
+                          const d = new Date(p.paidAt);
+                          if (!isNaN(d.getTime())) {
+                            return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+                          }
+                        } catch (e) {}
+                        return p.paidAt;
+                      })();
+
+                      const formattedCreatedAt = (() => {
+                        try {
+                          const d = new Date(p.createdAt);
+                          if (!isNaN(d.getTime())) {
+                            return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+                          }
+                        } catch (e) {}
+                        return p.createdAt;
+                      })();
+
+                      return (
+                        <div key={p.id} className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-2.5 hover:border-amber-400 dark:hover:border-amber-600 transition-colors">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${reasonColor}`}>
+                                {p.reason}
+                              </span>
+                              {p.paymentMethod && (
+                                <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                  {p.paymentMethod}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-black font-mono text-amber-600 dark:text-amber-400">
+                                R$ {Number(p.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteExtraPayment(p.id)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                title="Excluir este acréscimo"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {p.description && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 italic bg-slate-50 dark:bg-slate-950 p-2 rounded-xl">
+                              "{p.description}"
+                            </p>
+                          )}
+
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span>🕒 Pago em: <strong className="text-slate-700 dark:text-slate-200">{formattedPaidAt}</strong></span>
+                              {p.receiptUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openDocumentInNewTab(p.receiptUrl!)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
+                                >
+                                  <Eye className="w-3 h-3" /> Ver Comprovante
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">Sem anexo</span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                              <span>Lançado por: <strong className="text-slate-600 dark:text-slate-300">{p.createdByName}</strong> {p.createdByRole ? `(${p.createdByRole})` : ''}</span>
+                              <span>{formattedCreatedAt}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {showRouteField && (
               <div className="mt-6 border-t dark:border-gray-700 pt-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -4856,6 +5429,21 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             onSelectApprovedCode={(code) => {
               setRiskReleaseCode(code);
               setRiskQueryType('RDO Nacional');
+              setGrStatus('aprovado');
+            }}
+          />
+        )}
+
+        {/* Modal SIGA GR integrado ao Embarque */}
+        {isSigaModalOpen && (
+          <SigaGrModal
+            isOpen={isSigaModalOpen}
+            onClose={() => setIsSigaModalOpen(false)}
+            currentUser={currentUser}
+            initialShipmentId={shipment.id}
+            onSelectApprovedCode={(code, procNum) => {
+              setRiskReleaseCode(code);
+              setRiskQueryType('SIGA GR');
               setGrStatus('aprovado');
             }}
           />

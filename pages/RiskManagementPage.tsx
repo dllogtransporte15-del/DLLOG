@@ -38,6 +38,7 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EditRiskQueryModal from '../components/EditRiskQueryModal';
 import RiskQueryTypesPage from './RiskQueryTypesPage';
 import { RdoNacionalModal } from '../components/RdoNacionalModal';
+import { SigaGrModal } from '../components/SigaGrModal';
 
 
 interface RiskManagementPageProps {
@@ -149,6 +150,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   // Tabs: 'operational' | 'analytics' | 'query_types'
   const [activeTab, setActiveTab] = useState<'operational' | 'analytics' | 'query_types'>('operational');
   const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
+  const [isSigaModalOpen, setIsSigaModalOpen] = useState(false);
   const isDemo = isDemoUser(currentUser);
 
   // Global / Quick Filters
@@ -910,6 +912,16 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
           >
             <ShieldCheck className="w-4 h-4 text-white" />
             RDO Nacional
+          </button>
+
+          {/* Botão SIGA GR */}
+          <button
+            onClick={() => setIsSigaModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            title="Abrir painel de integração oficial com a gerenciadora SIGA GR"
+          >
+            <ShieldCheck className="w-4 h-4 text-white" />
+            SIGA GR
           </button>
 
           {/* Export Buttons */}
@@ -1933,6 +1945,24 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         drivers={drivers}
         vehicles={vehicles}
         currentUser={currentUser}
+      />
+
+      {/* SIGA GR Modal */}
+      <SigaGrModal
+        isOpen={isSigaModalOpen}
+        onClose={() => setIsSigaModalOpen(false)}
+        shipments={shipments}
+        drivers={drivers}
+        vehicles={vehicles}
+        currentUser={currentUser}
+        onSelectApprovedCode={(code, procNum) => {
+          if (shipmentToEditRisk && onUpdateShipmentData) {
+            onUpdateShipmentData(shipmentToEditRisk.id, {
+              riskReleaseCode: code,
+              riskQueryType: shipmentToEditRisk.riskQueryType || 'SIGA GR',
+            });
+          }
+        }}
       />
     </div>
   );

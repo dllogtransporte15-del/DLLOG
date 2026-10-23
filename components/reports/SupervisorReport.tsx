@@ -880,17 +880,23 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   const totalAgencyShipmentProfit = userAgencyProfitMap.get(user.id) || 0;
                   const agencyShipmentCount = userAgencyShipmentCountMap.get(user.id) || 0;
 
-                  const userFixed = user.commercialFixedSalary !== undefined 
-                    ? user.commercialFixedSalary 
-                    : (isAgenciador ? 0 : DEFAULT_FIXED);
+                  const userFixed = (isAgenciador && !user.hasCommercialCommission)
+                    ? 0
+                    : (user.commercialFixedSalary !== undefined 
+                      ? user.commercialFixedSalary 
+                      : (isAgenciador ? 0 : DEFAULT_FIXED));
 
-                  const userMatrizRate = user.commercialMatrizRate !== undefined 
-                    ? user.commercialMatrizRate 
-                    : (isAgenciador ? 0 : DEFAULT_MATRIZ_RATE);
+                  const userMatrizRate = (isAgenciador && !user.hasCommercialCommission)
+                    ? 0
+                    : (user.commercialMatrizRate !== undefined 
+                      ? user.commercialMatrizRate 
+                      : (isAgenciador ? 0 : DEFAULT_MATRIZ_RATE));
 
-                  const userFiliaisRate = user.commercialFiliaisRate !== undefined 
-                    ? user.commercialFiliaisRate 
-                    : (isAgenciador ? 0 : DEFAULT_FILIAIS_RATE);
+                  const userFiliaisRate = (isAgenciador && !user.hasCommercialCommission)
+                    ? 0
+                    : (user.commercialFiliaisRate !== undefined 
+                      ? user.commercialFiliaisRate 
+                      : (isAgenciador ? 0 : DEFAULT_FILIAIS_RATE));
 
                   const calcMode = user.commercialCalculationMode || 'bruto';
                   const isAgencyMode = user.commercialIsAgencyMode || isAgenciador;
@@ -926,7 +932,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   const matrizForUser = (isActive && effectiveMatrizRate > 0) ? targetMatrizRevenue * (effectiveMatrizRate / 100) : 0;
                   const filiaisForUser = (isActive && effectiveFiliaisRate > 0) ? userFiliaisRevenue * (effectiveFiliaisRate / 100) : 0;
                   const totalCommissionsForUser = isAgenciador 
-                    ? (totalAgencyShipmentComm + (user.hasCommercialCommission ? matrizForUser : 0))
+                    ? (totalAgencyShipmentComm + (user.hasCommercialCommission ? (matrizForUser + filiaisForUser) : 0))
                     : (matrizForUser + filiaisForUser);
                   const totalForUser = isActive ? (userFixed + totalCommissionsForUser) : 0;
 
@@ -1026,9 +1032,14 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                             <div className="text-[10px] text-gray-400 font-sans">
                               Comissão s/ Lucro Real ({totalAgencyShipmentProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})
                             </div>
-                            {effectiveMatrizRate > 0 && (
+                            {effectiveMatrizRate > 0 && matrizForUser > 0 && (
                               <div className="text-[10px] text-blue-500 font-sans">
                                 + Matriz ({effectiveMatrizRate.toFixed(2)}%): {matrizForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </div>
+                            )}
+                            {effectiveFiliaisRate > 0 && filiaisForUser > 0 && (
+                              <div className="text-[10px] text-blue-500 font-sans">
+                                + Filiais ({effectiveFiliaisRate.toFixed(2)}%): {filiaisForUser.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                               </div>
                             )}
                           </div>

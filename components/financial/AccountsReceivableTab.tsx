@@ -23,10 +23,45 @@ import {
   X, 
   ArrowUpRight,
   TrendingUp,
-  RotateCcw
+  RotateCcw,
+  Receipt,
+  Edit3,
+  Trash2,
+  Copy,
+  Printer,
+  Paperclip,
+  UploadCloud,
+  Check,
+  FileSpreadsheet
 } from 'lucide-react';
 import { getShipmentCteFileUrl, openDocumentInNewTab } from '../../utils/documentViewer';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
+
+export interface CteInvoice {
+  id: string;
+  shipmentId?: string;
+  cteNumber?: string;
+  transactionId?: string;
+  invoiceNumber: string; // Ex: FAT-1014
+  issueDate: string;    // Data de Lançamento / Emissão (YYYY-MM-DD)
+  dueDate: string;      // Data de Vencimento do Boleto (YYYY-MM-DD)
+  amount: number;       // Valor da Fatura / Boleto (R$)
+  paymentMethod: string;// Boleto Bancário, PIX, etc.
+  barcode?: string;     // Linha digitável do boleto
+  pixKey?: string;      // Chave Pix
+  fileUrl?: string;     // Anexo do boleto / fatura
+  fileName?: string;    // Nome do arquivo
+  fileType?: string;    // Tipo mime
+  notes?: string;       // Observações
+  clientName?: string;
+  clientCnpj?: string;
+  origin?: string;
+  destination?: string;
+  tonnage?: number;
+  driverName?: string;
+  horsePlate?: string;
+  createdAt: string;
+}
 
 interface AccountsReceivableTabProps {
   transactions: FinancialTransaction[];
@@ -40,6 +75,7 @@ interface AccountsReceivableTabProps {
 }
 
 const STORAGE_CTE_RECEIVABLES_STATUS_KEY = 'transcunha_cte_receivables_status_v1';
+const STORAGE_CTE_INVOICES_KEY = 'transcunha_cte_invoices_v1';
 
 export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
   transactions,
@@ -75,6 +111,36 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
     }
     return {};
   });
+
+  // Faturas / Boletos vinculados aos recebíveis
+  const [invoicesMap, setInvoicesMap] = useState<Record<string, CteInvoice>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_CTE_INVOICES_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Erro ao ler faturas de CT-e do localStorage', e);
+    }
+    return {};
+  });
+
+  // Modal de Emissão / Vínculo de Fatura
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [invoiceTargetItem, setInvoiceTargetItem] = useState<any>(null);
+  const [formInvoiceNumber, setFormInvoiceNumber] = useState('');
+  const [formIssueDate, setFormIssueDate] = useState('');
+  const [formDueDate, setFormDueDate] = useState('');
+  const [formInvoiceAmount, setFormInvoiceAmount] = useState('');
+  const [formPaymentMethod, setFormPaymentMethod] = useState('Boleto Bancário');
+  const [formBarcode, setFormBarcode] = useState('');
+  const [formPixKey, setFormPixKey] = useState('');
+  const [formInvoiceFileUrl, setFormInvoiceFileUrl] = useState('');
+  const [formInvoiceFileName, setFormInvoiceFileName] = useState('');
+  const [formInvoiceFileType, setFormInvoiceFileType] = useState('');
+  const [formInvoiceNotes, setFormInvoiceNotes] = useState('');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Modal de Espelho / Visualização da Fatura
+  const [selectedInvoiceToView, setSelectedInvoiceToView] = useState<CteInvoice | null>(null);
 
   // Modal de Lançamento Manual Avulso
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -223,6 +289,7 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
   // Filtragem: CT-e
   const filteredCtes = useMemo(() => {
     return cteReceivables.filter(item => {
+      const inv = invoicesMap[item.shipmentId] || invoicesMap[item.id];
       if (searchTerm) {
         const s = searchTerm.toLowerCase();
         const match = 
@@ -230,7 +297,8 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
           item.clientName.toLowerCase().includes(s) ||
           item.driverName.toLowerCase().includes(s) ||
           item.horsePlate.toLowerCase().includes(s) ||
-          item.shipmentId.toLowerCase().includes(s);
+          item.shipmentId.toLowerCase().includes(s) ||
+          (inv?.invoiceNumber && inv.invoiceNumber.toLowerCase().includes(s));
         if (!match) return false;
       }
 
@@ -246,24 +314,27 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
         return false;
       }
 
-      if (!matchesPeriod(item.dueDate) && !matchesPeriod(item.emissionDate)) {
+      const effectiveDueDate = inv?.dueDate || item.dueDate;
+      if (!matchesPeriod(effectiveDueDate) && !matchesPeriod(item.emissionDate)) {
         return false;
       }
 
       return true;
     });
-  }, [cteReceivables, searchTerm, selectedClientId, cteSearchNumber, statusFilter, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix]);
+  }, [cteReceivables, searchTerm, selectedClientId, cteSearchNumber, statusFilter, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix, invoicesMap]);
 
   // Filtragem: Manuais
   const filteredManuals = useMemo(() => {
     return manualReceivables.filter(item => {
+      const inv = invoicesMap[item.id];
       if (searchTerm) {
         const s = searchTerm.toLowerCase();
         const match = 
           item.description.toLowerCase().includes(s) ||
           item.clientName.toLowerCase().includes(s) ||
           item.category.toLowerCase().includes(s) ||
-          (item.documentNumber && item.documentNumber.toLowerCase().includes(s));
+          (item.documentNumber && item.documentNumber.toLowerCase().includes(s)) ||
+          (inv?.invoiceNumber && inv.invoiceNumber.toLowerCase().includes(s));
         if (!match) return false;
       }
 
@@ -271,13 +342,14 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
         return false;
       }
 
-      if (!matchesPeriod(item.dueDate)) {
+      const effectiveDueDate = inv?.dueDate || item.dueDate;
+      if (!matchesPeriod(effectiveDueDate)) {
         return false;
       }
 
       return true;
     });
-  }, [manualReceivables, searchTerm, statusFilter, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix]);
+  }, [manualReceivables, searchTerm, statusFilter, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix, invoicesMap]);
 
   // Lista Consolidada a Receber
   const consolidatedList = useMemo(() => {
@@ -293,11 +365,13 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
       status: 'Pendente' | 'Recebido' | 'Atrasado';
       documentUrl?: string | null;
       details?: string;
+      invoice?: CteInvoice;
       originalItem: any;
     }> = [];
 
     if (activeSection === 'all' || activeSection === 'cte') {
       filteredCtes.forEach(cte => {
+        const inv = invoicesMap[cte.shipmentId] || invoicesMap[cte.id];
         list.push({
           id: cte.id,
           kind: 'cte',
@@ -305,11 +379,12 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
           title: `Embarque ${cte.shipmentId} • ${cte.driverName} (${cte.horsePlate})`,
           clientName: cte.clientName,
           categoryOrRoute: `Frete Empresa • ${cte.origin} → ${cte.destination}`,
-          dueDate: cte.dueDate,
+          dueDate: inv?.dueDate || cte.dueDate,
           receivableAmount: cte.receivableAmount,
           status: cte.status,
           documentUrl: cte.cteUrl,
           details: `${cte.tonnage.toLocaleString('pt-BR')} ton`,
+          invoice: inv,
           originalItem: cte,
         });
       });
@@ -317,6 +392,18 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
 
     if (activeSection === 'all' || activeSection === 'manual') {
       filteredManuals.forEach(man => {
+        const inv = invoicesMap[man.id] || (man.documentNumber?.startsWith('FAT-') ? {
+          id: `inv_man_${man.id}`,
+          transactionId: man.id,
+          invoiceNumber: man.documentNumber,
+          issueDate: man.dueDate,
+          dueDate: man.dueDate,
+          amount: man.receivableAmount,
+          paymentMethod: 'Boleto Bancário',
+          clientName: man.clientName,
+          createdAt: new Date().toISOString()
+        } : undefined);
+
         list.push({
           id: `man_${man.id}`,
           kind: 'manual',
@@ -324,16 +411,17 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
           title: man.description,
           clientName: man.clientName,
           categoryOrRoute: man.category,
-          dueDate: man.dueDate,
+          dueDate: inv?.dueDate || man.dueDate,
           receivableAmount: man.receivableAmount,
           status: man.status,
+          invoice: invoicesMap[man.id] || inv,
           originalItem: man,
         });
       });
     }
 
     return list.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-  }, [activeSection, filteredCtes, filteredManuals]);
+  }, [activeSection, filteredCtes, filteredManuals, invoicesMap]);
 
   // KPIs
   const kpiPending = useMemo(() => {
@@ -386,11 +474,158 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
     setIsModalOpen(false);
   };
 
+  // Salvar Fatura / Boleto Vinculado
+  const handleOpenInvoiceModal = (item: any) => {
+    setInvoiceTargetItem(item);
+    const existing: CteInvoice | undefined = item.invoice;
+
+    if (existing) {
+      setFormInvoiceNumber(existing.invoiceNumber || '');
+      setFormIssueDate(existing.issueDate || todayStr);
+      setFormDueDate(existing.dueDate || item.dueDate);
+      setFormInvoiceAmount(existing.amount ? existing.amount.toFixed(2).replace('.', ',') : (item.receivableAmount ? item.receivableAmount.toFixed(2).replace('.', ',') : ''));
+      setFormPaymentMethod(existing.paymentMethod || 'Boleto Bancário');
+      setFormBarcode(existing.barcode || '');
+      setFormPixKey(existing.pixKey || '');
+      setFormInvoiceFileUrl(existing.fileUrl || '');
+      setFormInvoiceFileName(existing.fileName || '');
+      setFormInvoiceFileType(existing.fileType || '');
+      setFormInvoiceNotes(existing.notes || '');
+    } else {
+      // Sugestão de número da fatura
+      const defaultNumber = item.kind === 'cte' && item.originalItem.cteNumber && item.originalItem.cteNumber !== 'S/N'
+        ? `FAT-${item.originalItem.cteNumber}`
+        : (item.docNumber?.startsWith('FAT-') ? item.docNumber : `FAT-${Math.floor(1000 + Math.random() * 9000)}`);
+
+      setFormInvoiceNumber(defaultNumber);
+      // Data de lançamento: data de hoje ou data de emissão do CT-e
+      setFormIssueDate(item.originalItem?.emissionDate ? item.originalItem.emissionDate.split(' ')[0] : todayStr);
+      // Data de vencimento: PUXA DIRETAMENTE A DATA DE VENCIMENTO DO CT-E / RECEBÍVEL!
+      setFormDueDate(item.dueDate || todayStr);
+      // Valor do boleto / fatura: PUXA DIRETAMENTE O VALOR A RECEBER!
+      setFormInvoiceAmount(item.receivableAmount ? item.receivableAmount.toFixed(2).replace('.', ',') : '');
+      setFormPaymentMethod('Boleto Bancário');
+      setFormBarcode('');
+      setFormPixKey('');
+      setFormInvoiceFileUrl('');
+      setFormInvoiceFileName('');
+      setFormInvoiceFileType('');
+      setFormInvoiceNotes('');
+    }
+
+    setIsInvoiceModalOpen(true);
+  };
+
+  const applyDueDatePreset = (days: number) => {
+    const base = formIssueDate ? new Date(formIssueDate + 'T00:00:00') : new Date();
+    const newDate = new Date(base.getTime() + days * 86400000);
+    setFormDueDate(newDate.toISOString().split('T')[0]);
+  };
+
+  const copyToClipboard = (text: string, fieldName: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2500);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert('O arquivo selecionado é maior que 15MB. Por favor, escolha um arquivo menor.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setFormInvoiceFileUrl(base64);
+      setFormInvoiceFileName(file.name);
+      setFormInvoiceFileType(file.type);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveInvoice = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invoiceTargetItem) return;
+
+    const parsedAmt = parseBrazilianCurrency(formInvoiceAmount) || invoiceTargetItem.receivableAmount;
+    const itemKey = invoiceTargetItem.kind === 'cte' 
+      ? (invoiceTargetItem.originalItem.shipmentId || invoiceTargetItem.id)
+      : (invoiceTargetItem.originalItem.id || invoiceTargetItem.id);
+
+    const newInvoice: CteInvoice = {
+      id: invoiceTargetItem.invoice?.id || `inv_${Date.now()}`,
+      shipmentId: invoiceTargetItem.kind === 'cte' ? invoiceTargetItem.originalItem.shipmentId : undefined,
+      cteNumber: invoiceTargetItem.kind === 'cte' ? invoiceTargetItem.originalItem.cteNumber : undefined,
+      transactionId: invoiceTargetItem.kind === 'manual' ? invoiceTargetItem.originalItem.id : undefined,
+      invoiceNumber: formInvoiceNumber.trim() || `FAT-${Date.now().toString().slice(-4)}`,
+      issueDate: formIssueDate || todayStr,
+      dueDate: formDueDate || invoiceTargetItem.dueDate,
+      amount: parsedAmt,
+      paymentMethod: formPaymentMethod,
+      barcode: formBarcode.trim() || undefined,
+      pixKey: formPixKey.trim() || undefined,
+      fileUrl: formInvoiceFileUrl || undefined,
+      fileName: formInvoiceFileName || undefined,
+      fileType: formInvoiceFileType || undefined,
+      notes: formInvoiceNotes.trim() || undefined,
+      clientName: invoiceTargetItem.clientName,
+      clientCnpj: invoiceTargetItem.originalItem?.clientCnpj,
+      origin: invoiceTargetItem.originalItem?.origin,
+      destination: invoiceTargetItem.originalItem?.destination,
+      tonnage: invoiceTargetItem.originalItem?.tonnage,
+      driverName: invoiceTargetItem.originalItem?.driverName,
+      horsePlate: invoiceTargetItem.originalItem?.horsePlate,
+      createdAt: invoiceTargetItem.invoice?.createdAt || new Date().toISOString()
+    };
+
+    const updated: Record<string, CteInvoice> = { ...invoicesMap, [String(itemKey)]: newInvoice };
+    if (invoiceTargetItem.kind === 'cte' && invoiceTargetItem.id) {
+      updated[String(invoiceTargetItem.id)] = newInvoice;
+    }
+    if (invoiceTargetItem.originalItem?.shipmentId) {
+      updated[String(invoiceTargetItem.originalItem.shipmentId)] = newInvoice;
+    }
+
+    setInvoicesMap(updated);
+    try {
+      localStorage.setItem(STORAGE_CTE_INVOICES_KEY, JSON.stringify(updated));
+    } catch (err) {
+      console.error(err);
+    }
+
+    setIsInvoiceModalOpen(false);
+    setInvoiceTargetItem(null);
+  };
+
+  const handleDeleteInvoice = (item: any) => {
+    if (!window.confirm(`Deseja remover o vínculo da fatura "${item.invoice?.invoiceNumber}" deste lançamento?`)) return;
+
+    const itemKey = item.kind === 'cte' 
+      ? (item.originalItem.shipmentId || item.id)
+      : (item.originalItem.id || item.id);
+
+    const updated: Record<string, CteInvoice> = { ...invoicesMap };
+    delete updated[String(itemKey)];
+    if (item.id) delete updated[String(item.id)];
+    if (item.originalItem?.shipmentId) delete updated[String(item.originalItem.shipmentId)];
+
+    setInvoicesMap(updated);
+    try {
+      localStorage.setItem(STORAGE_CTE_INVOICES_KEY, JSON.stringify(updated));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // Exportar CSV
   const handleExportCsv = () => {
     if (consolidatedList.length === 0) return;
 
-    const headers = ['Tipo', 'Documento', 'Cliente / Tomador', 'Rota / Classificação', 'Vencimento', 'Valor a Receber', 'Status'];
+    const headers = ['Tipo', 'Documento', 'Cliente / Tomador', 'Rota / Classificação', 'Vencimento', 'Valor a Receber', 'Status', 'Fatura / Boleto', 'Data Lançamento Fatura'];
     const rows = consolidatedList.map(item => [
       item.kind === 'cte' ? 'CT-e / Frete' : 'Avulso',
       item.docNumber,
@@ -398,7 +633,9 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
       `"${item.categoryOrRoute.replace(/"/g, '""')}"`,
       new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR'),
       item.receivableAmount.toFixed(2).replace('.', ','),
-      item.status
+      item.status,
+      item.invoice ? `"${item.invoice.invoiceNumber}"` : '""',
+      item.invoice ? `"${new Date(item.invoice.issueDate + 'T00:00:00').toLocaleDateString('pt-BR')}"` : '""'
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -685,6 +922,7 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
                 <th className="py-3.5 px-4">Vencimento</th>
                 <th className="py-3.5 px-4 text-right">Valor a Receber</th>
                 <th className="py-3.5 px-4 text-center">Status</th>
+                <th className="py-3.5 px-4 text-center">Fatura / Boleto</th>
                 <th className="py-3.5 px-4 text-center">Documento</th>
                 <th className="py-3.5 px-4 text-right">Ação</th>
               </tr>
@@ -692,7 +930,7 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
               {consolidatedList.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     <ArrowUpRight className="w-10 h-10 mx-auto mb-2 opacity-30" />
                     <p className="font-semibold text-sm text-slate-600 dark:text-slate-300">Nenhum recebível encontrado</p>
                     <p className="text-xs text-slate-400 mt-1">Ajuste os filtros de busca ou cliente.</p>
@@ -790,7 +1028,63 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
                         </span>
                       </td>
 
-                      {/* 7. Documento Anexado */}
+                      {/* 7. Fatura / Boleto (Nova Coluna) */}
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        {item.invoice ? (
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedInvoiceToView(item.invoice!)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 font-bold text-[11px] shadow-2xs transition-all cursor-pointer"
+                              title={`Fatura: ${item.invoice.invoiceNumber}\nVencimento: ${new Date(item.invoice.dueDate + 'T00:00:00').toLocaleDateString('pt-BR')}\nValor: ${formatBrl(item.invoice.amount)}\nClique para ver o espelho da fatura`}
+                            >
+                              <Receipt className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                              <span className="font-mono">{item.invoice.invoiceNumber}</span>
+                            </button>
+
+                            {item.invoice.fileUrl && (
+                              <button
+                                type="button"
+                                onClick={() => openDocumentInNewTab(item.invoice!.fileUrl!, item.invoice!.invoiceNumber)}
+                                className="p-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+                                title="Abrir Boleto Bancário / Anexo em PDF"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenInvoiceModal(item)}
+                              className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                              title="Editar Fatura / Boleto"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInvoice(item)}
+                              className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 dark:text-rose-400 transition-colors cursor-pointer"
+                              title="Remover Fatura vinculada"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInvoiceModal(item)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer group"
+                            title="Emitir / vincular fatura correspondente a este CT-e"
+                          >
+                            <Receipt className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
+                            <span>+ Adicionar Fatura</span>
+                          </button>
+                        )}
+                      </td>
+
+                      {/* 8. Documento Anexado */}
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         {item.documentUrl ? (
                           <button
@@ -812,7 +1106,7 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
                         )}
                       </td>
 
-                      {/* 8. Ação: Dar Baixa / Reabrir */}
+                      {/* 9. Ação: Dar Baixa / Reabrir */}
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         {item.kind === 'cte' && (
                           <button
@@ -853,6 +1147,477 @@ export const AccountsReceivableTab: React.FC<AccountsReceivableTabProps> = ({
           </table>
         </div>
       </div>
+
+      {/* 5. MODAL DE EMISSÃO / VÍNCULO DE FATURA DO CT-E */}
+      {isInvoiceModalOpen && invoiceTargetItem && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150 my-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 rounded-2xl border border-purple-200 dark:border-purple-800">
+                  <Receipt className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                    {invoiceTargetItem.invoice ? 'Editar Fatura / Boleto' : 'Emitir Fatura / Boleto do CT-e'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Vincule a fatura de cobrança e o boleto correspondente a este frete
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setIsInvoiceModalOpen(false); setInvoiceTargetItem(null); }}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Banner com Dados Originais do CT-e / Embarque */}
+            <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-xs space-y-1.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-blue-500" />
+                  {invoiceTargetItem.docNumber}
+                </span>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                  {invoiceTargetItem.title}
+                </span>
+              </div>
+              <div className="text-slate-600 dark:text-slate-400 flex items-center justify-between flex-wrap gap-2">
+                <span><strong>Tomador:</strong> {invoiceTargetItem.clientName}</span>
+                <span><strong>Valor do Frete:</strong> {formatBrl(invoiceTargetItem.receivableAmount)}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveInvoice} className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Número da Fatura */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Número da Fatura / Boleto <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formInvoiceNumber}
+                    onChange={(e) => setFormInvoiceNumber(e.target.value)}
+                    placeholder="Ex: FAT-1014 / 2026-001"
+                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm font-bold font-mono border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                {/* Forma de Cobrança */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Forma de Cobrança
+                  </label>
+                  <select
+                    value={formPaymentMethod}
+                    onChange={(e) => setFormPaymentMethod(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Boleto Bancário">Boleto Bancário</option>
+                    <option value="PIX">PIX</option>
+                    <option value="Transferência Bancária">Transferência Bancária</option>
+                    <option value="Depósito em Conta">Depósito em Conta</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Data de Lançamento / Emissão */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Data de Lançamento / Emissão <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formIssueDate}
+                    onChange={(e) => setFormIssueDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                {/* Data de Vencimento (Puxada do CT-e / Editável) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Data de Vencimento do Boleto <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formDueDate}
+                    onChange={(e) => setFormDueDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm font-bold border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  {/* Presets Rápidos de Vencimento */}
+                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    <span className="text-[10px] text-slate-400 font-semibold mr-0.5">Prazo:</span>
+                    {[7, 14, 21, 28, 30, 45].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => applyDueDatePreset(d)}
+                        className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold transition-colors cursor-pointer"
+                        title={`Calcular vencimento para +${d} dias`}
+                      >
+                        +{d}d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Valor do Boleto (Puxado do Valor a Receber) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Valor da Fatura / Boleto (R$) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-bold font-mono text-slate-400">R$</span>
+                  <input
+                    type="text"
+                    required
+                    value={formInvoiceAmount}
+                    onChange={(e) => setFormInvoiceAmount(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl text-sm font-black font-mono border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-emerald-600 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  Valor preenchido automaticamente a partir do frete a receber do CT-e correspondente.
+                </span>
+              </div>
+
+              {/* Linha Digitável / Código de Barras */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Código de Barras / Linha Digitável do Boleto (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={formBarcode}
+                  onChange={(e) => setFormBarcode(e.target.value)}
+                  placeholder="00000.00000 00000.000000 00000.000000 0 00000000000000"
+                  className="w-full px-3 py-2 rounded-xl text-xs font-mono border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Chave Pix para Cobrança */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Chave PIX para Recebimento (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={formPixKey}
+                  onChange={(e) => setFormPixKey(e.target.value)}
+                  placeholder="Chave Pix (CNPJ, e-mail, telefone ou aleatória)"
+                  className="w-full px-3 py-2 rounded-xl text-xs font-mono border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Anexo do Boleto / Fatura */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Anexo do Boleto Bancário / Fatura (PDF ou Imagem)
+                </label>
+                {formInvoiceFileUrl ? (
+                  <div className="flex items-center justify-between p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span className="font-semibold text-emerald-900 dark:text-emerald-200 truncate">
+                        {formInvoiceFileName || 'Boleto_Anexado.pdf'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openDocumentInNewTab(formInvoiceFileUrl, formInvoiceFileName || 'Boleto')}
+                        className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition-colors cursor-pointer"
+                      >
+                        Visualizar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormInvoiceFileUrl('');
+                          setFormInvoiceFileName('');
+                          setFormInvoiceFileType('');
+                        }}
+                        className="p-1 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900 text-rose-600 transition-colors cursor-pointer"
+                        title="Remover anexo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-purple-500 dark:hover:border-purple-500 rounded-2xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/50 transition-colors">
+                    <UploadCloud className="w-5 h-5 text-purple-500 mb-1" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Clique para anexar o PDF do Boleto / Fatura
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">
+                      Arquivos suportados: PDF, JPG, PNG (máx. 15MB)
+                    </span>
+                    <input
+                      type="file"
+                      accept=".pdf,image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Observações / Instruções
+                </label>
+                <textarea
+                  rows={2}
+                  value={formInvoiceNotes}
+                  onChange={(e) => setFormInvoiceNotes(e.target.value)}
+                  placeholder="Instruções de protesto, juros, informações ao cliente ou notas internas..."
+                  className="w-full px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* Botões do Modal */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setIsInvoiceModalOpen(false); setInvoiceTargetItem(null); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Salvar Fatura / Boleto</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. MODAL DE ESPELHO / VISUALIZAÇÃO DA FATURA DE TRANSPORTE */}
+      {selectedInvoiceToView && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150 my-auto">
+            {/* Header com Ações */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-600 text-white rounded-2xl shadow-md shadow-purple-600/30">
+                  <Receipt className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                    Fatura de Transporte • {selectedInvoiceToView.invoiceNumber}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Transcunha Transportes e Logística LTDA • CNPJ: 10.638.283/0001-38
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  title="Imprimir Fatura"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Imprimir</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedInvoiceToView(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Corpo da Fatura */}
+            <div className="py-5 space-y-4 text-xs">
+              {/* Box de Resumo da Fatura */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Nº da Fatura</span>
+                  <span className="text-sm font-black font-mono text-purple-600 dark:text-purple-400">
+                    {selectedInvoiceToView.invoiceNumber}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Data de Emissão</span>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    {new Date(selectedInvoiceToView.issueDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Data de Vencimento</span>
+                  <span className="text-xs font-black text-rose-600 dark:text-rose-400">
+                    {new Date(selectedInvoiceToView.dueDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Valor a Pagar</span>
+                  <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                    {formatBrl(selectedInvoiceToView.amount)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Dados do Sacado / Tomador */}
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 block mb-1">
+                  Tomador do Serviço / Pagador
+                </span>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">
+                  {selectedInvoiceToView.clientName || 'Cliente não especificado'}
+                </p>
+                {selectedInvoiceToView.clientCnpj && (
+                  <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                    CNPJ / CPF: {selectedInvoiceToView.clientCnpj}
+                  </p>
+                )}
+              </div>
+
+              {/* Demonstrativo do Frete / CT-e */}
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 block">
+                  Demonstrativo do Conhecimento de Transporte (CT-e)
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">CT-e:</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      {selectedInvoiceToView.cteNumber ? `Nº ${selectedInvoiceToView.cteNumber}` : 'Avulso'}
+                    </span>
+                  </div>
+                  {selectedInvoiceToView.shipmentId && (
+                    <div>
+                      <span className="text-slate-400 block">Embarque:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {selectedInvoiceToView.shipmentId}
+                      </span>
+                    </div>
+                  )}
+                  {selectedInvoiceToView.tonnage && (
+                    <div>
+                      <span className="text-slate-400 block">Peso Faturado:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {selectedInvoiceToView.tonnage.toLocaleString('pt-BR')} ton
+                      </span>
+                    </div>
+                  )}
+                  {selectedInvoiceToView.origin && selectedInvoiceToView.destination && (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block">Rota:</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {selectedInvoiceToView.origin} → {selectedInvoiceToView.destination}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Informações de Pagamento (Boleto / Pix) */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Modalidade de Cobrança: <strong>{selectedInvoiceToView.paymentMethod || 'Boleto Bancário'}</strong>
+                  </span>
+                  {selectedInvoiceToView.fileUrl && (
+                    <button
+                      type="button"
+                      onClick={() => openDocumentInNewTab(selectedInvoiceToView.fileUrl!, selectedInvoiceToView.invoiceNumber)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Abrir Boleto PDF</span>
+                    </button>
+                  )}
+                </div>
+
+                {selectedInvoiceToView.barcode && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block">Linha Digitável do Boleto:</span>
+                    <div className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+                      <span className="font-mono text-xs text-slate-800 dark:text-slate-200 break-all select-all flex-1">
+                        {selectedInvoiceToView.barcode}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(selectedInvoiceToView.barcode!, 'barcode')}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-purple-600 transition-colors cursor-pointer shrink-0"
+                        title="Copiar linha digitável"
+                      >
+                        {copiedField === 'barcode' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedInvoiceToView.pixKey && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block">Chave PIX para Pagamento:</span>
+                    <div className="flex items-center gap-2 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+                      <span className="font-mono text-xs text-slate-800 dark:text-slate-200 break-all select-all flex-1">
+                        {selectedInvoiceToView.pixKey}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(selectedInvoiceToView.pixKey!, 'pix')}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-purple-600 transition-colors cursor-pointer shrink-0"
+                        title="Copiar Chave PIX"
+                      >
+                        {copiedField === 'pix' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedInvoiceToView.notes && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <span className="text-[10px] font-bold text-slate-400 block">Instruções / Observações:</span>
+                    <p className="text-slate-600 dark:text-slate-300 italic mt-0.5 whitespace-pre-wrap">
+                      {selectedInvoiceToView.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSelectedInvoiceToView(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. MODAL DE NOVO RECEBÍVEL AVULSO */}
       {isModalOpen && (

@@ -10,6 +10,7 @@ import { DriverClassification } from '../types';
 import { can } from '../auth';
 import { ShieldCheck } from 'lucide-react';
 import { RdoNacionalModal } from '../components/RdoNacionalModal';
+import { SigaGrModal } from '../components/SigaGrModal';
 
 
 // For reading XLS files
@@ -39,6 +40,7 @@ const DriversPage: React.FC<DriversPageProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isRdoModalOpen, setIsRdoModalOpen] = useState(false);
+  const [isSigaModalOpen, setIsSigaModalOpen] = useState(false);
   const [driverToEdit, setDriverToEdit] = useState<Driver | null>(null);
   const [selectedDriverForHistory, setSelectedDriverForHistory] = useState<Driver | null>(null);
 
@@ -313,6 +315,13 @@ const DriversPage: React.FC<DriversPageProps> = ({
           <ShieldCheck className="w-4 h-4" />
           RDO Nacional
         </button>
+        <button
+          onClick={() => setIsSigaModalOpen(true)}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+        >
+          <ShieldCheck className="w-4 h-4" />
+          SIGA GR
+        </button>
         {canCreate && (
             <>
                 <button onClick={handleImportClick} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Importar</button>
@@ -361,6 +370,15 @@ const DriversPage: React.FC<DriversPageProps> = ({
       <RdoNacionalModal
         isOpen={isRdoModalOpen}
         onClose={() => setIsRdoModalOpen(false)}
+        drivers={drivers}
+        shipments={shipments}
+        owners={owners}
+        currentUser={currentUser}
+      />
+
+      <SigaGrModal
+        isOpen={isSigaModalOpen}
+        onClose={() => setIsSigaModalOpen(false)}
         drivers={drivers}
         shipments={shipments}
         owners={owners}

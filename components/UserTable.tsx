@@ -121,6 +121,11 @@ const UserTable: React.FC<UserTableProps> = ({
                           </span>
                         )
                       )}
+                      {user.profile === UserProfile.Agenciador && user.hasCommercialCommission && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300" title="Comissão Comercial Ativa (+ Fixo / % Matriz / % Filiais)">
+                          + Comiss. Comercial
+                        </span>
+                      )}
                       {user.shipperCommissionRatePerTon !== undefined && user.shipperCommissionRatePerTon > 0 && (
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300" title={`Comissão do Embarcador: R$ ${user.shipperCommissionRatePerTon.toFixed(2)} por tonelada`}>
                           R$ {user.shipperCommissionRatePerTon.toFixed(2)}/t

@@ -21,6 +21,179 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_22_v2_74_6',
+    version: 'v2.74.6',
+    date: '22/10/2026',
+    title: 'Filtro por CNPJ da Filial Transcunha na Planilha de Controladoria',
+    summary: 'Implementado filtro avançado por CNPJ da Filial Transcunha na Planilha de Embarques da Controladoria, permitindo segmentar viagens e faturamentos da Matriz (Pratápolis/MG - 36.203.306/0001-92), Filial SP (Ipaussu/SP - 36.203.306/0002-73), Filial GO (Catalão/GO - 36.203.306/0004-35) e Filial PR (Cambará/PR - 36.203.306/0003-54) tanto no seletor da coluna TRANSPORTADORA quanto na barra de ferramentas superior.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Filtro por CNPJ da Filial na Coluna TRANSPORTADORA',
+        description: 'A coluna TRANSPORTADORA da planilha agora lista os CNPJs e filiais oficiais da Transcunha no popover de múltipla seleção estilo Excel, permitindo filtrar por uma ou mais filiais com suporte a busca rápida.'
+      },
+      {
+        category: 'feature',
+        title: 'Seletor Rápido de Filial / CNPJ na Barra Superior',
+        description: 'Adicionado dropdown dedicado "CNPJ Filial" na barra de ferramentas da planilha, sincronizado com os filtros da tabela, permitindo alternar instantaneamente entre a visualização de todas as unidades ou de uma filial específica.'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificação Visual da Unidade e Resolução Precisa',
+        description: 'Cada linha da planilha exibe o CNPJ em destaque mono e o badge colorido correspondente à unidade (Matriz em verde floresta, Filial SP em laranja, Filial GO em roxo e Filial PR em azul), com resolução automática baseada em documentos fiscais, prefixo do embarque, agência e rota.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_22_v2_74_5',
+    version: 'v2.74.5',
+    date: '22/10/2026',
+    title: 'Gestão de Notas Fiscais / Faturas e Lançamento de Faturas',
+    summary: 'Evolução da aba de Notas Fiscais no Módulo Financeiro, agora renomeada para "Notas Fiscais / Faturas", incluindo suporte integral ao lançamento de Faturas com as mesmas regras, validações e fluxo das Notas Fiscais, identificação visual diferenciada em roxo, sequenciador fat-1 e filtros por tipo de documento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Renomeação e Nova Modalidade de Lançamento de Faturas',
+        description: 'Aba e navegação do módulo financeiro renomeadas para "Notas Fiscais / Faturas". Adicionado botão de ação rápida "+ Lançar Fatura" e seletor entre Nota Fiscal e Fatura no formulário, mantendo 100% das regras fiscais, centros de custo, anexos e OCR.'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificação Visual e Numeração Sequencial Diferenciada',
+        description: 'Lançamentos de faturas contam com badges roxos destacados com tag [FATURA] e numeração sequencial independente (fat-1, fat-2...), enquanto Notas Fiscais mantêm a identidade azul tradicional (nf-1, nf-2...).'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtro por Tipo de Documento e Duplicidade Inteligente',
+        description: 'Novo seletor de filtros no painel permitindo visualizar "Todos os Tipos", "Somente NFs" ou "Somente Faturas". Validação de duplicidade ajustada para evitar falsos conflitos entre NF e Fatura de mesmo número.'
+      },
+      {
+        category: 'feature',
+        title: 'Integração com Contas a Pagar e Exportação em Planilha',
+        description: 'Faturas com boletos anexados integram-se diretamente ao Contas a Pagar com identificação clara do tipo de documento, além de coluna dedicada "Tipo Documento" na exportação de relatório CSV.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_22_v2_74_4',
+    version: 'v2.74.4',
+    date: '22/10/2026',
+    title: 'Acréscimos e Pagamentos Avulsos ao Motorista em Gerenciar Anexos',
+    summary: 'Nova função na janela Gerenciar Anexos para embarques a partir da etapa Aguardando Descarga em diante, permitindo lançar pagamentos avulsos de acréscimo ao motorista (diárias, estadia, bônus, ajuda de custo) com anexo de comprovante, registro de quem lançou com data/hora e abatimento no resultado final de lucro.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Painel de Acréscimos Avulsos ao Motorista (A partir de Ag. Descarga)',
+        description: 'Disponibilizado painel para as etapas Aguardando Descarga, Validação de Ticket, Aguardando Pagamento de Saldo e Finalizado para lançar pagamentos avulsos ao motorista com valor (R$), motivo (Diária/Estadia, Ajuda de Custo, Adicional de Descarga, Bônus), data/hora de pagamento e forma de cobrança.'
+      },
+      {
+        category: 'feature',
+        title: 'Comprovante Anexado com Suporte a Colar Imagem (Ctrl+V)',
+        description: 'Permite anexar o comprovante do pagamento em PDF ou imagem, com suporte a seleção de arquivos e atalho de colar imagem diretamente da área de transferência (Ctrl+V), além de visualizador com 1 clique.'
+      },
+      {
+        category: 'security',
+        title: 'Auditoria Completa de Lançamento e Histórico',
+        description: 'Gravação transparente de quem lançou (nome do usuário e perfil), data e horário de lançamento, alimentando o histórico oficial de eventos do embarque.'
+      },
+      {
+        category: 'improvement',
+        title: 'Abatimento Automático no Lucro Final da Operação',
+        description: 'Os valores de acréscimo são integrados aos custos operacionais do embarque, abatendo automaticamente o Lucro Líquido Real, DRE e a Margem de Contribuição do 1º Resultado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_22_v2_74_3',
+    version: 'v2.74.3',
+    date: '22/10/2026',
+    title: 'Gestão e Emissão de Faturas e Boletos no Contas a Receber',
+    summary: 'Nova coluna "Fatura / Boleto" adicionada na tabela de Contas a Receber, permitindo emitir, vincular e visualizar a fatura correspondente a cada CT-e, com preenchimento automático de vencimento, data de lançamento, valor e espelho para conferência.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Coluna e Emissão de Fatura / Boleto para CT-e',
+        description: 'Permite gerar e vincular a fatura de cobrança correspondente ao CT-e emitido ou recebível avulso, puxando automaticamente o valor a receber, a data de emissão/lançamento e a data de vencimento.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atalhos de Vencimento, Código de Barras / PIX e Anexos',
+        description: 'Modal de emissão com botões rápidos de prazo de vencimento (+7d, +14d, +21d, +28d, +30d, +45d), campos para linha digitável/código de barras, chave PIX, forma de cobrança e upload do boleto (PDF/imagem).'
+      },
+      {
+        category: 'feature',
+        title: 'Espelho da Fatura de Transporte para Conferência e Impressão',
+        description: 'Visualizador completo do espelho da fatura com dados do tomador/cliente, rota, tonelagem, número do CT-e, dados de pagamento e atalhos para cópia de código de barras/PIX e impressão direta.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_22_v2_74_2',
+    version: 'v2.74.2',
+    date: '22/10/2026',
+    title: 'Comissão Comercial Configurável para Agenciador Líder',
+    summary: 'Disponibilizada a configuração opcional de comissão comercial (salário fixo R$, % Matriz e % Filiais selecionadas) para usuários com o perfil de Agenciador Líder no cadastro e edição de usuários, com cálculo integrado no Relatório de Supervisão.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Comissão Comercial para Agenciadores Líderes',
+        description: 'O card de ativação e personalização da comissão comercial agora fica disponível para ativação ou desativação em usuários com o perfil de Agenciador Líder, permitindo customizar remuneração fixa, % de Matriz e % de Filiais selecionadas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Cálculo Integrado no Relatório de Supervisão',
+        description: 'Quando ativada, a comissão comercial complementar (fixo e percentuais) é somada à comissão de agenciamento de cargas do Agenciador Líder, com detalhamento discriminado na tabela de comissões.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_22_v2_74_1',
+    version: 'v2.74.1',
+    date: '22/10/2026',
+    title: 'Novo Status de Pagamento "Somente Volume" para Notas Fiscais',
+    summary: 'Inclusão da opção "Somente Volume" no fluxo de lançamento e gestão de Notas Fiscais, permitindo registrar documentos fiscais de transporte e carga sem gerar obrigações a pagar no financeiro.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Opção "Somente Volume" no Lançamento e Filtros de Notas Fiscais',
+        description: 'Configurada a opção "Somente Volume" no campo Status do Pagamento do modal Lançar/Editar Nova Nota Fiscal, com badge exclusivo e suporte completo a filtros.'
+      },
+      {
+        category: 'improvement',
+        title: 'Consistência no Módulo de Contas a Pagar',
+        description: 'Notas fiscais classificadas como "Somente Volume" ou "Canceladas" são devidamente isoladas do fluxo de duplicatas a pagar.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_22_v2_74_0',
+    version: 'v2.74.0',
+    date: '22/10/2026',
+    title: 'Integração Oficial com a Gerenciadora de Risco SIGA GR (REST+JSON v1)',
+    summary: 'Implementação completa da integração nativa com o SIGA GR, contemplando autenticação automática Bearer, upload de documentos (CNH, CRLV, fotos), criação e despacho de análises de risco com suporte a produtos SIGA e SIGA Plus, acompanhamento de pendências em tempo real, proxy seguro e vinculação de liberação com 1 clique.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Módulo Completo de Integração e Serviço API SIGA GR',
+        description: 'Desenvolvido o serviço oficial sigaGrService com comunicação REST+JSON v1 para Homologação e Produção, autenticação automática via token Bearer (validade de 1h), proxy reverso para contorno de CORS no navegador e upload seguro de documentos e fotos de até 5MB.'
+      },
+      {
+        category: 'feature',
+        title: 'Painel Operacional SigaGrModal com Wizard em 2 Etapas',
+        description: 'Modal executivo com suporte a autopreenchimento de dados a partir de embarques ou motoristas, validação de tipos de veículo e carretas conforme tabela oficial, seleção de produtos SIGA e SIGA Plus, e envio de dados complementares (endereço, referências comerciais e histórico).'
+      },
+      {
+        category: 'feature',
+        title: 'Acompanhamento de Processos, Pendências e Simulador Staging',
+        description: 'Painel em tempo real para consultar o status de cada análise com visualização das pendências (issues) e pareceres da central, além de botões de simulação exclusivos para homologação (simulate_approval, simulate_denial, simulate_issue) que permitem testar todo o ciclo sem analista humano.'
+      },
+      {
+        category: 'improvement',
+        title: 'Acesso Rápido em Gerenciadora de Risco, Motoristas e Embarques',
+        description: 'Integração visual com botões dedicados na página de Gerenciadora de Risco, no cadastro de Motoristas e na etapa Aguardando Seguradora do Embarque, permitindo aplicar o código de liberação com um único clique.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_22_v2_73_0',
     version: 'v2.73.0',
     date: '22/10/2026',

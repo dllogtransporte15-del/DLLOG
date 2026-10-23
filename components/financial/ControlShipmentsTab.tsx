@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
-import { Shipment, Cargo, Client, ClientBranchCnpj, ShipmentStatus, User, Product, Owner, Vehicle } from '../../types';
+import { Shipment, Cargo, Client, ClientBranchCnpj, ShipmentStatus, User, Product, Owner, Vehicle, Branch } from '../../types';
 import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipmentCiotNumber, normalizeWeightTonnage, getShipmentCteRemetente } from '../../utils';
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
@@ -59,6 +59,7 @@ import {
   getShipmentBalanceProofUrl
 } from '../../utils/documentViewer';
 import { getShipmentOcNumber } from '../../utils/ocParser';
+import { isGoiasOrigin, isSpOrigin } from '../../utils/pdfGenerator';
 
 interface ControlShipmentsTabProps {
   items: ShipmentControlItem[];
@@ -70,6 +71,170 @@ interface ControlShipmentsTabProps {
   products?: Product[];
   vehicles?: Vehicle[];
   owners?: Owner[];
+  branches?: Branch[];
+}
+
+export interface TranscunhaBranchInfo {
+  cnpj: string;
+  name: string;
+  unitName: string;
+  displayValue: string;
+  isMatriz: boolean;
+  uf: 'MG' | 'SP' | 'GO' | 'PR';
+}
+
+export const TRANSCUNHA_BRANCH_INFO: Record<string, TranscunhaBranchInfo> = {
+  matriz: {
+    cnpj: '36.203.306/0001-92',
+    name: 'TRANSCUNHA TRANSPORTES E LOGISTICA LTDA',
+    unitName: 'MATRIZ',
+    displayValue: '36.203.306/0001-92 - MATRIZ',
+    isMatriz: true,
+    uf: 'MG',
+  },
+  sp: {
+    cnpj: '36.203.306/0002-73',
+    name: 'TRANSCUNHA TRANSPORTES E LOGISTICA FILIAL SP',
+    unitName: 'FILIAL SP',
+    displayValue: '36.203.306/0002-73 - FILIAL SP',
+    isMatriz: false,
+    uf: 'SP',
+  },
+  go: {
+    cnpj: '36.203.306/0004-35',
+    name: 'TRANSCUNHA TRANSPORTES E LOGISTICA GOIAS',
+    unitName: 'FILIAL GO',
+    displayValue: '36.203.306/0004-35 - FILIAL GO',
+    isMatriz: false,
+    uf: 'GO',
+  },
+  pr: {
+    cnpj: '36.203.306/0003-54',
+    name: 'TRANSCUNHA TRANSPORTES E LOGISTICA PR',
+    unitName: 'FILIAL PR',
+    displayValue: '36.203.306/0003-54 - FILIAL PR',
+    isMatriz: false,
+    uf: 'PR',
+  },
+};
+
+/**
+ * Identifica com alta fidelidade a Filial Transcunha e o CNPJ emissor de cada embarque
+ */
+export function resolveTranscunhaBranch(
+  s: Shipment,
+  cargo?: Cargo | null,
+  userMap?: Map<string, User>,
+  branchesList?: Branch[]
+): TranscunhaBranchInfo {
+  // 1. Verificação direta nos documentos fiscais (CT-e / MDF-e / XML / DACTE / Chave de Acesso)
+  const docs = (s.documents || {}) as any;
+  const docCnpjCandidates: string[] = [
+    docs.cte_emitente_cnpj,
+    docs.emitente_cnpj,
+    docs.transportadora_cnpj,
+    docs.emitente?.cnpjCpf,
+    docs.emitente?.cnpj,
+    docs.cnpj_transportadora,
+  ].filter(Boolean).map(c => String(c).replace(/\D/g, ''));
+
+  const accessKey = ((s as any).accessKey || docs.accessKey || docs.chCTe || docs.chave_acesso || '').replace(/\D/g, '');
+  if (accessKey.length === 44) {
+    const keyCnpj = accessKey.substring(6, 20);
+    if (keyCnpj) docCnpjCandidates.push(keyCnpj);
+  }
+
+  const cteDocs = docs['CT-e'] || docs['CT-E'] || docs['cte'] || docs['Cte'];
+  const cteDocStr = Array.isArray(cteDocs) ? cteDocs.join(' ') : String(cteDocs || '');
+
+  for (const c of docCnpjCandidates) {
+    if (c.includes('36203306000273') || c.includes('000273')) return TRANSCUNHA_BRANCH_INFO.sp;
+    if (c.includes('36203306000435') || c.includes('000435')) return TRANSCUNHA_BRANCH_INFO.go;
+    if (c.includes('36203306000354') || c.includes('000354')) return TRANSCUNHA_BRANCH_INFO.pr;
+    if (c.includes('36203306000192') || c.includes('000192')) return TRANSCUNHA_BRANCH_INFO.matriz;
+  }
+
+  if (cteDocStr.includes('000273') || cteDocStr.includes('0002-73') || cteDocStr.toLowerCase().includes('filial_sp') || cteDocStr.toLowerCase().includes('filial-sp')) {
+    return TRANSCUNHA_BRANCH_INFO.sp;
+  }
+  if (cteDocStr.includes('000435') || cteDocStr.includes('0004-35') || cteDocStr.toLowerCase().includes('filial_go') || cteDocStr.toLowerCase().includes('filial-go')) {
+    return TRANSCUNHA_BRANCH_INFO.go;
+  }
+  if (cteDocStr.includes('000354') || cteDocStr.includes('0003-54') || cteDocStr.toLowerCase().includes('filial_pr') || cteDocStr.toLowerCase().includes('filial-pr')) {
+    return TRANSCUNHA_BRANCH_INFO.pr;
+  }
+
+  // 2. Prefixo do ID do Embarque (Regra oficial de prefixação do TMS Transcunha)
+  const sid = (s.id || '').toUpperCase();
+  if (sid.startsWith('RAF-')) return TRANSCUNHA_BRANCH_INFO.sp;
+  if (sid.startsWith('MAU-') || sid.startsWith('MUR-')) return TRANSCUNHA_BRANCH_INFO.go;
+
+  // 3. Filial Vinculada no Embarque ou Carga (branchId)
+  const effectiveBranchId = s.branchId || cargo?.branchId;
+  if (effectiveBranchId) {
+    if (effectiveBranchId === 'FIL-011') return TRANSCUNHA_BRANCH_INFO.sp;
+    if (effectiveBranchId === 'FIL-012') return TRANSCUNHA_BRANCH_INFO.go;
+    if (effectiveBranchId === 'FIL-013') return TRANSCUNHA_BRANCH_INFO.pr;
+    if (effectiveBranchId === 'FIL-010') return TRANSCUNHA_BRANCH_INFO.matriz;
+
+    if (branchesList && branchesList.length > 0) {
+      const bObj = branchesList.find(b => b.id === effectiveBranchId);
+      if (bObj) {
+        const bName = (bObj.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const bCity = (bObj.city || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const bState = (bObj.state || '').toLowerCase();
+
+        if (bState === 'go' || bName.includes('goias') || bCity.includes('catalao')) return TRANSCUNHA_BRANCH_INFO.go;
+        if (bState === 'sp' || bName.includes('sao paulo') || bCity.includes('ipaussu')) return TRANSCUNHA_BRANCH_INFO.sp;
+        if (bState === 'pr' || bName.includes('parana') || bCity.includes('cambara')) return TRANSCUNHA_BRANCH_INFO.pr;
+        if (bState === 'mg' || bName.includes('matriz') || bCity.includes('pratapolis')) return TRANSCUNHA_BRANCH_INFO.matriz;
+      }
+    }
+  }
+
+  // 4. Usuário Operador / Embarcador / Criador
+  if (userMap) {
+    const checkUser = (userId?: string) => {
+      if (!userId) return null;
+      const u = userMap.get(userId);
+      if (!u) return null;
+      if (u.branchId === 'FIL-011') return TRANSCUNHA_BRANCH_INFO.sp;
+      if (u.branchId === 'FIL-012') return TRANSCUNHA_BRANCH_INFO.go;
+      if (u.branchId === 'FIL-013') return TRANSCUNHA_BRANCH_INFO.pr;
+      if (u.branchId === 'FIL-010') return TRANSCUNHA_BRANCH_INFO.matriz;
+
+      const name = (u.name || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const email = (u.email || '').toUpperCase();
+      if (name.includes('RAFAEL PINHEIRO') || name.includes('RAFAEL TARANTELLI') || email.includes('PINHEIRO') || email.includes('TARANTELLI')) {
+        return TRANSCUNHA_BRANCH_INFO.sp;
+      }
+      if (name.includes('MAURICIO') || name.includes('MURILO') || email.includes('MAURICIO') || email.includes('MURILO')) {
+        return TRANSCUNHA_BRANCH_INFO.go;
+      }
+      return null;
+    };
+
+    const byEmb = checkUser(s.embarcadorId);
+    if (byEmb) return byEmb;
+    const byCreator = checkUser(s.createdById);
+    if (byCreator) return byCreator;
+    if (cargo?.createdById) {
+      const byCargoCreator = checkUser(cargo.createdById);
+      if (byCargoCreator) return byCargoCreator;
+    }
+  }
+
+  // 5. Origem da Carga / Rota
+  if (isGoiasOrigin(cargo, s)) return TRANSCUNHA_BRANCH_INFO.go;
+  if (isSpOrigin(cargo, s)) return TRANSCUNHA_BRANCH_INFO.sp;
+
+  const routeStr = ((s.route || '') + ' ' + (cargo?.origin || '')).toUpperCase();
+  if (routeStr.includes('/PR') || routeStr.includes('- PR') || routeStr.includes('CAMBARA') || routeStr.includes('PARANÁ') || routeStr.includes('PARANA')) {
+    return TRANSCUNHA_BRANCH_INFO.pr;
+  }
+
+  // 6. Padrão: Matriz Minas Gerais
+  return TRANSCUNHA_BRANCH_INFO.matriz;
 }
 
 /**
@@ -306,7 +471,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'tipoCarga', label: 'TIPO', category: 'Carga, Pedido & Logística', categoryColor: 'bg-cyan-700', type: 'text', width: 'min-w-[80px] max-w-[105px]', align: 'center' },
 
   // 4. Cadastros & Controles
-  { key: 'transportadora', label: 'TRANSPORTADORA', category: 'Cadastros & Controles', categoryColor: 'bg-slate-700', type: 'text', width: 'min-w-[115px] max-w-[135px]' },
+  { key: 'transportadora', label: 'TRANSPORTADORA', tooltip: 'Transportadora & CNPJ da Filial Transcunha emissora', category: 'Cadastros & Controles', categoryColor: 'bg-slate-700', type: 'text', width: 'min-w-[145px] max-w-[170px]', align: 'center' },
   { key: 'cadastro', label: 'CADASTRO', category: 'Cadastros & Controles', categoryColor: 'bg-slate-700', type: 'select', options: ['LIBERADO', 'BLOQUEADO', 'PENDENTE'], width: 'min-w-[80px] max-w-[90px]', align: 'center' },
   { key: 'matrizFilial', label: 'MATRIZ FILIAL', category: 'Cadastros & Controles', categoryColor: 'bg-slate-700', type: 'select', options: ['MATRIZ', 'FILIAL'], width: 'min-w-[80px] max-w-[90px]', align: 'center' },
   { key: 'liberacao', label: 'LIBERAÇÃO', category: 'Cadastros & Controles', categoryColor: 'bg-slate-700', type: 'text', width: 'min-w-[80px] max-w-[90px]', align: 'center' },
@@ -366,6 +531,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   products = [],
   vehicles: propVehicles = [],
   owners: propOwners = [],
+  branches = [],
 }) => {
   // Estado de dados mapeados e carregamento
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -587,6 +753,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.razaoSocial || c.nomeFantasia || ''])), [clients]);
   const clientObjMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u.name])), [users]);
+  const fullUserMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
 
   // Função para resolver o Nome do Proprietário do Veículo
   const resolveOwnerName = useCallback((s: Shipment): string => {
@@ -822,6 +989,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
       const dateStr = s.scheduledDate ? formatDatePtBr(s.scheduledDate) : formatDatePtBr(s.createdAt);
       const opExp = calculateShipmentExpenses(s, cargo);
+      const tcBranch = resolveTranscunhaBranch(s, cargo, fullUserMap, branches);
       const realCte = getShipmentCte(s);
       const cteNum = (realCte && realCte !== '-') ? realCte : (s.cteNumber || (s.documents as any)?.cte_number || s.id);
       
@@ -975,9 +1143,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           return 'Granel';
         })(),
 
-        transportadora: 'TRANSCUNHA LOGISTICA LTDA',
+        transportadora: tcBranch.displayValue,
         cadastro: 'LIBERADO',
-        matrizFilial: 'MATRIZ',
+        matrizFilial: tcBranch.isMatriz ? 'MATRIZ' : 'FILIAL',
         liberacao: (() => {
           if (s.riskReleaseCode && s.riskReleaseCode.trim() && s.riskReleaseCode !== '-') {
             return s.riskReleaseCode.trim();
@@ -1212,7 +1380,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         balanceProofUrl: getShipmentBalanceProofUrl(s),
       };
     });
-  }, [shipmentsFiltered, cargoMap, clientMap, clientObjMap, userMap, users, clientPaymentMethodOverrides, productMap, resolveTomadorClientName]);
+  }, [shipmentsFiltered, cargoMap, clientMap, clientObjMap, userMap, fullUserMap, users, clientPaymentMethodOverrides, productMap, resolveTomadorClientName, branches]);
 
   // Limites temporais calculados para filtro de período
   const dateRangeBounds = useMemo(() => {
@@ -1367,6 +1535,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           normalize(row.origem).includes(term) ||
           normalize(row.destino).includes(term) ||
           normalize(row.produto).includes(term) ||
+          normalize(row.transportadora).includes(term) ||
           normalize(row.status).includes(term);
 
         if (!matchesSearch) return false;
@@ -1463,6 +1632,45 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           });
 
           if (!matchesId) return false;
+          continue;
+        }
+
+        // Tratamento dedicado para TRANSPORTADORA / CNPJ FILIAL TRANSCUNHA
+        if (colKey === 'transportadora') {
+          const cellStr = String(rawCell || '').trim();
+          const cellDigits = cellStr.replace(/\D/g, '');
+
+          const matchesTransp = selectedList.some(filterItem => {
+            if (!filterItem) return false;
+            if (filterItem === '(Vazios)') return isEmptyCell;
+            if (isEmptyCell) return false;
+
+            const normFilter = normalize(filterItem);
+            const normCell = normalize(cellStr);
+
+            // 1. Correspondência direta ou substring
+            if (normCell === normFilter || normCell.includes(normFilter) || normFilter.includes(normCell)) {
+              return true;
+            }
+
+            // 2. Correspondência numérica por dígitos do CNPJ (ex: 0001, 0002, 0004, 0003, 36203306000273)
+            const filterDigits = filterItem.replace(/\D/g, '');
+            if (filterDigits && cellDigits) {
+              if (cellDigits === filterDigits || cellDigits.includes(filterDigits) || filterDigits.includes(cellDigits)) {
+                return true;
+              }
+            }
+
+            // 3. Correspondência por nome da unidade/filial (SP, GO, PR, MATRIZ)
+            if (normFilter.includes('sp') && (normCell.includes('sp') || cellDigits.includes('000273'))) return true;
+            if (normFilter.includes('go') && (normCell.includes('go') || cellDigits.includes('000435'))) return true;
+            if (normFilter.includes('pr') && (normCell.includes('pr') || cellDigits.includes('000354'))) return true;
+            if (normFilter.includes('matriz') && (normCell.includes('matriz') || cellDigits.includes('000192'))) return true;
+
+            return false;
+          });
+
+          if (!matchesTransp) return false;
           continue;
         }
 
@@ -2886,7 +3094,47 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                       // Conteúdo formatado com base na paleta original do Excel em Modo Claro
                       let cellContent: React.ReactNode = display;
 
-                      if (!isDark) {
+                      if (col.key === 'transportadora') {
+                        const norm = String(raw || '').toUpperCase().trim();
+                        const isSp = norm.includes('0002-73') || norm.includes('FILIAL SP');
+                        const isGo = norm.includes('0004-35') || norm.includes('FILIAL GO');
+                        const isPr = norm.includes('0003-54') || norm.includes('FILIAL PR');
+
+                        const cnpjStr = isSp 
+                          ? '36.203.306/0002-73' 
+                          : isGo 
+                          ? '36.203.306/0004-35' 
+                          : isPr 
+                          ? '36.203.306/0003-54' 
+                          : '36.203.306/0001-92';
+
+                        const branchTag = isSp 
+                          ? 'FILIAL SP' 
+                          : isGo 
+                          ? 'FILIAL GO' 
+                          : isPr 
+                          ? 'FILIAL PR' 
+                          : 'TRANSCUNHA MATRIZ';
+
+                        const badgeStyle = isSp
+                          ? 'bg-[#ea580c] text-white border-orange-700'
+                          : isGo
+                          ? 'bg-purple-700 text-white border-purple-800'
+                          : isPr
+                          ? 'bg-blue-700 text-white border-blue-800'
+                          : (isDark ? 'bg-emerald-800 text-yellow-300 border-emerald-600' : 'bg-[#005c00] text-yellow-300 border-green-800');
+
+                        cellContent = (
+                          <div className="flex flex-col items-center justify-center text-center py-0.5 leading-tight select-text" title={`Transportadora: Transcunha\nCNPJ: ${cnpjStr}\nUnidade: ${branchTag}`}>
+                            <span className={`font-mono font-black text-[10px] tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                              {cnpjStr}
+                            </span>
+                            <span className={`text-[8.5px] font-black uppercase px-1.5 py-0.2 rounded mt-0.5 inline-block shadow-xs border ${badgeStyle}`}>
+                              {branchTag}
+                            </span>
+                          </div>
+                        );
+                      } else if (!isDark) {
                         const normStr = String(raw || '').toUpperCase().trim();
                         const isTranscunha = normStr.includes('TRANSCUNHA');
                         const isRafael = normStr.includes('AGENCIA') || normStr.includes('RAFAEL');
@@ -3476,6 +3724,30 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               <option value="all" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">Saldo: Todos</option>
               <option value="PAGO" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">Pago</option>
               <option value="PENDENTE" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">Pendente</option>
+            </select>
+
+            {/* Filtro Rápido por CNPJ da Filial Transcunha */}
+            <select
+              value={columnFilters['transportadora']?.[0] || 'all'}
+              onChange={(e) => {
+                const v = e.target.value;
+                setColumnFilters(prev => {
+                  if (v === 'all') {
+                    const next = { ...prev };
+                    delete next['transportadora'];
+                    return next;
+                  }
+                  return { ...prev, transportadora: [v] };
+                });
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 outline-none cursor-pointer focus:border-indigo-500 font-medium"
+              title="Filtrar embarques pelo CNPJ da Filial Transcunha (disponível também na coluna TRANSPORTADORA)"
+            >
+              <option value="all" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">CNPJ Filial: Todos</option>
+              <option value="36.203.306/0001-92 - MATRIZ" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0001-92 - Matriz (MG)</option>
+              <option value="36.203.306/0002-73 - FILIAL SP" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0002-73 - Filial SP (SP)</option>
+              <option value="36.203.306/0004-35 - FILIAL GO" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0004-35 - Filial GO (GO)</option>
+              <option value="36.203.306/0003-54 - FILIAL PR" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0003-54 - Filial PR (PR)</option>
             </select>
 
             {/* Alternador Rápido de Ordem do CT-e (Crescente / Decrescente) */}

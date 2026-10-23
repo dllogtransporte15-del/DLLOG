@@ -541,6 +541,7 @@ export interface RealProfitData {
   shipperCommission?: number;
   shipperCommissionRatePerTon?: number;
   shipperCommissionEnabled?: boolean;
+  driverExtraPaymentsTotal?: number;
 }
 
 export interface CancelledCteRecord {
@@ -552,6 +553,22 @@ export interface CancelledCteRecord {
   reason?: string;
   substituteCteNumber?: string;
   substituteFileUrl?: string;
+}
+
+export interface DriverExtraPayment {
+  id: string;
+  amount: number;
+  reason: 'Diária / Estadia' | 'Ajuda de Custo' | 'Adicional de Descarga' | 'Bônus Operacional' | 'Reembolso' | 'Outro' | string;
+  description?: string;
+  receiptUrl?: string;
+  receiptFileName?: string;
+  receiptFileType?: string;
+  paymentMethod?: string;
+  paidAt: string;        // Data e hora do pagamento (ISO ou YYYY-MM-DDTHH:mm)
+  createdAt: string;     // Data e hora de lançamento
+  createdByName: string; // Nome do usuário que lançou
+  createdByUserId?: string;
+  createdByRole?: string; // Perfil de quem lançou
 }
 
 export interface Shipment {
@@ -652,6 +669,8 @@ export interface Shipment {
   shipperCommissionEnabled?: boolean;
   shipperCommissionRatePerTon?: number;
   shipperCommissionValue?: number;
+  driverExtraPayments?: DriverExtraPayment[];
+  driverExtraPaymentsTotal?: number;
 }
 
 
@@ -918,7 +937,9 @@ export type InvoiceCostNature =
   | 'bem'     // Compra de Bem / Ativo
   | 'outros'; // Outros Custos / Despesas em Geral
 
-export type InvoicePaymentStatus = 'Pendente' | 'Pago' | 'Atrasado' | 'Cancelado';
+export type InvoicePaymentStatus = 'Pendente' | 'Pago' | 'Atrasado' | 'Cancelado' | 'Somente Volume';
+
+export type FinancialDocumentType = 'Nota Fiscal' | 'Fatura';
 
 export interface CostType {
   id: string;
@@ -940,6 +961,7 @@ export interface CostCenter {
 
 export interface FinancialInvoice {
   id: string;
+  documentType?: FinancialDocumentType; // 'Nota Fiscal' (padrão) ou 'Fatura'
   invoiceNumber: string;
   series?: string;
   accessKey?: string;
@@ -1146,5 +1168,9 @@ export interface RdoConfig {
   enabled: boolean;
   autoApproveInRisk?: boolean;
 }
+
+// Re-export dos tipos do módulo SIGA GR
+export * from './types/sigaGr';
+
 
 

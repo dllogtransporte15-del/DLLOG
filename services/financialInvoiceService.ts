@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { FinancialInvoice, CostCenter, CostType, InvoiceCostNature, InvoicePaymentStatus, User } from '../types';
+import type { FinancialInvoice, FinancialDocumentType, CostCenter, CostType, InvoiceCostNature, InvoicePaymentStatus, User } from '../types';
 
 const STORAGE_INVOICES_KEY = 'transcunha_financial_invoices';
 const STORAGE_COST_CENTERS_KEY = 'transcunha_financial_cost_centers';
@@ -168,14 +168,16 @@ export const SUPABASE_INVOICES_RECORD_ID = 888;
 export const INVOICES_REALTIME_CHANNEL = 'financial_invoices_realtime';
 
 /**
- * Gera o próximo ID sequencial padronizado no formato 'nf-1', 'nf-2', etc.
+ * Gera o próximo ID sequencial padronizado no formato 'nf-1', 'fat-1', etc.
  */
-export function getNextInvoiceId(existingList: FinancialInvoice[]): string {
+export function getNextInvoiceId(existingList: FinancialInvoice[], documentType: FinancialDocumentType = 'Nota Fiscal'): string {
+  const prefix = documentType === 'Fatura' ? 'fat' : 'nf';
+  const regex = new RegExp(`^${prefix}-(\\d+)$`, 'i');
   let maxNum = 0;
   if (Array.isArray(existingList)) {
     for (const item of existingList) {
       if (!item || !item.id) continue;
-      const m = String(item.id).match(/^nf-(\d+)$/i);
+      const m = String(item.id).match(regex);
       if (m && m[1]) {
         const num = parseInt(m[1], 10);
         if (!isNaN(num) && num > maxNum) {
@@ -184,44 +186,56 @@ export function getNextInvoiceId(existingList: FinancialInvoice[]): string {
       }
     }
   }
-  return `nf-${maxNum + 1}`;
+  return `${prefix}-${maxNum + 1}`;
 }
 
 /**
- * Normaliza e migra a lista de notas para que todos os lançamentos possuam IDs sequenciais 'nf-1', 'nf-2'...
+ * Normaliza e migra a lista de notas para que todos os lançamentos possuam IDs sequenciais 'nf-1', 'fat-1'...
  */
 export function normalizeInvoicesList(list: FinancialInvoice[]): FinancialInvoice[] {
   if (!Array.isArray(list)) return [];
 
-  // Mantém todas as notas válidas (nunca descarta por prefixo!)
+  // Mantém todas as notas/faturas válidas (nunca descarta por prefixo!)
   const valid = list.filter(inv => inv && (inv.id || inv.invoiceNumber));
 
-  const hasNfRegex = /^nf-(\d+)$/i;
+  const hasValidIdRegex = /^(nf|fat)-(\d+)$/i;
 
-  // Descobre o maior ID nf- já existente
-  let maxAssigned = 0;
+  // Descobre o maior ID nf- e fat- já existente
+  let maxAssignedNf = 0;
+  let maxAssignedFat = 0;
   for (const inv of valid) {
     if (!inv.id) continue;
-    const m = String(inv.id).match(hasNfRegex);
-    if (m && m[1]) {
-      const num = parseInt(m[1], 10);
-      if (!isNaN(num) && num > maxAssigned) {
-        maxAssigned = num;
-      }
+    const mNf = String(inv.id).match(/^nf-(\d+)$/i);
+    if (mNf && mNf[1]) {
+      const num = parseInt(mNf[1], 10);
+      if (!isNaN(num) && num > maxAssignedNf) maxAssignedNf = num;
+    }
+    const mFat = String(inv.id).match(/^fat-(\d+)$/i);
+    if (mFat && mFat[1]) {
+      const num = parseInt(mFat[1], 10);
+      if (!isNaN(num) && num > maxAssignedFat) maxAssignedFat = num;
     }
   }
 
-  // Atribui sequencialmente nf- aos que ainda possuem IDs legados (ex.: inv_...)
-  let nextSeq = maxAssigned === 0 ? 1 : maxAssigned + 1;
+  let nextNfSeq = maxAssignedNf === 0 ? 1 : maxAssignedNf + 1;
+  let nextFatSeq = maxAssignedFat === 0 ? 1 : maxAssignedFat + 1;
+
   const normalized = valid.map(inv => {
     let finalId = inv.id;
-    if (!finalId || !hasNfRegex.test(finalId)) {
-      finalId = `nf-${nextSeq}`;
-      nextSeq++;
+    const isFatura = inv.documentType === 'Fatura';
+    if (!finalId || !hasValidIdRegex.test(finalId)) {
+      if (isFatura) {
+        finalId = `fat-${nextFatSeq}`;
+        nextFatSeq++;
+      } else {
+        finalId = `nf-${nextNfSeq}`;
+        nextNfSeq++;
+      }
     }
     return {
       ...inv,
       id: finalId,
+      documentType: inv.documentType || 'Nota Fiscal',
       totalAmount: typeof inv.totalAmount === 'number' && !isNaN(inv.totalAmount) ? inv.totalAmount : 0,
       payableAmount: typeof inv.payableAmount === 'number' && !isNaN(inv.payableAmount) ? inv.payableAmount : (inv.totalAmount || 0)
     };
@@ -289,7 +303,7 @@ export function dataUrlToBlob(dataUrl: string, defaultMime = 'application/pdf'):
 export async function uploadInvoiceAttachmentToStorage(
   fileOrDataUrl: File | string,
   invoiceId: string,
-  kind: 'nf' | 'boleto',
+  kind: 'nf' | 'fatura' | 'boleto',
   originalFileName?: string,
   fileType?: string
 ): Promise<string> {
@@ -425,12 +439,13 @@ export interface DuplicateInvoiceMatch {
 }
 
 /**
- * Identifica rigorosamente se uma Nota Fiscal já existe no sistema com base na:
+ * Identifica rigorosamente se uma Nota Fiscal ou Fatura já existe no sistema com base na:
  * 1) Chave de Acesso da NFe (44 dígitos); OU
- * 2) Número da NF + Fornecedor (CNPJ/CPF ou Razão Social) + Série.
+ * 2) Número do Documento + Tipo (NF ou Fatura) + Fornecedor (CNPJ/CPF ou Razão Social) + Série.
  */
 export function findDuplicateInvoice(
   target: {
+    documentType?: FinancialDocumentType;
     invoiceNumber?: string;
     series?: string;
     accessKey?: string;
@@ -444,13 +459,16 @@ export function findDuplicateInvoice(
     return { isDuplicate: false };
   }
 
+  const targetDocType = target.documentType || 'Nota Fiscal';
+  const docLabel = targetDocType === 'Fatura' ? 'A Fatura' : 'A Nota Fiscal';
+
   const targetAccessKey = (target.accessKey || '').replace(/\D/g, '');
   const targetNormNum = normalizeInvoiceNumber(target.invoiceNumber);
   const targetNormCnpj = normalizeCnpjCpf(target.supplierCnpjCpf);
   const targetNormSupplier = normalizeSupplierText(target.supplierName);
   const targetSeries = (target.series || '').trim().toLowerCase();
 
-  // Se não temos ao menos o número da NF ou chave de acesso válida, não há como analisar
+  // Se não temos ao menos o número do documento ou chave de acesso válida, não há como analisar
   if (!targetNormNum && (!targetAccessKey || targetAccessKey.length < 20)) {
     return { isDuplicate: false };
   }
@@ -460,6 +478,10 @@ export function findDuplicateInvoice(
     // Ignora a própria nota quando estiver em modo de edição
     if (excludeId && inv.id === excludeId) continue;
 
+    // Se os tipos de documento forem explicitamente diferentes (ex: Nota Fiscal vs Fatura), não conflita
+    const invDocType = inv.documentType || 'Nota Fiscal';
+    if (targetDocType !== invDocType) continue;
+
     // 1. Verificação por Chave de Acesso (44 dígitos)
     if (targetAccessKey && targetAccessKey.length >= 20) {
       const invAccessKey = (inv.accessKey || '').replace(/\D/g, '');
@@ -468,12 +490,12 @@ export function findDuplicateInvoice(
           isDuplicate: true,
           matchedInvoice: inv,
           reason: 'access_key',
-          message: `Esta Nota Fiscal já está cadastrada no sistema sob o ID [${inv.id}] com a mesma Chave de Acesso de 44 dígitos (Fornecedor: ${inv.supplierName || 'Identificado'}, Valor: R$ ${(inv.totalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).`
+          message: `Este documento (${targetDocType}) já está cadastrado no sistema sob o ID [${inv.id}] com a mesma Chave de Acesso de 44 dígitos (Fornecedor: ${inv.supplierName || 'Identificado'}, Valor: R$ ${(inv.totalAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).`
         };
       }
     }
 
-    // 2. Verificação por Número da NF + Fornecedor + Série
+    // 2. Verificação por Número do Documento + Fornecedor + Série
     if (targetNormNum && targetNormNum === normalizeInvoiceNumber(inv.invoiceNumber)) {
       // Se ambas as séries foram informadas e forem explicitamente diferentes (ex: Série 1 vs Série 2), não considera duplicata
       const invSeries = (inv.series || '').trim().toLowerCase();
@@ -487,7 +509,7 @@ export function findDuplicateInvoice(
             isDuplicate: true,
             matchedInvoice: inv,
             reason: 'number_and_supplier',
-            message: `A Nota Fiscal nº "${inv.invoiceNumber}" do fornecedor "${inv.supplierName}" (CNPJ ${inv.supplierCnpjCpf || 'identificado'}) já está cadastrada no sistema sob o ID [${inv.id}]!`
+            message: `${docLabel} nº "${inv.invoiceNumber}" do fornecedor "${inv.supplierName}" (CNPJ ${inv.supplierCnpjCpf || 'identificado'}) já está cadastrada no sistema sob o ID [${inv.id}]!`
           };
         }
 
@@ -503,7 +525,7 @@ export function findDuplicateInvoice(
               isDuplicate: true,
               matchedInvoice: inv,
               reason: 'number_and_supplier',
-              message: `A Nota Fiscal nº "${inv.invoiceNumber}" do fornecedor "${inv.supplierName}" já está cadastrada no sistema sob o ID [${inv.id}]!`
+              message: `${docLabel} nº "${inv.invoiceNumber}" do fornecedor "${inv.supplierName}" já está cadastrada no sistema sob o ID [${inv.id}]!`
             };
           }
         }
@@ -903,8 +925,9 @@ export const financialInvoiceService = {
       );
     }
 
-    // REGRA DE OURO: Para novos lançamentos, gera ID sequencial no formato 'nf-1', 'nf-2', etc.
-    const invoiceId = existingId || getNextInvoiceId(currentList);
+    // REGRA DE OURO: Para novos lançamentos, gera ID sequencial no formato 'nf-1', 'fat-1', etc.
+    const docType = item.documentType || 'Nota Fiscal';
+    const invoiceId = existingId || getNextInvoiceId(currentList, docType);
 
     // Converte e envia anexos pesados para o Supabase Storage (se for data URL base64)
     let finalFileUrl = item.fileUrl;
@@ -912,7 +935,7 @@ export const financialInvoiceService = {
       finalFileUrl = await uploadInvoiceAttachmentToStorage(
         finalFileUrl,
         invoiceId,
-        'nf',
+        docType === 'Fatura' ? 'fatura' : 'nf',
         item.fileName,
         item.fileType
       );
@@ -932,6 +955,7 @@ export const financialInvoiceService = {
     const completeInvoice: FinancialInvoice = {
       ...item,
       id: invoiceId,
+      documentType: docType,
       fileUrl: finalFileUrl,
       boletoFileUrl: finalBoletoFileUrl,
       totalAmount: Number(item.totalAmount) || 0,
@@ -964,6 +988,7 @@ export const financialInvoiceService = {
     // 3. Tentar persistir também na tabela dedicada 'financial_invoices' se existir
     try {
       const dbPayload = {
+        document_type: completeInvoice.documentType,
         invoice_number: item.invoiceNumber,
         series: item.series,
         access_key: item.accessKey,

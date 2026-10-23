@@ -84,8 +84,11 @@ export function calculateFirstResult(shipments: Shipment[], cargos: Cargo[]): Fi
     const icms = s.icmsValue ?? (cargo?.icmsPercentage ? (companyTotal * cargo.icmsPercentage / 100) : 0);
     totalTaxes += icms;
 
-    // Frete Motorista
-    totalDriverCosts += (s.driverFreightValue || 0);
+    // Frete Motorista + Acréscimos Avulsos (Diárias, Estadia, Bônus)
+    const driverExtra = (Array.isArray(s.driverExtraPayments)
+      ? s.driverExtraPayments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
+      : 0) || Number(s.driverExtraPaymentsTotal || 0) || Number(s.realProfitData?.driverSurcharge || 0) || 0;
+    totalDriverCosts += (s.driverFreightValue || 0) + driverExtra;
 
     // Pedágio com limite de sanidade
     const rawToll = Number(s.tollValue);

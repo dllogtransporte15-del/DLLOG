@@ -206,3 +206,48 @@ export function broadcastRdoChange(data: RdoBroadcastPayload): void {
   }
 }
 
+export interface SigaBroadcastPayload {
+  action: 'create' | 'update' | 'status_change' | 'delete';
+  processNumber: string;
+  state?: string;
+  driverCpf?: string;
+  truckPlate?: string;
+  shipmentId?: string;
+  driverId?: string;
+  timestamp?: number;
+}
+
+/**
+ * Transmite uma notificação de atualização da análise SIGA GR para os usuários conectados.
+ */
+export function broadcastSigaChange(data: SigaBroadcastPayload): void {
+  try {
+    const payloadWithTs = {
+      ...data,
+      timestamp: data.timestamp || Date.now()
+    };
+
+    const channel = getOperationsRealtimeChannel();
+    channel.send({
+      type: 'broadcast',
+      event: 'siga_changed',
+      payload: payloadWithTs
+    }).catch(err => {
+      console.warn('[Operations Realtime Hub] Falha ao enviar broadcast de SIGA GR:', err);
+    });
+
+    if (localBroadcast) {
+      localBroadcast.postMessage({
+        type: 'siga_changed',
+        payload: payloadWithTs
+      });
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('transcunha:siga_changed', { detail: payloadWithTs }));
+    }
+  } catch (err) {
+    console.warn('[Operations Realtime Hub] Erro ao disparar broadcast de SIGA GR:', err);
+  }
+}
+

@@ -618,8 +618,10 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
             </div>
           )}
 
-          {/* ATIVAR COMISSÃO COMERCIAL (GERENTE COMERCIAL) - Disponível apenas para Comercial */}
-          {user.profile === UserProfile.Comercial && (
+          {/* ATIVAR COMISSÃO COMERCIAL (GERENTE COMERCIAL / AGENCIADOR LÍDER) */}
+          {(user.profile === UserProfile.Comercial || 
+            user.profile === UserProfile.GerenteComercial || 
+            (user.profile === UserProfile.Agenciador && (user.agencyRole || 'lider') === 'lider')) && (
             <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl border border-blue-200/80 dark:border-blue-800/80 space-y-2">
               <div className="flex items-center">
                 <input 
@@ -631,11 +633,15 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                   className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
                 />
                 <label htmlFor="hasCommercialCommission" className="ml-2 block text-sm font-bold text-gray-900 dark:text-gray-200 cursor-pointer">
-                  Ativar Comissão Comercial (Gerente Comercial)
+                  {user.profile === UserProfile.Agenciador 
+                    ? 'Ativar Comissão Comercial (Agenciador Líder)' 
+                    : 'Ativar Comissão Comercial (Gerente Comercial)'}
                 </label>
               </div>
               <p className="text-[11px] text-gray-600 dark:text-gray-400 pl-6">
-                Personalize a base de cálculo individual deste comercial (Fixo R$, % Matriz e % Filiais):
+                {user.profile === UserProfile.Agenciador 
+                  ? 'Personalize a base de cálculo individual de comissão deste Agenciador Líder (Fixo R$, % Matriz e % Filiais):'
+                  : 'Personalize a base de cálculo individual deste comercial (Fixo R$, % Matriz e % Filiais):'}
               </p>
 
               {user.hasCommercialCommission && (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { 
   FinancialInvoice, 
+  FinancialDocumentType,
   CostCenter, 
   CostType, 
   InvoiceCostNature, 
@@ -107,6 +108,11 @@ const STATUS_CONFIG: Record<InvoicePaymentStatus, { label: string; icon: React.E
     label: 'Cancelado',
     icon: XCircle,
     badgeClass: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+  },
+  'Somente Volume': {
+    label: 'Somente Volume',
+    icon: Package,
+    badgeClass: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
   }
 };
 
@@ -128,6 +134,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
   // State: Filtros de listagem
   const [searchTerm, setSearchTerm] = useState('');
+  const [documentTypeFilter, setDocumentTypeFilter] = useState<'all' | 'nf' | 'fatura'>('all');
   const [natureFilter, setNatureFilter] = useState<string>('all');
   const [costCenterFilter, setCostCenterFilter] = useState<string>('all');
   const [userFilter, setUserFilter] = useState<string>('all');
@@ -156,7 +163,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [quickTypeNature, setQuickTypeNature] = useState<InvoiceCostNature>('servico');
   const [quickTypeDesc, setQuickTypeDesc] = useState('');
 
-  // Form State: Nota Fiscal
+  // Form State: Nota Fiscal / Fatura
+  const [formDocumentType, setFormDocumentType] = useState<FinancialDocumentType>('Nota Fiscal');
   const [formNumber, setFormNumber] = useState('');
   const [formSeries, setFormSeries] = useState('');
   const [formAccessKey, setFormAccessKey] = useState('');
@@ -297,16 +305,17 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     };
   }, [users]);
 
-  // ID prospectivo para o próximo lançamento (ex: 'nf-1', 'nf-12'...)
+  // ID prospectivo para o próximo lançamento (ex: 'nf-1', 'fat-1'...)
   const prospectiveNextId = useMemo(() => {
-    return getNextInvoiceId(invoices);
-  }, [invoices]);
+    return getNextInvoiceId(invoices, formDocumentType);
+  }, [invoices, formDocumentType]);
 
-  // Identificação em tempo real de notas fiscais repetidas/duplicadas no formulário de lançamento
+  // Identificação em tempo real de notas fiscais/faturas repetidas no formulário de lançamento
   const duplicateInvoiceMatch: DuplicateInvoiceMatch = useMemo(() => {
     if (!isFormModalOpen) return { isDuplicate: false };
     return findDuplicateInvoice(
       {
+        documentType: formDocumentType,
         invoiceNumber: formNumber,
         series: formSeries,
         accessKey: formAccessKey,
@@ -318,6 +327,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     );
   }, [
     isFormModalOpen,
+    formDocumentType,
     formNumber,
     formSeries,
     formAccessKey,
@@ -428,7 +438,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         }
 
         if (count > 0) {
-          setExtractionSuccess(`✨ ${count} campos extraídos automaticamente da Nota Fiscal anexada!`);
+          setExtractionSuccess(`✨ ${count} campos extraídos automaticamente d${formDocumentType === 'Fatura' ? 'a Fatura' : 'a Nota Fiscal'} anexada!`);
         }
       } catch (err) {
         console.warn('Erro ao extrair dados fiscais:', err);
@@ -539,8 +549,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   };
 
   // Abrir modal de criação
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = (defaultType: FinancialDocumentType = 'Nota Fiscal') => {
     setEditingInvoiceId(null);
+    setFormDocumentType(defaultType);
     setFormNumber('');
     setFormSeries('');
     setFormAccessKey('');
@@ -605,6 +616,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   // Abrir modal de edição
   const handleOpenEditModal = (inv: FinancialInvoice) => {
     setEditingInvoiceId(inv.id);
+    setFormDocumentType(inv.documentType || 'Nota Fiscal');
     setFormNumber(inv.invoiceNumber);
     setFormSeries(inv.series || '');
     setFormAccessKey(inv.accessKey || '');
@@ -640,11 +652,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setIsFormModalOpen(true);
   };
 
-  // Salvar nota fiscal (Criar / Editar)
+  // Salvar documento (Nota Fiscal / Fatura)
   const handleSubmitInvoiceForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    const docLabel = formDocumentType === 'Fatura' ? 'Fatura' : 'Nota Fiscal';
+    const docNumLabel = formDocumentType === 'Fatura' ? 'Número da Fatura' : 'Número da NF';
+
     if (!formNumber || !formSupplier || !formAmount || !formIssueDate || !formDueDate) {
-      alert('Por favor, preencha os campos obrigatórios: Número da NF, Fornecedor, Valor Total e Datas.');
+      alert(`Por favor, preencha os campos obrigatórios: ${docNumLabel}, Fornecedor, Valor Total e Datas.`);
       return;
     }
 
@@ -652,7 +667,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     const payableNum = formPayableAmount ? parseBrazilianCurrency(formPayableAmount) : totalNum;
 
     if (totalNum <= 0) {
-      alert('Por favor, informe um Valor Total válido para a Nota Fiscal.');
+      alert(`Por favor, informe um Valor Total válido para a ${docLabel}.`);
       return;
     }
 
@@ -661,6 +676,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     const selectedType = costTypes.find(t => t.id === formCostTypeId);
 
     const payload: Omit<FinancialInvoice, 'id' | 'createdAt'> = {
+      documentType: formDocumentType,
       invoiceNumber: formNumber.trim(),
       series: formSeries.trim() || undefined,
       accessKey: formAccessKey.replace(/\s+/g, '') || undefined,
@@ -696,7 +712,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
     // REGRA DE SEGURANÇA: Bloqueia lançamento duplicado
     if (duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.matchedInvoice) {
-      alert(duplicateInvoiceMatch.message || `Ação bloqueada: A Nota Fiscal nº "${formNumber}" já está cadastrada no sistema sob o ID [${duplicateInvoiceMatch.matchedInvoice.id}] pelo fornecedor "${duplicateInvoiceMatch.matchedInvoice.supplierName}". O sistema não permite lançamentos repetidos.`);
+      alert(duplicateInvoiceMatch.message || `Ação bloqueada: A ${docLabel} nº "${formNumber}" já está cadastrada no sistema sob o ID [${duplicateInvoiceMatch.matchedInvoice.id}] pelo fornecedor "${duplicateInvoiceMatch.matchedInvoice.supplierName}". O sistema não permite lançamentos repetidos.`);
       return;
     }
 
@@ -714,8 +730,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         onNavigateToPayables();
       }
     } catch (err: any) {
-      console.error('Erro ao salvar nota fiscal:', err);
-      alert(err?.message || 'Houve um erro ao salvar a nota fiscal. Tente novamente.');
+      console.error('Erro ao salvar documento:', err);
+      alert(err?.message || `Houve um erro ao salvar a ${docLabel.toLowerCase()}. Tente novamente.`);
     } finally {
       setIsSaving(false);
     }
@@ -730,9 +746,11 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     await financialInvoiceService.updateInvoiceStatus(inv.id, newStatus, payDate);
   };
 
-  // Excluir Nota Fiscal
+  // Excluir Nota Fiscal / Fatura
   const handleDeleteInvoice = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este lançamento de Nota Fiscal?')) return;
+    const target = invoices.find(i => i.id === id);
+    const docName = target?.documentType === 'Fatura' ? 'Fatura' : 'Nota Fiscal';
+    if (!window.confirm(`Tem certeza que deseja excluir este lançamento de ${docName}?`)) return;
     setInvoices(prev => prev.filter(i => i.id !== id));
     await financialInvoiceService.deleteInvoice(id);
   };
@@ -897,11 +915,20 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         return false;
       }
 
+      // 8. Filtro de Tipo de Documento (Nota Fiscal vs Fatura)
+      if (documentTypeFilter === 'nf' && inv.documentType === 'Fatura') {
+        return false;
+      }
+      if (documentTypeFilter === 'fatura' && (inv.documentType || 'Nota Fiscal') !== 'Fatura') {
+        return false;
+      }
+
       return true;
     });
   }, [
     invoices, 
     searchTerm, 
+    documentTypeFilter,
     natureFilter, 
     costCenterFilter, 
     userFilter, 
@@ -1003,7 +1030,8 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     }
 
     const headers = [
-      'Número NF',
+      'Tipo Documento',
+      'Número Doc / NF',
       'Série',
       'Fornecedor / Prestador',
       'CNPJ / CPF',
@@ -1023,6 +1051,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     ];
 
     const rows = filteredInvoices.map(i => [
+      `"${i.documentType || 'Nota Fiscal'}"`,
       `"${i.invoiceNumber}"`,
       `"${i.series || ''}"`,
       `"${i.supplierName.replace(/"/g, '""')}"`,
@@ -1047,7 +1076,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `relatorio_notas_fiscais_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `relatorio_notas_fiscais_faturas_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1090,7 +1119,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-              Todas as notas anexadas por qualquer usuário aparecem instantaneamente para todos que têm acesso ({invoices.length} notas no sistema • Total Geral: {formatCurrency(invoices.reduce((acc, i) => acc + (i.totalAmount || 0), 0))})
+              Todas as notas e faturas anexadas por qualquer usuário aparecem instantaneamente para todos que têm acesso ({invoices.length} documentos no sistema • Total Geral: {formatCurrency(invoices.reduce((acc, i) => acc + (i.totalAmount || 0), 0))})
             </p>
           </div>
         </div>
@@ -1114,7 +1143,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
           <div>
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-blue-500" />
-              Total em NFs ({filteredInvoices.length})
+              Total em NFs / Faturas ({filteredInvoices.length})
             </span>
             <div className="text-2xl font-black text-slate-900 dark:text-white mt-1.5 tracking-tight">
               {formatCurrency(totalAmount)}
@@ -1199,7 +1228,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             }`}
           >
             <FileText className="w-4 h-4" />
-            <span>Lista de Notas Fiscais</span>
+            <span>Lista de NFs & Faturas</span>
             <span className="text-[11px] px-1.5 py-0.2 bg-slate-200 dark:bg-slate-700 rounded-md font-semibold">
               {filteredInvoices.length}
             </span>
@@ -1253,11 +1282,19 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
           )}
 
           <button
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-600/30 transition-all cursor-pointer"
+            onClick={() => handleOpenCreateModal('Fatura')}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/30 transition-all cursor-pointer whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
-            <span>Lançar Nova NF</span>
+            <span>+ Lançar Fatura</span>
+          </button>
+
+          <button
+            onClick={() => handleOpenCreateModal('Nota Fiscal')}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Lançar Nova NF</span>
           </button>
         </div>
       </div>
@@ -1269,11 +1306,12 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             <Filter className="w-3.5 h-3.5 text-blue-500" />
             Filtros & Rastreamento de Custos
           </span>
-          {(searchTerm || natureFilter !== 'all' || costCenterFilter !== 'all' || userFilter !== 'all' || statusFilter !== 'all' || periodPreset !== 'today' || onlyDuplicatesFilter || dateBasis !== 'issue') && (
+          {(searchTerm || documentTypeFilter !== 'all' || natureFilter !== 'all' || costCenterFilter !== 'all' || userFilter !== 'all' || statusFilter !== 'all' || periodPreset !== 'today' || onlyDuplicatesFilter || dateBasis !== 'issue') && (
             <button
               type="button"
               onClick={() => {
                 setSearchTerm('');
+                setDocumentTypeFilter('all');
                 setNatureFilter('all');
                 setCostCenterFilter('all');
                 setUserFilter('all');
@@ -1286,22 +1324,35 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               }}
               className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer lowercase text-[11px]"
             >
-              limpar filtros (restaurar notas de hoje)
+              limpar filtros (restaurar documentos de hoje)
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
           {/* Busca Textual */}
           <div className="relative sm:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por NF, fornecedor, CNPJ..."
+              placeholder="Buscar por NF, fatura, fornecedor, CNPJ..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
+          </div>
+
+          {/* Filtro: Tipo de Documento */}
+          <div>
+            <select
+              value={documentTypeFilter}
+              onChange={(e) => setDocumentTypeFilter(e.target.value as any)}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 font-semibold"
+            >
+              <option value="all">📑 Todos os Tipos</option>
+              <option value="nf">📄 Somente NFs</option>
+              <option value="fatura">🧾 Somente Faturas</option>
+            </select>
           </div>
 
           {/* Filtro: Responsável / Usuário Interno */}
@@ -1363,6 +1414,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               <option value="Pago">Pago</option>
               <option value="Atrasado">Atrasado</option>
               <option value="Cancelado">Cancelado</option>
+              <option value="Somente Volume">Somente Volume</option>
             </select>
           </div>
         </div>
@@ -1417,7 +1469,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               value={dateBasis}
               onChange={(e) => setDateBasis(e.target.value as any)}
               className="px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
-              title="Escolha qual data da nota fiscal utilizar no filtro por período"
+              title="Escolha qual data do documento (NF ou Fatura) utilizar no filtro por período"
             >
               <option value="issue">📅 Data de Emissão</option>
               <option value="due">⏰ Data de Vencimento</option>
@@ -1468,20 +1520,20 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
           {loading ? (
             <div className="py-20 text-center text-slate-400 text-sm">
-              Carregando notas fiscais e centro de custos...
+              Carregando notas fiscais, faturas e centros de custo...
             </div>
           ) : filteredInvoices.length === 0 ? (
             <div className="py-20 text-center">
               <Calendar className="w-12 h-12 text-blue-400 dark:text-blue-500 mx-auto mb-3 opacity-80" />
               <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">
                 {periodPreset === 'today'
-                  ? `Nenhuma Nota Fiscal para hoje (${new Date().toLocaleDateString('pt-BR')})`
-                  : 'Nenhuma Nota Fiscal encontrada para os filtros'}
+                  ? `Nenhum documento para hoje (${new Date().toLocaleDateString('pt-BR')})`
+                  : 'Nenhum lançamento encontrado para os filtros'}
               </h3>
               <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
                 {periodPreset === 'today'
-                  ? 'Ainda não constam notas fiscais para o dia de hoje. Você pode alternar para visualizar o mês ou o histórico completo abaixo.'
-                  : 'Não há lançamentos fiscais correspondentes aos filtros selecionados. Tente ajustar o período ou centro de custo.'}
+                  ? 'Ainda não constam notas fiscais ou faturas para o dia de hoje. Você pode alternar para visualizar o mês ou o histórico completo abaixo.'
+                  : 'Não há lançamentos de notas fiscais ou faturas correspondentes aos filtros selecionados. Tente ajustar o período ou centro de custo.'}
               </p>
               <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
                 {periodPreset !== 'all' && (
@@ -1504,7 +1556,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                 )}
                 <button
                   type="button"
-                  onClick={handleOpenCreateModal}
+                  onClick={() => handleOpenCreateModal('Fatura')}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-md shadow-purple-600/30"
+                >
+                  + Lançar Fatura
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenCreateModal('Nota Fiscal')}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors shadow-md shadow-blue-600/30"
                 >
                   + Lançar Nova NF
@@ -1516,7 +1575,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4">ID / Nota Fiscal</th>
+                    <th className="py-3 px-4">ID / Documento</th>
                     <th className="py-3 px-4">Fornecedor / Prestador</th>
                     <th className="py-3 px-4">Natureza / Tipo</th>
                     <th className="py-3 px-4">Centro de Custo</th>
@@ -1533,24 +1592,40 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     const natConf = NATURE_CONFIG[inv.costNature] || NATURE_CONFIG.outros;
                     const stConf = STATUS_CONFIG[inv.status] || STATUS_CONFIG.Pendente;
                     const StatusIcon = stConf.icon;
+                    const isFatura = inv.documentType === 'Fatura';
 
                     return (
                       <tr 
                         key={inv.id} 
                         className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors"
                       >
-                        {/* 1. NF / Documento */}
+                        {/* 1. Documento (NF ou Fatura) */}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
-                            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-lg">
-                              <FileText className="w-4 h-4" />
+                            <div className={`p-2 rounded-lg ${
+                              isFatura
+                                ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400'
+                                : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
+                            }`}>
+                              {isFatura ? <Receipt className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                             </div>
                             <div>
                               <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 font-mono font-bold border border-blue-200 dark:border-blue-800 shrink-0">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border shrink-0 ${
+                                  isFatura
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                }`}>
                                   {inv.id}
                                 </span>
-                                <span>NF nº {inv.invoiceNumber}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border shrink-0 ${
+                                  isFatura
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                }`}>
+                                  {isFatura ? 'Fatura' : 'NF'}
+                                </span>
+                                <span>{isFatura ? `Fatura nº ${inv.invoiceNumber}` : `NF nº ${inv.invoiceNumber}`}</span>
                                 {inv.series && (
                                   <span className="text-[10px] px-1 bg-slate-100 dark:bg-slate-700 rounded text-slate-500 font-mono">
                                     Série {inv.series}
@@ -1559,7 +1634,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                                 {duplicateInvoicesMap.has(inv.id) && (
                                   <span 
                                     className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-700 flex items-center gap-1 shadow-sm"
-                                    title={`Atenção: Esta nota fiscal possui número e fornecedor idênticos à nota ${duplicateInvoicesMap.get(inv.id)?.id} (${duplicateInvoicesMap.get(inv.id)?.supplierName})`}
+                                    title={`Atenção: Este documento possui número e fornecedor idênticos a ${duplicateInvoicesMap.get(inv.id)?.id} (${duplicateInvoicesMap.get(inv.id)?.supplierName})`}
                                   >
                                     <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
                                     Repetida ({duplicateInvoicesMap.get(inv.id)?.id})
@@ -1674,12 +1749,16 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                           <div className="flex flex-col sm:flex-row items-center justify-center gap-1.5">
                             {inv.fileUrl && (
                               <button
-                                onClick={() => setPreviewFile({ url: inv.fileUrl!, name: inv.fileName || 'Nota Fiscal', type: inv.fileType })}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-semibold text-[11px] transition-colors cursor-pointer"
-                                title="Visualizar Nota Fiscal"
+                                onClick={() => setPreviewFile({ url: inv.fileUrl!, name: inv.fileName || (isFatura ? 'Fatura' : 'Nota Fiscal'), type: inv.fileType })}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer ${
+                                  isFatura
+                                    ? 'bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60'
+                                    : 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60'
+                                }`}
+                                title={isFatura ? 'Visualizar Fatura' : 'Visualizar Nota Fiscal'}
                               >
                                 <Paperclip className="w-3.5 h-3.5" />
-                                <span>Ver NF</span>
+                                <span>{isFatura ? 'Ver FAT' : 'Ver NF'}</span>
                               </button>
                             )}
                             {inv.boletoFileUrl && (
@@ -1703,7 +1782,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => handleOpenEditModal(inv)}
-                              title="Editar Nota Fiscal"
+                              title={isFatura ? 'Editar Fatura' : 'Editar Nota Fiscal'}
                               className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                             >
                               <Edit3 className="w-4 h-4" />
@@ -1719,7 +1798,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                             )}
                             <button
                               onClick={() => handleDeleteInvoice(inv.id)}
-                              title="Excluir Nota Fiscal"
+                              title={isFatura ? 'Excluir Fatura' : 'Excluir Nota Fiscal'}
                               className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1744,7 +1823,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             <div>
               <h2 className="text-base font-bold flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-blue-400" />
-                Relatório Analítico de Custos & Notas Fiscais
+                Relatório Analítico de Custos, Notas Fiscais & Faturas
               </h2>
               <p className="text-xs text-slate-300 mt-0.5">
                 Demonstrativo consolidado por Usuário/Responsável Interno, Centro de Custos e Modalidade de Despesa.
@@ -1753,7 +1832,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
             <div className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 whitespace-nowrap">
               <span>Total Analisado: </span>
               <strong className="text-emerald-300 text-sm">{formatCurrency(totalAmount)}</strong>
-              <span className="text-slate-300 ml-1">({filteredInvoices.length} NFs)</span>
+              <span className="text-slate-300 ml-1">({filteredInvoices.length} documentos)</span>
             </div>
           </div>
 
@@ -2011,22 +2090,32 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto animate-fade-in">
           <div className="bg-white dark:bg-slate-800 w-full max-w-5xl rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden my-6">
             {/* Modal Header */}
-            <div className="px-7 py-5 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
+            <div className={`px-7 py-5 text-white flex items-center justify-between ${
+              formDocumentType === 'Fatura'
+                ? 'bg-gradient-to-r from-purple-900 to-indigo-900'
+                : 'bg-gradient-to-r from-blue-900 to-indigo-900'
+            }`}>
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-white/10 rounded-2xl">
-                  <FileText className="w-6 h-6 text-blue-300" />
+                  {formDocumentType === 'Fatura' ? <Receipt className="w-6 h-6 text-purple-300" /> : <FileText className="w-6 h-6 text-blue-300" />}
                 </div>
                 <div>
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h3 className="text-xl font-black tracking-tight">
-                      {editingInvoiceId ? 'Editar Nota Fiscal' : 'Lançar Nova Nota Fiscal'}
+                      {editingInvoiceId 
+                        ? (formDocumentType === 'Fatura' ? 'Editar Fatura' : 'Editar Nota Fiscal') 
+                        : (formDocumentType === 'Fatura' ? 'Lançar Nova Fatura' : 'Lançar Nova Nota Fiscal')}
                     </h3>
-                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/50 font-mono font-bold tracking-wider">
+                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-bold tracking-wider border ${
+                      formDocumentType === 'Fatura'
+                        ? 'bg-purple-500/30 text-purple-200 border-purple-400/50'
+                        : 'bg-blue-500/30 text-blue-200 border-blue-400/50'
+                    }`}>
                       ID: {editingInvoiceId || prospectiveNextId}
                     </span>
                   </div>
                   <p className="text-xs text-blue-200 mt-0.5">
-                    Preencha os dados da NF, anexo, centro de custo e responsável interno.
+                    Preencha os dados da {formDocumentType === 'Fatura' ? 'fatura' : 'NF'}, anexo, centro de custo e responsável interno.
                   </p>
                 </div>
               </div>
@@ -2040,6 +2129,40 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
 
             {/* Modal Body / Form */}
             <form onSubmit={handleSubmitInvoiceForm} className="p-7 space-y-6 max-h-[82vh] overflow-y-auto">
+              {/* SELETOR DE TIPO DE DOCUMENTO: NOTA FISCAL vs FATURA */}
+              <div className="p-1.5 bg-slate-100 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+                <div className="flex items-center gap-2 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  <Tag className="w-4 h-4 text-blue-500" />
+                  <span>Tipo de Lançamento:</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 flex-1 sm:max-w-md">
+                  <button
+                    type="button"
+                    onClick={() => setFormDocumentType('Nota Fiscal')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                      formDocumentType === 'Nota Fiscal'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Nota Fiscal (NF-e)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormDocumentType('Fatura')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                      formDocumentType === 'Fatura'
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Receipt className="w-4 h-4" />
+                    <span>Fatura</span>
+                  </button>
+                </div>
+              </div>
+
               {/* ALERTA DE DUPLICIDADE EM TEMPO REAL */}
               {duplicateInvoiceMatch.isDuplicate && duplicateInvoiceMatch.matchedInvoice && (
                 <div className="p-4 bg-rose-50 dark:bg-rose-950/50 border-2 border-rose-500 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900 dark:text-rose-200 shadow-lg shadow-rose-500/10">
@@ -2049,7 +2172,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     </div>
                     <div>
                       <div className="font-black text-sm flex items-center gap-2 text-rose-600 dark:text-rose-400 uppercase tracking-tight">
-                        <span>⚠️ NOTA FISCAL JÁ CADASTRADA NO SISTEMA! LANÇAMENTO BLOQUEADO</span>
+                        <span>⚠️ {formDocumentType === 'Fatura' ? 'FATURA' : 'NOTA FISCAL'} JÁ CADASTRADA NO SISTEMA! LANÇAMENTO BLOQUEADO</span>
                       </div>
                       <p className="text-xs text-rose-700 dark:text-rose-300 mt-1 font-medium">
                         {duplicateInvoiceMatch.message}
@@ -2082,19 +2205,19 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shrink-0 transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-rose-600/30"
                   >
                     <Eye className="w-4 h-4" />
-                    <span>Abrir Nota Existente</span>
+                    <span>Abrir {formDocumentType === 'Fatura' ? 'Fatura' : 'Nota'} Existente</span>
                   </button>
                 </div>
               )}
 
-              {/* 1. SEÇÃO DE ANEXOS: NOTA FISCAL E BOLETO PARA PAGAMENTO */}
+              {/* 1. SEÇÃO DE ANEXOS: NOTA FISCAL / FATURA E BOLETO PARA PAGAMENTO */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 1.1 ANEXO DA NOTA FISCAL */}
+                {/* 1.1 ANEXO DO DOCUMENTO */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <UploadCloud className="w-4 h-4 text-blue-500" />
-                      Arquivo da Nota Fiscal (PDF/XML)
+                      Arquivo da {formDocumentType === 'Fatura' ? 'Fatura (PDF ou Imagem)' : 'Nota Fiscal (PDF/XML)'}
                     </span>
                     <span className="text-[11px] text-slate-400 font-normal">Máx: 15MB</span>
                   </label>
@@ -2111,22 +2234,22 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   {formFileUrl ? (
                     <div className="flex items-center justify-between p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-2xl min-h-[96px]">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2.5 bg-blue-600 text-white rounded-xl shrink-0">
-                          <File className="w-5 h-5" />
+                        <div className={`p-2.5 text-white rounded-xl shrink-0 ${formDocumentType === 'Fatura' ? 'bg-purple-600' : 'bg-blue-600'}`}>
+                          {formDocumentType === 'Fatura' ? <Receipt className="w-5 h-5" /> : <File className="w-5 h-5" />}
                         </div>
                         <div className="min-w-0">
                           <span className="font-bold text-xs text-slate-900 dark:text-white block truncate max-w-[150px] sm:max-w-[200px]" title={formFileName}>
                             {formFileName || 'Documento Anexado'}
                           </span>
                           <span className="text-[11px] text-blue-600 dark:text-blue-400 block">
-                            {formFileSize ? `${(formFileSize / (1024 * 1024)).toFixed(2)} MB` : 'NF pronta'}
+                            {formFileSize ? `${(formFileSize / (1024 * 1024)).toFixed(2)} MB` : (formDocumentType === 'Fatura' ? 'Fatura pronta' : 'NF pronta')}
                           </span>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0 ml-2">
                         <button
                           type="button"
-                          onClick={() => setPreviewFile({ url: formFileUrl, name: formFileName || 'Nota Fiscal', type: formFileType })}
+                          onClick={() => setPreviewFile({ url: formFileUrl, name: formFileName || (formDocumentType === 'Fatura' ? 'Fatura' : 'Nota Fiscal'), type: formFileType })}
                           className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-xl transition-colors cursor-pointer"
                           title="Visualizar anexo"
                         >
@@ -2149,7 +2272,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     >
                       <UploadCloud className="w-6 h-6 text-slate-400 group-hover:text-blue-500 transition-colors mb-1" />
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Anexar Nota Fiscal (PDF ou XML)
+                        Anexar {formDocumentType === 'Fatura' ? 'Fatura (PDF ou Imagem)' : 'Nota Fiscal (PDF ou XML)'}
                       </span>
                       <span className="text-[10px] text-slate-400 mt-0.5">
                         Lê número, fornecedor, CNPJ e valores com IA
@@ -2157,15 +2280,15 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     </label>
                   )}
 
-                  {/* Banner de Processamento da Extração Automática de NF */}
+                  {/* Banner de Processamento da Extração Automática */}
                   {isExtracting && (
                     <div className="p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center gap-2 text-blue-600 dark:text-blue-300 text-xs font-semibold animate-pulse">
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500 shrink-0" />
-                      <span>Extraindo dados fiscais da NF...</span>
+                      <span>Extraindo dados da {formDocumentType === 'Fatura' ? 'fatura' : 'NF'}...</span>
                     </div>
                   )}
 
-                  {/* Banner de Sucesso da Extração da NF */}
+                  {/* Banner de Sucesso da Extração */}
                   {extractionSuccess && (
                     <div className="p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-between gap-2 text-blue-700 dark:text-blue-300 text-xs font-semibold animate-fade-in">
                       <div className="flex items-center gap-1.5">
@@ -2278,23 +2401,23 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                 </div>
               </div>
 
-              {/* 2. DADOS BÁSICOS DA NOTA FISCAL */}
+              {/* 2. DADOS BÁSICOS DO DOCUMENTO (NF OU FATURA) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Número da NF */}
+                {/* Número do Documento */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
-                    <span>Número da NF *</span>
+                    <span>{formDocumentType === 'Fatura' ? 'Número da Fatura *' : 'Número da NF *'}</span>
                     {duplicateInvoiceMatch.isDuplicate && (
                       <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
-                        NF Repetida
+                        {formDocumentType === 'Fatura' ? 'Fatura Repetida' : 'NF Repetida'}
                       </span>
                     )}
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="Ex: 89240"
+                    placeholder={formDocumentType === 'Fatura' ? 'Ex: FAT-89240 ou 89240' : 'Ex: 89240'}
                     value={formNumber}
                     onChange={(e) => setFormNumber(e.target.value)}
                     className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm focus:outline-none transition-all ${
@@ -2305,7 +2428,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   />
                   {duplicateInvoiceMatch.isDuplicate && (
                     <span className="text-[10px] text-rose-600 dark:text-rose-400 mt-1 block font-medium">
-                      Já existe nota com este número para este fornecedor.
+                      Já existe documento com este número para este fornecedor.
                     </span>
                   )}
                 </div>
@@ -2324,10 +2447,10 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   />
                 </div>
 
-                {/* Valor Total da NF */}
+                {/* Valor Total */}
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Valor Total da NF (R$) *
+                    {formDocumentType === 'Fatura' ? 'Valor Total da Fatura (R$) *' : 'Valor Total da NF (R$) *'}
                   </label>
                   <input
                     type="text"
@@ -2344,7 +2467,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     onBlur={() => handleFormatAmountBlur(formAmount, setFormAmount, setFormPayableAmount)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">Valor bruto cheio da nota</span>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    {formDocumentType === 'Fatura' ? 'Valor bruto cheio da fatura' : 'Valor bruto cheio da nota'}
+                  </span>
                 </div>
 
                 {/* Valor a Pagar */}
@@ -2465,6 +2590,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     <option value="Pago">Pago</option>
                     <option value="Atrasado">Atrasado</option>
                     <option value="Cancelado">Cancelado</option>
+                    <option value="Somente Volume">Somente Volume</option>
                   </select>
                 </div>
 
@@ -2684,12 +2810,12 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
                     <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <span>
-                      Boleto anexado: será direcionado ao <strong>Contas a Pagar</strong> vinculado a esta Nota Fiscal.
+                      Boleto anexado: será direcionado ao <strong>Contas a Pagar</strong> vinculado a esta {formDocumentType === 'Fatura' ? 'Fatura' : 'Nota Fiscal'}.
                     </span>
                   </div>
                 ) : (
                   <div className="text-xs text-slate-400 dark:text-slate-500 hidden sm:block">
-                    * Campos obrigatórios para lançamento fiscal.
+                    * Campos obrigatórios para lançamento {formDocumentType === 'Fatura' ? 'da fatura' : 'fiscal'}.
                   </div>
                 )}
 
@@ -2708,7 +2834,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                       duplicateInvoiceMatch.isDuplicate
                         ? 'bg-rose-500 text-white cursor-not-allowed opacity-90 shadow-md shadow-rose-500/20'
                         : isSaving
-                        ? 'bg-blue-400 text-white cursor-wait opacity-80 shadow-md'
+                        ? formDocumentType === 'Fatura' ? 'bg-purple-400 text-white cursor-wait opacity-80 shadow-md' : 'bg-blue-400 text-white cursor-wait opacity-80 shadow-md'
+                        : formDocumentType === 'Fatura'
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/30 cursor-pointer'
                         : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 cursor-pointer'
                     }`}
                   >
@@ -2720,12 +2848,20 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     ) : duplicateInvoiceMatch.isDuplicate ? (
                       <>
                         <ShieldAlert className="w-4 h-4 text-white" />
-                        <span>Bloqueado (Nota Repetida)</span>
+                        <span>Bloqueado ({formDocumentType === 'Fatura' ? 'Fatura' : 'Nota'} Repetida)</span>
                       </>
                     ) : (
                       <>
                         {formBoletoFileUrl && <Receipt className="w-4 h-4" />}
-                        <span>{editingInvoiceId ? 'Salvar Alterações' : (formBoletoFileUrl ? 'Lançar e Ir para Contas a Pagar' : 'Confirmar e Lançar NF')}</span>
+                        <span>
+                          {editingInvoiceId
+                            ? 'Salvar Alterações'
+                            : formBoletoFileUrl
+                            ? 'Lançar e Ir para Contas a Pagar'
+                            : formDocumentType === 'Fatura'
+                            ? 'Confirmar e Lançar Fatura'
+                            : 'Confirmar e Lançar NF'}
+                        </span>
                       </>
                     )}
                   </button>

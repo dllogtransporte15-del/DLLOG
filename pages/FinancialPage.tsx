@@ -304,7 +304,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   const tabsConfig: { id: FinancialTab; label: string; icon: React.ElementType; badge?: string; group?: string }[] = [
     { id: 'payables', label: 'Contas a Pagar', icon: ArrowDownCircle },
     { id: 'receivables', label: 'Contas a Receber', icon: ArrowUpCircle },
-    { id: 'invoices', label: 'Notas Fiscais', icon: FileText, badge: 'NFs' },
+    { id: 'invoices', label: 'Notas Fiscais / Faturas', icon: FileText, badge: 'NFs / Faturas' },
     { id: 'ofx', label: 'Conciliação Bancária OFX', icon: FileSpreadsheet, badge: 'OFX' },
     { id: 'result-1', label: '1º Resultado', icon: PieChart },
     { id: 'result-2', label: '2º Resultado', icon: Layers },
@@ -484,6 +484,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             products={products}
             vehicles={vehicles}
             owners={owners}
+            branches={branches}
           />
         )}
 

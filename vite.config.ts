@@ -85,6 +85,71 @@ export default defineConfig({
         });
       }
     },
+    {
+      name: 'siga-gr-proxy-endpoint',
+      configureServer(server) {
+        server.middlewares.use('/api/siga-gr/proxy', async (req, res) => {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-siga-endpoint, x-siga-target, Accept');
+          res.setHeader('Access-Control-Expose-Headers', 'Authorization');
+
+          if (req.method === 'OPTIONS') {
+            res.statusCode = 200;
+            res.end();
+            return;
+          }
+
+          const parsedUrl = new URL(req.url || '', 'http://localhost');
+          const rawEndpoint = req.headers['x-siga-endpoint'] || parsedUrl.searchParams.get('endpoint') || '';
+          const endpoint = String(rawEndpoint).startsWith('/') ? String(rawEndpoint) : `/${rawEndpoint}`;
+          const targetHost = req.headers['x-siga-target'] || parsedUrl.searchParams.get('target') || 'https://api.staging.sigagr.com.br';
+          const targetUrl = `${String(targetHost).replace(/\/$/, '')}${endpoint}`;
+
+          const chunks: any[] = [];
+          req.on('data', chunk => { chunks.push(chunk); });
+          req.on('end', async () => {
+            const bodyBuffer = Buffer.concat(chunks);
+            const headers: Record<string, string> = {
+              Accept: 'application/json',
+            };
+            if (req.headers['authorization']) {
+              headers['Authorization'] = String(req.headers['authorization']);
+            }
+            if (req.headers['content-type']) {
+              headers['Content-Type'] = String(req.headers['content-type']);
+            }
+
+            try {
+              const fetchOptions: any = {
+                method: req.method,
+                headers,
+              };
+              if (['POST', 'PUT', 'PATCH'].includes(req.method || '') && bodyBuffer.length > 0) {
+                fetchOptions.body = bodyBuffer;
+              }
+
+              const upstream = await fetch(targetUrl, fetchOptions);
+              const authHeader = upstream.headers.get('authorization');
+              if (authHeader) {
+                res.setHeader('Authorization', authHeader);
+              }
+
+              const resContentType = upstream.headers.get('content-type') || 'application/json';
+              res.setHeader('Content-Type', resContentType);
+              res.statusCode = upstream.status;
+
+              const responseBuffer = await upstream.arrayBuffer();
+              res.end(Buffer.from(responseBuffer));
+            } catch (err: any) {
+              res.statusCode = 502;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err?.message || 'Upstream connection error to SIGA GR' }));
+            }
+          });
+        });
+      }
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],

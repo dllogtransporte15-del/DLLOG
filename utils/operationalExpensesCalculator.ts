@@ -46,6 +46,7 @@ export interface CalculatedOperationalExpenses {
   salespersonCommission: number;
   shipperCommission: number;
   agencyCommission: number;
+  driverExtraPayments?: number;
   riskCost: number;
   generatedCredit: number;
   expenseItems: OperationalExpenseItem[];
@@ -517,6 +518,22 @@ export function calculateShipmentExpenses(
     }
   }
 
+  // 14.4 Acréscimo Avulso ao Motorista (Diárias, Estadia, Bônus, Ajuda de Custo)
+  const driverExtraPayments = (Array.isArray(shipment.driverExtraPayments)
+    ? shipment.driverExtraPayments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
+    : 0) || Number(shipment.driverExtraPaymentsTotal || 0) || Number(shipment.realProfitData?.driverSurcharge || 0) || 0;
+
+  if (driverExtraPayments > 0) {
+    const hasExistingExtra = expenseItems.some(i => i.name.toLowerCase().includes('acréscimo avulso') || i.name.toLowerCase().includes('acrescimo avulso'));
+    if (!hasExistingExtra) {
+      expenseItems.push({
+        name: 'Acréscimo Avulso Motorista (Diárias / Bônus / Estadia)',
+        value: Number(driverExtraPayments.toFixed(2)),
+        type: 'negative'
+      });
+    }
+  }
+
   // Total das deduções operacionais (sem frete motorista)
   const totalExpenses = Number(
     expenseItems.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0).toFixed(2)
@@ -564,6 +581,7 @@ export function calculateShipmentExpenses(
     salespersonCommission,
     shipperCommission,
     agencyCommission,
+    driverExtraPayments,
     riskCost,
     generatedCredit,
     expenseItems,
