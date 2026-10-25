@@ -3,9 +3,9 @@ import {
   Trash2, Package, Truck, ExternalLink, Paperclip, Eye, Download, Upload, X, 
   FileText, Loader2, Mic, Square, Play, Pause, Grid, List, Search, Filter, 
   Clock, CheckCircle2, AlertCircle, Headphones, Volume2, RotateCcw, User as UserIcon, 
-  Calendar, MessageSquare, ChevronDown, ChevronUp, Sparkles, AlertTriangle
+  Calendar, MessageSquare, ChevronDown, ChevronUp, Sparkles, AlertTriangle, Image as ImageIcon
 } from 'lucide-react';
-import type { Ticket, User, TicketHistory, Cargo, Shipment } from '../types';
+import type { Ticket, User, TicketHistory, Cargo, Shipment, TicketAttachment } from '../types';
 import { TicketStatus, TicketPriority, UserProfile } from '../types';
 import { isDemoUser } from '../auth';
 import { useToast } from '../hooks/useToast';
@@ -44,6 +44,16 @@ const formatTimeAgo = (dateStr: string): string => {
   } catch {
     return dateStr;
   }
+};
+
+const getTicketAttachments = (ticket: Ticket): TicketAttachment[] => {
+  if (ticket.attachments && ticket.attachments.length > 0) {
+    return ticket.attachments;
+  }
+  if (ticket.attachmentUrl) {
+    return [{ url: ticket.attachmentUrl, name: ticket.attachmentName || 'Anexo' }];
+  }
+  return [];
 };
 
 /**
@@ -210,8 +220,8 @@ const TicketModal: React.FC<TicketModalProps> = ({
     shipmentId: '',
   });
 
-  // Anexo de Arquivo
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Anexo de Múltiplos Arquivos e Fotos
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string } | null>(null);
@@ -284,7 +294,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
       cargoId: '',
       shipmentId: '',
     });
-    setSelectedFile(null);
+    setSelectedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (recordedAudioUrl) {
       URL.revokeObjectURL(recordedAudioUrl);
@@ -488,7 +498,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
 
     // 5. Filtros rápidos
     if (onlyWithAttachment) {
-      list = list.filter(t => Boolean(t.attachmentUrl));
+      list = list.filter(t => Boolean(t.attachmentUrl || (t.attachments && t.attachments.length > 0)));
     }
 
     if (onlyWithAudio) {
@@ -518,16 +528,45 @@ const TicketModal: React.FC<TicketModalProps> = ({
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    if (file.size > 25 * 1024 * 1024) {
-      showToast('O arquivo selecionado excede o limite máximo permitido de 25MB.', 'warning');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
+    const validFiles: File[] = [];
+    let oversizedCount = 0;
+
+    files.forEach(file => {
+      if (file.size > 25 * 1024 * 1024) {
+        oversizedCount++;
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (oversizedCount > 0) {
+      showToast(`${oversizedCount} arquivo(s) ultrapassam o limite de 25MB e foram desconsiderados.`, 'warning');
     }
 
-    setSelectedFile(file);
+    if (validFiles.length > 0) {
+      setSelectedFiles(prev => {
+        const existingKeys = new Set(prev.map(f => `${f.name}_${f.size}_${f.lastModified}`));
+        const newUnique = validFiles.filter(f => !existingKeys.has(`${f.name}_${f.size}_${f.lastModified}`));
+        if (newUnique.length < validFiles.length) {
+          showToast('Arquivos já selecionados foram ignorados para evitar duplicidade.', 'info');
+        }
+        return [...prev, ...newUnique];
+      });
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleClearAllFiles = () => {
+    setSelectedFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDownloadAttachment = async (url: string, filename: string) => {
@@ -573,39 +612,60 @@ const TicketModal: React.FC<TicketModalProps> = ({
 
     let attachmentUrl: string | undefined = undefined;
     let attachmentName: string | undefined = undefined;
+    const uploadedAttachments: TicketAttachment[] = [];
     let audioUrl: string | undefined = undefined;
     let audioDurationSeconds: number | undefined = recordingSeconds > 0 ? recordingSeconds : undefined;
 
     setIsUploading(true);
 
     try {
-      // 1. Upload do Arquivo Anexado (se houver)
-      if (selectedFile) {
-        try {
-          const fileExt = selectedFile.name.split('.').pop() || 'bin';
-          const cleanBaseName = selectedFile.name
-            .replace(/\.[^/.]+$/, '')
-            .replace(/[^a-zA-Z0-9_-]/g, '_');
-          const filePath = `tickets/tck_${Date.now()}_${cleanBaseName}.${fileExt}`;
+      // 1. Upload dos Arquivos e Fotos Anexados (se houver)
+      if (selectedFiles.length > 0) {
+        for (let i = 0; i < selectedFiles.length; i++) {
+          const file = selectedFiles[i];
+          try {
+            const fileExt = file.name.split('.').pop() || 'bin';
+            const cleanBaseName = file.name
+              .replace(/\.[^/.]+$/, '')
+              .replace(/[^a-zA-Z0-9_-]/g, '_');
+            const filePath = `tickets/tck_${Date.now()}_${i}_${cleanBaseName}.${fileExt}`;
 
-          const { error: uploadError } = await supabase.storage
-            .from('shipment_attachments')
-            .upload(filePath, selectedFile, { upsert: true });
-
-          if (uploadError) {
-            console.warn('[TicketModal] Storage upload error, using base64 fallback:', uploadError);
-            attachmentUrl = await readFileAsDataUrl(selectedFile);
-          } else {
-            const { data } = supabase.storage
+            const { error: uploadError } = await supabase.storage
               .from('shipment_attachments')
-              .getPublicUrl(filePath);
-            attachmentUrl = data.publicUrl;
+              .upload(filePath, file, { upsert: true });
+
+            let finalUrl: string;
+            if (uploadError) {
+              console.warn(`[TicketModal] Storage upload error on file ${file.name}, using base64 fallback:`, uploadError);
+              finalUrl = await readFileAsDataUrl(file);
+            } else {
+              const { data } = supabase.storage
+                .from('shipment_attachments')
+                .getPublicUrl(filePath);
+              finalUrl = data.publicUrl;
+            }
+
+            uploadedAttachments.push({
+              url: finalUrl,
+              name: file.name,
+              size: file.size,
+              type: file.type || undefined,
+            });
+          } catch (err) {
+            console.warn(`[TicketModal] Error uploading file ${file.name}, using base64 fallback:`, err);
+            const fallbackUrl = await readFileAsDataUrl(file);
+            uploadedAttachments.push({
+              url: fallbackUrl,
+              name: file.name,
+              size: file.size,
+              type: file.type || undefined,
+            });
           }
-          attachmentName = selectedFile.name;
-        } catch (err) {
-          console.warn('[TicketModal] Error uploading file, using base64 fallback:', err);
-          attachmentUrl = await readFileAsDataUrl(selectedFile);
-          attachmentName = selectedFile.name;
+        }
+
+        if (uploadedAttachments.length > 0) {
+          attachmentUrl = uploadedAttachments[0].url;
+          attachmentName = uploadedAttachments[0].name;
         }
       }
 
@@ -643,6 +703,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
         shipmentId: newTicket.shipmentId || undefined,
         attachmentUrl,
         attachmentName,
+        attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
         audioUrl,
         audioDurationSeconds,
       });
@@ -952,59 +1013,95 @@ const TicketModal: React.FC<TicketModalProps> = ({
               </div>
             </div>
 
-            {/* Campo de Anexo de Arquivo Tradicional */}
-            <div className="flex flex-col gap-2 p-3.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50/60 dark:bg-gray-800/40">
-              <div className="flex items-center justify-between">
+            {/* Campo de Anexo de Múltiplos Arquivos ou Fotos */}
+            <div className="flex flex-col gap-2.5 p-3.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50/60 dark:bg-gray-800/40">
+              <div className="flex items-center justify-between flex-wrap gap-1">
                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
                   <Paperclip className="w-4 h-4 text-primary" />
-                  Anexar Arquivo ou Foto (Opcional)
+                  Anexar Arquivos ou Fotos (Opcional)
+                  {selectedFiles.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                      {selectedFiles.length} selecionado{selectedFiles.length > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </label>
-                <span className="text-[11px] text-gray-400 font-normal">PDF, Imagens (PNG, JPG, WEBP) ou Docs (máx. 25MB)</span>
+                <span className="text-[11px] text-gray-400 font-normal">PDF, Imagens (PNG, JPG, WEBP) ou Docs (máx. 25MB por arquivo)</span>
               </div>
 
-              {selectedFile ? (
-                <div className="flex items-center justify-between p-2.5 bg-white dark:bg-gray-700/80 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    <div className="truncate">
-                      <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate">{selectedFile.name}</p>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                        {(selectedFile.size / 1024 < 1024) 
-                          ? `${(selectedFile.size / 1024).toFixed(1)} KB` 
-                          : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}
-                      </p>
-                    </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                id="ticket-file-input"
+                onChange={handleFileChange}
+                className="hidden"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.xml,.txt,.csv"
+              />
+
+              {selectedFiles.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {selectedFiles.map((file, idx) => {
+                      const isImg = file.type.startsWith('image/');
+                      return (
+                        <div 
+                          key={`${file.name}-${file.size}-${idx}`} 
+                          className="flex items-center justify-between p-2.5 bg-white dark:bg-gray-700/80 rounded-lg border border-gray-200 dark:border-gray-600 shadow-xs hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
+                            <div className={`w-8 h-8 rounded-lg ${isImg ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'} flex items-center justify-center shrink-0`}>
+                              {isImg ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                            </div>
+                            <div className="truncate min-w-0">
+                              <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 truncate" title={file.name}>
+                                {file.name}
+                              </p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                {(file.size / 1024 < 1024) 
+                                  ? `${(file.size / 1024).toFixed(1)} KB` 
+                                  : `${(file.size / (1024 * 1024)).toFixed(2)} MB`}
+                                {isImg && <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-medium">• Foto/Imagem</span>}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile(idx)}
+                            className="text-gray-400 hover:text-red-500 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer shrink-0 ml-2"
+                            title="Remover este arquivo"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedFile(null);
-                      if (fileInputRef.current) fileInputRef.current.value = '';
-                    }}
-                    className="text-gray-400 hover:text-red-500 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                    title="Remover arquivo selecionado"
-                  >
-                    <X size={16} />
-                  </button>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <label
+                      htmlFor="ticket-file-input"
+                      className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors shadow-xs"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      + Adicionar Mais Arquivos / Fotos
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleClearAllFiles}
+                      className="text-[11px] text-red-500 hover:text-red-600 dark:text-red-400 font-semibold hover:underline cursor-pointer"
+                    >
+                      Remover todos ({selectedFiles.length})
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-3">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    id="ticket-file-input"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.xml,.txt,.csv"
-                  />
                   <label
                     htmlFor="ticket-file-input"
-                    className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm"
+                    className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-xs"
                   >
                     <Upload className="w-3.5 h-3.5 text-primary" />
-                    Escolher Arquivo
+                    Escolher Arquivos ou Fotos
                   </label>
                   <span className="text-xs text-gray-400 italic">Nenhum arquivo selecionado</span>
                 </div>
@@ -1027,7 +1124,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
                 className="py-2.5 px-6 btn-premium rounded-xl font-bold shadow-lg flex items-center gap-2 text-xs sm:text-sm disabled:opacity-50"
               >
                 {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isUploading ? 'Gravando e Enviando...' : 'Salvar e Abrir Chamado'}
+                {isUploading ? (selectedFiles.length > 1 ? `Enviando chamado e ${selectedFiles.length} arquivos...` : 'Gravando e Enviando...') : 'Salvar e Abrir Chamado'}
               </button>
             </div>
           </form>
@@ -1341,11 +1438,15 @@ const TicketModal: React.FC<TicketModalProps> = ({
 
                             {/* Badges de Anexos / Vínculos */}
                             <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                              {ticket.attachmentUrl && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
-                                  <Paperclip className="w-3 h-3" /> Anexo
-                                </span>
-                              )}
+                              {(() => {
+                                const atts = getTicketAttachments(ticket);
+                                if (atts.length === 0) return null;
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
+                                    <Paperclip className="w-3 h-3" /> {atts.length > 1 ? `${atts.length} Anexos` : 'Anexo'}
+                                  </span>
+                                );
+                              })()}
                               {ticket.cargoId && (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
                                   <Package className="w-3 h-3" /> Carga
@@ -1413,31 +1514,43 @@ const TicketModal: React.FC<TicketModalProps> = ({
                             {/* Bloco Expandido dentro do Grid Card */}
                             {isExpanded && (
                               <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs space-y-2 animate-fade-in">
-                                {ticket.attachmentUrl && (
-                                  <div className="flex items-center justify-between p-2 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
-                                    <span className="font-semibold text-blue-900 dark:text-blue-300 truncate max-w-[150px]">
-                                      {ticket.attachmentName || 'Anexo'}
-                                    </span>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => setPreviewFile({ url: ticket.attachmentUrl!, name: ticket.attachmentName || 'Anexo' })}
-                                        className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded"
-                                        title="Visualizar"
-                                      >
-                                        <Eye size={14} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDownloadAttachment(ticket.attachmentUrl!, ticket.attachmentName || 'anexo')}
-                                        className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded"
-                                        title="Baixar"
-                                      >
-                                        <Download size={14} />
-                                      </button>
+                                {(() => {
+                                  const atts = getTicketAttachments(ticket);
+                                  if (atts.length === 0) return null;
+                                  return (
+                                    <div className="space-y-1.5">
+                                      <div className="text-[11px] font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1">
+                                        <Paperclip className="w-3 h-3" />
+                                        {atts.length > 1 ? `Anexos / Fotos (${atts.length})` : 'Anexo / Foto'}
+                                      </div>
+                                      {atts.map((att, i) => (
+                                        <div key={`${att.url}-${i}`} className="flex items-center justify-between p-2 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                                          <span className="font-semibold text-blue-900 dark:text-blue-300 truncate max-w-[150px]" title={att.name}>
+                                            {att.name || `Anexo ${i + 1}`}
+                                          </span>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => setPreviewFile({ url: att.url, name: att.name || 'Anexo' })}
+                                              className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded"
+                                              title="Visualizar"
+                                            >
+                                              <Eye size={14} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDownloadAttachment(att.url, att.name || 'anexo')}
+                                              className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded"
+                                              title="Baixar"
+                                            >
+                                              <Download size={14} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
 
                                 {/* Ações de Atendimento no Card */}
                                 {attendingTicketId === ticket.id && (
@@ -1512,11 +1625,15 @@ const TicketModal: React.FC<TicketModalProps> = ({
                                   </span>
                                 )}
 
-                                {ticket.attachmentUrl && (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/40 shrink-0">
-                                    <Paperclip size={11} /> Anexo
-                                  </span>
-                                )}
+                                {(() => {
+                                  const atts = getTicketAttachments(ticket);
+                                  if (atts.length === 0) return null;
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/40 shrink-0">
+                                      <Paperclip size={11} /> {atts.length > 1 ? `${atts.length} Anexos` : 'Anexo'}
+                                    </span>
+                                  );
+                                })()}
                               </div>
 
                               <span className="text-xs text-gray-500 truncate hidden md:inline-block ml-auto">
@@ -1588,59 +1705,82 @@ const TicketModal: React.FC<TicketModalProps> = ({
                                 </div>
                               )}
 
-                              {/* Card do Anexo do Chamado */}
-                              {ticket.attachmentUrl && (
-                                <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-indigo-50/90 dark:from-blue-950/40 dark:via-gray-900/60 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
-                                  <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
-                                      <Paperclip className="w-5 h-5" />
+                              {/* Card dos Anexos do Chamado (Múltiplos ou Único) */}
+                              {(() => {
+                                const atts = getTicketAttachments(ticket);
+                                if (atts.length === 0) return null;
+                                return (
+                                  <div className="space-y-2 animate-fade-in">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                                        <Paperclip size={13} /> {atts.length > 1 ? `Arquivos e Fotos Anexados (${atts.length})` : 'Arquivo Anexado'}
+                                      </span>
+                                      <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                        (enviado por {getUserName(ticket.createdById)})
+                                      </span>
                                     </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600/15 text-blue-600 dark:text-blue-400 border border-blue-500/30">
-                                          Arquivo Anexado
-                                        </span>
-                                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-                                          (enviado por {getUserName(ticket.createdById)})
-                                        </span>
-                                      </div>
-                                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate mt-0.5" title={ticket.attachmentName || 'Arquivo do Chamado'}>
-                                        {ticket.attachmentName || 'Arquivo do Chamado'}
-                                      </p>
-                                    </div>
-                                  </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                      {atts.map((att, idx) => {
+                                        const isImg = att.type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(att.name || '') || /\.(jpg|jpeg|png|webp|gif|svg)/i.test(att.url || '');
+                                        return (
+                                          <div
+                                            key={`${att.url}-${idx}`}
+                                            className="p-3 bg-gradient-to-r from-blue-50/90 via-sky-50/50 to-indigo-50/90 dark:from-blue-950/40 dark:via-gray-900/60 dark:to-indigo-950/40 rounded-xl border border-blue-200/90 dark:border-blue-800/60 shadow-xs flex items-center justify-between gap-3"
+                                          >
+                                            <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
+                                              <div className={`w-9 h-9 rounded-lg ${isImg ? 'bg-emerald-600 shadow-emerald-500/20' : 'bg-blue-600 shadow-blue-500/20'} text-white flex items-center justify-center shrink-0 shadow-sm`}>
+                                                {isImg ? <ImageIcon className="w-4 h-4" /> : <Paperclip className="w-4 h-4" />}
+                                              </div>
+                                              <div className="min-w-0 truncate">
+                                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate" title={att.name}>
+                                                  {att.name || `Anexo ${idx + 1}`}
+                                                </p>
+                                                {att.size && (
+                                                  <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                                    {(att.size / 1024 < 1024)
+                                                      ? `${(att.size / 1024).toFixed(1)} KB`
+                                                      : `${(att.size / (1024 * 1024)).toFixed(2)} MB`}
+                                                  </p>
+                                                )}
+                                              </div>
+                                            </div>
 
-                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setPreviewFile({
-                                          url: ticket.attachmentUrl!,
-                                          name: ticket.attachmentName || 'Anexo_Chamado'
-                                        });
-                                      }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all cursor-pointer hover:shadow-md"
-                                      title="Visualizar documento em tela cheia"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" />
-                                      Visualizar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDownloadAttachment(ticket.attachmentUrl!, ticket.attachmentName || 'anexo_chamado');
-                                      }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 shadow-sm transition-all cursor-pointer hover:shadow-md"
-                                      title="Baixar arquivo para o computador"
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                      Baixar
-                                    </button>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setPreviewFile({
+                                                    url: att.url,
+                                                    name: att.name || 'Anexo_Chamado'
+                                                  });
+                                                }}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all cursor-pointer"
+                                                title="Visualizar documento ou foto"
+                                              >
+                                                <Eye className="w-3.5 h-3.5" />
+                                                Visualizar
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDownloadAttachment(att.url, att.name || 'anexo_chamado');
+                                                }}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 shadow-xs transition-all cursor-pointer"
+                                                title="Baixar arquivo"
+                                              >
+                                                <Download className="w-3.5 h-3.5" />
+                                                Baixar
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })()}
                               
                               {/* Vínculos de Carga ou Embarque */}
                               {(ticket.cargoId || ticket.shipmentId) && (

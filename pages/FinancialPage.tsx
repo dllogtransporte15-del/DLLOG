@@ -11,7 +11,8 @@ import {
   Layers, 
   TrendingUp, 
   Landmark,
-  FileText
+  FileText,
+  ShieldCheck
 } from 'lucide-react';
 
 import { AccountsPayableTab } from '../components/financial/AccountsPayableTab';
@@ -23,6 +24,7 @@ import { SecondResultTab } from '../components/financial/SecondResultTab';
 import { ThirdResultTab } from '../components/financial/ThirdResultTab';
 import { ControlShipmentsTab } from '../components/financial/ControlShipmentsTab';
 import { ControlBankingTab } from '../components/financial/ControlBankingTab';
+import { ControlFiscalTab } from '../components/financial/ControlFiscalTab';
 
 import { 
   calculateFirstResult, 
@@ -71,6 +73,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
     'result-2', 
     'result-3', 
     'control-shipments', 
+    'control-fiscal',
     'control-banking'
   ];
 
@@ -248,6 +251,10 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
     }));
   };
 
+  const handleDeleteTransaction = (id: string) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+  };
+
   const handleAddBankAccount = (acc: Omit<BankAccount, 'id' | 'createdAt'>) => {
     const newAcc: BankAccount = {
       ...acc,
@@ -310,6 +317,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
     { id: 'result-2', label: '2º Resultado', icon: Layers },
     { id: 'result-3', label: '3º Resultado', icon: TrendingUp },
     { id: 'control-shipments', label: 'Planilha Embarque', icon: FileSpreadsheet, group: 'Controladoria' },
+    { id: 'control-fiscal', label: 'Controladoria Fiscal', icon: ShieldCheck, badge: 'Apólices & Docs', group: 'Controladoria' },
     { id: 'control-banking', label: 'Controladoria Bancária', icon: Landmark, group: 'Controladoria' }
   ];
 
@@ -406,10 +414,12 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             transactions={transactions}
             onAddTransaction={handleAddTransaction}
             onUpdateStatus={handleUpdateStatus}
+            onDeleteTransaction={handleDeleteTransaction}
             shipments={shipments}
             cargos={cargos}
             clients={clients}
             users={users}
+            branches={branches}
             currentUser={_currentUser}
             onNavigateToInvoices={() => handleTabChange('invoices')}
           />
@@ -485,6 +495,14 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             vehicles={vehicles}
             owners={owners}
             branches={branches}
+            onNavigateToFiscal={() => handleTabChange('control-fiscal')}
+          />
+        )}
+
+        {activeTab === 'control-fiscal' && (
+          <ControlFiscalTab
+            branches={branches}
+            currentUser={_currentUser}
           />
         )}
 

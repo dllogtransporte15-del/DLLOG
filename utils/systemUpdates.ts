@@ -21,6 +21,324 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_25_v2_76_1',
+    version: 'v2.76.1',
+    date: '25/10/2026',
+    title: 'Correção na Apuração de Fretes e Comissão de Gestores de Agência (Gestor AG)',
+    summary: 'Corrigida a apuração de fretes e comissão dos Gestores de Agência Líderes (Maurício / Agência GO) no Contas a Pagar, alinhando a atribuição de embarques rigorosamente à regra canônica da Agência (eliminando a captura indevida de fretes de outras filiais/matriz e garantindo o cálculo exato de 30% sobre o Lucro Real da Agência).',
+    items: [
+      {
+        category: 'fix',
+        title: 'Atribuição Canônica de Fretes da Agência',
+        description: 'Os Gestores AG agora apuram exclusivamente os embarques de sua própria agência e equipe vinculada (via operador/agenciador, agência líder ou filial dedicada), eliminando o espelhamento de fretes de toda a empresa.'
+      },
+      {
+        category: 'fix',
+        title: 'Cálculo Exato da Comissão (30% do Lucro Real)',
+        description: 'A comissão de agenciamento agora calcula perfeitamente o percentual pactuado (ex: 30%) sobre o Lucro Real apurado dos embarques da agência, desfazendo sobreposição com taxas de vendas comerciais da Matriz.'
+      },
+      {
+        category: 'improvement',
+        title: 'Restauração de Apuração Automática no Modal de Ajustes',
+        description: 'Adicionado botão "Usar Apuração Automática dos Fretes" para descartar valores manuais residuais a qualquer momento e recalcular dinamicamente os valores com base nos CT-es auditados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_76_0',
+    version: 'v2.76.0',
+    date: '25/10/2026',
+    title: 'Adiantamento com Registro de Data e Anexo de Comprovante de Transferência',
+    summary: 'Os adiantamentos e vales concedidos aos colaboradores agora registram a data exata da transferência bancária ou PIX e permitem anexar o comprovante de pagamento, com visualizador direto no card da Folha de Pagamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Data da Transferência no Adiantamento',
+        description: 'Campo de data obrigatório para registro do adiantamento, garantindo rastreabilidade do dia em que a antecipação salarial foi efetivada.'
+      },
+      {
+        category: 'feature',
+        title: 'Anexo de Comprovante de Transferência',
+        description: 'Upload de comprovantes (PDF ou imagem) com armazenamento na nuvem, botão para visualização imediata do documento em nova aba e opção de exclusão/substituição.'
+      },
+      {
+        category: 'improvement',
+        title: 'Atalho de Comprovante e Data no Card da Folha',
+        description: 'A linha "(-) Adiantamentos / Vales" de cada colaborador exibe um selo com a data do pagamento e o botão interativo "[ 📎 Comprovante ]" para visualização rápida sem precisar entrar em modais.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_9',
+    version: 'v2.75.9',
+    date: '25/10/2026',
+    title: 'Apuração e Exibição de Comissões Comerciais na Folha de Pagamento',
+    summary: 'Configurada a apuração automática e lançamento manual de comissão para colaboradores com perfil Comercial e gestores em qualquer regime (CLT, PJ e Gestor AG), garantindo a exibição transparente no card do Celso e demais colaboradores da equipe.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Comissão no Card CLT e PJ',
+        description: 'Exibição da linha "(+) Comissão" com quantidade de fretes vinculados, valor apurado e atalho para ajuste manual através do ícone de edição (lápis).'
+      },
+      {
+        category: 'improvement',
+        title: 'Auditoria de Fretes para Equipe Comercial',
+        description: 'Disponibilizado botão [ Auditar ] diretamente no card e no detalhamento da comissão para inspecionar os CT-es, rotas, faturamento e base de comissão calculada.'
+      },
+      {
+        category: 'feature',
+        title: 'Campo de Comissão na Configuração do Colaborador',
+        description: 'Inclusão do campo "Comissão / Ajuste de Comissão (R$)" no modal de configuração de valores, permitindo ajuste de valores ou bonificações e atualização instantânea do salário bruto e líquido.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_8',
+    version: 'v2.75.8',
+    date: '25/10/2026',
+    title: 'Separação de Somas por Mês e Quitação Inicial do Mês de Setembro na Folha de Pagamento',
+    summary: 'Implementada a separação total dos totais de cada mês (Bruto, Descontos, Líquido Devido, Total Pago e Saldo a Pagar) com cards comparativos lado a lado de Outubro/2026 e Setembro/2026, além de filtros rápidos por mês. Configurada a regra de implantação onde os acertos do mês de Setembro já foram concluídos e quitados, mantendo a tela inicial limpa apenas com as pendências reais de Outubro.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Somas Consolidadas Separadas por Mês',
+        description: 'Cards comparativos lado a lado exibindo a soma detalhada e isolada de cada mês (Outubro/2026 em andamento vs Setembro/2026 100% quitado), permitindo filtragem instantânea ao clicar no próprio card.'
+      },
+      {
+        category: 'feature',
+        title: 'Filtro Rápido por Mês de Referência',
+        description: 'Seletores dedicados na barra de filtros da folha para alternar entre "Mês Atual (Outubro/2026)", "Mês Anterior (Setembro/2026 - Quitado)" e "Todos os Meses", sincronizando todos os KPIs e apurações.'
+      },
+      {
+        category: 'improvement',
+        title: 'Quitação Inicial de Setembro Concluída',
+        description: 'Como os acertos de Setembro já foram realizados anteriormente, esses lançamentos nascem 100% liquidados (Saldo R$ 0,00) e arquivados em "Pagamento Feito", sem poluir as contas em aberto da tela inicial.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_7',
+    version: 'v2.75.7',
+    date: '25/10/2026',
+    title: 'Opção de Excluir Colaborador da Tela de Folha de Pagamento',
+    summary: 'Criada a opção "Excluir" diretamente no seletor de "Classificação:" de cada card da Folha de Pagamento, permitindo remover usuários internos que não devem compor a folha (como contas de sistema, diretores ou administradores de TI). Inclui modal para gerenciamento e restauração dos colaboradores excluídos a qualquer momento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Botão "Excluir" em Classificação',
+        description: 'Disponibilizada a ação [ ✕ Excluir ] junto aos regimes de contratação (CLT | PJ | Gestor AG), com confirmação segura e persistência no navegador.'
+      },
+      {
+        category: 'feature',
+        title: 'Gerenciamento e Restauração de Excluídos',
+        description: 'Indicador dinâmico na barra de filtros da folha mostrando a quantidade de usuários excluídos e abrindo modal para restaurá-los individualmente ou em lote com um clique.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_6',
+    version: 'v2.75.6',
+    date: '25/10/2026',
+    title: 'Folha de Pagamento: Lançamento de NF e Comprovantes, Histórico de Pagamento Feito e Rollover de Mês Anterior',
+    summary: 'Aprimoramento completo da Folha de Pagamento com regras estritas de documentação por regime (CLT exige Comprovante de Pagamento/Holerite; PJ e Agenciador Líder/Gestor AG exigem Nota Fiscal e Comprovante). Criação da sub-aba "Pagamento Feito" para arquivamento automático após validação documental e quitação, e manutenção das apurações do mês anterior na tela inicial caso ainda não tenham sido concluídas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Lançamento de Documentos por Regime (CLT, PJ e Gestor AG)',
+        description: 'Campo para lançamento e upload da Nota Fiscal (número, data e anexo) e do Comprovante de Pagamento/PIX para colaboradores PJ e Agenciador Líder (Gestor AG), e Comprovante de Pagamento/Holerite para colaboradores CLT.'
+      },
+      {
+        category: 'feature',
+        title: 'Arquivamento Automático em "Pagamento Feito (Histórico)"',
+        description: 'Assim que todos os documentos pendentes forem anexados e o saldo for liquidado, o acerto sai da tela inicial e é transferido para a sub-aba "Pagamento Feito", mantendo acesso direto para visualização dos arquivos em nova aba.'
+      },
+      {
+        category: 'improvement',
+        title: 'Permanência de Mês Anterior Pendente',
+        description: 'Mesmo virando o mês e surgindo a apuração do mês atual, o acerto do mês anterior continua exibido na tela inicial com badge de alerta em destaque até que seja 100% quitado e documentado.'
+      },
+      {
+        category: 'improvement',
+        title: 'Navegação por Sub-Abas na Folha',
+        description: 'Divisão clara entre "Contas em Aberto & Pendências (Tela Inicial)" e "Pagamento Feito (Histórico)" com contadores dinâmicos e filtros de regime integrados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_5',
+    version: 'v2.75.5',
+    date: '25/10/2026',
+    title: 'Botões de Cópia Rápida para Placa do Veículo e Código ATUA',
+    summary: 'Implementados botões de cópia direta para a área de transferência com feedback visual e notificação toast no Código ATUA do motorista e na Placa do Cavalo Mecânico (e Carretas), tanto na visualização da tabela de embarques (desktop e mobile) quanto na modal de detalhes do embarque.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Cópia Rápida do Código ATUA',
+        description: 'Adicionado botão de cópia e clique interativo no badge do Código ATUA do motorista com notificação toast de confirmação e ícone de check temporário.'
+      },
+      {
+        category: 'feature',
+        title: 'Cópia Rápida da Placa do Veículo',
+        description: 'Adicionado botão dedicado de cópia e clique no texto da Placa do Veículo na coluna Motorista / Solicitante da tabela e na modal de detalhes do embarque.'
+      },
+      {
+        category: 'improvement',
+        title: 'Suporte Multi-Dispositivo (Desktop e Mobile)',
+        description: 'Ação de cópia disponível tanto na versão de grade da tabela para computadores quanto nos cards da visualização móvel.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_4',
+    version: 'v2.75.4',
+    date: '25/10/2026',
+    title: 'Módulo de Controladoria Fiscal e Alertas de Validade de Documentos',
+    summary: 'Nova janela e aba "Controladoria Fiscal" integrada ao módulo financeiro e diretamente acessível ao lado de "Controladoria & Planilha de Embarques". Permite cadastrar e gerenciar apólices de seguro (RCTR-C, RC-DC), certidões negativas (CND Federal, Estadual, Municipal, FGTS, Trabalhista), licenças ambientais e ANTT, com controle estrito de validade e alertas automatizados de vencimento (Atenção para 30 dias ou menos, e Crítico para 10 dias ou menos).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Módulo "Controladoria Fiscal"',
+        description: 'Disponibilizado como aba dedicada no Módulo Financeiro e como atalho/janela modal instantânea ao lado do título de "Controladoria & Planilha de Embarques".'
+      },
+      {
+        category: 'feature',
+        title: 'Cadastro e Gestão de Tipos de Documentos',
+        description: 'Permite lançar novos tipos de documentos personalizados (seguros, certidões, licenças, alvarás) com categorias e descrições customizadas.'
+      },
+      {
+        category: 'feature',
+        title: 'Regras de Alertas Automatizados de Vencimento',
+        description: 'Cálculo em tempo real da validade: faltante 30 dias ou menos ativa o status "Atenção", e 10 dias ou menos ativa o status "Crítico" com destaques visuais pulsantes e contadores de alerta.'
+      },
+      {
+        category: 'improvement',
+        title: 'Painel de 5 KPIs e Banner Preventivo',
+        description: 'Painel com indicadores de Total de Documentos, Vencidos, Críticos, Em Atenção e Em Dia, com filtros instantâneos ao clicar e exportação completa para Excel.'
+      },
+      {
+        category: 'improvement',
+        title: 'Anexo de Comprovantes e Ação de Renovação Rápida',
+        description: 'Upload de apólices e certidões (PDF ou imagens) com prévia em tela cheia e botão de renovação expressa que pré-carrega os dados do documento anterior.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_3',
+    version: 'v2.75.3',
+    date: '25/10/2026',
+    title: 'Anexo de Múltiplos Arquivos e Fotos no Módulo de Chamados',
+    summary: 'Abertura de chamados agora suporta a seleção e envio simultâneo ou cumulativo de múltiplos arquivos e fotos (PDFs, imagens PNG, JPG, WEBP, planilhas e documentos), com lista detalhada de anexos, badges de fotos, opção de remoção individual ou em lote, e visualização/download de todos os anexos tanto na visão em grade quanto em lista.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Anexo de Múltiplos Arquivos e Fotos',
+        description: 'Permite selecionar vários documentos ou fotos de uma só vez ou adicionar novos arquivos consecutivamente no modal de "Abrir Novo Chamado".'
+      },
+      {
+        category: 'improvement',
+        title: 'Gerenciador Visual de Arquivos Selecionados',
+        description: 'Exibe lista com identificação visual por ícone (foto/documento), nome, tamanho em KB/MB, botão de remoção por arquivo e ação para limpar todos os selecionados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Visualização e Download de Todos os Anexos',
+        description: 'Cards em grade e itens em lista agora exibem todos os anexos vinculados ao chamado com botões rápidos para "Visualizar" e "Baixar".'
+      },
+      {
+        category: 'improvement',
+        title: 'Compatibilidade e Persistência Segura',
+        description: 'Estrutura com suporte retrocompatível para chamados legados e armazenamento no bucket Supabase com fallback seguro em Base64.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_2',
+    version: 'v2.75.2',
+    date: '25/10/2026',
+    title: 'Folha de Pagamento dos Usuários Internos e Apurações de Pagamento',
+    summary: 'A sub-aba "Agenciadores Líder" foi expandida e renomeada para "Folha de Pagamento", e a seção principal passa a ser "Apurações de Pagamento", consolidando todos os colaboradores internos com suas classificações de regime (CLT, PJ e Gestor AG), suporte a salários fixos, deduções de tributos CLT (INSS/IRRF), adiantamentos salariais e planejamento de pagamentos, com exclusão estrita do perfil "Agenciador Embarque" (que é pago diretamente pelo seu Gestor AG Líder).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Módulo "Folha de Pagamento" e "Apurações de Pagamento"',
+        description: 'Renomeada a sub-aba para "Folha de Pagamento" e o título para "Apurações de Pagamento", oferecendo visão financeira completa de todos os usuários internos da empresa.'
+      },
+      {
+        category: 'feature',
+        title: 'Classificação por Regime (CLT, PJ e Gestor AG)',
+        description: 'Seletor ágil de regime em cada colaborador e filtros dedicados por regime, adaptando automaticamente o fluxo de cálculo e as obrigações pertinentes.'
+      },
+      {
+        category: 'feature',
+        title: 'Controle de Salários Fixos, Tributos CLT e Adiantamentos',
+        description: 'Permite informar e salvar salários fixos para colaboradores mensalistas, deduzir tributos e retenções (INSS/IRRF) para colaboradores CLT e abater adiantamentos/vales concedidos do saldo devido.'
+      },
+      {
+        category: 'feature',
+        title: 'Regra de Agenciador de Embarque',
+        description: 'Usuários com papel de "Agenciador Embarque" são estritamente excluídos da folha da transportadora, pois sua remuneração é de responsabilidade direta de seu respectivo Agenciador Líder.'
+      },
+      {
+        category: 'improvement',
+        title: 'Painel de 6 KPIs e Planejamento Unificado',
+        description: 'Novos indicadores de Folha Bruta, Tributos CLT, Adiantamentos, Líquido Devido, Total Pago e Saldo em Aberto, integrados ao modal de planejamento com preenchimento instantâneo do saldo em aberto.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_1',
+    version: 'v2.75.1',
+    date: '25/10/2026',
+    title: 'Padronização da Filial por UF da Carga na Planilha da Controladoria',
+    summary: 'Estabelecida a regra oficial para identificar a filial à qual pertence cada embarque na Planilha de Embarques da Controladoria: cargas com UF MG pertencem à "Matriz" (36.203.306/0001-92 - MATRIZ), com UF GO à "Filial GO" (36.203.306/0004-35 - FILIAL GO), com UF SP à "Filial SP" (36.203.306/0002-73 - FILIAL SP) e cargas das demais UFs pertencem à "Matriz".',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Regra Estrita de Filial por UF de Origem da Carga',
+        description: 'A identificação da unidade Transcunha na planilha passa a considerar estritamente o estado de origem da carga (UF MG -> Matriz, UF GO -> Filial GO, UF SP -> Filial SP, e demais UFs -> Matriz), assegurando total coerência fiscal e contábil.'
+      },
+      {
+        category: 'improvement',
+        title: 'Ajuste nos Filtros da Coluna TRANSPORTADORA',
+        description: 'Os filtros da coluna TRANSPORTADORA e o seletor da barra superior agora refletem com precisão as três unidades oficiais (Matriz, Filial SP e Filial GO), consolidando as demais UFs sob a Matriz.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_25_v2_75_0',
+    version: 'v2.75.0',
+    date: '25/10/2026',
+    title: 'Acompanhamento e Planejamento de Pagamentos dos Agenciadores Líder',
+    summary: 'Implementada nova sub-aba dedicada "Agenciadores Líder" no Contas a Pagar do Módulo Financeiro (ao lado de "Lançamentos Avulsos"), com apuração automatizada de comissões por agência sobre o Lucro Real Líquido dos embarques com CT-e, painel de acompanhamento de saldos em aberto, cronograma de vencimentos e modal para planejamento e quitação de pagamentos.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Nova Sub-aba "Agenciadores Líder" ao lado de Lançamentos Avulsos',
+        description: 'Disponibilizada nova seção de visualização na barra do Contas a Pagar com contador dinâmico de lançamentos e botão rápido "+ Planejar Pagamento Líder" no cabeçalho financeiro.'
+      },
+      {
+        category: 'feature',
+        title: 'Apuração e Painel Consolidado por Agenciador Líder',
+        description: 'Cards individuais por líder exibindo agência/filial vinculada, equipe de agenciadores de embarque, fretes faturados, lucro real da agência, comissão gerada (30% padrão ou configurada), salário fixo comercial, total já pago e saldo restante a liquidar.'
+      },
+      {
+        category: 'feature',
+        title: 'Planejamento Inteligente de Pagamentos e Vencimentos',
+        description: 'Modal inteligente para programar pagamentos futuros ou liquidar na hora: preenchimento em 1 clique com o saldo em aberto do líder, seleção de modalidade (Comissão, Salário Fixo, Adiantamento, Bônus), chave PIX, vencimento e integração total com o Contas a Pagar geral.'
+      },
+      {
+        category: 'feature',
+        title: 'Auditoria de Fretes e Memória de Cálculo da Agência',
+        description: 'Modal de auditoria detalhada que lista todos os embarques com CT-e emitido que originaram a comissão daquele líder no período selecionado, exibindo tomador, rotas, motorista, despesas, lucro real e valor da comissão apurada.'
+      },
+      {
+        category: 'improvement',
+        title: 'Integração com "Todas as Contas a Pagar" e Composição Financeira',
+        description: 'Os pagamentos de Agenciadores Líder aparecem unificados na tabela geral com badge âmbar exclusivo e ações de "Dar Baixa" / "Reabrir", alimentando automaticamente o fluxo de caixa, as saídas projetadas e o card de composição atual.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_22_v2_74_6',
     version: 'v2.74.6',
     date: '22/10/2026',

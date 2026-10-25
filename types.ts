@@ -723,6 +723,13 @@ export interface TicketHistory {
   durationText?: string;
 }
 
+export interface TicketAttachment {
+  url: string;
+  name: string;
+  size?: number;
+  type?: string;
+}
+
 export interface Ticket {
   id: string;
   title: string;
@@ -737,6 +744,7 @@ export interface Ticket {
   shipmentId?: string;
   attachmentUrl?: string;
   attachmentName?: string;
+  attachments?: TicketAttachment[];
   audioUrl?: string;
   audioDurationSeconds?: number;
   startedAt?: string;
@@ -832,7 +840,49 @@ export type FinancialTab =
   | 'result-2' 
   | 'result-3' 
   | 'control-shipments' 
-  | 'control-banking';
+  | 'control-banking'
+  | 'control-fiscal';
+
+// ==========================================
+// CONTROLADORIA FISCAL & GESTÃO DE DOCUMENTOS
+// ==========================================
+
+export type FiscalAlertLevel = 'expired' | 'critical' | 'warning' | 'ok';
+
+export interface FiscalDocumentAttachment {
+  url: string;
+  name: string;
+  size?: number;
+  type?: string;
+}
+
+export interface FiscalDocument {
+  id: string;
+  title: string;
+  typeId: string;
+  typeName: string;
+  documentNumber?: string;
+  issuer?: string;
+  issueDate?: string;
+  expirationDate: string; // YYYY-MM-DD (obrigatório)
+  branchId?: string;
+  branchName?: string;
+  notes?: string;
+  attachments?: FiscalDocumentAttachment[];
+  status?: 'active' | 'archived';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FiscalDocumentType {
+  id: string;
+  name: string;
+  description?: string;
+  category?: 'seguro' | 'certidao' | 'licenca' | 'fiscal' | 'outros';
+  color?: string;
+  isDefault?: boolean;
+  createdAt: string;
+}
 
 export type FinancialTransactionType = 'payable' | 'receivable';
 
@@ -900,6 +950,42 @@ export interface FinancialTransaction {
   
   createdAt: string;
   createdById?: string;
+}
+
+export interface PayrollSettlementDoc {
+  userId: string;
+  monthKey: string; // 'YYYY-MM', ex: '2026-10'
+  monthLabel: string; // ex: 'Outubro/2026'
+  regime: 'CLT' | 'PJ' | 'Gestor AG';
+  
+  // Nota Fiscal (PJ / Gestor AG)
+  invoiceNumber?: string;
+  invoiceIssueDate?: string;
+  invoiceFileUrl?: string;
+  invoiceFileName?: string;
+  
+  // Comprovante de Pagamento (CLT / PJ / Gestor AG)
+  receiptFileUrl?: string;
+  receiptFileName?: string;
+  paymentDate?: string;
+  paymentAuthCode?: string;
+  
+  isPaid?: boolean;
+  isCompleted?: boolean;
+  completedAt?: string;
+  notes?: string;
+  updatedAt?: string;
+}
+
+export interface PayrollAdvanceRecord {
+  userId: string;
+  monthKey: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  receiptFileUrl?: string;
+  receiptFileName?: string;
+  notes?: string;
+  updatedAt?: string;
 }
 
 export interface OfxTransaction {

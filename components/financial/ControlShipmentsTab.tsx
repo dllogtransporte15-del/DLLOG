@@ -48,7 +48,9 @@ import {
   Moon,
   AlignLeft,
   AlignCenter,
-  AlignRight
+  AlignRight,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { 
   openDocumentInNewTab, 
@@ -59,7 +61,9 @@ import {
   getShipmentBalanceProofUrl
 } from '../../utils/documentViewer';
 import { getShipmentOcNumber } from '../../utils/ocParser';
-import { isGoiasOrigin, isSpOrigin } from '../../utils/pdfGenerator';
+import { isGoiasOrigin, isMinasOrigin, isSpOrigin } from '../../utils/pdfGenerator';
+import { ControlFiscalModal } from './ControlFiscalModal';
+import { getFiscalDocuments, getFiscalKpisSummary, FISCAL_DOCUMENTS_CHANGED_EVENT } from '../../services/fiscalControlService';
 
 interface ControlShipmentsTabProps {
   items: ShipmentControlItem[];
@@ -72,6 +76,7 @@ interface ControlShipmentsTabProps {
   vehicles?: Vehicle[];
   owners?: Owner[];
   branches?: Branch[];
+  onNavigateToFiscal?: () => void;
 }
 
 export interface TranscunhaBranchInfo {
@@ -119,7 +124,73 @@ export const TRANSCUNHA_BRANCH_INFO: Record<string, TranscunhaBranchInfo> = {
 };
 
 /**
- * Identifica com alta fidelidade a Filial Transcunha e o CNPJ emissor de cada embarque
+ * Extrai a UF de origem da carga/embarque para fins de enquadramento da Filial Transcunha
+ */
+export function extractCargoOriginUf(
+  cargo?: Cargo | null,
+  s?: Shipment | null
+): string {
+  // 1. Checagem direta com os utilitários de origem de alta precisão
+  if (isGoiasOrigin(cargo, s)) return 'GO';
+  if (isSpOrigin(cargo, s)) return 'SP';
+  if (isMinasOrigin(cargo, s)) return 'MG';
+
+  // 2. Documentos fiscais anexados (CT-e / NF-e)
+  const docs = (s?.documents || {}) as any;
+  const docUf = docs.uf_origem || docs.ufOrigem || docs.UF_ORIGEM || docs.origem_uf || docs.remetente?.uf || docs.remetente_uf || docs.remetente?.state;
+  if (docUf && typeof docUf === 'string' && docUf.trim().length === 2) {
+    return docUf.trim().toUpperCase();
+  }
+
+  // 3. Chave de Acesso do CT-e (44 dígitos: os 2 primeiros dígitos indicam o cUF)
+  const accessKey = String((s as any)?.accessKey || docs.accessKey || docs.chCTe || docs.chave_acesso || '').replace(/\D/g, '');
+  if (accessKey.length === 44) {
+    const cUf = accessKey.substring(0, 2);
+    if (cUf === '52') return 'GO';
+    if (cUf === '35') return 'SP';
+    if (cUf === '31') return 'MG';
+    if (cUf === '41') return 'PR';
+    if (cUf === '51') return 'MT';
+    if (cUf === '50') return 'MS';
+    if (cUf === '29') return 'BA';
+  }
+
+  // 4. Analisar partes textuais da ORIGEM (cuidado para não pegar destino da rota)
+  const originParts: string[] = [];
+  if (cargo?.origin) originParts.push(cargo.origin);
+  if (cargo?.originLocation) originParts.push(cargo.originLocation);
+  if ((s as any)?.origin) originParts.push((s as any).origin);
+  if ((s as any)?.originLocation) originParts.push((s as any).originLocation);
+
+  const route = s?.route;
+  if (route && typeof route === 'string') {
+    const originFromRoute = route.split(/->|➔|>|→|\s+x\s+/i)[0]?.trim();
+    if (originFromRoute) originParts.push(originFromRoute);
+  }
+
+  const originText = originParts.join(' ').trim();
+  if (originText) {
+    const normalized = originText
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase();
+
+    // Regex para extrair UF brasileira de 2 letras na origem (ex: /MG, - MG, (MG), MG)
+    const ufMatch = normalized.match(/(?:[\/\-\(\,\.\s]|^)(MG|GO|SP|PR|MT|MS|BA|RJ|ES|RS|SC|TO|PA|MA|PI|CE|RN|PB|PE|AL|SE|AM|RO|AC|RR|AP|DF)(?:[\/\-\)\,\.\s]|$)/);
+    if (ufMatch && ufMatch[1]) {
+      return ufMatch[1];
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Identifica a Filial Transcunha e o CNPJ emissor de cada embarque conforme a regra oficial:
+ * - Carga com UF MG -> "Matriz" (36.203.306/0001-92 - MATRIZ)
+ * - Carga com UF GO -> "Filial GO" (36.203.306/0004-35 - FILIAL GO)
+ * - Carga com UF SP -> "Filial SP" (36.203.306/0002-73 - FILIAL SP)
+ * - Carga das demais UFs -> "Matriz" (36.203.306/0001-92 - MATRIZ)
  */
 export function resolveTranscunhaBranch(
   s: Shipment,
@@ -127,113 +198,19 @@ export function resolveTranscunhaBranch(
   userMap?: Map<string, User>,
   branchesList?: Branch[]
 ): TranscunhaBranchInfo {
-  // 1. Verificação direta nos documentos fiscais (CT-e / MDF-e / XML / DACTE / Chave de Acesso)
-  const docs = (s.documents || {}) as any;
-  const docCnpjCandidates: string[] = [
-    docs.cte_emitente_cnpj,
-    docs.emitente_cnpj,
-    docs.transportadora_cnpj,
-    docs.emitente?.cnpjCpf,
-    docs.emitente?.cnpj,
-    docs.cnpj_transportadora,
-  ].filter(Boolean).map(c => String(c).replace(/\D/g, ''));
+  const uf = extractCargoOriginUf(cargo, s);
 
-  const accessKey = ((s as any).accessKey || docs.accessKey || docs.chCTe || docs.chave_acesso || '').replace(/\D/g, '');
-  if (accessKey.length === 44) {
-    const keyCnpj = accessKey.substring(6, 20);
-    if (keyCnpj) docCnpjCandidates.push(keyCnpj);
-  }
-
-  const cteDocs = docs['CT-e'] || docs['CT-E'] || docs['cte'] || docs['Cte'];
-  const cteDocStr = Array.isArray(cteDocs) ? cteDocs.join(' ') : String(cteDocs || '');
-
-  for (const c of docCnpjCandidates) {
-    if (c.includes('36203306000273') || c.includes('000273')) return TRANSCUNHA_BRANCH_INFO.sp;
-    if (c.includes('36203306000435') || c.includes('000435')) return TRANSCUNHA_BRANCH_INFO.go;
-    if (c.includes('36203306000354') || c.includes('000354')) return TRANSCUNHA_BRANCH_INFO.pr;
-    if (c.includes('36203306000192') || c.includes('000192')) return TRANSCUNHA_BRANCH_INFO.matriz;
-  }
-
-  if (cteDocStr.includes('000273') || cteDocStr.includes('0002-73') || cteDocStr.toLowerCase().includes('filial_sp') || cteDocStr.toLowerCase().includes('filial-sp')) {
-    return TRANSCUNHA_BRANCH_INFO.sp;
-  }
-  if (cteDocStr.includes('000435') || cteDocStr.includes('0004-35') || cteDocStr.toLowerCase().includes('filial_go') || cteDocStr.toLowerCase().includes('filial-go')) {
+  if (uf === 'GO') {
     return TRANSCUNHA_BRANCH_INFO.go;
   }
-  if (cteDocStr.includes('000354') || cteDocStr.includes('0003-54') || cteDocStr.toLowerCase().includes('filial_pr') || cteDocStr.toLowerCase().includes('filial-pr')) {
-    return TRANSCUNHA_BRANCH_INFO.pr;
+  if (uf === 'SP') {
+    return TRANSCUNHA_BRANCH_INFO.sp;
+  }
+  if (uf === 'MG') {
+    return TRANSCUNHA_BRANCH_INFO.matriz;
   }
 
-  // 2. Prefixo do ID do Embarque (Regra oficial de prefixação do TMS Transcunha)
-  const sid = (s.id || '').toUpperCase();
-  if (sid.startsWith('RAF-')) return TRANSCUNHA_BRANCH_INFO.sp;
-  if (sid.startsWith('MAU-') || sid.startsWith('MUR-')) return TRANSCUNHA_BRANCH_INFO.go;
-
-  // 3. Filial Vinculada no Embarque ou Carga (branchId)
-  const effectiveBranchId = s.branchId || cargo?.branchId;
-  if (effectiveBranchId) {
-    if (effectiveBranchId === 'FIL-011') return TRANSCUNHA_BRANCH_INFO.sp;
-    if (effectiveBranchId === 'FIL-012') return TRANSCUNHA_BRANCH_INFO.go;
-    if (effectiveBranchId === 'FIL-013') return TRANSCUNHA_BRANCH_INFO.pr;
-    if (effectiveBranchId === 'FIL-010') return TRANSCUNHA_BRANCH_INFO.matriz;
-
-    if (branchesList && branchesList.length > 0) {
-      const bObj = branchesList.find(b => b.id === effectiveBranchId);
-      if (bObj) {
-        const bName = (bObj.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const bCity = (bObj.city || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const bState = (bObj.state || '').toLowerCase();
-
-        if (bState === 'go' || bName.includes('goias') || bCity.includes('catalao')) return TRANSCUNHA_BRANCH_INFO.go;
-        if (bState === 'sp' || bName.includes('sao paulo') || bCity.includes('ipaussu')) return TRANSCUNHA_BRANCH_INFO.sp;
-        if (bState === 'pr' || bName.includes('parana') || bCity.includes('cambara')) return TRANSCUNHA_BRANCH_INFO.pr;
-        if (bState === 'mg' || bName.includes('matriz') || bCity.includes('pratapolis')) return TRANSCUNHA_BRANCH_INFO.matriz;
-      }
-    }
-  }
-
-  // 4. Usuário Operador / Embarcador / Criador
-  if (userMap) {
-    const checkUser = (userId?: string) => {
-      if (!userId) return null;
-      const u = userMap.get(userId);
-      if (!u) return null;
-      if (u.branchId === 'FIL-011') return TRANSCUNHA_BRANCH_INFO.sp;
-      if (u.branchId === 'FIL-012') return TRANSCUNHA_BRANCH_INFO.go;
-      if (u.branchId === 'FIL-013') return TRANSCUNHA_BRANCH_INFO.pr;
-      if (u.branchId === 'FIL-010') return TRANSCUNHA_BRANCH_INFO.matriz;
-
-      const name = (u.name || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const email = (u.email || '').toUpperCase();
-      if (name.includes('RAFAEL PINHEIRO') || name.includes('RAFAEL TARANTELLI') || email.includes('PINHEIRO') || email.includes('TARANTELLI')) {
-        return TRANSCUNHA_BRANCH_INFO.sp;
-      }
-      if (name.includes('MAURICIO') || name.includes('MURILO') || email.includes('MAURICIO') || email.includes('MURILO')) {
-        return TRANSCUNHA_BRANCH_INFO.go;
-      }
-      return null;
-    };
-
-    const byEmb = checkUser(s.embarcadorId);
-    if (byEmb) return byEmb;
-    const byCreator = checkUser(s.createdById);
-    if (byCreator) return byCreator;
-    if (cargo?.createdById) {
-      const byCargoCreator = checkUser(cargo.createdById);
-      if (byCargoCreator) return byCargoCreator;
-    }
-  }
-
-  // 5. Origem da Carga / Rota
-  if (isGoiasOrigin(cargo, s)) return TRANSCUNHA_BRANCH_INFO.go;
-  if (isSpOrigin(cargo, s)) return TRANSCUNHA_BRANCH_INFO.sp;
-
-  const routeStr = ((s.route || '') + ' ' + (cargo?.origin || '')).toUpperCase();
-  if (routeStr.includes('/PR') || routeStr.includes('- PR') || routeStr.includes('CAMBARA') || routeStr.includes('PARANÁ') || routeStr.includes('PARANA')) {
-    return TRANSCUNHA_BRANCH_INFO.pr;
-  }
-
-  // 6. Padrão: Matriz Minas Gerais
+  // Demais UFs (PR, MT, MS, BA, etc. ou indefinidas) pertencem à Matriz conforme regra
   return TRANSCUNHA_BRANCH_INFO.matriz;
 }
 
@@ -532,6 +509,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   vehicles: propVehicles = [],
   owners: propOwners = [],
   branches = [],
+  onNavigateToFiscal,
 }) => {
   // Estado de dados mapeados e carregamento
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -547,6 +525,27 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const [isResizingWindow, setIsResizingWindow] = useState<boolean>(false);
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, windowX: 20, windowY: 20 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 1200, startH: 750 });
+
+  // Controladoria Fiscal Modal & Alertas
+  const [isFiscalModalOpen, setIsFiscalModalOpen] = useState(false);
+  const [fiscalUrgentCount, setFiscalUrgentCount] = useState(0);
+
+  useEffect(() => {
+    const updateFiscalUrgency = () => {
+      try {
+        const docs = getFiscalDocuments();
+        const k = getFiscalKpisSummary(docs);
+        setFiscalUrgentCount(k.urgentCount);
+      } catch {}
+    };
+    updateFiscalUrgency();
+    window.addEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, updateFiscalUrgency);
+    window.addEventListener('storage', updateFiscalUrgency);
+    return () => {
+      window.removeEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, updateFiscalUrgency);
+      window.removeEventListener('storage', updateFiscalUrgency);
+    };
+  }, []);
 
   // Filtros e busca (rolagem contínua por período, sem quebra de páginas)
   const [searchTerm, setSearchTerm] = useState('');
@@ -3098,30 +3097,23 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         const norm = String(raw || '').toUpperCase().trim();
                         const isSp = norm.includes('0002-73') || norm.includes('FILIAL SP');
                         const isGo = norm.includes('0004-35') || norm.includes('FILIAL GO');
-                        const isPr = norm.includes('0003-54') || norm.includes('FILIAL PR');
 
                         const cnpjStr = isSp 
                           ? '36.203.306/0002-73' 
                           : isGo 
                           ? '36.203.306/0004-35' 
-                          : isPr 
-                          ? '36.203.306/0003-54' 
                           : '36.203.306/0001-92';
 
                         const branchTag = isSp 
                           ? 'FILIAL SP' 
                           : isGo 
                           ? 'FILIAL GO' 
-                          : isPr 
-                          ? 'FILIAL PR' 
-                          : 'TRANSCUNHA MATRIZ';
+                          : 'MATRIZ';
 
                         const badgeStyle = isSp
                           ? 'bg-[#ea580c] text-white border-orange-700'
                           : isGo
                           ? 'bg-purple-700 text-white border-purple-800'
-                          : isPr
-                          ? 'bg-blue-700 text-white border-blue-800'
                           : (isDark ? 'bg-emerald-800 text-yellow-300 border-emerald-600' : 'bg-[#005c00] text-yellow-300 border-green-800');
 
                         cellContent = (
@@ -3315,13 +3307,29 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               <FileSpreadsheet className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
                   Controladoria & Planilha de Embarques
                 </h2>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
                   {mappedRows.length} {onlyWithCte ? 'Embarques com CT-e' : 'Embarques Mapeados'}
                 </span>
+
+                {/* BOTÃO DA CONTROLADORIA FISCAL */}
+                <button
+                  type="button"
+                  onClick={() => onNavigateToFiscal ? onNavigateToFiscal() : setIsFiscalModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-sm shadow-indigo-600/30 transition-all cursor-pointer active:scale-95"
+                  title="Abrir Controladoria Fiscal (Apólices de Seguro, Certidões e Validades)"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-200" />
+                  <span>Controladoria Fiscal</span>
+                  {fiscalUrgentCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                      {fiscalUrgentCount}
+                    </span>
+                  )}
+                </button>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Integração nativa com 61 colunas sincronizadas em tempo real com as tabelas de embarques e fretes.
@@ -3744,10 +3752,9 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
               title="Filtrar embarques pelo CNPJ da Filial Transcunha (disponível também na coluna TRANSPORTADORA)"
             >
               <option value="all" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">CNPJ Filial: Todos</option>
-              <option value="36.203.306/0001-92 - MATRIZ" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0001-92 - Matriz (MG)</option>
+              <option value="36.203.306/0001-92 - MATRIZ" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0001-92 - Matriz (MG e Demais UFs)</option>
               <option value="36.203.306/0002-73 - FILIAL SP" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0002-73 - Filial SP (SP)</option>
               <option value="36.203.306/0004-35 - FILIAL GO" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0004-35 - Filial GO (GO)</option>
-              <option value="36.203.306/0003-54 - FILIAL PR" className="bg-slate-900 text-slate-100 dark:bg-slate-900 dark:text-slate-100">36.203.306/0003-54 - Filial PR (PR)</option>
             </select>
 
             {/* Alternador Rápido de Ordem do CT-e (Crescente / Decrescente) */}
@@ -3811,6 +3818,22 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                {/* BOTÃO CONTROLADORIA FISCAL (TELA CHEIA) */}
+                <button
+                  type="button"
+                  onClick={() => setIsFiscalModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-all cursor-pointer"
+                  title="Abrir Controladoria Fiscal"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-200" />
+                  <span>Controladoria Fiscal</span>
+                  {fiscalUrgentCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                      {fiscalUrgentCount}
+                    </span>
+                  )}
+                </button>
+
                 {/* BOTÃO MODO CLARO / ESCURO INDEPENDENTE (TELA CHEIA) */}
                 <button
                   type="button"
@@ -3918,6 +3941,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
         </div>,
         document.body
       )}
+      {/* MODAL CONTROLADORIA FISCAL */}
+      <ControlFiscalModal
+        isOpen={isFiscalModalOpen}
+        onClose={() => setIsFiscalModalOpen(false)}
+        branches={branches}
+        currentUser={currentUser}
+      />
     </div>
   );
 };

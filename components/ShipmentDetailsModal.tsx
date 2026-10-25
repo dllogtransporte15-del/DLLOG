@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod, AnttModality, EtcTaxRegime } from '../types';
 import { generateLoadingOrderPDF, isGoiasOrigin, isMinasOrigin, isSpOrigin } from '../utils/pdfGenerator';
-import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X } from 'lucide-react';
+import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X, Copy } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
@@ -11,6 +11,7 @@ import SwapCargoModal from './SwapCargoModal';
 import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
 import { isDemoUser } from '../auth';
+import { useToast } from '../hooks/useToast';
 
 
 interface ShipmentDetailsModalProps {
@@ -78,6 +79,22 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [inlinePixKey, setInlinePixKey] = useState<string>('');
   const [inlineBankDetails, setInlineBankDetails] = useState<string>('');
   const [isSavingPaymentMethod, setIsSavingPaymentMethod] = useState(false);
+  const { showToast } = useToast();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (text: string, key: string, label: string) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      showToast(`${label} copiado: ${text}`, 'success');
+      setTimeout(() => {
+        setCopiedKey(prev => (prev === key ? null : prev));
+      }, 2000);
+    } catch {
+      showToast('Não foi possível copiar.', 'warning');
+    }
+  };
 
   React.useEffect(() => {
     if (shipment) {
@@ -611,8 +628,20 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     {(() => {
                                         const atua = shipment.codigoAtua || (shipment.documents as any)?.codigo_atua || (shipment.documents as any)?.codg_atua || (shipment.documents as any)?.codigoAtua;
                                         return atua ? (
-                                            <span className="px-1.5 py-0.5 rounded text-[11px] font-black font-mono bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300 dark:border-blue-700/60 shadow-2xs">
-                                                {atua}
+                                            <span 
+                                                onClick={() => handleCopy(atua, 'modal_atua', 'Código ATUA')}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-black font-mono bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300 dark:border-blue-700/60 shadow-2xs cursor-pointer hover:bg-blue-200/80 dark:hover:bg-blue-800/80 transition-colors"
+                                                title={`Código ATUA: ${atua} (Clique para copiar)`}
+                                            >
+                                                <span>{atua}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleCopy(atua, 'modal_atua', 'Código ATUA'); }}
+                                                    className="text-blue-600 hover:text-blue-950 dark:text-blue-300 dark:hover:text-white transition-colors cursor-pointer p-0.5 rounded"
+                                                    title={`Copiar Código ATUA (${atua})`}
+                                                >
+                                                    {copiedKey === 'modal_atua' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                                </button>
                                             </span>
                                         ) : null;
                                     })()}
@@ -624,8 +653,52 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                             
                             <div className="md:col-span-2 lg:col-span-3 h-px bg-gray-100 dark:bg-gray-700 my-2" />
                             
-                            <DetailItem label="Placa do Cavalo" value={shipment.horsePlate} />
-                            <DetailItem label="Placa Carreta 1" value={shipment.trailer1Plate} />
+                            <DetailItem label="Placa do Cavalo">
+                                {shipment.horsePlate ? (
+                                    <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
+                                        <span 
+                                            onClick={() => handleCopy(shipment.horsePlate!, 'modal_horse_plate', 'Placa do Cavalo')}
+                                            className="font-mono cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                            title="Clique para copiar a Placa do Cavalo"
+                                        >
+                                            {shipment.horsePlate}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); handleCopy(shipment.horsePlate!, 'modal_horse_plate', 'Placa do Cavalo'); }}
+                                            className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                                            title="Copiar Placa do Cavalo"
+                                        >
+                                            {copiedKey === 'modal_horse_plate' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>
+                                )}
+                            </DetailItem>
+                            <DetailItem label="Placa Carreta 1">
+                                {shipment.trailer1Plate ? (
+                                    <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
+                                        <span 
+                                            onClick={() => handleCopy(shipment.trailer1Plate!, 'modal_trailer1', 'Placa Carreta 1')}
+                                            className="font-mono cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                            title="Clique para copiar a Placa Carreta 1"
+                                        >
+                                            {shipment.trailer1Plate}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); handleCopy(shipment.trailer1Plate!, 'modal_trailer1', 'Placa Carreta 1'); }}
+                                            className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                                            title="Copiar Placa Carreta 1"
+                                        >
+                                            {copiedKey === 'modal_trailer1' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">N/A</p>
+                                )}
+                            </DetailItem>
                             <DetailItem label="Placa Carreta 2" value={shipment.trailer2Plate || 'N/A'} />
                             <DetailItem label="Placa Carreta 3" value={shipment.trailer3Plate || 'N/A'} />
                             <DetailItem label="Tag do Veículo" value={shipment.vehicleTag || 'N/A'} />

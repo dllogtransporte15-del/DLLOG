@@ -303,7 +303,7 @@ export function dataUrlToBlob(dataUrl: string, defaultMime = 'application/pdf'):
 export async function uploadInvoiceAttachmentToStorage(
   fileOrDataUrl: File | string,
   invoiceId: string,
-  kind: 'nf' | 'fatura' | 'boleto',
+  kind: 'nf' | 'fatura' | 'boleto' | 'comprovante' | 'recibo' | string,
   originalFileName?: string,
   fileType?: string
 ): Promise<string> {
