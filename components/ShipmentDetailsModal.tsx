@@ -213,6 +213,22 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const companyRateSnapshot = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const commissionPerTon = Number(cargo?.salespersonCommissionPerTon) || 0;
 
+  // Custo Financeiro
+  const financialCostMonthlyRate = shipment.financialCostMonthlyRate !== undefined 
+    ? shipment.financialCostMonthlyRate 
+    : (cargo?.financialCostMonthlyRate || 0);
+  const financialCostDaysTerm = shipment.financialCostDaysTerm !== undefined 
+    ? shipment.financialCostDaysTerm 
+    : (cargo?.financialCostDaysTerm || 0);
+  const financialCostRate = shipment.financialCostRate !== undefined 
+    ? shipment.financialCostRate 
+    : (cargo?.financialCostEffectiveRate !== undefined 
+        ? cargo.financialCostEffectiveRate 
+        : ((financialCostMonthlyRate * financialCostDaysTerm) / (cargo?.financialCostBaseDays || 30)));
+  const financialCostValue = (shipment.financialCostValue !== undefined && shipment.financialCostValue > 0)
+    ? shipment.financialCostValue
+    : ((companyRateSnapshot * tonnage) * (financialCostRate / 100));
+
   // Valor original colocado na carga (R$/ton) e teto de +R$ 5,00 para perfis operacionais
   const cargoBaseDriverRate = (cargo?.driverFreightValuePerTon !== undefined && cargo.driverFreightValuePerTon > 0)
     ? cargo.driverFreightValuePerTon
@@ -875,6 +891,19 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                 </p>
                             </DetailItem>
                         )}
+
+                        {currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && financialCostValue > 0 && (
+                            <DetailItem label="Custo Financeiro">
+                                <div>
+                                    <p className="text-sm font-bold text-purple-700 dark:text-purple-400">
+                                        - {formatCurrency(financialCostValue)}
+                                    </p>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block mt-0.5">
+                                        {financialCostRate.toFixed(2)}% ({financialCostDaysTerm} dias a {financialCostMonthlyRate}% a.m.)
+                                    </span>
+                                </div>
+                            </DetailItem>
+                        )}
                         
                         {staysList.length > 0 && currentUser?.profile !== UserProfile.Embarcador && currentUser?.profile !== UserProfile.Motorista && currentUser?.profile !== UserProfile.Cliente && (
                             <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700">
@@ -947,17 +976,23 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         )}
                         
                         {currentUser?.profile !== UserProfile.Embarcador && (
-                            <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg">
+                            <div className="md:col-span-2 mt-2 pt-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                                 <DetailItem label="Lucro Operacional do Embarque (Margem + Estadias)">
                                     <p className="text-lg font-bold text-primary dark:text-blue-400">
                                         {formatCurrency(
                                             (companyRateSnapshot * tonnage) 
                                             - driverFreight 
                                             - (commissionPerTon * tonnage)
+                                            - financialCostValue
                                             + netDemurrage
                                         )}
                                     </p>
                                 </DetailItem>
+                                {financialCostValue > 0 && (
+                                    <span className="text-xs px-2.5 py-1 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-700 font-semibold">
+                                        Deduzido Custo Financeiro: -{formatCurrency(financialCostValue)}
+                                    </span>
+                                )}
                             </div>
                         )}
 

@@ -60,6 +60,7 @@ export interface TranscunhaSpreadsheetRow {
   patronal4: number;
   inssSestSenat: number;
   valorTaxaCiot?: number;
+  custoFinanceiro?: number;
   
   // AP - AU: Custos de Frete do Motorista
   tarifaTonMotorista: number;

@@ -63,7 +63,7 @@ import {
 import { getShipmentOcNumber } from '../../utils/ocParser';
 import { isGoiasOrigin, isMinasOrigin, isSpOrigin } from '../../utils/pdfGenerator';
 import { ControlFiscalModal } from './ControlFiscalModal';
-import { getFiscalDocuments, getFiscalKpisSummary, FISCAL_DOCUMENTS_CHANGED_EVENT } from '../../services/fiscalControlService';
+import { getFiscalDocuments, getFiscalKpisSummary, subscribeToFiscalControl } from '../../services/fiscalControlService';
 
 interface ControlShipmentsTabProps {
   items: ShipmentControlItem[];
@@ -473,6 +473,7 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColDef[] = [
   { key: 'patronal4', label: 'PATRONAL 4%', tooltip: 'PATRONAL 4%: INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF)', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
   { key: 'inssSestSenat', label: 'INSS / SEST SENAT', tooltip: 'INSS / SEST SENAT: 3.5.3 (-) Desconto SEST/SENAT (Carta Frete)', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[95px]', align: 'right' },
   { key: 'valorTaxaCiot', label: 'VL. CIOT', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[80px] max-w-[90px]', align: 'right' },
+  { key: 'custoFinanceiro', label: 'CUSTO FINANCEIRO', tooltip: 'CUSTO FINANCEIRO: Pro rata sobre Frete Empresa conforme taxa e prazo da carga', category: 'Impostos & Deduções', categoryColor: 'bg-purple-700', type: 'currency', width: 'min-w-[85px] max-w-[100px]', align: 'right' },
 
   // 7. Frete & Acerto Motorista
   { key: 'tarifaTonMotorista', label: 'TARIFA TON MOTORISTA', category: 'Frete & Acerto Motorista', categoryColor: 'bg-indigo-700', type: 'currency', width: 'min-w-[90px] max-w-[100px]', align: 'right' },
@@ -539,11 +540,13 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
       } catch {}
     };
     updateFiscalUrgency();
-    window.addEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, updateFiscalUrgency);
-    window.addEventListener('storage', updateFiscalUrgency);
+
+    const unsubscribe = subscribeToFiscalControl(() => {
+      updateFiscalUrgency();
+    });
+
     return () => {
-      window.removeEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, updateFiscalUrgency);
-      window.removeEventListener('storage', updateFiscalUrgency);
+      unsubscribe();
     };
   }, []);
 
@@ -1339,6 +1342,24 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             : Math.max(0, freteMotorista - tollVal);
           return baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0;
         })(),
+        custoFinanceiro: (() => {
+          if (s.financialCostValue !== undefined && s.financialCostValue > 0) {
+            return s.financialCostValue;
+          }
+          if (opExp.financialCostValue !== undefined && opExp.financialCostValue > 0) {
+            return opExp.financialCostValue;
+          }
+          const monthlyRate = s.financialCostMonthlyRate !== undefined ? s.financialCostMonthlyRate : (cargo?.financialCostMonthlyRate || 0);
+          const daysTerm = s.financialCostDaysTerm !== undefined ? s.financialCostDaysTerm : (cargo?.financialCostDaysTerm || 0);
+          const effectiveRate = s.financialCostRate !== undefined 
+            ? s.financialCostRate 
+            : (cargo?.financialCostEffectiveRate !== undefined ? cargo.financialCostEffectiveRate : ((monthlyRate * daysTerm) / 30));
+          if (effectiveRate > 0) {
+            const fb = (s.realProfitData?.companyFreight || opExp.companyFreight || freteBruto || 0);
+            return Number(((fb * effectiveRate) / 100).toFixed(2));
+          }
+          return 0;
+        })(),
 
         tarifaTonMotorista: tarifaMotorista,
         valorFreteMotorista: freteMotoristaConta,
@@ -1765,6 +1786,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   const totalPatronal = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.patronal4 || 0), 0), [filteredRows]);
   const totalInssSestSenat = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.inssSestSenat || 0), 0), [filteredRows]);
   const totalValorTaxaCiot = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.valorTaxaCiot || 0), 0), [filteredRows]);
+  const totalCustoFinanceiro = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.custoFinanceiro || 0), 0), [filteredRows]);
   const totalValorNf = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.valorNf || 0), 0), [filteredRows]);
   const totalAdiantamentos = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.valorAdiantamento || 0), 0), [filteredRows]);
   const totalSaldos = useMemo(() => filteredRows.reduce((acc, r) => acc + (r.saldo || 0), 0), [filteredRows]);
@@ -3017,6 +3039,24 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                         );
                       }
 
+                      // Coluna Especial: CUSTO FINANCEIRO (Pro rata s/ Frete Empresa)
+                      if (col.key === 'custoFinanceiro') {
+                        const costVal = typeof raw === 'number' ? raw : 0;
+                        return (
+                          <td 
+                            key={col.key}
+                            data-cell-coord={cellCoord}
+                            onClick={handleCellClick}
+                            className={`px-2 py-1 border-r ${borderCol} ${textAlignClass} font-mono text-[11px] cursor-pointer select-none ${cellFocusRing} ${isSelected ? 'relative z-10' : ''}`}
+                            title={costVal > 0 ? `Custo Financeiro da Carga: ${formatCurrency(costVal)}` : 'Sem custo financeiro'}
+                          >
+                            <span className={costVal > 0 ? (isDark ? 'font-bold text-purple-400' : 'font-black text-red-700') : (isDark ? 'text-slate-500' : 'text-slate-900 font-bold')}>
+                              {costVal > 0 ? formatCurrency(costVal) : '-'}
+                            </span>
+                          </td>
+                        );
+                      }
+
                       // Coluna Especial: Nº PEDIDO (Em branco caso não informado na carga)
                       if (col.key === 'numeroPedido') {
                         const pedidoVal = (raw && String(raw).trim() !== '-' && String(raw).trim() !== 'Não informado') ? String(raw).trim() : '';
@@ -3190,7 +3230,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
                           ) : (
                             <span className="text-slate-500 font-bold">-</span>
                           );
-                        } else if (['icms', 'debitoPisCofins', 'creditoPisCofins', 'patronal4', 'inssSestSenat', 'totalQuebra', 'valorQuebraCiot'].includes(col.key as string)) {
+                        } else if (['icms', 'debitoPisCofins', 'creditoPisCofins', 'patronal4', 'inssSestSenat', 'totalQuebra', 'valorQuebraCiot', 'custoFinanceiro'].includes(col.key as string)) {
                           cellContent = (
                             <span className="text-red-700 font-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.4)]">
                               {display}

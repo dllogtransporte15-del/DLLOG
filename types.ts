@@ -393,6 +393,13 @@ export interface Cargo {
   packaging?: string;
   ulaNumber?: string;
   loadNum?: string;
+  financialCostEnabled?: boolean;
+  financialCostMonthlyRate?: number;    // Ex: 2.0 (2% ao mês)
+  financialCostDaysTerm?: number;       // Ex: 45 (dias)
+  financialCostBaseDays?: number;       // Ex: 30 (dias)
+  financialCostEffectiveRate?: number;  // Ex: 3.0 (3%)
+  financialCostPerTon?: number;         // R$/ton
+  financialCostTotal?: number;          // R$ total
 }
 
 
@@ -542,6 +549,10 @@ export interface RealProfitData {
   shipperCommissionRatePerTon?: number;
   shipperCommissionEnabled?: boolean;
   driverExtraPaymentsTotal?: number;
+  financialCost?: number;
+  financialCostRate?: number;
+  financialCostDaysTerm?: number;
+  financialCostMonthlyRate?: number;
 }
 
 export interface CancelledCteRecord {
@@ -671,6 +682,10 @@ export interface Shipment {
   shipperCommissionValue?: number;
   driverExtraPayments?: DriverExtraPayment[];
   driverExtraPaymentsTotal?: number;
+  financialCostValue?: number;
+  financialCostRate?: number;
+  financialCostDaysTerm?: number;
+  financialCostMonthlyRate?: number;
 }
 
 
@@ -870,6 +885,8 @@ export interface FiscalDocument {
   notes?: string;
   attachments?: FiscalDocumentAttachment[];
   status?: 'active' | 'archived';
+  createdByUserId?: string;
+  createdByName?: string;
   createdAt: string;
   updatedAt: string;
 }

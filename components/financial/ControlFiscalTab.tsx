@@ -18,7 +18,9 @@ import {
   calculateExpirationStatus, 
   getFiscalKpisSummary,
   FISCAL_DOCUMENTS_CHANGED_EVENT,
-  ExpirationStatusInfo
+  ExpirationStatusInfo,
+  subscribeToFiscalControl,
+  syncFiscalDataWithSupabase
 } from '../../services/fiscalControlService';
 import { DocumentPreviewModal } from '../DocumentPreviewModal';
 import { useToast } from '../../hooks/useToast';
@@ -55,6 +57,8 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [branchFilter, setBranchFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   // Modais
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
@@ -90,17 +94,53 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
   };
 
   useEffect(() => {
+    // 1. Carga inicial rápida a partir do cache local
     reloadData();
 
-    const handleChanged = () => reloadData();
-    window.addEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, handleChanged);
-    window.addEventListener('storage', handleChanged);
+    // 2. Sincronização com o Supabase Postgres (row 889) para carregar documentos da Samanta e outros usuários
+    setIsSyncing(true);
+    syncFiscalDataWithSupabase()
+      .then(() => {
+        reloadData();
+        setLastSyncTime(new Date());
+      })
+      .catch(err => {
+        console.warn('[ControlFiscalTab] Falha na sincronização inicial:', err);
+      })
+      .finally(() => {
+        setIsSyncing(false);
+      });
+
+    // 3. Subscrição em Tempo Real Multi-Usuário (WebSockets Supabase + Postgres CDC + BroadcastChannel)
+    const unsubscribe = subscribeToFiscalControl((payload) => {
+      reloadData();
+      setLastSyncTime(new Date());
+      if (payload?.action === 'create' && payload?.document?.title) {
+        showToast(`Novo documento lançado: "${payload.document.title}"`, 'info');
+      } else if (payload?.action === 'update' && payload?.document?.title) {
+        showToast(`Documento atualizado: "${payload.document.title}"`, 'info');
+      }
+    });
 
     return () => {
-      window.removeEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, handleChanged);
-      window.removeEventListener('storage', handleChanged);
+      unsubscribe();
     };
   }, []);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await syncFiscalDataWithSupabase();
+      reloadData();
+      setLastSyncTime(new Date());
+      showToast('Documentos fiscais sincronizados com sucesso!', 'success');
+    } catch (err) {
+      console.error('[ControlFiscalTab] Erro ao sincronizar manualmente:', err);
+      showToast('Erro ao sincronizar com a nuvem.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // KPIs
   const kpis = useMemo(() => {
@@ -318,14 +358,17 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
         notes: formData.notes.trim() || undefined,
         attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
         status: editingDoc?.status || 'active',
+        createdByUserId: editingDoc?.createdByUserId || currentUser?.id,
+        createdByName: editingDoc?.createdByName || currentUser?.name || 'Administrador',
         createdAt: editingDoc?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
-      saveFiscalDocument(docPayload);
+      await saveFiscalDocument(docPayload, { id: currentUser?.id, name: currentUser?.name });
       showToast(editingDoc ? 'Documento fiscal atualizado com sucesso!' : 'Novo documento fiscal registrado com sucesso!', 'success');
       handleCloseDocModal();
       reloadData();
+      setLastSyncTime(new Date());
     } catch (err) {
       console.error('[ControlFiscalTab] Erro ao salvar documento:', err);
       showToast('Erro ao salvar documento. Tente novamente.', 'error');
@@ -334,16 +377,22 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
     }
   };
 
-  const handleDeleteDoc = (docId: string, title: string) => {
+  const handleDeleteDoc = async (docId: string, title: string) => {
     if (window.confirm(`Tem certeza que deseja excluir o documento "${title}"?`)) {
-      deleteFiscalDocument(docId);
-      showToast('Documento fiscal excluído com sucesso.', 'info');
-      reloadData();
+      try {
+        await deleteFiscalDocument(docId);
+        showToast('Documento fiscal excluído com sucesso.', 'info');
+        reloadData();
+        setLastSyncTime(new Date());
+      } catch (err) {
+        console.error('[ControlFiscalTab] Erro ao excluir:', err);
+        showToast('Erro ao excluir documento.', 'error');
+      }
     }
   };
 
   // Gerenciador de Tipos
-  const handleSaveNewType = (e: React.FormEvent) => {
+  const handleSaveNewType = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTypeName.trim()) {
       showToast('Informe o nome do novo tipo de documento.', 'warning');
@@ -360,18 +409,30 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
       createdAt: new Date().toISOString()
     };
 
-    saveFiscalDocumentType(newType);
-    showToast(`Tipo "${newTypeName}" cadastrado com sucesso!`, 'success');
-    setNewTypeName('');
-    setNewTypeDescription('');
-    reloadData();
+    try {
+      await saveFiscalDocumentType(newType);
+      showToast(`Tipo "${newTypeName}" cadastrado com sucesso!`, 'success');
+      setNewTypeName('');
+      setNewTypeDescription('');
+      reloadData();
+      setLastSyncTime(new Date());
+    } catch (err) {
+      console.error('[ControlFiscalTab] Erro ao salvar tipo:', err);
+      showToast('Erro ao cadastrar tipo de documento.', 'error');
+    }
   };
 
-  const handleDeleteType = (typeId: string, typeName: string) => {
+  const handleDeleteType = async (typeId: string, typeName: string) => {
     if (window.confirm(`Deseja remover o tipo de documento "${typeName}"?`)) {
-      deleteFiscalDocumentType(typeId);
-      showToast('Tipo de documento removido.', 'info');
-      reloadData();
+      try {
+        await deleteFiscalDocumentType(typeId);
+        showToast('Tipo de documento removido.', 'info');
+        reloadData();
+        setLastSyncTime(new Date());
+      } catch (err) {
+        console.error('[ControlFiscalTab] Erro ao remover tipo:', err);
+        showToast('Erro ao remover tipo de documento.', 'error');
+      }
     }
   };
 
@@ -461,6 +522,13 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
                   Apólices, Certidões & Validades
                 </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shadow-xs" title="Sincronização em tempo real ativa com o Supabase para todos os usuários">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+                  </span>
+                  <span>Tempo Real Nuvem</span>
+                </span>
                 {kpis.urgentCount > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-md shadow-rose-500/30 animate-pulse flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
@@ -475,6 +543,16 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-slate-200 border border-white/10 hover:border-white/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              title="Sincronizar documentos fiscais agora com a nuvem Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsTypeModalOpen(true)}
@@ -861,11 +939,18 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                         <div className="font-bold text-slate-900 dark:text-white truncate" title={doc.title}>
                           {doc.title}
                         </div>
-                        {doc.notes && (
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-xs" title={doc.notes}>
-                            {doc.notes}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {doc.createdByName && (
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-200 dark:border-indigo-800/40" title={`Cadastrado por: ${doc.createdByName}`}>
+                              👤 {doc.createdByName}
+                            </span>
+                          )}
+                          {doc.notes && (
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={doc.notes}>
+                              {doc.notes}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       {/* Tipo */}
@@ -1039,6 +1124,13 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                       </span>
                     </div>
                   </div>
+
+                  {doc.createdByName && (
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                      <span>👤 Cadastrado por:</span>
+                      <span className="font-bold">{doc.createdByName}</span>
+                    </div>
+                  )}
 
                   {doc.notes && (
                     <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 italic bg-slate-50 dark:bg-slate-950/60 p-2 rounded-lg">

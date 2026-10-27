@@ -5,7 +5,7 @@ import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
 import { UserPlusIcon } from './icons/UserPlusIcon';
-import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2, MapPin, Building2, Edit2 } from 'lucide-react';
+import { Users, Search, Sparkles, History, Zap, Check, Loader2, Globe2, MapPin, Building2, Edit2, Landmark, BadgePercent, CircleDollarSign, Calendar } from 'lucide-react';
 import { BRAZILIAN_CITIES } from '../brazilianCities';
 import { geocodeCity } from '../utils/geocoding';
 import { useToast } from '../hooks/useToast';
@@ -122,7 +122,14 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         clientBranchId: offerToConvert.clientBranchId || '',
         isExport: offerToConvert.isExport !== undefined ? offerToConvert.isExport : undefined,
         orderNumber: (offerToConvert as any)?.orderNumber || '',
-        packaging: (offerToConvert as any)?.packaging || 'Granel'
+        packaging: (offerToConvert as any)?.packaging || 'Granel',
+        financialCostEnabled: false,
+        financialCostMonthlyRate: 0,
+        financialCostDaysTerm: 30,
+        financialCostBaseDays: 30,
+        financialCostEffectiveRate: 0,
+        financialCostPerTon: 0,
+        financialCostTotal: 0
       };
     }
 
@@ -173,7 +180,14 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       clientBranchId: '',
       isExport: undefined,
       orderNumber: '',
-      packaging: 'Granel'
+      packaging: 'Granel',
+      financialCostEnabled: false,
+      financialCostMonthlyRate: 0,
+      financialCostDaysTerm: firstClient?.paymentTerm || 30,
+      financialCostBaseDays: 30,
+      financialCostEffectiveRate: 0,
+      financialCostPerTon: 0,
+      financialCostTotal: 0
     };
   };
   
@@ -181,6 +195,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   const [load, setLoad] = useState<Omit<Cargo, 'id' | 'history' | 'createdAt' | 'createdById' | 'scheduledVolume' | 'loadedVolume'> & { createdById?: string }>(getInitialState());
   const [hasMultiLeg, setHasMultiLeg] = useState(false);
   const [showSalesperson, setShowSalesperson] = useState(false);
+  const [showFinancialCost, setShowFinancialCost] = useState(false);
   
   const [newScheduleStartDate, setNewScheduleStartDate] = useState('');
   const [newScheduleEndDate, setNewScheduleEndDate] = useState('');
@@ -347,10 +362,18 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 clientBranchId: editableLoad.clientBranchId || '',
                 isExport: editableLoad.isExport !== undefined ? editableLoad.isExport : undefined,
                 orderNumber: editableLoad.orderNumber || (editableLoad as any).numeroPedido || '',
-                packaging: editableLoad.packaging || 'Granel'
+                packaging: editableLoad.packaging || 'Granel',
+                financialCostEnabled: editableLoad.financialCostEnabled ?? false,
+                financialCostMonthlyRate: editableLoad.financialCostMonthlyRate || 0,
+                financialCostDaysTerm: editableLoad.financialCostDaysTerm || 30,
+                financialCostBaseDays: editableLoad.financialCostBaseDays || 30,
+                financialCostEffectiveRate: editableLoad.financialCostEffectiveRate || 0,
+                financialCostPerTon: editableLoad.financialCostPerTon || 0,
+                financialCostTotal: editableLoad.financialCostTotal || 0,
             });
             setHasMultiLeg(editableLoad.freightLegs ? editableLoad.freightLegs.length > 1 : false);
             setShowSalesperson(!!editableLoad.salespersonName);
+            setShowFinancialCost(Boolean(editableLoad.financialCostEnabled || (editableLoad.financialCostMonthlyRate && editableLoad.financialCostMonthlyRate > 0)));
         } else {
             const { scheduledVolume, loadedVolume, ...initialState } = getInitialState();
             const initClient = clients.find(c => c.id === initialState.clientId);
@@ -363,11 +386,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
               ...initialState,
               salespersonName: initSalesperson,
               salespersonCommissionPerTon: initCommission,
+              financialCostDaysTerm: initClient?.paymentTerm || 30,
               createdById: currentUser.id,
               allowedUserIds: internalUsers.map(u => u.id)
             });
             setHasMultiLeg(false);
             setShowSalesperson(Boolean(initSalesperson));
+            setShowFinancialCost(false);
         }
     }
     prevIsOpen.current = isOpen;
@@ -416,7 +441,11 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     hasDriverPfToll,
     displayCompanyFreightTotal,
     displayDriverFreightPjTotal,
-    displayDriverFreightPfTotal
+    displayDriverFreightPfTotal,
+    isFinCostActive,
+    effectiveFinancialRate,
+    financialCostPerTon,
+    financialCostTotal
   } = useMemo(() => {
     const legs = load.freightLegs || [];
     const activeLegs = hasMultiLeg ? legs.slice(0, 2) : legs.slice(0, 1);
@@ -484,14 +513,40 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
     const totalCommission = isFixed
       ? (load.salespersonCommissionPerTon || 0)
       : (load.salespersonCommissionPerTon || 0) * (isPlusIcms ? volumeRef : 1);
+
+    // Custo Financeiro
+    const isFinCostActive = showFinancialCost && Boolean(load.financialCostEnabled);
+    const finMonthlyRate = isFinCostActive ? (Number(load.financialCostMonthlyRate) || 0) : 0;
+    const finDaysTerm = isFinCostActive ? (Number(load.financialCostDaysTerm) || 0) : 0;
+    const finBaseDays = isFinCostActive ? (Number(load.financialCostBaseDays) || 30) : 30;
+    const effectiveFinancialRate = finBaseDays > 0 ? (finMonthlyRate * (finDaysTerm / finBaseDays)) : 0;
+
+    let financialCostValue = 0;
+    let financialCostPerTon = 0;
+    let financialCostTotal = 0;
+
+    if (isFixed) {
+      financialCostValue = Number((totalCompanyFreight * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostTotal = financialCostValue;
+      financialCostPerTon = (load.totalVolume && load.totalVolume > 0) ? Number((financialCostTotal / load.totalVolume).toFixed(2)) : 0;
+    } else if (isPlusIcms) {
+      financialCostPerTon = Number((totalCompanyFreight * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostValue = Number(((totalCompanyFreight * volumeRef) * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostTotal = Number(((totalCompanyFreight * (load.totalVolume || 0)) * (effectiveFinancialRate / 100)).toFixed(2));
+    } else {
+      // Per Ton
+      financialCostPerTon = Number((totalCompanyFreight * (effectiveFinancialRate / 100)).toFixed(2));
+      financialCostValue = financialCostPerTon;
+      financialCostTotal = Number(((totalCompanyFreight * (load.totalVolume || 0)) * (effectiveFinancialRate / 100)).toFixed(2));
+    }
     
     // PJ Margin
-    const netProfitPj = totalNetCompanyValue - totalDriverCostPj - totalCommission;
+    const netProfitPj = totalNetCompanyValue - totalDriverCostPj - totalCommission - financialCostValue;
     const marginPj = (totalNetCompanyValue > 0) ? (netProfitPj / totalNetCompanyValue) * 100 : 0;
     const marginPjPercentage = isNaN(marginPj) || !isFinite(marginPj) ? '0,00%' : `${marginPj.toFixed(2).replace('.', ',')}%`;
 
     // PF Margin
-    const netProfitPf = totalNetCompanyValue - totalDriverCostPf - totalCommission;
+    const netProfitPf = totalNetCompanyValue - totalDriverCostPf - totalCommission - financialCostValue;
     const marginPf = (totalNetCompanyValue > 0) ? (netProfitPf / totalNetCompanyValue) * 100 : 0;
     const marginPfPercentage = isNaN(marginPf) || !isFinite(marginPf) ? '0,00%' : `${marginPf.toFixed(2).replace('.', ',')}%`;
 
@@ -506,9 +561,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       hasDriverPfToll,
       displayCompanyFreightTotal,
       displayDriverFreightPjTotal,
-      displayDriverFreightPfTotal
+      displayDriverFreightPfTotal,
+      isFinCostActive,
+      effectiveFinancialRate,
+      financialCostPerTon,
+      financialCostTotal
     };
-  }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon, load.freightCalculationType, load.totalVolume]);
+  }, [load.freightLegs, hasMultiLeg, load.salespersonCommissionPerTon, load.freightCalculationType, load.totalVolume, showFinancialCost, load.financialCostEnabled, load.financialCostMonthlyRate, load.financialCostDaysTerm, load.financialCostBaseDays]);
 
   const locationsList = useMemo(() => locations || getExpedidoresRecebedores(), [locations]);
 
@@ -657,6 +716,13 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
           icmsPercentage: activeLegs[0]?.icmsPercentage || 0,
           originCoords: originCoords || undefined,
           destinationCoords: destinationCoords || undefined,
+          financialCostEnabled: isFinCostActive,
+          financialCostMonthlyRate: isFinCostActive ? (Number(load.financialCostMonthlyRate) || 0) : 0,
+          financialCostDaysTerm: isFinCostActive ? (Number(load.financialCostDaysTerm) || 30) : 30,
+          financialCostBaseDays: isFinCostActive ? (Number(load.financialCostBaseDays) || 30) : 30,
+          financialCostEffectiveRate: Number(effectiveFinancialRate.toFixed(2)),
+          financialCostPerTon: Number(financialCostPerTon.toFixed(2)),
+          financialCostTotal: Number(financialCostTotal.toFixed(2)),
       };
 
       // Sincronização automática com o cadastro de Expedidor/Recebedor
@@ -2113,24 +2179,45 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                     </div>
                 </div>
 
-                {/* Comissão de Vendedor Externo */}
+                {/* Comissão de Vendedor Externo & Custo Financeiro */}
                 <div className="border-t dark:border-gray-700 pt-4">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Comissão de Vendedor Externo</h3>
-                        {!showSalesperson && (
-                            <button 
-                                type="button" 
-                                onClick={() => setShowSalesperson(true)}
-                                className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
-                            >
-                                <UserPlusIcon className="h-3.5 w-3.5" />
-                                <span>Adicionar Vendedor</span>
-                            </button>
-                        )}
+                    <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Comissão de Vendedor Externo & Custos</h3>
+                        <div className="flex items-center gap-2">
+                            {!showSalesperson && (
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowSalesperson(true)}
+                                    className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 cursor-pointer"
+                                >
+                                    <UserPlusIcon className="h-3.5 w-3.5" />
+                                    <span>Adicionar Vendedor</span>
+                                </button>
+                            )}
+                            {!showFinancialCost && (
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        setShowFinancialCost(true);
+                                        setLoad(prev => ({ 
+                                            ...prev, 
+                                            financialCostEnabled: true,
+                                            financialCostMonthlyRate: prev.financialCostMonthlyRate || 2.0,
+                                            financialCostDaysTerm: prev.financialCostDaysTerm || 30,
+                                            financialCostBaseDays: prev.financialCostBaseDays || 30,
+                                        }));
+                                    }}
+                                    className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-400 cursor-pointer"
+                                >
+                                    <CircleDollarSign className="h-3.5 w-3.5" />
+                                    <span>+ Adicionar Custo Financeiro</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {showSalesperson && (
-                        <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5">
+                        <div className="p-3.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900/40 shadow-xs space-y-2.5 mb-3">
                             <div className="flex justify-between items-center">
                                 <h4 className="font-bold text-xs text-gray-500 uppercase tracking-wider">Dados do Vendedor</h4>
                                 <button 
@@ -2139,7 +2226,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                         setShowSalesperson(false);
                                         setLoad(prev => ({ ...prev, salespersonName: '', salespersonCommissionPerTon: 0 }));
                                     }}
-                                    className="text-xs font-bold text-red-500 hover:text-red-700"
+                                    className="text-xs font-bold text-red-500 hover:text-red-700 cursor-pointer"
                                 >
                                     Remover
                                 </button>
@@ -2166,6 +2253,180 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                                         className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white" 
                                         step="0.01"
                                     />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showFinancialCost && (
+                        <div className="p-3.5 border border-blue-200 dark:border-blue-900/60 rounded-xl bg-blue-50/30 dark:bg-blue-950/20 shadow-xs space-y-3">
+                            <div className="flex justify-between items-center pb-2 border-b border-blue-100 dark:border-blue-900/40">
+                                <div className="flex items-center gap-1.5">
+                                    <Landmark className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                    <h4 className="font-bold text-xs text-blue-900 dark:text-blue-200 uppercase tracking-wider">Custo Financeiro da Carga</h4>
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                                        Pro Rata
+                                    </span>
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        setShowFinancialCost(false);
+                                        setLoad(prev => ({ 
+                                            ...prev, 
+                                            financialCostEnabled: false, 
+                                            financialCostMonthlyRate: 0, 
+                                            financialCostDaysTerm: 30, 
+                                            financialCostBaseDays: 30,
+                                            financialCostEffectiveRate: 0, 
+                                            financialCostPerTon: 0, 
+                                            financialCostTotal: 0 
+                                        }));
+                                    }}
+                                    className="text-xs font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 cursor-pointer"
+                                >
+                                    Remover / Desativar
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {/* 1. Taxa Mensal (% a.m.) */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                        Taxa Mensal (% a.m.)
+                                    </label>
+                                    <div className="relative">
+                                        <input 
+                                            name="financialCostMonthlyRate" 
+                                            type="number" 
+                                            step="0.01"
+                                            min="0"
+                                            value={load.financialCostMonthlyRate || ''} 
+                                            onChange={e => {
+                                                const raw = e.target.value;
+                                                if (raw === '') {
+                                                    setLoad(prev => ({ ...prev, financialCostMonthlyRate: undefined }));
+                                                    return;
+                                                }
+                                                const val = parseFloat(raw);
+                                                setLoad(prev => ({ ...prev, financialCostMonthlyRate: isNaN(val) ? undefined : val }));
+                                            }}
+                                            placeholder="Ex: 2,00" 
+                                            className="py-2 pl-3 pr-12 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white"
+                                        />
+                                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 dark:text-gray-400">
+                                            % a.m.
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* 2. Base de Cálculo (dias) */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                                        Base de Cálculo
+                                    </label>
+                                    <select 
+                                        name="financialCostBaseDays"
+                                        value={load.financialCostBaseDays || 30}
+                                        onChange={e => {
+                                            const val = parseInt(e.target.value, 10);
+                                            setLoad(prev => ({ ...prev, financialCostBaseDays: isNaN(val) ? 30 : val }));
+                                        }}
+                                        className="py-2 px-3 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white"
+                                    >
+                                        <option value="30">30 dias (Mês comercial pro rata)</option>
+                                        <option value="360">360 dias (Ano comercial)</option>
+                                        <option value="365">365 dias (Ano civil)</option>
+                                    </select>
+                                </div>
+
+                                {/* 3. Prazo de Pagamento da Carga (Dias) */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                            Prazo de Recebimento
+                                        </label>
+                                        <div className="flex items-center gap-1">
+                                            {[30, 45, 60].map(dias => (
+                                                <button
+                                                    key={dias}
+                                                    type="button"
+                                                    onClick={() => setLoad(prev => ({ ...prev, financialCostDaysTerm: dias }))}
+                                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-colors cursor-pointer ${
+                                                        Number(load.financialCostDaysTerm) === dias
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    {dias}d
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <input 
+                                            name="financialCostDaysTerm" 
+                                            type="number" 
+                                            min="0"
+                                            value={load.financialCostDaysTerm || ''} 
+                                            onChange={e => {
+                                                const raw = e.target.value;
+                                                if (raw === '') {
+                                                    setLoad(prev => ({ ...prev, financialCostDaysTerm: undefined }));
+                                                    return;
+                                                }
+                                                const val = parseInt(raw, 10);
+                                                setLoad(prev => ({ ...prev, financialCostDaysTerm: isNaN(val) ? undefined : val }));
+                                            }}
+                                            placeholder="Ex: 45" 
+                                            className="py-2 pl-3 pr-12 w-full border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white"
+                                        />
+                                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 dark:text-gray-400">
+                                            dias
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 4. Painel de Pré-Visualização / Resumo em Tempo Real */}
+                            <div className="p-3 bg-white dark:bg-slate-800/90 rounded-lg border border-blue-200/80 dark:border-blue-800/60 shadow-2xs">
+                                <div className="text-[11px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-tight mb-2 flex items-center justify-between">
+                                    <span className="flex items-center gap-1">
+                                        <BadgePercent className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                                        Memória de Cálculo & Pré-Visualização
+                                    </span>
+                                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 lowercase">
+                                        incidência s/ frete empresa
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <div className="p-2 rounded-md bg-blue-50/60 dark:bg-slate-700/50 border border-blue-100 dark:border-slate-600">
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Alíquota Efetiva</p>
+                                        <p className="text-sm font-black text-blue-700 dark:text-blue-300 font-mono">
+                                            {effectiveFinancialRate.toFixed(2).replace('.', ',')}%
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                            {load.financialCostMonthlyRate || 0}% a.m. × ({load.financialCostDaysTerm || 30}/{load.financialCostBaseDays || 30}d)
+                                        </p>
+                                    </div>
+                                    <div className="p-2 rounded-md bg-blue-50/60 dark:bg-slate-700/50 border border-blue-100 dark:border-slate-600">
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Custo por Tonelada</p>
+                                        <p className="text-sm font-black text-rose-600 dark:text-rose-400 font-mono">
+                                            R$ {financialCostPerTon.toFixed(2).replace('.', ',')} / ton
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                            s/ Frete Empresa R$ {totalCompanyFreight.toFixed(2).replace('.', ',')}/t
+                                        </p>
+                                    </div>
+                                    <div className="p-2 rounded-md bg-blue-50/60 dark:bg-slate-700/50 border border-blue-100 dark:border-slate-600">
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Custo Total Estimado</p>
+                                        <p className="text-sm font-black text-rose-600 dark:text-rose-400 font-mono">
+                                            R$ {financialCostTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                            calculado p/ lote de {(load.totalVolume || 0).toLocaleString('pt-BR')} ton
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>

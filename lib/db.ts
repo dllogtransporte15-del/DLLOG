@@ -443,6 +443,55 @@ export const toCargo = (row: any): Cargo => ({
     if (metaLog?.description) return metaLog.description;
     return undefined;
   })(),
+  financialCostEnabled: (() => {
+    if (row.financial_cost_enabled !== null && row.financial_cost_enabled !== undefined) return Boolean(row.financial_cost_enabled);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_enabled') : null;
+    if (metaLog) return metaLog.description === 'true';
+    return false;
+  })(),
+  financialCostMonthlyRate: (() => {
+    if (row.financial_cost_monthly_rate !== null && row.financial_cost_monthly_rate !== undefined) return Number(row.financial_cost_monthly_rate);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_monthly_rate') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostDaysTerm: (() => {
+    if (row.financial_cost_days_term !== null && row.financial_cost_days_term !== undefined) return Number(row.financial_cost_days_term);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_days_term') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostBaseDays: (() => {
+    if (row.financial_cost_base_days !== null && row.financial_cost_base_days !== undefined) return Number(row.financial_cost_base_days);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_base_days') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostEffectiveRate: (() => {
+    if (row.financial_cost_effective_rate !== null && row.financial_cost_effective_rate !== undefined) return Number(row.financial_cost_effective_rate);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_effective_rate') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostPerTon: (() => {
+    if (row.financial_cost_per_ton !== null && row.financial_cost_per_ton !== undefined) return Number(row.financial_cost_per_ton);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_per_ton') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
+  financialCostTotal: (() => {
+    if (row.financial_cost_total !== null && row.financial_cost_total !== undefined) return Number(row.financial_cost_total);
+    const rawHistory = safeParseJson(row.history, []);
+    const metaLog = Array.isArray(rawHistory) ? rawHistory.find((h: any) => h.id === 'meta_financial_cost_total') : null;
+    if (metaLog) return Number(metaLog.description) || 0;
+    return undefined;
+  })(),
 });
 
 const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
@@ -546,6 +595,69 @@ const fromCargo = (c: Cargo | Omit<Cargo, 'id'>) => {
         description: c.packaging
       });
     }
+  }
+  if (c.financialCostEnabled !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_enabled');
+    history.push({
+      id: 'meta_financial_cost_enabled',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: c.financialCostEnabled ? 'true' : 'false'
+    });
+  }
+  if (c.financialCostMonthlyRate !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_monthly_rate');
+    history.push({
+      id: 'meta_financial_cost_monthly_rate',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostMonthlyRate)
+    });
+  }
+  if (c.financialCostDaysTerm !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_days_term');
+    history.push({
+      id: 'meta_financial_cost_days_term',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostDaysTerm)
+    });
+  }
+  if (c.financialCostBaseDays !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_base_days');
+    history.push({
+      id: 'meta_financial_cost_base_days',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostBaseDays)
+    });
+  }
+  if (c.financialCostEffectiveRate !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_effective_rate');
+    history.push({
+      id: 'meta_financial_cost_effective_rate',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostEffectiveRate)
+    });
+  }
+  if (c.financialCostPerTon !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_per_ton');
+    history.push({
+      id: 'meta_financial_cost_per_ton',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostPerTon)
+    });
+  }
+  if (c.financialCostTotal !== undefined) {
+    history = history.filter(h => h.id !== 'meta_financial_cost_total');
+    history.push({
+      id: 'meta_financial_cost_total',
+      userId: 'system',
+      timestamp: new Date().toISOString(),
+      description: String(c.financialCostTotal)
+    });
   }
 
   const cargoId = (c as Cargo).id;
@@ -729,6 +841,30 @@ export const toShipment = (row: any): Shipment => {
     driverExtraPaymentsTotal: row.driver_extra_payments_total !== null && row.driver_extra_payments_total !== undefined 
       ? Number(row.driver_extra_payments_total) 
       : (docs.driver_extra_payments_total !== undefined ? Number(docs.driver_extra_payments_total) : (docs.driverExtraPaymentsTotal !== undefined ? Number(docs.driverExtraPaymentsTotal) : undefined)),
+    financialCostValue: row.financial_cost_value !== null && row.financial_cost_value !== undefined 
+      ? Number(row.financial_cost_value) 
+      : (docs.financial_cost_value !== undefined && docs.financial_cost_value !== null 
+          ? Number(docs.financial_cost_value) 
+          : (realProfit?.financialCost !== undefined && realProfit?.financialCost !== null 
+              ? Number(realProfit.financialCost) 
+              : undefined)),
+    financialCostRate: row.financial_cost_rate !== null && row.financial_cost_rate !== undefined 
+      ? Number(row.financial_cost_rate) 
+      : (docs.financial_cost_rate !== undefined && docs.financial_cost_rate !== null 
+          ? Number(docs.financial_cost_rate) 
+          : (docs.financial_cost_effective_rate !== undefined && docs.financial_cost_effective_rate !== null 
+              ? Number(docs.financial_cost_effective_rate) 
+              : undefined)),
+    financialCostDaysTerm: row.financial_cost_days_term !== null && row.financial_cost_days_term !== undefined 
+      ? Number(row.financial_cost_days_term) 
+      : (docs.financial_cost_days_term !== undefined && docs.financial_cost_days_term !== null 
+          ? Number(docs.financial_cost_days_term) 
+          : undefined),
+    financialCostMonthlyRate: row.financial_cost_monthly_rate !== null && row.financial_cost_monthly_rate !== undefined 
+      ? Number(row.financial_cost_monthly_rate) 
+      : (docs.financial_cost_monthly_rate !== undefined && docs.financial_cost_monthly_rate !== null 
+          ? Number(docs.financial_cost_monthly_rate) 
+          : undefined),
   };
 };
 
@@ -829,6 +965,10 @@ const fromShipment = (s: Shipment) => {
     shipper_commission_value: s.shipperCommissionValue !== undefined ? s.shipperCommissionValue : (s.documents?.shipper_commission_value ?? null),
     driver_extra_payments: s.driverExtraPayments ?? (s.documents?.driver_extra_payments ?? null),
     driver_extra_payments_total: s.driverExtraPaymentsTotal !== undefined ? s.driverExtraPaymentsTotal : (s.documents?.driver_extra_payments_total ?? null),
+    financial_cost_value: s.financialCostValue !== undefined ? s.financialCostValue : (s.documents?.financial_cost_value ?? null),
+    financial_cost_rate: s.financialCostRate !== undefined ? s.financialCostRate : (s.documents?.financial_cost_rate ?? null),
+    financial_cost_days_term: s.financialCostDaysTerm !== undefined ? s.financialCostDaysTerm : (s.documents?.financial_cost_days_term ?? null),
+    financial_cost_monthly_rate: s.financialCostMonthlyRate !== undefined ? s.financialCostMonthlyRate : (s.documents?.financial_cost_monthly_rate ?? null),
     owner_name: s.ownerName !== undefined ? s.ownerName : (s.documents?.owner_name ?? null),
     owner_contact: s.ownerContact !== undefined ? s.ownerContact : (s.documents?.owner_contact ?? null),
   };

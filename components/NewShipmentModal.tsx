@@ -1120,6 +1120,12 @@ const NewShipmentModal: React.FC<NewShipmentModalProps> = ({ isOpen, onClose, on
       balanceToReceiveValue: calc.balanceToReceiveValue,
       vehicleTag: vehicleTag || undefined,
       filesToAttach: filesToAttach.length > 0 ? filesToAttach : undefined,
+      financialCostMonthlyRate: currentCargo.financialCostEnabled ? (currentCargo.financialCostMonthlyRate || 0) : undefined,
+      financialCostDaysTerm: currentCargo.financialCostEnabled ? (currentCargo.financialCostDaysTerm || 30) : undefined,
+      financialCostRate: currentCargo.financialCostEnabled ? (currentCargo.financialCostEffectiveRate || (currentCargo.financialCostBaseDays && currentCargo.financialCostBaseDays > 0 ? Number((((currentCargo.financialCostMonthlyRate || 0) * (currentCargo.financialCostDaysTerm || 30)) / currentCargo.financialCostBaseDays).toFixed(4)) : 0)) : undefined,
+      financialCostValue: (currentCargo.financialCostEnabled && companyFreightRate > 0 && shipmentTonnage > 0)
+        ? Number(((companyFreightRate * shipmentTonnage) * ((currentCargo.financialCostEffectiveRate || 0) / 100)).toFixed(2))
+        : undefined,
     };
 
     // Check for active shipments for this driver

@@ -344,13 +344,19 @@ const LoadTable: React.FC<LoadTableProps> = ({ loads, clients, products, shipmen
           
           const totalCompanyFreightWithEstadias = totalNetCompanyValue + demurrageRevenuePerTon;
 
+          const financialCostPerTon = (load.financialCostPerTon !== undefined && load.financialCostPerTon > 0)
+            ? load.financialCostPerTon
+            : (load.financialCostEnabled && (load.financialCostEffectiveRate || 0) > 0)
+              ? (totalNetCompanyValue * ((load.financialCostEffectiveRate || 0) / 100))
+              : 0;
+
           // PJ Margin
-          const netProfitPj = totalNetCompanyValue - totalDriverFreightPj - totalCommission + demurrageProfitPerTon;
+          const netProfitPj = totalNetCompanyValue - totalDriverFreightPj - totalCommission - financialCostPerTon + demurrageProfitPerTon;
           const marginPj = (totalCompanyFreightWithEstadias > 0) ? (netProfitPj / totalCompanyFreightWithEstadias) * 100 : 0;
           const netMarginPercentagePj = isNaN(marginPj) || !isFinite(marginPj) ? '0,00%' : `${marginPj.toFixed(2).replace('.', ',')}%`;
 
           // PF Margin
-          const netProfitPf = totalNetCompanyValue - totalDriverFreightPf - totalCommission + demurrageProfitPerTon;
+          const netProfitPf = totalNetCompanyValue - totalDriverFreightPf - totalCommission - financialCostPerTon + demurrageProfitPerTon;
           const marginPf = (totalCompanyFreightWithEstadias > 0) ? (netProfitPf / totalCompanyFreightWithEstadias) * 100 : 0;
           const netMarginPercentagePf = isNaN(marginPf) || !isFinite(marginPf) ? '0,00%' : `${marginPf.toFixed(2).replace('.', ',')}%`;
 

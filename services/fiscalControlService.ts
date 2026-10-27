@@ -1,8 +1,363 @@
+import { supabase } from '../supabase';
 import type { FiscalDocument, FiscalDocumentType, FiscalAlertLevel, FiscalDocumentAttachment } from '../types';
 
-const STORAGE_DOCUMENTS_KEY = 'transcunha_fiscal_documents_v1';
-const STORAGE_TYPES_KEY = 'transcunha_fiscal_document_types_v1';
+export const STORAGE_DOCUMENTS_KEY = 'transcunha_fiscal_documents_v1';
+export const STORAGE_TYPES_KEY = 'transcunha_fiscal_document_types_v1';
 export const FISCAL_DOCUMENTS_CHANGED_EVENT = 'transcunha:fiscal_documents_changed';
+export const SUPABASE_FISCAL_RECORD_ID = 889;
+export const FISCAL_REALTIME_CHANNEL = 'transcunha_fiscal_control';
+
+// Canal local no mesmo navegador (entre diferentes abas)
+const localFiscalBroadcast = typeof window !== 'undefined' && 'BroadcastChannel' in window 
+  ? new BroadcastChannel('transcunha_fiscal_sync') 
+  : null;
+
+let fiscalChannelInstance: ReturnType<typeof supabase.channel> | null = null;
+
+function safeSetLocalStorage(key: string, data: any): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+  } catch (e) {
+    console.warn(`[fiscalControlService] Falha ao gravar no localStorage (${key}):`, e);
+  }
+}
+
+/**
+ * Obtém ou inicializa o canal central de Realtime para Controladoria Fiscal no Supabase.
+ */
+export function getFiscalRealtimeChannel(): ReturnType<typeof supabase.channel> {
+  if (!fiscalChannelInstance) {
+    fiscalChannelInstance = supabase.channel(FISCAL_REALTIME_CHANNEL, {
+      config: {
+        broadcast: { ack: false, self: false },
+      }
+    });
+
+    fiscalChannelInstance.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('[Fiscal Realtime] ✅ Conectado ao canal de Controladoria Fiscal.');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        console.warn(`[Fiscal Realtime] ⚠️ Status do canal: ${status}`);
+      }
+    });
+  }
+  return fiscalChannelInstance;
+}
+
+/**
+ * Dispara notificação via WebSocket Realtime e canais locais para TODOS os usuários conectados.
+ */
+export function broadcastFiscalChange(
+  action: 'create' | 'update' | 'delete' | 'sync',
+  documentId?: string,
+  document?: FiscalDocument
+): void {
+  try {
+    const payload = {
+      action,
+      documentId,
+      document,
+      timestamp: Date.now()
+    };
+
+    // 1. WebSocket central do Supabase Realtime (entre diferentes computadores / navegadores)
+    const channel = getFiscalRealtimeChannel();
+    channel.send({
+      type: 'broadcast',
+      event: 'fiscal_documents_changed',
+      payload
+    }).catch(err => {
+      console.warn('[Fiscal Realtime Hub] Falha ao enviar broadcast:', err);
+    });
+
+    // 2. BroadcastChannel para outras abas abertas no mesmo navegador
+    if (localFiscalBroadcast) {
+      try {
+        localFiscalBroadcast.postMessage({
+          type: 'fiscal_documents_changed',
+          payload
+        });
+      } catch {}
+    }
+
+    // 3. Evento customizado DOM para a própria janela
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(FISCAL_DOCUMENTS_CHANGED_EVENT, { detail: payload }));
+    }
+  } catch (err) {
+    console.warn('[Fiscal Realtime Hub] Erro ao disparar broadcast:', err);
+  }
+}
+
+/**
+ * Busca a lista remota compartilhada de documentos e tipos fiscais no Supabase (row 889 de profile_permissions).
+ */
+export async function fetchRemoteFiscalData(): Promise<{
+  documents: FiscalDocument[];
+  types: FiscalDocumentType[];
+  success: boolean;
+  updatedAt?: string;
+  error?: any;
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('profile_permissions')
+      .select('permissions')
+      .eq('id', SUPABASE_FISCAL_RECORD_ID)
+      .maybeSingle();
+
+    if (!error && data?.permissions) {
+      const p = data.permissions;
+      const docs = Array.isArray(p.fiscal_documents) ? p.fiscal_documents : [];
+      const types = Array.isArray(p.fiscal_document_types) ? p.fiscal_document_types : [];
+      return { 
+        documents: docs, 
+        types, 
+        updatedAt: p.updatedAt,
+        success: true 
+      };
+    }
+
+    if (!error && !data) {
+      // Row 889 ainda não existe na nuvem
+      return { documents: [], types: [], success: true };
+    }
+
+    console.warn('[FiscalControl] Erro ao consultar Supabase row 889:', error);
+    return { documents: [], types: [], success: false, error };
+  } catch (err) {
+    console.warn('[FiscalControl] Exceção ao consultar Supabase row 889:', err);
+    return { documents: [], types: [], success: false, error: err };
+  }
+}
+
+/**
+ * Mescla de forma inteligente documentos fiscais remotos e locais sem perda de dados.
+ * Se um documento foi criado localmente (ex: pela Samanta), ele é preservado e inserido.
+ */
+export function mergeFiscalDocuments(remoteDocs: FiscalDocument[], localDocs: FiscalDocument[]): FiscalDocument[] {
+  const result: FiscalDocument[] = Array.isArray(remoteDocs) ? [...remoteDocs] : [];
+  const existingMap = new Map<string, FiscalDocument>();
+
+  for (const doc of result) {
+    if (doc?.id) existingMap.set(doc.id, doc);
+    const key = `${(doc.title || '').trim().toLowerCase()}_${(doc.documentNumber || '').trim().toLowerCase()}_${doc.branchId || ''}`;
+    if (key.length > 5) existingMap.set(key, doc);
+  }
+
+  if (Array.isArray(localDocs)) {
+    for (const loc of localDocs) {
+      if (!loc || !loc.title) continue;
+
+      const key = `${(loc.title || '').trim().toLowerCase()}_${(loc.documentNumber || '').trim().toLowerCase()}_${loc.branchId || ''}`;
+      const existing = (loc.id && existingMap.get(loc.id)) || (key.length > 5 && existingMap.get(key));
+
+      if (!existing) {
+        // Documento novo cadastrado localmente (ex: Samanta): adiciona ao resultado
+        result.push(loc);
+        if (loc.id) existingMap.set(loc.id, loc);
+      } else {
+        // Documento já existe: atualiza se a versão local for mais recente
+        const localUpdated = new Date(loc.updatedAt || loc.createdAt || 0).getTime();
+        const existingUpdated = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        if (localUpdated > existingUpdated) {
+          const idx = result.findIndex(d => d.id === existing.id);
+          if (idx >= 0) {
+            result[idx] = { ...existing, ...loc };
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Mescla tipos de documentos fiscais remotos e locais.
+ */
+export function mergeFiscalDocumentTypes(remoteTypes: FiscalDocumentType[], localTypes: FiscalDocumentType[]): FiscalDocumentType[] {
+  const result: FiscalDocumentType[] = Array.isArray(remoteTypes) && remoteTypes.length > 0 
+    ? [...remoteTypes] 
+    : [...INITIAL_FISCAL_DOCUMENT_TYPES];
+  const existingIds = new Set(result.map(t => t.id));
+  const existingNames = new Set(result.map(t => t.name.trim().toLowerCase()));
+
+  if (Array.isArray(localTypes)) {
+    for (const loc of localTypes) {
+      if (!loc || !loc.name) continue;
+      const normName = loc.name.trim().toLowerCase();
+      if (!existingIds.has(loc.id) && !existingNames.has(normName)) {
+        result.push(loc);
+        existingIds.add(loc.id);
+        existingNames.add(normName);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Sincroniza bidirecionalmente os documentos fiscais com a nuvem Supabase:
+ * - Baixa do Supabase e mescla com os locais;
+ * - Se houver novos itens locais (ex: cadastro recente de qualquer usuário), sobe para a nuvem;
+ * - Garante que todos os usuários tenham exatamente os mesmos dados atualizados.
+ */
+export async function syncFiscalDataWithSupabase(): Promise<{
+  documents: FiscalDocument[];
+  types: FiscalDocumentType[];
+}> {
+  try {
+    const remote = await fetchRemoteFiscalData();
+    const localDocs = getFiscalDocuments();
+    const localTypes = getFiscalDocumentTypes();
+
+    if (remote.success) {
+      if (remote.documents.length > 0) {
+        const mergedDocs = mergeFiscalDocuments(remote.documents, localDocs);
+        const mergedTypes = mergeFiscalDocumentTypes(remote.types, localTypes);
+
+        safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, mergedDocs);
+        safeSetLocalStorage(STORAGE_TYPES_KEY, mergedTypes);
+
+        // Se o merge local detectou documentos que ainda não estavam na nuvem, sobe para o Supabase
+        if (mergedDocs.length > remote.documents.length || mergedTypes.length > remote.types.length) {
+          try {
+            await supabase.from('profile_permissions').upsert({
+              id: SUPABASE_FISCAL_RECORD_ID,
+              permissions: {
+                fiscal_documents: mergedDocs,
+                fiscal_document_types: mergedTypes,
+                updatedAt: new Date().toISOString()
+              }
+            });
+            broadcastFiscalChange('sync');
+          } catch (upsertErr) {
+            console.warn('[FiscalControl] Falha ao sincronizar merge com Supabase:', upsertErr);
+          }
+        }
+
+        // Notifica componentes
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(FISCAL_DOCUMENTS_CHANGED_EVENT));
+        }
+
+        return { documents: mergedDocs, types: mergedTypes };
+      } else {
+        // Se a nuvem estava vazia, faz o primeiro upload dos dados locais/seed
+        const docsToUpload = localDocs.length > 0 ? localDocs : getInitialFiscalDocumentsSeed();
+        const typesToUpload = localTypes.length > 0 ? localTypes : INITIAL_FISCAL_DOCUMENT_TYPES;
+
+        safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, docsToUpload);
+        safeSetLocalStorage(STORAGE_TYPES_KEY, typesToUpload);
+
+        try {
+          await supabase.from('profile_permissions').upsert({
+            id: SUPABASE_FISCAL_RECORD_ID,
+            permissions: {
+              fiscal_documents: docsToUpload,
+              fiscal_document_types: typesToUpload,
+              updatedAt: new Date().toISOString()
+            }
+          });
+          broadcastFiscalChange('sync');
+        } catch (upsertErr) {
+          console.warn('[FiscalControl] Falha ao inicializar row 889:', upsertErr);
+        }
+
+        return { documents: docsToUpload, types: typesToUpload };
+      }
+    } else {
+      // Offline/erro de conexão: mantém dados locais
+      return { documents: localDocs, types: localTypes };
+    }
+  } catch (err) {
+    console.error('[FiscalControl] Erro ao sincronizar dados fiscais com Supabase:', err);
+    return { documents: getFiscalDocuments(), types: getFiscalDocumentTypes() };
+  }
+}
+
+/**
+ * Subscreve a atualizações em tempo real da Controladoria Fiscal (WebSockets Supabase + Postgres CDC + Broadcast).
+ */
+export function subscribeToFiscalControl(onUpdate: (payload?: any) => void): () => void {
+  let isMounted = true;
+  const channelName = `fiscal_rt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const channel = supabase.channel(channelName);
+
+  // 1. WebSocket Broadcast Realtime (entre diferentes computadores e usuários)
+  channel.on('broadcast', { event: 'fiscal_documents_changed' }, (msg: any) => {
+    if (isMounted) {
+      console.log('[Fiscal Realtime] ⚡ Broadcast recebido de outro usuário:', msg?.payload?.action);
+      syncFiscalDataWithSupabase().then(() => {
+        if (isMounted) onUpdate(msg?.payload);
+      });
+    }
+  });
+
+  // 2. Postgres Changes no registro compartilhado no Supabase (row 889 em profile_permissions)
+  channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'profile_permissions' },
+    (payload: any) => {
+      if (isMounted) {
+        const rowId = payload?.new?.id ?? payload?.old?.id;
+        if (rowId === SUPABASE_FISCAL_RECORD_ID || !rowId) {
+          console.log('[Fiscal Realtime] ⚡ Postgres CDC detectou alteração no row 889');
+          syncFiscalDataWithSupabase().then(() => {
+            if (isMounted) onUpdate();
+          });
+        }
+      }
+    }
+  );
+
+  channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      console.log('[Fiscal Realtime] ✅ Canal inscrito com sucesso');
+    }
+  });
+
+  // 3. BroadcastChannel local entre abas do mesmo navegador
+  let localBc: BroadcastChannel | null = null;
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    try {
+      localBc = new BroadcastChannel('transcunha_fiscal_sync');
+      localBc.onmessage = (event) => {
+        if (isMounted) {
+          onUpdate(event.data);
+        }
+      };
+    } catch {}
+  }
+
+  // 4. CustomEvent DOM na janela atual
+  const handleLocal = (e: any) => {
+    if (isMounted) onUpdate(e?.detail);
+  };
+  window.addEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, handleLocal);
+
+  // 5. Storage Event
+  const handleStorage = (e: StorageEvent) => {
+    if ((e.key === STORAGE_DOCUMENTS_KEY || e.key === STORAGE_TYPES_KEY) && isMounted) {
+      onUpdate();
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  return () => {
+    isMounted = false;
+    try { supabase.removeChannel(channel); } catch {}
+    if (localBc) {
+      try { localBc.close(); } catch {}
+    }
+    window.removeEventListener(FISCAL_DOCUMENTS_CHANGED_EVENT, handleLocal);
+    window.removeEventListener('storage', handleStorage);
+  };
+}
 
 export interface ExpirationStatusInfo {
   level: FiscalAlertLevel;
@@ -245,7 +600,7 @@ export const getFiscalDocumentTypes = (): FiscalDocumentType[] => {
   return INITIAL_FISCAL_DOCUMENT_TYPES;
 };
 
-export const saveFiscalDocumentType = (type: FiscalDocumentType): void => {
+export const saveFiscalDocumentType = async (type: FiscalDocumentType): Promise<void> => {
   try {
     const current = getFiscalDocumentTypes();
     const existingIndex = current.findIndex(t => t.id === type.id);
@@ -256,19 +611,48 @@ export const saveFiscalDocumentType = (type: FiscalDocumentType): void => {
     } else {
       updated = [...current, type];
     }
-    localStorage.setItem(STORAGE_TYPES_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent(FISCAL_DOCUMENTS_CHANGED_EVENT));
+    safeSetLocalStorage(STORAGE_TYPES_KEY, updated);
+    broadcastFiscalChange('update');
+
+    // Persistência compartilhada no Supabase
+    try {
+      const currentDocs = getFiscalDocuments();
+      await supabase.from('profile_permissions').upsert({
+        id: SUPABASE_FISCAL_RECORD_ID,
+        permissions: {
+          fiscal_documents: currentDocs,
+          fiscal_document_types: updated,
+          updatedAt: new Date().toISOString()
+        }
+      });
+    } catch (cloudErr) {
+      console.warn('[fiscalControlService] Falha ao sincronizar tipo com Supabase:', cloudErr);
+    }
   } catch (err) {
     console.error('[fiscalControlService] Erro ao salvar tipo de documento:', err);
   }
 };
 
-export const deleteFiscalDocumentType = (typeId: string): void => {
+export const deleteFiscalDocumentType = async (typeId: string): Promise<void> => {
   try {
     const current = getFiscalDocumentTypes();
     const updated = current.filter(t => t.id !== typeId);
-    localStorage.setItem(STORAGE_TYPES_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent(FISCAL_DOCUMENTS_CHANGED_EVENT));
+    safeSetLocalStorage(STORAGE_TYPES_KEY, updated);
+    broadcastFiscalChange('delete');
+
+    try {
+      const currentDocs = getFiscalDocuments();
+      await supabase.from('profile_permissions').upsert({
+        id: SUPABASE_FISCAL_RECORD_ID,
+        permissions: {
+          fiscal_documents: currentDocs,
+          fiscal_document_types: updated,
+          updatedAt: new Date().toISOString()
+        }
+      });
+    } catch (cloudErr) {
+      console.warn('[fiscalControlService] Falha ao excluir tipo no Supabase:', cloudErr);
+    }
   } catch (err) {
     console.error('[fiscalControlService] Erro ao excluir tipo de documento:', err);
   }
@@ -289,40 +673,85 @@ export const getFiscalDocuments = (): FiscalDocument[] => {
 
   // Inicializa seed com demonstrações
   const seed = getInitialFiscalDocumentsSeed();
-  try {
-    localStorage.setItem(STORAGE_DOCUMENTS_KEY, JSON.stringify(seed));
-  } catch {}
+  safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, seed);
   return seed;
 };
 
-export const saveFiscalDocument = (doc: FiscalDocument): void => {
+export const saveFiscalDocument = async (
+  doc: FiscalDocument,
+  author?: { id?: string; name?: string }
+): Promise<void> => {
   try {
     const current = getFiscalDocuments();
     const existingIdx = current.findIndex(d => d.id === doc.id);
     let updated: FiscalDocument[];
     const nowIso = new Date().toISOString();
 
+    const completeDoc: FiscalDocument = {
+      ...doc,
+      createdByUserId: doc.createdByUserId || author?.id,
+      createdByName: doc.createdByName || author?.name,
+      createdAt: doc.createdAt || nowIso,
+      updatedAt: nowIso
+    };
+
     if (existingIdx >= 0) {
       updated = [...current];
-      updated[existingIdx] = { ...doc, updatedAt: nowIso };
+      updated[existingIdx] = completeDoc;
     } else {
-      updated = [{ ...doc, createdAt: doc.createdAt || nowIso, updatedAt: nowIso }, ...current];
+      updated = [completeDoc, ...current];
     }
 
-    localStorage.setItem(STORAGE_DOCUMENTS_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent(FISCAL_DOCUMENTS_CHANGED_EVENT));
+    // 1. Atualização imediata no cache local para resposta visual instantânea
+    safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, updated);
+
+    // 2. Transmissão imediata via WebSocket e eventos de abas
+    const action = existingIdx >= 0 ? 'update' : 'create';
+    broadcastFiscalChange(action, completeDoc.id, completeDoc);
+
+    // 3. Persistência compartilhada no Supabase (row 889 de profile_permissions)
+    try {
+      const currentTypes = getFiscalDocumentTypes();
+      await supabase.from('profile_permissions').upsert({
+        id: SUPABASE_FISCAL_RECORD_ID,
+        permissions: {
+          fiscal_documents: updated,
+          fiscal_document_types: currentTypes,
+          updatedAt: nowIso,
+          updatedBy: author?.name || completeDoc.createdByName
+        }
+      });
+    } catch (cloudErr) {
+      console.warn('[fiscalControlService] Falha ao persistir documento no Supabase:', cloudErr);
+    }
   } catch (err) {
     console.error('[fiscalControlService] Erro ao salvar documento fiscal:', err);
     throw err;
   }
 };
 
-export const deleteFiscalDocument = (docId: string): void => {
+export const deleteFiscalDocument = async (docId: string): Promise<void> => {
   try {
     const current = getFiscalDocuments();
     const updated = current.filter(d => d.id !== docId);
-    localStorage.setItem(STORAGE_DOCUMENTS_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent(FISCAL_DOCUMENTS_CHANGED_EVENT));
+    const nowIso = new Date().toISOString();
+
+    safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, updated);
+    broadcastFiscalChange('delete', docId);
+
+    try {
+      const currentTypes = getFiscalDocumentTypes();
+      await supabase.from('profile_permissions').upsert({
+        id: SUPABASE_FISCAL_RECORD_ID,
+        permissions: {
+          fiscal_documents: updated,
+          fiscal_document_types: currentTypes,
+          updatedAt: nowIso
+        }
+      });
+    } catch (cloudErr) {
+      console.warn('[fiscalControlService] Falha ao excluir documento no Supabase:', cloudErr);
+    }
   } catch (err) {
     console.error('[fiscalControlService] Erro ao excluir documento fiscal:', err);
     throw err;

@@ -116,7 +116,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         icmsPercentage: Number(cargo.icmsPercentage) || 0,
       }];
       
-  const { totalCompanyFreight, totalDriverFreight, netMarginPercentage } = useMemo(() => {
+  const { totalCompanyFreight, totalDriverFreight, netMarginPercentage, financialCostPerTon } = useMemo(() => {
     const activeLegs = freightLegsToDisplay;
 
     const totalCompanyFreight = activeLegs.reduce((sum, leg) => sum + (Number(leg.companyFreightValuePerTon) || 0), 0);
@@ -145,7 +145,13 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
     const demurrageProfitPerTon = loadedTonnage > 0 ? (totalDemurrageProfit / loadedTonnage) : 0;
     const demurrageRevenuePerTon = loadedTonnage > 0 ? (totalDemurrageRevenue / loadedTonnage) : 0;
 
-    const netProfit = totalNetCompanyValue - totalDriverFreight - totalCommission + demurrageProfitPerTon;
+    const financialCostPerTon = (cargo.financialCostPerTon !== undefined && cargo.financialCostPerTon > 0)
+      ? cargo.financialCostPerTon
+      : (cargo.financialCostEnabled && (cargo.financialCostEffectiveRate || 0) > 0)
+        ? (totalNetCompanyValue * ((cargo.financialCostEffectiveRate || 0) / 100))
+        : 0;
+
+    const netProfit = totalNetCompanyValue - totalDriverFreight - totalCommission - financialCostPerTon + demurrageProfitPerTon;
     const totalCompanyFreightWithEstadias = totalNetCompanyValue + demurrageRevenuePerTon;
 
     const margin = (totalCompanyFreightWithEstadias > 0) ? (netProfit / totalCompanyFreightWithEstadias) * 100 : 0;
@@ -154,8 +160,8 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
         ? '0,00%'
         : `${margin.toFixed(2).replace('.', ',')}%`;
 
-    return { totalCompanyFreight, totalDriverFreight, netMarginPercentage };
-  }, [freightLegsToDisplay, cargo.salespersonCommissionPerTon, stays, shipments, cargo.id]);
+    return { totalCompanyFreight, totalDriverFreight, netMarginPercentage, financialCostPerTon };
+  }, [freightLegsToDisplay, cargo.salespersonCommissionPerTon, cargo.financialCostPerTon, cargo.financialCostEnabled, cargo.financialCostEffectiveRate, stays, shipments, cargo.id]);
 
 
   return (
@@ -299,7 +305,7 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                         />
                     ))}
                 </div>
-                 <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <div className={`mt-4 grid grid-cols-1 ${financialCostPerTon > 0 ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
                     {currentUser?.profile === 'Motorista' ? (
                         <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md col-span-3">
                             <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Valor do Frete (Final)</label>
@@ -326,6 +332,15 @@ const CargoDetailsModal: React.FC<CargoDetailsModalProps> = ({ isOpen, onClose, 
                                             {(freightLegsToDisplay.some(leg => leg.driverFreightHasToll) || cargo.driverFreightHasToll) && <span className="ml-1 text-sm font-bold text-emerald-600 dark:text-emerald-400">+ Ped</span>}
                                         </p>
                                     </div>
+                                    {financialCostPerTon > 0 && (
+                                        <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded-md border border-purple-200 dark:border-purple-800">
+                                            <label className="text-xs font-medium text-purple-600 dark:text-purple-400">Custo Financeiro ({cargo.financialCostEffectiveRate || 0}%)</label>
+                                            <p className="text-lg font-bold text-purple-700 dark:text-purple-300">
+                                                - {formatCurrency(financialCostPerTon)}
+                                                <span className="text-xs font-normal text-gray-500 ml-1">/ ton</span>
+                                            </p>
+                                        </div>
+                                    )}
                                     <div className="p-3 bg-blue-50 dark:bg-blue-900/50 rounded-md border border-blue-200 dark:border-blue-800">
                                         <label className="text-xs font-medium text-blue-500 dark:text-blue-400">Margem Líquida (%)</label>
                                         <p className="text-lg font-bold text-primary dark:text-blue-300">{netMarginPercentage}</p>

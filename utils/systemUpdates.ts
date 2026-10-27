@@ -21,6 +21,74 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_26_v2_78_0',
+    version: 'v2.78.0',
+    date: '26/10/2026',
+    title: 'Módulo de Custo Financeiro em Cargas, Embarques e Controladoria',
+    summary: 'Implementado o recurso completo de Custo Financeiro nas Cargas (cadastro e edição) e sua respectiva propagação, dedução e exibição na composição de deduções dos Embarques e na Controladoria. O custo financeiro incide pro rata sobre o Frete Empresa a partir da taxa mensal de juros e do prazo de recebimento, abatendo diretamente a margem líquida da carga e integrando as deduções operacionais do embarque.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Custo Financeiro na Criação e Edição de Cargas (Etapa 3)',
+        description: 'Inclusão do botão retrátil [+ Adicionar Custo Financeiro] ao lado de [+ Adicionar Vendedor] em LoadFormModal.tsx, com seleção rápida de prazos (30, 45, 60 dias ou customizado), taxa mensal (% a.m.) e painel de pré-visualização em tempo real (alíquota efetiva pro rata, custo R$/ton e valor total estimado).'
+      },
+      {
+        category: 'feature',
+        title: 'Recálculo Instantâneo das Margens de Lucro PJ e PF',
+        description: 'O custo financeiro deduz diretamente do netProfitPj e netProfitPf da carga, atualizando instantaneamente as porcentagens de margem nos cards superiores do modal, na listagem de cargas (LoadTable.tsx) e nos detalhes da carga (CargoDetailsModal.tsx).'
+      },
+      {
+        category: 'feature',
+        title: 'Herança Automática e Composição das Deduções do Embarque',
+        description: 'Embarques vinculados herdam os parâmetros de custo financeiro da carga. O custo é destacado na "Composição das Deduções & Custos" (CteCostAutomationPanel.tsx e ShipmentDetailsModal.tsx), somando às deduções operacionais e abatendo do Lucro Operacional e Lucro Líquido Real.'
+      },
+      {
+        category: 'feature',
+        title: 'Coluna Oficial na Planilha de Controladoria de Embarques',
+        description: 'Adicionada a coluna "CUSTO FINANCEIRO" na categoria Impostos & Deduções da Controladoria de Embarques (ControlShipmentsTab.tsx), exibindo a alíquota e o valor deduzido pro rata com totais consolidados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Persistência Resiliente e Compatibilidade Total',
+        description: 'Campos integrados em types.ts e lib/db.ts com fallback sombra em meta-histórico para total tolerância e compatibilidade retroativa com cargas legadas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Usabilidade e Digitação Fluida nos Campos de Custo Financeiro',
+        description: 'Aprimoramento dos inputs numéricos de Prazo de Recebimento e Taxa Mensal para que fiquem totalmente em branco ao apagar os valores, eliminando o zero fixo residual e facilitando a digitação rápida de novos prazos e alíquotas.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_26_v2_77_0',
+    version: 'v2.77.0',
+    date: '26/10/2026',
+    title: 'Sincronização em Tempo Real e Persistência Multi-Usuário na Controladoria Fiscal',
+    summary: 'Implementada a integração completa da Controladoria Fiscal (apólices de seguros RCTR-C / RC-DC, CNDs, licenças e certidões) com o Supabase Postgres e WebSockets em tempo real. Novos documentos lançados por qualquer usuário (ex: Samanta) agora aparecem instantaneamente para todos os demais operadores e administradores, sem necessidade de atualizar a página.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sincronização em Tempo Real (Supabase Realtime WebSockets & Broadcast)',
+        description: 'Lançamentos, renovações, edições e exclusões de documentos fiscais e certidões são propagados instantaneamente para todas as sessões ativas da equipe via WebSocket.'
+      },
+      {
+        category: 'fix',
+        title: 'Persistência em Nuvem Centralizada (Resolução do isolamento local)',
+        description: 'Corrigido o comportamento onde os cadastros fiscais ficavam salvos apenas no navegador local do autor. Agora todos os dados são salvos de forma permanente e compartilhada no Supabase Postgres (row 889).'
+      },
+      {
+        category: 'improvement',
+        title: 'Fusão Inteligente de Documentos (Zero Data Loss)',
+        description: 'Algoritmo de merge inteligente que resgata e unifica documentos cadastrados previamente no cache de qualquer máquina ou usuário, promovendo-os para a nuvem automaticamente no primeiro acesso.'
+      },
+      {
+        category: 'feature',
+        title: 'Identificação de Autoria e Indicador Live de Sincronização',
+        description: 'Exibição do operador que realizou o cadastro de cada documento fiscal e indicador dinâmico no cabeçalho com botão para sincronização manual a qualquer momento.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_25_v2_76_1',
     version: 'v2.76.1',
     date: '25/10/2026',

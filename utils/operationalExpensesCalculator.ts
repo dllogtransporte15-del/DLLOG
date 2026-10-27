@@ -48,6 +48,10 @@ export interface CalculatedOperationalExpenses {
   agencyCommission: number;
   driverExtraPayments?: number;
   riskCost: number;
+  financialCostValue: number;
+  financialCostEffectiveRate: number;
+  financialCostMonthlyRate: number;
+  financialCostDaysTerm: number;
   generatedCredit: number;
   expenseItems: OperationalExpenseItem[];
   totalExpenses: number; // Total deduções sem frete motorista
@@ -448,6 +452,50 @@ export function calculateShipmentExpenses(
     });
   }
 
+  // 14.1.1 Custo Financeiro (pro rata s/ Frete Empresa conforme taxa mensal e prazo)
+  const isFinancialCostActive = Boolean(
+    (shipment.financialCostValue !== undefined && Number(shipment.financialCostValue) > 0) ||
+    (shipment.financialCostRate !== undefined && Number(shipment.financialCostRate) > 0) ||
+    cargo?.financialCostEnabled === true ||
+    (cargo?.financialCostMonthlyRate !== undefined && Number(cargo.financialCostMonthlyRate) > 0 && cargo?.financialCostDaysTerm !== undefined && Number(cargo.financialCostDaysTerm) > 0)
+  );
+
+  const financialCostMonthlyRate = shipment.financialCostMonthlyRate !== undefined && shipment.financialCostMonthlyRate !== null
+    ? Number(shipment.financialCostMonthlyRate)
+    : (cargo?.financialCostMonthlyRate !== undefined && cargo.financialCostMonthlyRate !== null
+        ? Number(cargo.financialCostMonthlyRate)
+        : 0);
+
+  const financialCostDaysTerm = shipment.financialCostDaysTerm !== undefined && shipment.financialCostDaysTerm !== null
+    ? Number(shipment.financialCostDaysTerm)
+    : (cargo?.financialCostDaysTerm !== undefined && cargo.financialCostDaysTerm !== null
+        ? Number(cargo.financialCostDaysTerm)
+        : 30);
+
+  const financialCostBaseDays = cargo?.financialCostBaseDays || 30;
+
+  const financialCostEffectiveRate = shipment.financialCostRate !== undefined && shipment.financialCostRate !== null
+    ? Number(shipment.financialCostRate)
+    : (cargo?.financialCostEffectiveRate !== undefined && cargo.financialCostEffectiveRate !== null
+        ? Number(cargo.financialCostEffectiveRate)
+        : (financialCostBaseDays > 0 ? Number(((financialCostMonthlyRate * financialCostDaysTerm) / financialCostBaseDays).toFixed(4)) : 0));
+
+  const calculatedFinancialCost = (financialCostEffectiveRate > 0 && companyFreight > 0)
+    ? Number((companyFreight * (financialCostEffectiveRate / 100)).toFixed(2))
+    : 0;
+
+  const financialCostValue = (shipment.financialCostValue !== undefined && shipment.financialCostValue !== null && Number(shipment.financialCostValue) > 0)
+    ? Number(shipment.financialCostValue)
+    : (isFinancialCostActive ? calculatedFinancialCost : 0);
+
+  if (financialCostValue > 0) {
+    expenseItems.push({
+      name: `Custo Financeiro (${financialCostEffectiveRate.toFixed(2).replace('.', ',')}% - ${financialCostDaysTerm} dias a ${financialCostMonthlyRate}% a.m.)`,
+      value: financialCostValue,
+      type: 'negative'
+    });
+  }
+
   // 14.2 Comissão do Embarcador (Informativo - não deduz do Resultado (=))
   const isShipperCommEnabled = Boolean(
     shipment.shipperCommissionEnabled === true ||
@@ -510,6 +558,7 @@ export function calculateShipmentExpenses(
       lower.includes('comissao de agencia') ||
       lower.includes('agenciamento') ||
       lower.includes('agenciador') ||
+      lower.includes('custo financeiro') ||
       lower.includes('gr') ||
       lower.includes('gerenciadora');
 
@@ -583,6 +632,10 @@ export function calculateShipmentExpenses(
     agencyCommission,
     driverExtraPayments,
     riskCost,
+    financialCostValue,
+    financialCostEffectiveRate,
+    financialCostMonthlyRate,
+    financialCostDaysTerm,
     generatedCredit,
     expenseItems,
     totalExpenses,

@@ -37,7 +37,8 @@ import {
   Plus,
   Trash2,
   HelpCircle,
-  FileWarning
+  FileWarning,
+  Landmark
 } from 'lucide-react';
 
 interface CteCostAutomationPanelProps {
@@ -1946,6 +1947,42 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     ? Number((shipperCommRate * tonnage).toFixed(2))
     : 0;
 
+  // 14.5 Custo Financeiro (pro rata s/ Frete Empresa conforme taxa mensal e prazo)
+  const isCargoFinActive = Boolean(
+    (shipment.financialCostValue !== undefined && Number(shipment.financialCostValue) > 0) ||
+    (shipment.financialCostRate !== undefined && Number(shipment.financialCostRate) > 0) ||
+    cargo?.financialCostEnabled === true ||
+    (cargo?.financialCostMonthlyRate !== undefined && Number(cargo.financialCostMonthlyRate) > 0 && cargo?.financialCostDaysTerm !== undefined && Number(cargo.financialCostDaysTerm) > 0)
+  );
+
+  const financialCostMonthlyRate = shipment.financialCostMonthlyRate !== undefined && shipment.financialCostMonthlyRate !== null
+    ? Number(shipment.financialCostMonthlyRate)
+    : (cargo?.financialCostMonthlyRate !== undefined && cargo.financialCostMonthlyRate !== null
+        ? Number(cargo.financialCostMonthlyRate)
+        : 0);
+
+  const financialCostDaysTerm = shipment.financialCostDaysTerm !== undefined && shipment.financialCostDaysTerm !== null
+    ? Number(shipment.financialCostDaysTerm)
+    : (cargo?.financialCostDaysTerm !== undefined && cargo.financialCostDaysTerm !== null
+        ? Number(cargo.financialCostDaysTerm)
+        : 30);
+
+  const financialCostBaseDays = cargo?.financialCostBaseDays || 30;
+
+  const financialCostEffectiveRate = shipment.financialCostRate !== undefined && shipment.financialCostRate !== null
+    ? Number(shipment.financialCostRate)
+    : (cargo?.financialCostEffectiveRate !== undefined && cargo.financialCostEffectiveRate !== null
+        ? Number(cargo.financialCostEffectiveRate)
+        : (financialCostBaseDays > 0 ? Number(((financialCostMonthlyRate * financialCostDaysTerm) / financialCostBaseDays).toFixed(4)) : 0));
+
+  const calculatedFinancialCost = (financialCostEffectiveRate > 0 && cteGrossFreight > 0)
+    ? Number((cteGrossFreight * (financialCostEffectiveRate / 100)).toFixed(2))
+    : 0;
+
+  const financialCostValue = (shipment.financialCostValue !== undefined && shipment.financialCostValue !== null && Number(shipment.financialCostValue) > 0)
+    ? Number(shipment.financialCostValue)
+    : (isCargoFinActive ? calculatedFinancialCost : 0);
+
   // 15. Deduções Operacionais Base (sem comissão de agência)
   // Nota: Custo Adicional / Prejuízo agora é informativo e não afeta o cálculo do Lucro Líquido Real
   const totalBaseDeductionsWithoutAgency = Number((
@@ -1960,7 +1997,8 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     salespersonCommission +
     comissaoComercial +
     totalDriverFreight +
-    shipperCommissionValue
+    shipperCommissionValue +
+    financialCostValue
   ).toFixed(2));
 
   // Lucro Operacional antes da comissão de agência
@@ -3028,6 +3066,31 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
               {salespersonCommission > 0 && (
                 <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${tonnage.toFixed(2)} ton x R$ ${salespersonRate.toFixed(2)}/ton`}>
                   {salespersonName ? `${salespersonName} • ` : ''}{tonnage.toFixed(2)}t x {formatBrl(salespersonRate)}/t
+                </div>
+              )}
+            </div>
+
+            {/* Custo Financeiro (Pro rata s/ Frete Empresa) */}
+            <div className={`p-2 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200/90 dark:border-slate-700/80 shadow-2xs flex flex-col justify-between ${financialCostValue === 0 ? 'opacity-90' : ''}`}>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1" title="Custo Financeiro pro rata sobre o Frete Empresa">
+                  <Landmark className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                  Custo Financeiro
+                </span>
+                <span className={`text-[8px] font-medium px-1 py-0.2 rounded shrink-0 max-w-[110px] truncate ${
+                  financialCostValue > 0 
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' 
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`} title={financialCostValue > 0 ? `${financialCostEffectiveRate.toFixed(2)}% (${financialCostDaysTerm} dias a ${financialCostMonthlyRate}% a.m.)` : 'Sem custo financeiro'}>
+                  {financialCostValue > 0 ? `${financialCostEffectiveRate.toFixed(2)}% (${financialCostDaysTerm}d)` : 'Isento'}
+                </span>
+              </div>
+              <div className={`text-xs font-bold font-mono ${financialCostValue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {financialCostValue > 0 ? `- ${formatBrl(financialCostValue)}` : 'R$ 0,00'}
+              </div>
+              {financialCostValue > 0 && (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`${financialCostDaysTerm} dias a ${financialCostMonthlyRate}% a.m. (base ${financialCostBaseDays}d) sobre ${formatBrl(cteGrossFreight)}`}>
+                  {financialCostDaysTerm}d a {financialCostMonthlyRate}% a.m. s/ {formatBrl(cteGrossFreight)}
                 </div>
               )}
             </div>

@@ -1874,6 +1874,12 @@ const App: React.FC = () => {
       agencyCommissionAgencyName: isAgenciadorRequester ? agencyNameAuto : undefined,
       shipperCommissionEnabled: isShipperCommAuto ? true : undefined,
       shipperCommissionRatePerTon: isShipperCommAuto ? shipperRateConfigured : undefined,
+      financialCostMonthlyRate: data.financialCostMonthlyRate ?? (findCargoById(cargos, data.cargoId)?.financialCostEnabled ? findCargoById(cargos, data.cargoId)?.financialCostMonthlyRate : undefined),
+      financialCostDaysTerm: data.financialCostDaysTerm ?? (findCargoById(cargos, data.cargoId)?.financialCostEnabled ? findCargoById(cargos, data.cargoId)?.financialCostDaysTerm : undefined),
+      financialCostRate: data.financialCostRate ?? (findCargoById(cargos, data.cargoId)?.financialCostEnabled ? findCargoById(cargos, data.cargoId)?.financialCostEffectiveRate : undefined),
+      financialCostValue: data.financialCostValue ?? ((findCargoById(cargos, data.cargoId)?.financialCostEnabled && findCargoById(cargos, data.cargoId)?.companyFreightValuePerTon && data.shipmentTonnage) 
+        ? Number(((findCargoById(cargos, data.cargoId)!.companyFreightValuePerTon * data.shipmentTonnage) * ((findCargoById(cargos, data.cargoId)?.financialCostEffectiveRate || 0) / 100)).toFixed(2)) 
+        : undefined),
       statusHistory: [{
         status: data.status || initialStatus,
         timestamp: new Date().toISOString(),
