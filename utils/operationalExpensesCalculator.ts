@@ -130,17 +130,29 @@ export function calculateShipmentExpenses(
           ));
 
   // 3. ICMS Destacado Completo
-  // Prioridade 1: Valor fixo/oficial lançado no documento CT-e ou na Apuração do Lucro Real
-  const icmsDocExplicit = (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference !== null && Number(shipment.realProfitData.icmsDifference) > 0)
-    ? Number(shipment.realProfitData.icmsDifference)
-    : (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0);
+  // Prioridade 1: Isenção explícita ou ICMS zerado
+  const isIcmsExemptExplicit = Boolean(
+    (shipment as any)?.isIcmsExempt ||
+    (shipment.documents as any)?.is_icms_exempt ||
+    (shipment.documents as any)?.isIcmsExempt ||
+    shipment.realProfitData?.isIcmsExempt ||
+    shipment.icmsValue === 0 ||
+    (shipment.documents as any)?.icms_value === 0 ||
+    (shipment.documents as any)?.icms_value === '0' ||
+    (shipment.documents as any)?.valor_icms === 0 ||
+    shipment.realProfitData?.icmsDifference === 0
+  );
 
-  const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : ((shipment as any)?.icmsPercentage || 0));
-  const icmsCalculado = (cargo?.hasIcms && icmsPercentage > 0)
+  const icmsDocExplicit = !isIcmsExemptExplicit && (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference !== null && Number(shipment.realProfitData.icmsDifference) > 0)
+    ? Number(shipment.realProfitData.icmsDifference)
+    : (!isIcmsExemptExplicit ? (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0) : 0);
+
+  const icmsPercentage = isIcmsExemptExplicit ? 0 : (cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : ((shipment as any)?.icmsPercentage || 0)));
+  const icmsCalculado = (!isIcmsExemptExplicit && cargo?.hasIcms && icmsPercentage > 0)
     ? Number((companyFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
 
-  const icms = icmsDocExplicit > 0 ? icmsDocExplicit : icmsCalculado;
+  const icms = isIcmsExemptExplicit ? 0 : (icmsDocExplicit > 0 ? icmsDocExplicit : icmsCalculado);
   const icmsBruto = icms;
 
   // 4. Frete Empresa Líquido de ICMS

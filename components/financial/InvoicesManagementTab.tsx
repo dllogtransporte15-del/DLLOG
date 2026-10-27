@@ -423,6 +423,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         }
         if (extracted.dueDate) {
           setFormDueDate(extracted.dueDate);
+          count++;
         }
         if (extracted.accessKey) {
           setFormAccessKey(extracted.accessKey);
@@ -438,7 +439,17 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         }
 
         if (count > 0) {
-          setExtractionSuccess(`✨ ${count} campos extraídos automaticamente d${formDocumentType === 'Fatura' ? 'a Fatura' : 'a Nota Fiscal'} anexada!`);
+          const dateHighlights: string[] = [];
+          if (extracted.dueDate) {
+            const [ano, mes, dia] = extracted.dueDate.split('-');
+            dateHighlights.push(`Vencimento: ${dia}/${mes}/${ano}`);
+          }
+          if (extracted.issueDate) {
+            const [ano, mes, dia] = extracted.issueDate.split('-');
+            dateHighlights.push(`Emissão: ${dia}/${mes}/${ano}`);
+          }
+          const datesText = dateHighlights.length > 0 ? ` [${dateHighlights.join(' • ')}]` : '';
+          setExtractionSuccess(`✨ ${count} campos extraídos automaticamente d${formDocumentType === 'Fatura' ? 'a Fatura' : 'a Nota Fiscal'}${datesText}!`);
         }
       } catch (err) {
         console.warn('Erro ao extrair dados fiscais:', err);
@@ -497,23 +508,36 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
           updatedFields.push(`Valor a Pagar (R$ ${formatted})`);
         }
 
-        // 2. Atualização automática da "Data de Vencimento"
+        // 2. Atualização automática da "Data de Emissão / Data do Documento"
+        if (extracted.issueDate) {
+          setFormIssueDate(extracted.issueDate);
+          const [ano, mes, dia] = extracted.issueDate.split('-');
+          updatedFields.push(`Emissão (${dia}/${mes}/${ano})`);
+        }
+
+        // 3. Atualização automática da "Data de Vencimento"
         if (extracted.dueDate) {
           setFormDueDate(extracted.dueDate);
           const [ano, mes, dia] = extracted.dueDate.split('-');
           updatedFields.push(`Vencimento (${dia}/${mes}/${ano})`);
         }
 
-        // 3. Atualização da Forma de Pagamento para Boleto
+        // 4. Atualização da Forma de Pagamento para Boleto
         setFormPaymentMethod('Boleto');
 
-        // 4. Preenchimento de Linha Digitável
+        // 5. Preenchimento de Linha Digitável
         if (extracted.digitableLine) {
           setFormPaymentDetails(extracted.digitableLine);
           updatedFields.push('Linha Digitável');
         }
 
-        // 5. Sugestão de Fornecedor / Beneficiário se ainda vazio
+        // 6. Preenchimento de Número do Documento se ainda vazio
+        if (extracted.documentNumber && !formNumber) {
+          setFormNumber(extracted.documentNumber);
+          updatedFields.push(`Nº Doc (${extracted.documentNumber})`);
+        }
+
+        // 7. Sugestão de Fornecedor / Beneficiário se ainda vazio
         if (extracted.beneficiaryName && !formSupplier) {
           setFormSupplier(extracted.beneficiaryName);
           updatedFields.push('Favorecido');

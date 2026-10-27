@@ -520,6 +520,7 @@ export interface RealProfitData {
   driverSurcharge?: number;
   toll?: number;
   icmsDifference?: number;
+  isIcmsExempt?: boolean;
   federalTax?: number;
   isFederalTaxManual?: boolean;
   inssPatronal?: number;
@@ -633,6 +634,7 @@ export interface Shipment {
   driverFreightRateSnapshot?: number;
   freightCalculationType?: FreightCalculationType;
   icmsValue?: number;
+  isIcmsExempt?: boolean;
   federalTax?: number;
   isFederalTaxManual?: boolean;
   generatedCredit?: number;

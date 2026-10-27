@@ -22,20 +22,62 @@ export interface ExtractedInvoiceData {
 }
 
 /**
- * Converte data DD/MM/AAAA para formato aceito por input[type="date"] (AAAA-MM-DD)
+ * Converte data DD/MM/AAAA ou variações para formato aceito por input[type="date"] (AAAA-MM-DD)
  */
-function convertBrDateToIso(dateStr?: string): string | undefined {
+export function convertBrDateToIso(dateStr?: string): string | undefined {
   if (!dateStr) return undefined;
   const trimmed = dateStr.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
 
-  const match = trimmed.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
-  if (match) {
-    const day = match[1].padStart(2, '0');
-    const month = match[2].padStart(2, '0');
-    const year = match[3];
-    return `${year}-${month}-${day}`;
+  // DD/MM/AAAA ou DD.MM.AAAA ou DD-MM-AAAA (com possíveis espaços extras)
+  const match4 = trimmed.match(/(\d{1,2})\s*[\/\.-]\s*(\d{1,2})\s*[\/\.-]\s*(\d{4})/);
+  if (match4) {
+    const day = parseInt(match4[1], 10);
+    const month = parseInt(match4[2], 10);
+    const year = parseInt(match4[3], 10);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1990 && year <= 2099) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
   }
+
+  // DD/MM/AA (ano com 2 dígitos, ex: 15/10/26 -> 2026-10-15)
+  const match2 = trimmed.match(/(\d{1,2})\s*[\/\.-]\s*(\d{1,2})\s*[\/\.-]\s*(\d{2})\b/);
+  if (match2) {
+    const day = parseInt(match2[1], 10);
+    const month = parseInt(match2[2], 10);
+    let year = parseInt(match2[3], 10);
+    year = year < 50 ? 2000 + year : 1900 + year;
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  // Formato extenso simples: "25 de Outubro de 2026"
+  const monthMap: Record<string, string> = {
+    janeiro: '01', jan: '01',
+    fevereiro: '02', fev: '02',
+    março: '03', marco: '03', mar: '03',
+    abril: '04', abr: '04',
+    maio: '05', mai: '05',
+    junho: '06', jun: '06',
+    julho: '07', jul: '07',
+    agosto: '08', ago: '08',
+    setembro: '09', set: '09',
+    outubro: '10', out: '10',
+    novembro: '11', nov: '11',
+    dezembro: '12', dez: '12'
+  };
+  const matchExtenso = trimmed.match(/(\d{1,2})\s+de\s+([a-zçãé]+)\s+de\s+(\d{4})/i);
+  if (matchExtenso) {
+    const day = parseInt(matchExtenso[1], 10);
+    const mName = matchExtenso[2].toLowerCase();
+    const year = parseInt(matchExtenso[3], 10);
+    const mNum = monthMap[mName];
+    if (mNum && day >= 1 && day <= 31) {
+      return `${year}-${mNum}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
   return undefined;
 }
 
@@ -279,10 +321,14 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
     }
   }
 
-  // 7. Data de Emissão
+  // 7. Data de Emissão / Data do Documento / Fatura
   const emissionPatterns = [
-    /(?:DATA\s+(?:DA\s+|DE\s+)?EMISS[ÃA]O|DATA\s+EMISS[ÃA]O|EMISS[ÃA]O)\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i,
-    /EMITIDA\s+EM\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i
+    /(?:DATA\s+(?:DA\s+|DE\s+)?EMISS[ÃA]O|DATA\s+EMISS[ÃA]O|DT\.?\s*EMISS[ÃA]O|EMISS[ÃA]O|EMITID[AO]\s+EM)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:DATA\s+(?:DO\s+)?DOCUMENTO|DATA\s+DOCUMENTO|DT\.?\s*DOC\.?|DATA\s+DOC)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:DATA\s+(?:DE\s+)?PROCESSAMENTO|DATA\s+PROCESSAMENTO|PROCESSAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:DATA\s+(?:DA\s+)?FATURA|DATA\s+FATURA|FATURA\s+EMITIDA\s+EM)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:PER[ÍI]ODO\s+DE\s+FATURAMENTO|M[ÊE]S\s+DE\s+REFER[ÊE]NCIA)[^\n\d]*?(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:DATA\s+(?:DA\s+|DE\s+)?EMISS[ÃA]O|DATA\s+EMISS[ÃA]O|DATA\s+DO\s+DOCUMENTO)[\s\r\n]+(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
   ];
   for (const p of emissionPatterns) {
     const m = text.match(p);
@@ -297,8 +343,10 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
 
   // 8. Data de Vencimento
   const duePatterns = [
-    /(?:DATA\s+(?:DO\s+)?VENCIMENTO|VENCIMENTO|VENC\.)\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i,
-    /VENCER\s+EM\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i
+    /(?:DATA\s+(?:DO\s+|DE\s+)?VENCIMENTO|DATA\s+VENCIMENTO|VENCIMENTO|VENC\.?|DT\.?\s*VENC\.?)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:VENCER\s+EM|PAGAR\s+AT[ÉE]|PAG[ÁA]VEL\s+AT[ÉE]|DATA\s+LIMITE\s+(?:PARA\s+|DE\s+)?PAGAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:VENCIMENTO\s+DA\s+FATURA|VENCIMENTO\s+DO\s+BOLETO|VENCIMENTO\s+PAGAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:DATA\s+(?:DO\s+)?VENCIMENTO|VENCIMENTO|DATA\s+VENCIMENTO)[\s\r\n]+(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
   ];
   for (const p of duePatterns) {
     const m = text.match(p);
@@ -312,10 +360,20 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
   }
 
   // 9. Dados de Pagamento (Linha digitável de boleto ou PIX)
-  const boletoMatch = text.match(/\b(\d{5}[\.\s]?\d{5}\s+\d{5}[\.\s]?\d{6}\s+\d{5}[\.\s]?\d{6}\s+\d\s+\d{14})\b/);
+  const boletoMatch = text.match(/\b(\d{5}[\.\s]?\d{5}\s+\d{5}[\.\s]?\d{6}\s+\d{5}[\.\s]?\d{6}\s+\d\s+\d{14})\b/) ||
+                      text.match(/\b\d{47}\b/) ||
+                      text.match(/\b\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\b/) ||
+                      text.match(/\b\d{48}\b/);
   if (boletoMatch) {
-    res.paymentDetails = boletoMatch[1].trim();
+    const decoded = parseBoletoDigitableLine(boletoMatch[0]);
+    res.paymentDetails = decoded.digitableLine || boletoMatch[0].trim();
     res.paymentMethod = 'Boleto';
+    if (!res.dueDate && decoded.dueDate) {
+      res.dueDate = decoded.dueDate;
+    }
+    if ((!res.totalAmount || res.totalAmount <= 0) && decoded.payableAmount) {
+      res.totalAmount = decoded.payableAmount;
+    }
   } else {
     const pixMatch = text.match(/(?:Chave\s+PIX|PIX)\s*[:.\s]+([a-zA-Z0-9_\-\.\@\+]{8,60})/i);
     if (pixMatch) {
@@ -499,20 +557,33 @@ export async function extractDataFromInvoiceFile(
         fullText += textContent.items.map((it: any) => it.str || '').join(' ') + '\n';
       }
 
-      if (fullText.trim().length > 20) {
+      if (fullText.trim().length > 10) {
         localPdfResult = parseTextInvoice(fullText);
+        // Enriquecimento cruzado inteligente com parseTextBoleto para faturas com boleto em anexo
+        const boletoInfo = parseTextBoleto(fullText);
+        if (boletoInfo) {
+          if (!localPdfResult.dueDate && boletoInfo.dueDate) localPdfResult.dueDate = boletoInfo.dueDate;
+          if (!localPdfResult.issueDate && boletoInfo.issueDate) localPdfResult.issueDate = boletoInfo.issueDate;
+          if ((!localPdfResult.totalAmount || localPdfResult.totalAmount <= 0) && boletoInfo.payableAmount) localPdfResult.totalAmount = boletoInfo.payableAmount;
+          if (!localPdfResult.paymentDetails && boletoInfo.digitableLine) {
+            localPdfResult.paymentDetails = boletoInfo.digitableLine;
+            localPdfResult.paymentMethod = 'Boleto';
+          }
+          if (!localPdfResult.supplierName && boletoInfo.beneficiaryName) localPdfResult.supplierName = boletoInfo.beneficiaryName;
+          if (!localPdfResult.supplierCnpjCpf && boletoInfo.beneficiaryCnpjCpf) localPdfResult.supplierCnpjCpf = boletoInfo.beneficiaryCnpjCpf;
+          if (!localPdfResult.invoiceNumber && boletoInfo.documentNumber) localPdfResult.invoiceNumber = boletoInfo.documentNumber;
+        }
       }
     } catch (e) {
       console.warn('[invoiceExtractionService] Falha ao extrair texto do PDF via PDF.js:', e);
     }
   }
 
-  // Se o parser local já obteve com sucesso os campos fundamentais (número, fornecedor e valor), retorna imediatamente
+  // Se o parser local já obteve com sucesso dados fundamentais (número/pagamento e vencimento/emissão/valor), retorna imediatamente
   if (
     localPdfResult &&
-    localPdfResult.invoiceNumber &&
-    localPdfResult.supplierName &&
-    localPdfResult.totalAmount !== undefined
+    (localPdfResult.invoiceNumber || localPdfResult.paymentDetails || localPdfResult.supplierName) &&
+    (localPdfResult.totalAmount !== undefined || localPdfResult.dueDate || localPdfResult.issueDate)
   ) {
     console.log('[invoiceExtractionService] Dados extraídos com sucesso do PDF local:', localPdfResult);
     return localPdfResult;
@@ -559,6 +630,8 @@ export async function extractDataFromInvoiceFile(
 export interface ExtractedBoletoData {
   payableAmount?: number;
   dueDate?: string; // YYYY-MM-DD
+  issueDate?: string; // YYYY-MM-DD (Data do Documento / Emissão / Processamento)
+  documentNumber?: string;
   digitableLine?: string;
   beneficiaryName?: string;
   beneficiaryCnpjCpf?: string;
@@ -647,9 +720,8 @@ function parseTextBoleto(text: string): ExtractedBoletoData {
 
   // 2. Data de Vencimento explícita no texto
   const duePatterns = [
-    /(?:(?:Data\s+(?:do\s+)?)?Vencimento|Data\s+Venc\.|Venc\.)\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i,
-    /Vencimento\s*[:.\s\n]+(\d{2}\/\d{2}\/\d{4})/i,
-    /VENCER\s+EM\s*[:.\s]*(\d{2}\/\d{2}\/\d{4})/i
+    /(?:(?:Data\s+(?:do\s+)?)?Vencimento|Data\s+Venc\.|Vencimento|Venc\.|Vencer\s+em|Pagar\s+at[ée]|Data\s+Limite\s+(?:para\s+)?Pagamento|Vencimento\s+do\s+Boleto|Vencimento\s+da\s+Fatura)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:Vencimento|Data\s+do\s+Vencimento)[\s\r\n]+(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
   ];
   for (const p of duePatterns) {
     const m = text.match(p);
@@ -657,6 +729,39 @@ function parseTextBoleto(text: string): ExtractedBoletoData {
       const iso = convertBrDateToIso(m[1]);
       if (iso) {
         res.dueDate = iso; // Data textual do boleto tem prioridade máxima
+        break;
+      }
+    }
+  }
+
+  // 3. Data de Emissão / Data do Documento / Data de Processamento
+  const issuePatterns = [
+    /(?:Data\s+(?:do\s+)?Documento|Data\s+Documento|Dt\.?\s*Doc\.?|Data\s+(?:de\s+)?Emiss[ãa]o|Data\s+Emiss[ãa]o|Dt\.?\s*Emiss[ãa]o|Emiss[ãa]o|Emitido\s+em)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:Data\s+(?:de\s+)?Processamento|Data\s+Processamento|Processamento)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:Data\s+(?:do\s+)?Documento|Data\s+de\s+Processamento|Data\s+de\s+Emiss[ãa]o)[\s\r\n]+(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
+  ];
+  for (const p of issuePatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const iso = convertBrDateToIso(m[1]);
+      if (iso) {
+        res.issueDate = iso;
+        break;
+      }
+    }
+  }
+
+  // 4. Número do Documento / Seu Número / Nosso Número
+  const docNumPatterns = [
+    /(?:N[úu]mero\s+(?:do\s+)?Documento|N[º°]\s+(?:do\s+)?Documento|No\s+Documento|Seu\s+N[úu]mero|Nosso\s+N[úu]mero)\s*[:.\s]*([A-Z0-9\/-]{3,30})/i,
+    /(?:N[úu]mero\s+do\s+Documento)[\s\r\n]+([A-Z0-9\/-]{3,30})/i
+  ];
+  for (const p of docNumPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const clean = m[1].trim();
+      if (clean && !res.documentNumber) {
+        res.documentNumber = clean;
         break;
       }
     }
@@ -728,15 +833,19 @@ async function parseBoletoWithGemini(
 Analise com extrema atenção a imagem/PDF do boleto bancário anexado e extraia:
 1. "valorAPagar": Valor nominal/cobrado do boleto em decimal (ex: 1250.00, sem R$)
 2. "dataVencimento": Data de vencimento no formato "AAAA-MM-DD" (ex: "2026-10-25")
-3. "linhaDigitavel": Linha digitável completa com pontuações (ex: "34191.09008 00000.282119 00818.989004 5 98760000150000")
-4. "beneficiario": Razão Social ou Nome do Beneficiário / Cedente
-5. "cnpjCpfBeneficiario": CNPJ ou CPF do Beneficiário formatado
-6. "banco": Nome do banco emissor se visível (ex: Itaú, Bradesco, Santander, Banco do Brasil, Caixa, etc.)
+3. "dataEmissao": Data do documento, data de emissão ou data de processamento no formato "AAAA-MM-DD" (ex: "2026-10-10")
+4. "numeroDocumento": Número do documento, número da fatura, seu número ou nosso número se visível (ex: "89240")
+5. "linhaDigitavel": Linha digitável completa com pontuações (ex: "34191.09008 00000.282119 00818.989004 5 98760000150000")
+6. "beneficiario": Razão Social ou Nome do Beneficiário / Cedente
+7. "cnpjCpfBeneficiario": CNPJ ou CPF do Beneficiário formatado
+8. "banco": Nome do banco emissor se visível (ex: Itaú, Bradesco, Santander, Banco do Brasil, Caixa, etc.)
 
 Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de código \`\`\`json):
 {
   "valorAPagar": 1250.00,
   "dataVencimento": "2026-10-25",
+  "dataEmissao": "2026-10-10",
+  "numeroDocumento": "89240",
   "linhaDigitavel": "34191.09008 00000.282119 00818.989004 5 98760000150000",
   "beneficiario": "Posto Graal Parada Real",
   "cnpjCpfBeneficiario": "12.345.678/0001-99",
@@ -783,6 +892,8 @@ Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de c
         return {
           payableAmount: typeof parsed.valorAPagar === 'number' ? parsed.valorAPagar : parseFloat(String(parsed.valorAPagar || '').replace(',', '.')) || undefined,
           dueDate: convertBrDateToIso(parsed.dataVencimento),
+          issueDate: convertBrDateToIso(parsed.dataEmissao),
+          documentNumber: parsed.numeroDocumento ? String(parsed.numeroDocumento).trim() : undefined,
           digitableLine: parsed.linhaDigitavel ? String(parsed.linhaDigitavel).trim() : undefined,
           beneficiaryName: parsed.beneficiario ? String(parsed.beneficiario).trim() : undefined,
           beneficiaryCnpjCpf: parsed.cnpjCpfBeneficiario ? formatCnpjCpf(String(parsed.cnpjCpfBeneficiario)) : undefined,
@@ -843,17 +954,36 @@ export async function extractDataFromBoletoFile(
 
       if (fullText.trim().length > 10) {
         localPdfResult = parseTextBoleto(fullText);
+        // Enriquecimento cruzado com parseTextInvoice caso tenha dados da fatura/cabeçalho
+        const invoiceComplement = parseTextInvoice(fullText);
+        if (invoiceComplement) {
+          if (!localPdfResult.issueDate && invoiceComplement.issueDate) {
+            localPdfResult.issueDate = invoiceComplement.issueDate;
+          }
+          if (!localPdfResult.dueDate && invoiceComplement.dueDate) {
+            localPdfResult.dueDate = invoiceComplement.dueDate;
+          }
+          if (!localPdfResult.documentNumber && invoiceComplement.invoiceNumber) {
+            localPdfResult.documentNumber = invoiceComplement.invoiceNumber;
+          }
+          if (!localPdfResult.beneficiaryName && invoiceComplement.supplierName) {
+            localPdfResult.beneficiaryName = invoiceComplement.supplierName;
+          }
+          if (!localPdfResult.beneficiaryCnpjCpf && invoiceComplement.supplierCnpjCpf) {
+            localPdfResult.beneficiaryCnpjCpf = invoiceComplement.supplierCnpjCpf;
+          }
+        }
       }
     } catch (e) {
       console.warn('[invoiceExtractionService] Falha ao extrair texto do PDF do boleto:', e);
     }
   }
 
-  // Se o parser local já obteve o valor a pagar e a data de vencimento com precisão, retorna imediatamente
+  // Se o parser local já obteve o vencimento e o valor (ou emissão), retorna imediatamente
   if (
     localPdfResult &&
-    localPdfResult.payableAmount !== undefined &&
-    localPdfResult.dueDate
+    (localPdfResult.dueDate || localPdfResult.issueDate) &&
+    (localPdfResult.payableAmount !== undefined || localPdfResult.digitableLine)
   ) {
     console.log('[invoiceExtractionService] Dados do boleto extraídos com sucesso do PDF local:', localPdfResult);
     return localPdfResult;
@@ -866,6 +996,8 @@ export async function extractDataFromBoletoFile(
       const merged: ExtractedBoletoData = {
         payableAmount: geminiResult.payableAmount !== undefined ? geminiResult.payableAmount : localPdfResult?.payableAmount,
         dueDate: geminiResult.dueDate || localPdfResult?.dueDate,
+        issueDate: geminiResult.issueDate || localPdfResult?.issueDate,
+        documentNumber: geminiResult.documentNumber || localPdfResult?.documentNumber,
         digitableLine: geminiResult.digitableLine || localPdfResult?.digitableLine,
         beneficiaryName: geminiResult.beneficiaryName || localPdfResult?.beneficiaryName,
         beneficiaryCnpjCpf: geminiResult.beneficiaryCnpjCpf || localPdfResult?.beneficiaryCnpjCpf,

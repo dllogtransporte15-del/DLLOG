@@ -1413,6 +1413,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const [autoFederalTax, setAutoFederalTax] = React.useState<number | undefined>(undefined);
   const [autoCteServiceTotal, setAutoCteServiceTotal] = React.useState<number | undefined>(undefined);
   const [autoCteIcms, setAutoCteIcms] = React.useState<number | undefined>(undefined);
+  const [autoCteIcmsRate, setAutoCteIcmsRate] = React.useState<number | undefined>(undefined);
   const [isSyncing, setIsSyncing] = React.useState(false);
 
   const syncDocs = React.useCallback(async () => {
@@ -1521,6 +1522,9 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
             }
             if (ext.financeiro?.valorIcms !== undefined) {
               setAutoCteIcms(ext.financeiro.valorIcms);
+            }
+            if (ext.financeiro?.aliquotaIcms !== undefined && ext.financeiro.aliquotaIcms > 0) {
+              setAutoCteIcmsRate(ext.financeiro.aliquotaIcms);
             }
           }
           if (ext.notasFiscais && ext.notasFiscais.length > 0) {
@@ -1704,18 +1708,45 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const baseFreteMotorista = Math.max(0, driverFreight - toll);
 
   // 7. ICMS (Valor integral do ICMS destacado no CT-e / vICMS)
-  const icmsPercentage = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : 0);
-  const icmsBruto = (cargo?.hasIcms && icmsPercentage > 0)
+  const isIcmsExemptExplicit = Boolean(
+    (shipment as any)?.isIcmsExempt ||
+    (shipment.documents as any)?.is_icms_exempt ||
+    (shipment.documents as any)?.isIcmsExempt ||
+    shipment.realProfitData?.isIcmsExempt ||
+    shipment.icmsValue === 0 ||
+    (shipment.documents as any)?.icms_value === 0 ||
+    (shipment.documents as any)?.icms_value === '0' ||
+    (shipment.documents as any)?.valor_icms === 0 ||
+    shipment.realProfitData?.icmsDifference === 0
+  );
+  const detectedOrCalculatedIcmsRate = (() => {
+    if (isIcmsExemptExplicit) return 0;
+    if (autoCteIcmsRate && autoCteIcmsRate > 0) return autoCteIcmsRate;
+    if ((shipment as any)?.icmsPercentage && (shipment as any).icmsPercentage > 0) return (shipment as any).icmsPercentage;
+    if (cargo?.icmsPercentage && cargo.icmsPercentage > 0) return cargo.icmsPercentage;
+    const effectiveIcmsVal = autoCteIcms !== undefined 
+      ? autoCteIcms 
+      : (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0);
+    if (effectiveIcmsVal > 0 && cteGrossFreight > 0) {
+      const computedRatio = Math.round((effectiveIcmsVal / cteGrossFreight) * 100);
+      if (computedRatio > 0 && computedRatio <= 30) return computedRatio;
+    }
+    return ((shipment as any)?.hasIcms || cargo?.hasIcms) ? 7 : 0;
+  })();
+  const icmsPercentage = isIcmsExemptExplicit ? 0 : detectedOrCalculatedIcmsRate;
+  const icmsBruto = (!isIcmsExemptExplicit && (cargo?.hasIcms || (shipment as any)?.hasIcms || icmsPercentage > 0) && icmsPercentage > 0)
     ? Number((cteGrossFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
 
   // Valor ICMS Completo (Destacado no CT-e)
-  const icmsDoc = Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0;
-  const icms = icmsBruto > 0
-    ? icmsBruto
-    : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
-        ? shipment.realProfitData.icmsDifference
-        : (icmsDoc > 0 ? icmsDoc : 0));
+  const icmsDoc = isIcmsExemptExplicit ? 0 : (Number((shipment.documents as any)?.icms_value) || Number(shipment.icmsValue) || 0);
+  const icms = isIcmsExemptExplicit
+    ? 0
+    : (icmsBruto > 0
+        ? icmsBruto
+        : (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0
+            ? shipment.realProfitData.icmsDifference
+            : (icmsDoc > 0 ? icmsDoc : 0)));
 
   const allDocText = [
     cargo?.observations,
@@ -1929,6 +1960,23 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const demurrageDriverPaid = shipmentStays.reduce((sum, s) => sum + (s.driverPaidValue || 0), 0);
   const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
   const hasStays = shipmentStays.length > 0 && (demurrageRevenue > 0 || demurrageDriverPaid > 0 || shipmentStays.length > 0);
+
+  // Tributos do CT-e Complementar de Estadia (conforme alíquotas do embarque)
+  const stayCteNumbers = shipmentStays.map(s => s.cteNumber).filter(Boolean);
+  const effectiveStayIcmsRate = isIcmsExemptExplicit ? 0 : icmsPercentage;
+  const stayIcms = (isIcmsExemptExplicit || effectiveStayIcmsRate <= 0)
+    ? 0
+    : Number((demurrageRevenue * (effectiveStayIcmsRate / 100)).toFixed(2));
+
+  const stayFederalRate = isExportCargo 
+    ? 0 
+    : (isSimplesNacional ? simplesFederalRate : (isShipmentPf ? 0.03655 : 0.0925));
+  const stayFederalTax = isExportCargo 
+    ? 0 
+    : Number((demurrageRevenue * stayFederalRate).toFixed(2));
+  const stayFederalRateLabel = isExportCargo 
+    ? '0% Exportação' 
+    : (isSimplesNacional ? '3,40% Simples' : (isShipmentPf ? '3,655% PF' : '9,25%'));
 
   // Totais Combinados (Frete Base CT-e + Estadia / CT-e Complementar)
   const totalCompanyFreight = cteGrossFreight + demurrageRevenue;
@@ -2754,6 +2802,21 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                   </div>
                 </>
               )}
+
+              {demurrageRevenue > 0 && (
+                <div 
+                  className="mt-1 pt-1 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[8px]"
+                  title={`CT-e Complementar de Estadia${stayCteNumbers.length > 0 ? ` (CT-e nº ${stayCteNumbers.join(', ')})` : ''}: ${stayFederalRateLabel} sobre ${formatBrl(demurrageRevenue)} = ${formatBrl(stayFederalTax)}. Total Imposto Federal (Principal + Complementar): ${formatBrl(impostoFederalLiquido + stayFederalTax)}`}
+                >
+                  <span className="text-slate-500 dark:text-slate-400 font-medium truncate flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 inline-block"></span>
+                    <span>CT-e Comp. ({stayFederalRateLabel}):</span>
+                  </span>
+                  <span className={`font-mono font-bold shrink-0 ml-1 ${stayFederalTax > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                    {formatBrl(stayFederalTax)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* ICMS Destacado Completo */}
@@ -2783,9 +2846,32 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
                 }
                 return null;
               })()}
-              {icmsBruto > 0 && (
-                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
+              {icmsBruto > 0 ? (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title={`Valor integral do ICMS destacado no CT-e Principal (${icmsPercentage}% s/ ${formatBrl(cteGrossFreight)})`}>
                   Integral ({formatBrl(icmsBruto)})
+                </div>
+              ) : (demurrageRevenue > 0 ? (
+                <div className="text-[8px] text-slate-400 dark:text-slate-500 truncate mt-0.5" title="ICMS destacado no CT-e Principal">
+                  {isIcmsExemptExplicit || icmsPercentage === 0 ? 'CT-e Princ.: Isento' : `CT-e Princ.: ${formatBrl(icms)}`}
+                </div>
+              ) : null)}
+
+              {demurrageRevenue > 0 && (
+                <div 
+                  className="mt-1 pt-1 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[8px]" 
+                  title={
+                    isIcmsExemptExplicit || effectiveStayIcmsRate === 0
+                      ? `CT-e Complementar de Estadia (${formatBrl(demurrageRevenue)}): Isento de ICMS conforme CT-e Principal`
+                      : `CT-e Complementar de Estadia${stayCteNumbers.length > 0 ? ` (CT-e nº ${stayCteNumbers.join(', ')})` : ''}: ${effectiveStayIcmsRate}% sobre ${formatBrl(demurrageRevenue)} = ${formatBrl(stayIcms)}. Total ICMS (Principal + Complementar): ${formatBrl(icms + stayIcms)}`
+                  }
+                >
+                  <span className="text-slate-500 dark:text-slate-400 font-medium truncate flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 inline-block"></span>
+                    <span>CT-e Comp. ({effectiveStayIcmsRate > 0 && !isIcmsExemptExplicit ? `${effectiveStayIcmsRate}%` : 'Isento'}):</span>
+                  </span>
+                  <span className={`font-mono font-bold shrink-0 ml-1 ${stayIcms > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                    {isIcmsExemptExplicit || effectiveStayIcmsRate === 0 ? 'Isento' : formatBrl(stayIcms)}
+                  </span>
                 </div>
               )}
             </div>

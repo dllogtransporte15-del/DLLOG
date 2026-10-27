@@ -419,7 +419,14 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         attachmentUrl,
         calculatedExpenses,
         weight: normalizeWeightTonnage(s.unloadedTonnage || s.loadedTonnage || s.shipmentTonnage || cargo?.totalVolume || 0),
-        icms: Number((calculatedExpenses.icms || (s.documents as any)?.icms_value || s.icmsValue || s.realProfitData?.icmsDifference || 0).toFixed(2)),
+        icms: (
+          (s as any)?.isIcmsExempt ||
+          (s.documents as any)?.is_icms_exempt ||
+          s.realProfitData?.isIcmsExempt ||
+          s.icmsValue === 0 ||
+          (s.documents as any)?.icms_value === 0 ||
+          s.realProfitData?.icmsDifference === 0
+        ) ? 0 : Number((calculatedExpenses.icms || (s.documents as any)?.icms_value || s.icmsValue || s.realProfitData?.icmsDifference || 0).toFixed(2)),
         federalTax: (s.realProfitData?.federalTax !== undefined && s.realProfitData.federalTax !== null)
           ? Number(s.realProfitData.federalTax)
           : Number(calculatedExpenses.impostoFederal || 0),

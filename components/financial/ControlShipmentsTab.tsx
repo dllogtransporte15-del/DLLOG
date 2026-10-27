@@ -1205,6 +1205,19 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
         // 1. ICMS: ICMS Destacado no CT-e / Isento / Cálculo de ICMS
         icms: (() => {
+          if (
+            (s as any)?.isIcmsExempt ||
+            (s.documents as any)?.is_icms_exempt ||
+            (s.documents as any)?.isIcmsExempt ||
+            s.realProfitData?.isIcmsExempt ||
+            s.icmsValue === 0 ||
+            (s.documents as any)?.icms_value === 0 ||
+            (s.documents as any)?.icms_value === '0' ||
+            (s.documents as any)?.valor_icms === 0 ||
+            s.realProfitData?.icmsDifference === 0
+          ) {
+            return 0;
+          }
           // 1. Diferença de ICMS explicitamente registrada no realProfitData
           if (s.realProfitData?.icmsDifference !== undefined && s.realProfitData.icmsDifference > 0) {
             return s.realProfitData.icmsDifference;

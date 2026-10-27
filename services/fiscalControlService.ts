@@ -612,15 +612,30 @@ export const saveFiscalDocumentType = async (type: FiscalDocumentType): Promise<
       updated = [...current, type];
     }
     safeSetLocalStorage(STORAGE_TYPES_KEY, updated);
+
+    // Atualiza automaticamente o nome do tipo em todos os documentos que usam este tipo
+    const currentDocs = getFiscalDocuments();
+    let docsUpdated = false;
+    const updatedDocs = currentDocs.map(d => {
+      if (d.typeId === type.id && d.typeName !== type.name) {
+        docsUpdated = true;
+        return { ...d, typeName: type.name, updatedAt: new Date().toISOString() };
+      }
+      return d;
+    });
+
+    if (docsUpdated) {
+      safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, updatedDocs);
+    }
+
     broadcastFiscalChange('update');
 
     // Persistência compartilhada no Supabase
     try {
-      const currentDocs = getFiscalDocuments();
       await supabase.from('profile_permissions').upsert({
         id: SUPABASE_FISCAL_RECORD_ID,
         permissions: {
-          fiscal_documents: currentDocs,
+          fiscal_documents: docsUpdated ? updatedDocs : currentDocs,
           fiscal_document_types: updated,
           updatedAt: new Date().toISOString()
         }
@@ -630,6 +645,7 @@ export const saveFiscalDocumentType = async (type: FiscalDocumentType): Promise<
     }
   } catch (err) {
     console.error('[fiscalControlService] Erro ao salvar tipo de documento:', err);
+    throw err;
   }
 };
 
@@ -728,6 +744,59 @@ export const saveFiscalDocument = async (
     console.error('[fiscalControlService] Erro ao salvar documento fiscal:', err);
     throw err;
   }
+};
+
+export const updateFiscalDocumentTitle = async (
+  docId: string,
+  newTitle: string,
+  author?: { id?: string; name?: string }
+): Promise<FiscalDocument> => {
+  const trimmed = newTitle.trim();
+  if (!trimmed) {
+    throw new Error('O título do documento não pode estar vazio.');
+  }
+
+  const current = getFiscalDocuments();
+  const existingIdx = current.findIndex(d => d.id === docId);
+  if (existingIdx === -1) {
+    throw new Error('Documento fiscal não encontrado.');
+  }
+
+  const nowIso = new Date().toISOString();
+  const updatedDoc: FiscalDocument = {
+    ...current[existingIdx],
+    title: trimmed,
+    updatedAt: nowIso,
+    ...(author?.id ? { createdByUserId: current[existingIdx].createdByUserId || author.id } : {}),
+    ...(author?.name ? { createdByName: current[existingIdx].createdByName || author.name } : {})
+  };
+
+  const updatedList = [...current];
+  updatedList[existingIdx] = updatedDoc;
+
+  // 1. Atualização imediata no cache local para resposta visual instantânea
+  safeSetLocalStorage(STORAGE_DOCUMENTS_KEY, updatedList);
+
+  // 2. Transmissão imediata via WebSocket e eventos de abas
+  broadcastFiscalChange('update', docId, updatedDoc);
+
+  // 3. Persistência compartilhada no Supabase
+  try {
+    const currentTypes = getFiscalDocumentTypes();
+    await supabase.from('profile_permissions').upsert({
+      id: SUPABASE_FISCAL_RECORD_ID,
+      permissions: {
+        fiscal_documents: updatedList,
+        fiscal_document_types: currentTypes,
+        updatedAt: nowIso,
+        updatedBy: author?.name || updatedDoc.createdByName
+      }
+    });
+  } catch (cloudErr) {
+    console.warn('[fiscalControlService] Falha ao persistir atualização de título no Supabase:', cloudErr);
+  }
+
+  return updatedDoc;
 };
 
 export const deleteFiscalDocument = async (docId: string): Promise<void> => {

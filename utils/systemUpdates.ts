@@ -21,6 +21,107 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_27_v2_82_0',
+    version: 'v2.82.0',
+    date: '27/10/2026',
+    title: 'Destaque de Tributos (Imposto Federal e ICMS) do CT-e Complementar de Estadia',
+    summary: 'Configuração da exibição inteligente no rodapé dos cards de "Imposto Federal" e "ICMS Destacado" na Composição das Deduções do CT-e para apresentar os valores tributários do CT-e complementar sempre que o embarque possuir estadias vinculadas e faturadas.',
+    items: [
+      {
+        category: 'feature',
+        title: 'ICMS do CT-e Complementar da Estadia',
+        description: 'Exibe no rodapé do card de ICMS Destacado a alíquota e o valor exato correspondente ao CT-e complementar da estadia (ex: 12% sobre R$ 1.000,00 gerando R$ 120,00 de ICMS destacado, ou indicação de isenção).'
+      },
+      {
+        category: 'feature',
+        title: 'Imposto Federal do CT-e Complementar da Estadia',
+        description: 'Exibe no rodapé do card de Imposto Federal a alíquota aplicável ao embarque (9,25% PJ / 3,40% Simples / 3,655% PF / 0% Exportação) calculada sobre a receita do CT-e complementar da estadia.'
+      },
+      {
+        category: 'improvement',
+        title: 'Detecção de Alíquotas e Tooltips com Valores Totais',
+        description: 'Tooltips aprimorados informando a memória de cálculo individualizada, números dos CT-es complementares e o valor consolidado de tributos (CT-e Principal + Complementar).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_81_0',
+    version: 'v2.81.0',
+    date: '27/10/2026',
+    title: 'Leitura e Reconhecimento Automático de Vencimento e Emissão em Boletos e Faturas',
+    summary: 'Configuração da leitura inteligente e automática de Data de Vencimento e Data de Emissão ao anexar boletos bancários ou faturas nos módulos Financeiro (NFs/Faturas) e Controladoria Fiscal, com decodificação Febraban e OCR multimodal.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Extração Automática de Emissão e Vencimento em Boletos',
+        description: 'Ao anexar um boleto bancário (PDF ou imagem), o sistema agora extrai tanto a Data de Vencimento quanto a Data de Emissão (Data do Documento ou Processamento) via expressões regulares estruturadas e fator Febraban, preenchendo automaticamente o formulário.'
+      },
+      {
+        category: 'feature',
+        title: 'Leitura Cruzada Inteligente em Faturas e Concessionárias',
+        description: 'Ao anexar faturas comerciais ou de concessionárias (energia, água, telecom), o motor identifica períodos de faturamento, data de emissão, vencimento limite e linha digitável integrada, alimentando os campos fiscais instantaneamente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Parser de Datas Flexível para Padrões Brasileiros',
+        description: 'Aprimorado o conversor de datas para aceitar formatos DD/MM/AAAA, DD.MM.AAAA, DD-MM-AAAA, anos de dois dígitos (DD/MM/AA) e datas com nomes de meses por extenso.'
+      },
+      {
+        category: 'improvement',
+        title: 'Auto-preenchimento nos Módulos de Faturas e Controladoria Fiscal',
+        description: 'A extração automática de vencimento e emissão agora atua em tempo real tanto no lançamento de NFs/Faturas/Boletos (InvoicesManagementTab) quanto na gestão de Documentos Fiscais e Apólices (ControlFiscalTab).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_80_0',
+    version: 'v2.80.0',
+    date: '27/10/2026',
+    title: 'Edição e Modificação Dinâmica de Título dos Documentos Fiscais',
+    summary: 'Implementada a funcionalidade completa para atualizar e modificar os títulos dos documentos e tipos fiscais diretamente na tabela, nos cards e nos modais da Controladoria Fiscal, com sincronização em tempo real e persistência na nuvem.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Edição Rápida e Direta (Inline) de Título',
+        description: 'Possibilidade de editar o título de qualquer documento com clique duplo no nome ou através do botão de lápis (Pencil) tanto na tabela quanto na visualização em cards. Suporta confirmação via Enter ou botão verde, e cancelamento via tecla Esc.'
+      },
+      {
+        category: 'feature',
+        title: 'Botão de Ação "Modificar Título do Documento"',
+        description: 'Adicionado botão dedicado de edição de título na coluna de Ações da tabela e no rodapé dos cards, facilitando a alteração imediata sem precisar abrir o formulário completo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sugestão e Preenchimento Automático de Título no Formulário',
+        description: 'No formulário de cadastro/edição de documentos, foi incluído o botão "⚡ Sugerir Título pelo Tipo" que monta automaticamente o título combinando Tipo + Emissor + Filial, além de auto-preenchimento ao selecionar uma categoria.'
+      },
+      {
+        category: 'feature',
+        title: 'Edição e Renomeação de Tipos de Documento',
+        description: 'No gerenciador de tipos de documentos fiscais, agora é possível editar e renomear tipos existentes. A alteração do nome do tipo propaga e atualiza automaticamente todos os documentos vinculados na nuvem (Supabase).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_79_0',
+    version: 'v2.79.0',
+    date: '27/10/2026',
+    title: 'Ajuste Fiscal e Isenção de ICMS nos CT-es 35, 36, 37 e 38',
+    summary: 'Ajuste cadastral e operacional para CT-es emitidos sem incidência de ICMS (ou substituídos). O sistema agora suporta isenção explícita de ICMS (isIcmsExempt ou R$ 0,00) em nível de embarque, impedindo a sobreposição de alíquotas da carga e zerando deduções indevidas na DRE e Controladoria.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Remoção de ICMS nos Embarques dos CT-es 35, 36, 37 e 38',
+        description: 'Os embarques FEL-809 (CT-e 35), RAF-792 (CT-e 36), FEL-814 (CT-e 37) e RAF-793 (CT-e 38) tiveram seus valores de ICMS zerados e marcados como isentos no banco de dados e nos documentos fiscais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Respeito a Isenção e ICMS Zerado no Motor Operacional e Painéis',
+        description: 'Aprimorados o calculador operacional (operationalExpensesCalculator.ts), o Painel de Automação de Custos de CT-e (CteCostAutomationPanel.tsx), a aba de Controle de Embarques (ControlShipmentsTab.tsx) e o Relatório de Lucro Real para respeitar quando um embarque for explicitamente isento ou possuir ICMS R$ 0,00, não recalculando a alíquota da carga.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_26_v2_78_0',
     version: 'v2.78.0',
     date: '26/10/2026',

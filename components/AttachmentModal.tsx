@@ -990,6 +990,19 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
   // ICMS: Comparação entre Sistema e CT-e
   const systemIcms = React.useMemo(() => {
+    if (
+      shipment.isIcmsExempt ||
+      (shipment.documents as any)?.is_icms_exempt ||
+      (shipment.documents as any)?.isIcmsExempt ||
+      shipment.realProfitData?.isIcmsExempt ||
+      shipment.icmsValue === 0 ||
+      (shipment.documents as any)?.icms_value === 0 ||
+      (shipment.documents as any)?.icms_value === '0' ||
+      (shipment.documents as any)?.valor_icms === 0 ||
+      shipment.realProfitData?.icmsDifference === 0
+    ) {
+      return 0;
+    }
     if (shipment.icmsValue !== undefined && shipment.icmsValue > 0) return shipment.icmsValue;
     if ((shipment.documents as any)?.icms_value) return Number((shipment.documents as any).icms_value);
     if (shipment.realProfitData?.icmsDifference !== undefined && shipment.realProfitData.icmsDifference > 0) {
@@ -1000,7 +1013,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       return (companyFreight * cargo.icmsPercentage) / 100;
     }
     return 0;
-  }, [shipment.icmsValue, shipment.documents, shipment.realProfitData, shipment.shipmentTonnage, cargo]);
+  }, [shipment.isIcmsExempt, shipment.icmsValue, shipment.documents, shipment.realProfitData, shipment.shipmentTonnage, cargo]);
 
   const icmsDivergenceInfo = React.useMemo(() => {
     if (cteExtractedIcms === undefined) return null;

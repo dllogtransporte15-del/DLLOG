@@ -4,13 +4,14 @@ import {
   Calendar, FileText, Search, Plus, Trash2, Edit3, Eye, Download, 
   Upload, X, RefreshCw, Filter, Layers, ExternalLink, Paperclip, 
   Tag, Clock, Sparkles, Building2, Check, ArrowRight, Grid, List, 
-  FileSpreadsheet, Loader2, Info, ChevronDown
+  FileSpreadsheet, Loader2, Info, ChevronDown, Pencil
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { FiscalDocument, FiscalDocumentType, FiscalAlertLevel, FiscalDocumentAttachment, Branch, User } from '../../types';
 import { 
   getFiscalDocuments, 
   saveFiscalDocument, 
+  updateFiscalDocumentTitle,
   deleteFiscalDocument, 
   getFiscalDocumentTypes, 
   saveFiscalDocumentType, 
@@ -22,6 +23,7 @@ import {
   subscribeToFiscalControl,
   syncFiscalDataWithSupabase
 } from '../../services/fiscalControlService';
+import { extractDataFromInvoiceFile, extractDataFromBoletoFile } from '../../utils/invoiceExtractionService';
 import { DocumentPreviewModal } from '../DocumentPreviewModal';
 import { useToast } from '../../hooks/useToast';
 import { supabase } from '../../supabase';
@@ -80,13 +82,20 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
   const [existingAttachments, setExistingAttachments] = useState<FiscalDocumentAttachment[]>([]);
   const [selectedNewFiles, setSelectedNewFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isExtractingAttachment, setIsExtractingAttachment] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form State Novo Tipo
+  // Form State Novo / Edição Tipo
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeCategory, setNewTypeCategory] = useState<'seguro' | 'certidao' | 'licenca' | 'fiscal' | 'outros'>('certidao');
   const [newTypeDescription, setNewTypeDescription] = useState('');
   const [newTypeColor, setNewTypeColor] = useState('blue');
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+
+  // Edição Rápida de Título (Inline na tabela e cards)
+  const [editingTitleDocId, setEditingTitleDocId] = useState<string | null>(null);
+  const [inlineTitleValue, setInlineTitleValue] = useState('');
+  const [isSavingInlineTitle, setIsSavingInlineTitle] = useState(false);
 
   const reloadData = () => {
     setDocuments(getFiscalDocuments());
@@ -269,6 +278,51 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
 
     setSelectedNewFiles(prev => [...prev, ...validFiles]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+
+    // Extração automática inteligente de Validade/Vencimento e Emissão
+    const primaryFile = validFiles[0];
+    if (primaryFile) {
+      setIsExtractingAttachment(true);
+      (async () => {
+        try {
+          const isBoleto = primaryFile.name.toLowerCase().includes('boleto');
+          const extracted = isBoleto
+            ? await extractDataFromBoletoFile(primaryFile)
+            : await extractDataFromInvoiceFile(primaryFile);
+
+          const newDueDate = extracted.dueDate;
+          const newIssueDate = extracted.issueDate;
+          const newNumber = (extracted as any).invoiceNumber || (extracted as any).documentNumber;
+          const newIssuer = (extracted as any).supplierName || (extracted as any).beneficiaryName;
+
+          setFormData(prev => ({
+            ...prev,
+            expirationDate: newDueDate || prev.expirationDate,
+            issueDate: newIssueDate || prev.issueDate,
+            documentNumber: (!prev.documentNumber && newNumber) ? newNumber : prev.documentNumber,
+            issuer: (!prev.issuer && newIssuer) ? newIssuer : prev.issuer,
+          }));
+
+          const dateInfos: string[] = [];
+          if (newDueDate) {
+            const [ano, mes, dia] = newDueDate.split('-');
+            dateInfos.push(`Vencimento: ${dia}/${mes}/${ano}`);
+          }
+          if (newIssueDate) {
+            const [ano, mes, dia] = newIssueDate.split('-');
+            dateInfos.push(`Emissão: ${dia}/${mes}/${ano}`);
+          }
+
+          if (dateInfos.length > 0) {
+            showToast(`✨ Lidos do anexo: ${dateInfos.join(' • ')}`, 'success');
+          }
+        } catch (err) {
+          console.warn('[ControlFiscalTab] Falha ao extrair dados do anexo:', err);
+        } finally {
+          setIsExtractingAttachment(false);
+        }
+      })();
+    }
   };
 
   const handleRemoveExistingAttachment = (index: number) => {
@@ -391,34 +445,90 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
     }
   };
 
+  // Edição Rápida de Título de Documento (Inline)
+  const handleStartInlineTitleEdit = (doc: FiscalDocument) => {
+    setEditingTitleDocId(doc.id);
+    setInlineTitleValue(doc.title);
+  };
+
+  const handleCancelInlineTitleEdit = () => {
+    setEditingTitleDocId(null);
+    setInlineTitleValue('');
+  };
+
+  const handleSaveInlineTitle = async (docId: string) => {
+    const trimmed = inlineTitleValue.trim();
+    if (!trimmed) {
+      showToast('O título do documento não pode ficar vazio.', 'warning');
+      return;
+    }
+    setIsSavingInlineTitle(true);
+    try {
+      await updateFiscalDocumentTitle(docId, trimmed, {
+        id: currentUser?.id,
+        name: currentUser?.name
+      });
+      showToast('✓ Título do documento atualizado com sucesso!', 'success');
+      setEditingTitleDocId(null);
+      reloadData();
+      setLastSyncTime(new Date());
+    } catch (err: any) {
+      console.error('[ControlFiscalTab] Erro ao atualizar título:', err);
+      showToast(err.message || 'Erro ao atualizar título do documento.', 'error');
+    } finally {
+      setIsSavingInlineTitle(false);
+    }
+  };
+
   // Gerenciador de Tipos
+  const handleStartEditType = (type: FiscalDocumentType) => {
+    setEditingTypeId(type.id);
+    setNewTypeName(type.name);
+    setNewTypeCategory(type.category);
+    setNewTypeDescription(type.description || '');
+    setNewTypeColor(type.color || 'blue');
+  };
+
+  const handleCancelEditType = () => {
+    setEditingTypeId(null);
+    setNewTypeName('');
+    setNewTypeCategory('certidao');
+    setNewTypeDescription('');
+    setNewTypeColor('blue');
+  };
+
   const handleSaveNewType = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTypeName.trim()) {
-      showToast('Informe o nome do novo tipo de documento.', 'warning');
+      showToast('Informe o nome do tipo de documento.', 'warning');
       return;
     }
 
-    const newType: FiscalDocumentType = {
-      id: `fdt_${Date.now()}_${newTypeName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+    const typeId = editingTypeId || `fdt_${Date.now()}_${newTypeName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    const existingType = documentTypes.find(t => t.id === typeId);
+
+    const typePayload: FiscalDocumentType = {
+      id: typeId,
       name: newTypeName.trim(),
       category: newTypeCategory,
       description: newTypeDescription.trim() || undefined,
       color: newTypeColor,
-      isDefault: false,
-      createdAt: new Date().toISOString()
+      isDefault: existingType?.isDefault ?? false,
+      createdAt: existingType?.createdAt || new Date().toISOString()
     };
 
     try {
-      await saveFiscalDocumentType(newType);
-      showToast(`Tipo "${newTypeName}" cadastrado com sucesso!`, 'success');
+      await saveFiscalDocumentType(typePayload);
+      showToast(editingTypeId ? `✓ Tipo "${newTypeName}" atualizado com sucesso!` : `✓ Tipo "${newTypeName}" cadastrado com sucesso!`, 'success');
+      setEditingTypeId(null);
       setNewTypeName('');
       setNewTypeDescription('');
+      setNewTypeCategory('certidao');
       reloadData();
       setLastSyncTime(new Date());
     } catch (err) {
       console.error('[ControlFiscalTab] Erro ao salvar tipo:', err);
-      showToast('Erro ao cadastrar tipo de documento.', 'error');
+      showToast('Erro ao salvar tipo de documento.', 'error');
     }
   };
 
@@ -936,9 +1046,59 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                     >
                       {/* Título & Detalhes */}
                       <td className="py-3 px-4 max-w-xs">
-                        <div className="font-bold text-slate-900 dark:text-white truncate" title={doc.title}>
-                          {doc.title}
-                        </div>
+                        {editingTitleDocId === doc.id ? (
+                          <div className="flex items-center gap-1.5 w-full py-0.5 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={inlineTitleValue}
+                              onChange={(e) => setInlineTitleValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveInlineTitle(doc.id);
+                                if (e.key === 'Escape') handleCancelInlineTitleEdit();
+                              }}
+                              disabled={isSavingInlineTitle}
+                              autoFocus
+                              placeholder="Novo título..."
+                              className="w-full px-2.5 py-1 text-xs font-bold rounded-lg border-2 border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none shadow-sm focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveInlineTitle(doc.id)}
+                              disabled={isSavingInlineTitle || !inlineTitleValue.trim()}
+                              className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                              title="Salvar título (Enter)"
+                            >
+                              {isSavingInlineTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelInlineTitleEdit}
+                              disabled={isSavingInlineTitle}
+                              className="p-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 transition-all cursor-pointer shrink-0"
+                              title="Cancelar (Esc)"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="group/title flex items-center gap-1.5">
+                            <span 
+                              className="font-bold text-slate-900 dark:text-white truncate cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                              title={`Duplo clique ou lápis para modificar o título: "${doc.title}"`}
+                              onDoubleClick={() => handleStartInlineTitleEdit(doc)}
+                            >
+                              {doc.title}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleStartInlineTitleEdit(doc)}
+                              className="opacity-0 group-hover/title:opacity-100 p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-all cursor-pointer shrink-0"
+                              title="Modificar título do documento"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           {doc.createdByName && (
                             <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-200 dark:border-indigo-800/40" title={`Cadastrado por: ${doc.createdByName}`}>
@@ -1032,6 +1192,14 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                         <div className="inline-flex items-center gap-1">
                           <button
                             type="button"
+                            onClick={() => handleStartInlineTitleEdit(doc)}
+                            className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
+                            title="Modificar título do documento"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleRenewDocument(doc)}
                             className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
                             title="Renovar este documento (duplicar com nova data de validade)"
@@ -1042,7 +1210,7 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                             type="button"
                             onClick={() => handleOpenDocModal(doc)}
                             className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors cursor-pointer"
-                            title="Editar documento"
+                            title="Editar dados completos do documento"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
@@ -1094,9 +1262,59 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                     </span>
                   </div>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-tight" title={doc.title}>
-                    {doc.title}
-                  </h4>
+                  {editingTitleDocId === doc.id ? (
+                    <div className="flex items-center gap-1.5 my-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={inlineTitleValue}
+                        onChange={(e) => setInlineTitleValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveInlineTitle(doc.id);
+                          if (e.key === 'Escape') handleCancelInlineTitleEdit();
+                        }}
+                        disabled={isSavingInlineTitle}
+                        className="flex-1 text-xs font-bold px-2 py-1 rounded-lg border border-indigo-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
+                        placeholder="Título do documento..."
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveInlineTitle(doc.id)}
+                        disabled={isSavingInlineTitle}
+                        className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs disabled:opacity-50"
+                        title="Salvar título (Enter)"
+                      >
+                        {isSavingInlineTitle ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelInlineTitleEdit}
+                        disabled={isSavingInlineTitle}
+                        className="p-1 rounded bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 cursor-pointer disabled:opacity-50"
+                        title="Cancelar (Esc)"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="group/title flex items-start justify-between gap-1.5">
+                      <h4 
+                        className="text-sm font-bold text-slate-900 dark:text-white leading-tight flex-1 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" 
+                        title="Clique duplo para editar o título deste documento"
+                        onDoubleClick={() => handleStartInlineTitleEdit(doc)}
+                      >
+                        {doc.title}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => handleStartInlineTitleEdit(doc)}
+                        className="opacity-0 group-hover/title:opacity-100 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all cursor-pointer"
+                        title="Modificar título do documento"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
 
                   <div className="mt-2.5 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                     {doc.issuer && (
@@ -1156,6 +1374,14 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStartInlineTitleEdit(doc)}
+                      className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
+                      title="Modificar título do documento"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleRenewDocument(doc)}
@@ -1238,7 +1464,19 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                   </div>
                   <select
                     value={formData.typeId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, typeId: e.target.value }))}
+                    onChange={(e) => {
+                      const nextTypeId = e.target.value;
+                      const nextType = documentTypes.find(t => t.id === nextTypeId);
+                      setFormData(prev => {
+                        const prevType = documentTypes.find(t => t.id === prev.typeId);
+                        const shouldAutoFill = !prev.title.trim() || (prevType && prev.title === prevType.name);
+                        return {
+                          ...prev,
+                          typeId: nextTypeId,
+                          title: shouldAutoFill && nextType ? nextType.name : prev.title
+                        };
+                      });
+                    }}
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none focus:border-indigo-500"
                     required
                   >
@@ -1269,9 +1507,27 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
 
               {/* Título do Documento */}
               <div>
-                <label className="font-bold text-slate-700 dark:text-slate-300 mb-1 block">
-                  Título / Descrição do Documento *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                    Título / Descrição do Documento *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const curType = documentTypes.find(t => t.id === formData.typeId);
+                      if (curType) {
+                        const issuerPart = formData.issuer.trim() ? ` - ${formData.issuer.trim()}` : '';
+                        const branchPart = formData.branchId && formData.branchId !== 'Todas' ? ` (${formData.branchId})` : '';
+                        setFormData(prev => ({ ...prev, title: `${curType.name}${issuerPart}${branchPart}` }));
+                      }
+                    }}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                    title="Sugerir título padronizado combinando o tipo, emissor e filial"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <span>Sugerir Título pelo Tipo</span>
+                  </button>
+                </div>
                 <input
                   type="text"
                   required
@@ -1447,7 +1703,7 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
                   <label
                     htmlFor="fiscal-doc-file-input"
                     className="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors shadow-xs"
@@ -1455,7 +1711,13 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                     <Upload className="w-3.5 h-3.5" />
                     <span>Escolher Arquivo(s) ou Foto(s)</span>
                   </label>
-                  {(existingAttachments.length === 0 && selectedNewFiles.length === 0) && (
+                  {isExtractingAttachment && (
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1.5 animate-pulse bg-indigo-50 dark:bg-indigo-950/40 px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                      Lendo vencimento e emissão do documento...
+                    </span>
+                  )}
+                  {(!isExtractingAttachment && existingAttachments.length === 0 && selectedNewFiles.length === 0) && (
                     <span className="text-xs text-slate-400 italic">Nenhum anexo selecionado</span>
                   )}
                 </div>
@@ -1527,11 +1789,22 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
             </div>
 
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-              {/* Formulário Novo Tipo */}
+              {/* Formulário Novo / Edição Tipo */}
               <form onSubmit={handleSaveNewType} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2.5">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
-                  + Adicionar Novo Tipo de Documento
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
+                    {editingTypeId ? '✏️ Modificar Nome / Detalhes do Tipo' : '+ Adicionar Novo Tipo de Documento'}
+                  </span>
+                  {editingTypeId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEditType}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input
                     type="text"
@@ -1560,12 +1833,22 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                   placeholder="Descrição breve ou finalidade (opcional)"
                   className="w-full p-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-indigo-500"
                 />
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  {editingTypeId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEditType}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                  )}
                   <button
                     type="submit"
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer flex items-center gap-1"
                   >
-                    Salvar Tipo
+                    {editingTypeId ? <Check className="w-3.5 h-3.5" /> : null}
+                    <span>{editingTypeId ? 'Atualizar Tipo' : 'Salvar Tipo'}</span>
                   </button>
                 </div>
               </form>
@@ -1591,6 +1874,14 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditType(t)}
+                          className="p-1 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded cursor-pointer"
+                          title="Editar ou renomear este tipo"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
                         {!t.isDefault && (
                           <button
                             type="button"

@@ -784,7 +784,10 @@ export const toShipment = (row: any): Shipment => {
     companyFreightRateSnapshot: row.company_freight_rate_snapshot !== null ? Number(row.company_freight_rate_snapshot) : undefined,
     driverFreightRateSnapshot: row.driver_freight_rate_snapshot !== null ? Number(row.driver_freight_rate_snapshot) : undefined,
     freightCalculationType: row.freight_calculation_type || docs.freight_calculation_type || undefined,
-    icmsValue: row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (docs.icms_value !== undefined && docs.icms_value !== null ? Number(docs.icms_value) : undefined),
+    icmsValue: (docs.is_icms_exempt || realProfit?.isIcmsExempt || docs.icms_value === 0 || row.icms_value === 0)
+      ? 0
+      : (row.icms_value !== null && row.icms_value !== undefined ? Number(row.icms_value) : (docs.icms_value !== undefined && docs.icms_value !== null ? Number(docs.icms_value) : undefined)),
+    isIcmsExempt: Boolean(row.is_icms_exempt || docs.is_icms_exempt || realProfit?.isIcmsExempt || docs.icms_value === 0 || row.icms_value === 0),
     route: row.route,
     cancellationReason: row.cancellation_reason,
     driverReferences: Array.isArray(row.driver_references) ? row.driver_references.join('\n') : (row.driver_references || ''),
@@ -905,20 +908,30 @@ const fromShipment = (s: Shipment) => {
                 ? Number((s.documents as any).credito_gerado)
                 : null)));
 
+  const isIcmsExempt = s.isIcmsExempt !== undefined
+    ? Boolean(s.isIcmsExempt)
+    : ((s.documents as any)?.is_icms_exempt !== undefined
+        ? Boolean((s.documents as any).is_icms_exempt)
+        : (s.realProfitData?.isIcmsExempt !== undefined
+            ? Boolean(s.realProfitData.isIcmsExempt)
+            : (s.icmsValue === 0 || (s.documents as any)?.icms_value === 0 ? true : null)));
+
   const realProfitData = s.realProfitData 
     ? {
         ...s.realProfitData,
         isFederalTaxManual: isFederalTaxManual !== null ? Boolean(isFederalTaxManual) : s.realProfitData.isFederalTaxManual,
         federalTax: federalTax !== null ? Number(federalTax) : s.realProfitData.federalTax,
         isGeneratedCreditManual: isGeneratedCreditManual !== null ? Boolean(isGeneratedCreditManual) : s.realProfitData.isGeneratedCreditManual,
-        generatedCredit: generatedCredit !== null ? Number(generatedCredit) : s.realProfitData.generatedCredit
+        generatedCredit: generatedCredit !== null ? Number(generatedCredit) : s.realProfitData.generatedCredit,
+        ...(isIcmsExempt !== null ? { isIcmsExempt: Boolean(isIcmsExempt), ...(isIcmsExempt ? { icmsDifference: 0 } : {}) } : {})
       } 
-    : (isFederalTaxManual !== null || federalTax !== null || isGeneratedCreditManual !== null || generatedCredit !== null
+    : (isFederalTaxManual !== null || federalTax !== null || isGeneratedCreditManual !== null || generatedCredit !== null || isIcmsExempt !== null
         ? { 
             isFederalTaxManual: Boolean(isFederalTaxManual), 
             federalTax: federalTax !== null ? Number(federalTax) : undefined,
             isGeneratedCreditManual: Boolean(isGeneratedCreditManual),
-            generatedCredit: generatedCredit !== null ? Number(generatedCredit) : undefined
+            generatedCredit: generatedCredit !== null ? Number(generatedCredit) : undefined,
+            ...(isIcmsExempt !== null ? { isIcmsExempt: Boolean(isIcmsExempt), ...(isIcmsExempt ? { icmsDifference: 0 } : {}) } : {})
           }
         : null);
 
@@ -949,9 +962,10 @@ const fromShipment = (s: Shipment) => {
     is_generated_credit_manual: isGeneratedCreditManual,
     generated_credit: generatedCredit,
     credito_gerado: generatedCredit,
+    is_icms_exempt: isIcmsExempt,
     real_profit_data: realProfitData,
     freight_calculation_type: s.freightCalculationType ?? (s.documents?.freight_calculation_type ?? null),
-    icms_value: s.icmsValue !== undefined ? s.icmsValue : (s.documents?.icms_value ?? null),
+    icms_value: isIcmsExempt ? 0 : (s.icmsValue !== undefined ? s.icmsValue : (s.documents?.icms_value ?? null)),
     additional_cost: s.additionalCost ?? (s.documents?.additional_cost ?? null),
     additional_cost_value: s.additionalCostValue !== undefined ? s.additionalCostValue : (s.additionalCost?.value ?? s.documents?.additional_cost_value ?? null),
     additional_cost_category: s.additionalCostCategory ?? (s.additionalCost?.category ?? s.documents?.additional_cost_category ?? null),
