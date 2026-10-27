@@ -182,7 +182,7 @@ export const OthersReport: React.FC<OthersReportProps> = ({
       const cleanCte = (cteVal && cteVal !== '-' && cteVal.trim() !== '') ? cteVal.trim() : (s.cteNumber ? String(s.cteNumber).trim() : '');
 
       // 1. Apurar Despesas e Lucro Líquido Real (Conforme Automatização do CT-e e Estadias)
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       const shipmentStays = (stays || []).filter(stay => isStayForShipment(stay, s));
       const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
       const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);

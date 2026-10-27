@@ -822,7 +822,12 @@ export const toShipment = (row: any): Shipment => {
                   : undefined))),
     mdfeNumber: row.mdfe_number || docs.mdfe_number,
     codigoAtua: row.codigo_atua || docs.codigo_atua || docs.codg_atua || docs.codigoAtua || undefined,
-    realProfitData: realProfit,
+    realProfitData: realProfit ? {
+      ...realProfit,
+      ...(Boolean(row.is_icms_exempt || docs.is_icms_exempt || realProfit?.isIcmsExempt || docs.icms_value === 0 || row.icms_value === 0)
+        ? { isIcmsExempt: true, icmsDifference: 0 }
+        : {})
+    } : realProfit,
     isFederalTaxManual: isFederalTaxManual,
     federalTax: federalTax,
     isGeneratedCreditManual: isGeneratedCreditManual,
@@ -966,6 +971,7 @@ const fromShipment = (s: Shipment) => {
     real_profit_data: realProfitData,
     freight_calculation_type: s.freightCalculationType ?? (s.documents?.freight_calculation_type ?? null),
     icms_value: isIcmsExempt ? 0 : (s.icmsValue !== undefined ? s.icmsValue : (s.documents?.icms_value ?? null)),
+    valor_icms: isIcmsExempt ? 0 : (s.documents?.valor_icms ?? null),
     additional_cost: s.additionalCost ?? (s.documents?.additional_cost ?? null),
     additional_cost_value: s.additionalCostValue !== undefined ? s.additionalCostValue : (s.additionalCost?.value ?? s.documents?.additional_cost_value ?? null),
     additional_cost_category: s.additionalCostCategory ?? (s.additionalCost?.category ?? s.documents?.additional_cost_category ?? null),

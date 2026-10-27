@@ -21,6 +21,78 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_27_v2_85_0',
+    version: 'v2.85.0',
+    date: '27/10/2026',
+    title: 'Correção de Lucro Real e Conciliação de Estadias / CT-e Complementar',
+    summary: 'Correção na conciliação de estadias e diárias vinculadas a embarques (ex: MUR-773). Eliminada a duplicidade de dedução onde o comprovante de diária anexado ao motorista era deduzido uma segunda vez como acréscimo avulso sobre a receita de frete, anulando a entrada do CT-e complementar faturado ao cliente e gerando lucro negativo indevido.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Eliminação da Dupla Dedução de Diárias / Estadias',
+        description: 'Ajustado o motor de despesas operacionais (operationalExpensesCalculator) para reconciliar automaticamente os lançamentos de diária/estadia registrados em Acréscimos Avulsos com os valores pagos ao motorista já apurados no módulo de estadias vinculadas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Integração Completa de Estadias e CT-e Complementar',
+        description: 'Garantido que os relatórios de Lucro Líquido Real, Histórico de Embarques, Filiais, Clientes, Vendedores e Controladoria somem a receita do CT-e complementar e abatam o repasse ao motorista exatamente uma vez, restabelecendo o lucro positivo real da operação.'
+      },
+      {
+        category: 'security',
+        title: 'Harmonização Contábil em Toda a Plataforma',
+        description: 'Sincronização entre os painéis de Automatização do CT-e, Contas a Pagar, 1º Resultado e Planilha Geral de Controle com a mesma regra de conciliação fiscal de estadias.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_84_0',
+    version: 'v2.84.0',
+    date: '27/10/2026',
+    title: 'Sincronização em Massa de Embarques ao Editar Carga (ICMS, Frete e Custos)',
+    summary: 'Novo modal inteligente disparado automaticamente na edição de cargas com viagens já vinculadas. Permite selecionar ou desmarcar quais embarques devem receber a atualização de ICMS (isenção ou destaque), Frete Empresa, Frete Motorista, Custos Financeiros e Pedágio, recalculando valores em lote com auditoria completa.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Modal de Sincronização em Massa (CargoSyncShipmentsModal)',
+        description: 'Interface interativa exibindo o resumo dos campos alterados na carga e a tabela comparativa de cada embarque existente (valores atuais vs novos valores projetados de ICMS, fretes e spread líquido).'
+      },
+      {
+        category: 'improvement',
+        title: 'Seleção Granular de Viagens e Salvar Carga Apenas',
+        description: 'Flexibilidade total com opções para selecionar/desmarcar todos os embarques, escolher individualmente quais atualizar ou optar por "Salvar Carga Apenas", preservando os embarques anteriores sem alteração.'
+      },
+      {
+        category: 'security',
+        title: 'Recálculo Automático e Histórico de Auditoria',
+        description: 'Atualização segura de alíquotas, isenção de ICMS, valores de frete, adiantamentos e custos financeiros diretamente no banco de dados com registro automático de auditoria no histórico de cada embarque.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_83_0',
+    version: 'v2.83.0',
+    date: '27/10/2026',
+    title: 'Normalização e Bloqueio de ICMS Indevido em Cargas Sem ICMS Destacado',
+    summary: 'Correção estrutural na leitura e cálculo de ICMS para impedir o destaque indevido de ICMS em embarques cujas cargas não possuem incidência de ICMS (como CRG-293 e CRG-149). Correção do parser de CT-e que interpretava suspensão tributária como alíquota e saneamento completo de todos os embarques no banco de dados.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Correção de Extração no Leitor de CT-e',
+        description: 'Ajustada a detecção de ICMS no fiscalDocParser para CT-es isentos, com CST 40/41 ou com suspensão tributária (ex: "IMPOSTOS SUSPENSOS: 30%"), impedindo a atribuição equivocada de alíquota de 30% de ICMS.'
+      },
+      {
+        category: 'security',
+        title: 'Blindagem de Cálculo de Lucro e Spread por Carga',
+        description: 'Implementadas travas de segurança em operationalExpensesCalculator, CteCostAutomationPanel, ControlShipmentsTab, RealProfitReport e AttachmentModal para que embarques vinculados a cargas sem ICMS contratual nunca recebam dedução de ICMS, preservando 100% da margem líquida da empresa.'
+      },
+      {
+        category: 'improvement',
+        title: 'Saneamento Completo de Embarques no Banco de Dados',
+        description: 'Normalizados 390 embarques de cargas sem ICMS cadastrado no sistema (incluindo todas as viagens das cargas CRG-293 e CRG-149), zerando retenções indevidas de ICMS e restaurando o cálculo exato do frete e lucro real.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_27_v2_82_0',
     version: 'v2.82.0',
     date: '27/10/2026',

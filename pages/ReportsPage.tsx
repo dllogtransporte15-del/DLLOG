@@ -312,7 +312,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
        }
 
        if (profitMarginStatuses.includes(s.status)) {
-           const expenses = calculateShipmentExpenses(s, cargo);
+           const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
            
            const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
            const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);

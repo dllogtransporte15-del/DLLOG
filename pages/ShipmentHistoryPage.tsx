@@ -53,7 +53,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
   const calculateMargin = (s: Shipment) => {
     const cargo = cargoMap.get(s.cargoId);
     if (!cargo) return 0;
-    const expenses = calculateShipmentExpenses(s, cargo);
+    const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
     
     const demurrageProfit = stays
         .filter(stay => isStayForShipment(stay, s))

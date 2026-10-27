@@ -216,7 +216,7 @@ const ClientReport: React.FC<ClientReportProps> = ({ shipments, cargos, clients,
 
       const client = clients.find(c => c.id === cargo.clientId);
       const ton = shipment.loadedTonnage || shipment.shipmentTonnage || 0;
-      const expenses = calculateShipmentExpenses(shipment, cargo);
+      const expenses = calculateShipmentExpenses(shipment, cargo, undefined, stays);
       const grossValue = expenses.companyFreight;
 
       // Estadias aprovadas vinculadas a este embarque com CT-e

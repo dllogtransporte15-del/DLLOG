@@ -6,6 +6,7 @@ import { getShipmentCte, getShipmentCteEmissionDate, hasCteAttached, getShipment
 import { calculateRoadDistanceKm } from '../../utils/distance';
 import { calculateTacTaxDeductions } from '../../utils/freightCalculation';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
+import type { StayRecord } from '../../utils/toolStorage';
 import { fetchProducts, fetchOwners, fetchVehicles } from '../../lib/db';
 import type { ShipmentControlItem } from '../../utils/financialCalculations';
 import { 
@@ -76,6 +77,7 @@ interface ControlShipmentsTabProps {
   vehicles?: Vehicle[];
   owners?: Owner[];
   branches?: Branch[];
+  stays?: StayRecord[];
   onNavigateToFiscal?: () => void;
 }
 
@@ -510,6 +512,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
   vehicles: propVehicles = [],
   owners: propOwners = [],
   branches = [],
+  stays = [],
   onNavigateToFiscal,
 }) => {
   // Estado de dados mapeados e carregamento
@@ -990,7 +993,7 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             : Math.max(0, freteMotorista - (s.tollValue || 0) - (s.advanceValue || 0) - (s.discountValue || 0)));
 
       const dateStr = s.scheduledDate ? formatDatePtBr(s.scheduledDate) : formatDatePtBr(s.createdAt);
-      const opExp = calculateShipmentExpenses(s, cargo);
+      const opExp = calculateShipmentExpenses(s, cargo, undefined, stays);
       const tcBranch = resolveTranscunhaBranch(s, cargo, fullUserMap, branches);
       const realCte = getShipmentCte(s);
       const cteNum = (realCte && realCte !== '-') ? realCte : (s.cteNumber || (s.documents as any)?.cte_number || s.id);
@@ -1205,7 +1208,19 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
 
         // 1. ICMS: ICMS Destacado no CT-e / Isento / Cálculo de ICMS
         icms: (() => {
+          const isCargoWithoutIcms = Boolean(
+            cargo &&
+            !cargo.hasIcms &&
+            !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+            !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+            !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+            (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+            !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+            !(s as any)?.hasIcms
+          );
+
           if (
+            isCargoWithoutIcms ||
             (s as any)?.isIcmsExempt ||
             (s.documents as any)?.is_icms_exempt ||
             (s.documents as any)?.isIcmsExempt ||

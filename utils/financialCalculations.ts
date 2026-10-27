@@ -1,5 +1,7 @@
 import type { Shipment, Cargo, FinancialTransaction, Client } from '../types';
 import { ShipmentStatus } from '../types';
+import type { StayRecord } from './toolStorage';
+import { isStayForShipment } from '../utils';
 
 export interface FirstLevelFinancialResult {
   totalGrossRevenue: number;     // Faturamento Bruto (Frete Empresa)
@@ -57,7 +59,7 @@ export interface ShipmentControlItem {
 /**
  * Calcula o 1º Resultado Financeiro a partir dos embarques reais do sistema
  */
-export function calculateFirstResult(shipments: Shipment[], cargos: Cargo[]): FirstLevelFinancialResult {
+export function calculateFirstResult(shipments: Shipment[], cargos: Cargo[], stays?: StayRecord[]): FirstLevelFinancialResult {
   const cargoMap = new Map(cargos.map(c => [c.id, c]));
 
   const validShipments = shipments.filter(s => 
@@ -78,17 +80,47 @@ export function calculateFirstResult(shipments: Shipment[], cargos: Cargo[]): Fi
     // Frete Empresa
     const companyRate = s.companyFreightRateSnapshot ?? cargo?.companyFreightValuePerTon ?? 0;
     const companyTotal = companyRate > 0 ? (companyRate * ton) : (s.driverFreightValue * 1.15); // Fallback saudável
-    totalGrossRevenue += companyTotal;
+
+    // Estadias / CT-e Complementar vinculados
+    const sStays = stays ? stays.filter(st => isStayForShipment(st, s)) : [];
+    const demurrageRevenue = sStays.reduce((sum: number, st: any) => sum + (Number(st.approvedValue ?? st.approved_value) || 0), 0);
+    const demurrageDriverPaid = sStays.reduce((sum: number, st: any) => sum + (Number(st.driverPaidValue ?? st.driver_paid_value) || 0), 0);
+
+    totalGrossRevenue += companyTotal + demurrageRevenue;
 
     // Impostos
     const icms = s.icmsValue ?? (cargo?.icmsPercentage ? (companyTotal * cargo.icmsPercentage / 100) : 0);
     totalTaxes += icms;
 
     // Frete Motorista + Acréscimos Avulsos (Diárias, Estadia, Bônus)
-    const driverExtra = (Array.isArray(s.driverExtraPayments)
-      ? s.driverExtraPayments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
-      : 0) || Number(s.driverExtraPaymentsTotal || 0) || Number(s.realProfitData?.driverSurcharge || 0) || 0;
-    totalDriverCosts += (s.driverFreightValue || 0) + driverExtra;
+    const rawExtra = Array.isArray(s.driverExtraPayments) ? s.driverExtraPayments : [];
+    let stayExtra = 0;
+    let otherExtra = 0;
+    if (rawExtra.length > 0) {
+      for (const p of rawExtra) {
+        const amt = Number(p.amount) || 0;
+        if (/di[aá]ria|estadia/i.test(p.reason || '')) {
+          stayExtra += amt;
+        } else {
+          otherExtra += amt;
+        }
+      }
+    } else {
+      const tot = Number(s.driverExtraPaymentsTotal || 0) || Number(s.realProfitData?.driverSurcharge || 0) || 0;
+      if (demurrageDriverPaid > 0 && Math.abs(tot - demurrageDriverPaid) < 1.0) {
+        stayExtra = tot;
+      } else {
+        otherExtra = tot;
+      }
+    }
+
+    const stayAlreadyCounted = demurrageDriverPaid > 0
+      ? Math.min(demurrageDriverPaid, stayExtra)
+      : (demurrageRevenue > 0 ? Math.min(demurrageRevenue, stayExtra) : 0);
+    const effectiveStayExtra = Math.max(0, stayExtra - stayAlreadyCounted);
+    const effectiveDriverExtra = otherExtra + effectiveStayExtra;
+
+    totalDriverCosts += (s.driverFreightValue || 0) + demurrageDriverPaid + effectiveDriverExtra;
 
     // Pedágio com limite de sanidade
     const rawToll = Number(s.tollValue);

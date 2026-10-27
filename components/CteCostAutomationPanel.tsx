@@ -1708,7 +1708,20 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const baseFreteMotorista = Math.max(0, driverFreight - toll);
 
   // 7. ICMS (Valor integral do ICMS destacado no CT-e / vICMS)
+  // Se a carga NÃO tem ICMS destacado no seu cadastro, nenhum embarque vinculado pode destacar/deduzir ICMS
+  const isCargoWithoutIcms = Boolean(
+    cargo &&
+    !cargo.hasIcms &&
+    !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+    !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+    !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+    (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+    !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+    !(shipment as any)?.hasIcms
+  );
+
   const isIcmsExemptExplicit = Boolean(
+    isCargoWithoutIcms ||
     (shipment as any)?.isIcmsExempt ||
     (shipment.documents as any)?.is_icms_exempt ||
     (shipment.documents as any)?.isIcmsExempt ||
@@ -1720,7 +1733,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     shipment.realProfitData?.icmsDifference === 0
   );
   const detectedOrCalculatedIcmsRate = (() => {
-    if (isIcmsExemptExplicit) return 0;
+    if (isIcmsExemptExplicit || isCargoWithoutIcms) return 0;
     if (autoCteIcmsRate && autoCteIcmsRate > 0) return autoCteIcmsRate;
     if ((shipment as any)?.icmsPercentage && (shipment as any).icmsPercentage > 0) return (shipment as any).icmsPercentage;
     if (cargo?.icmsPercentage && cargo.icmsPercentage > 0) return cargo.icmsPercentage;
@@ -1734,7 +1747,7 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
     return ((shipment as any)?.hasIcms || cargo?.hasIcms) ? 7 : 0;
   })();
   const icmsPercentage = isIcmsExemptExplicit ? 0 : detectedOrCalculatedIcmsRate;
-  const icmsBruto = (!isIcmsExemptExplicit && (cargo?.hasIcms || (shipment as any)?.hasIcms || icmsPercentage > 0) && icmsPercentage > 0)
+  const icmsBruto = (!isIcmsExemptExplicit && !isCargoWithoutIcms && (cargo?.hasIcms || (shipment as any)?.hasIcms || icmsPercentage > 0) && icmsPercentage > 0)
     ? Number((cteGrossFreight * (icmsPercentage / 100)).toFixed(2))
     : 0;
 

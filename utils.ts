@@ -584,14 +584,15 @@ export function getShipmentEffectiveDate(shipment?: { status?: any; cteEmissionD
 }
 
 export function isStayForShipment(
-  stay?: { shipmentId?: string; plate?: string; driver?: string; invoice?: string; entryDate?: string; date?: string } | null,
+  stay?: { shipmentId?: string; shipment_id?: string; plate?: string; driver?: string; invoice?: string; entryDate?: string; date?: string } | null,
   shipment?: { id?: string; orderId?: string; horsePlate?: string; driverName?: string; nfeNumber?: string; documents?: any; scheduledDate?: string; createdAt?: string } | null
 ): boolean {
   if (!stay || !shipment) return false;
 
   // 1. Direct match by shipmentId
-  if (stay.shipmentId && typeof stay.shipmentId === 'string' && stay.shipmentId.trim() !== '') {
-    const cleanStayId = stay.shipmentId.trim().toLowerCase();
+  const stayShipmentId = stay.shipmentId || (stay as any).shipment_id;
+  if (stayShipmentId && typeof stayShipmentId === 'string' && stayShipmentId.trim() !== '') {
+    const cleanStayId = stayShipmentId.trim().toLowerCase();
     if (shipment.id && shipment.id.toLowerCase() === cleanStayId) return true;
     if (shipment.orderId && shipment.orderId.toLowerCase() === cleanStayId) return true;
     return false; // If stay has an explicit shipmentId assigned, it strictly belongs to that shipment

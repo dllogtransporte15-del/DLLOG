@@ -73,7 +73,7 @@ const SalespersonReport: React.FC<SalespersonReportProps> = ({ shipments, cargos
           const cargo = cargoMap.get(shipment.cargoId);
           if (!cargo) return acc;
 
-          const expenses = calculateShipmentExpenses(shipment, cargo);
+          const expenses = calculateShipmentExpenses(shipment, cargo, undefined, stays);
           
           const shipmentStays = stays.filter(stay => isStayForShipment(stay, shipment));
           const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);

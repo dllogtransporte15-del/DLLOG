@@ -1341,14 +1341,21 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
   const mFreteLiq = !isPureNotaFiscalOrTicket ? text.match(/(?:VALOR\s+L[ÍI]QUIDO|L[ÍI]QUIDO\s+A\s+RECEBER|FRETE\s+L[ÍI]QUIDO)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
   const mSaldo = !isPureNotaFiscalOrTicket ? text.match(/(?:SALDO|VALOR\s+DO\s+SALDO|2[ªa]\s*Parcela)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
   const mCombustivel = !isPureNotaFiscalOrTicket ? text.match(/(?:COMBUST[ÍI]VEL|ABASTECIMENTO|POSTO)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
-  const mIcms = !isPureNotaFiscalOrTicket ? (
+  
+  // Detecção de isenção ou não incidência de ICMS no CT-e
+  const isCteIcmsIsento = !isPureNotaFiscalOrTicket && Boolean(
+    /(?:ICMS\s+isento|isento\s+de\s+ICMS|ICMS\s*:\s*isento|CST\s*40\b|40\s*-\s*ICMS\s+isento|40\s*-\s*isento|isen[çc][ãa]o\s+de\s+ICMS|n[ãa]o\s+tributad[ao]|41\s*-\s*n[ãa]o\s+tributad[ao]|CST\s*41\b)/i.test(text)
+  );
+
+  const mIcms = (!isPureNotaFiscalOrTicket && !isCteIcmsIsento) ? (
     text.match(/(?:VALOR\s+(?:DO\s+)?ICMS|VLR\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) ||
     text.match(/\bICMS\s*(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i)
   ) : null;
-  const mBcIcms = !isPureNotaFiscalOrTicket ? text.match(/(?:BASE\s+DE\s+C[ÁA]LCULO\s+(?:DO\s+)?ICMS|BC\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
-  const mAliqIcms = !isPureNotaFiscalOrTicket ? (
+  const mBcIcms = (!isPureNotaFiscalOrTicket && !isCteIcmsIsento) ? text.match(/(?:BASE\s+DE\s+C[ÁA]LCULO\s+(?:DO\s+)?ICMS|BC\s+ICMS)[\s\S]{0,35}?(?:R\$\s*)?([\d]{1,3}(?:\.[\d]{3})*,[\d]{2})\b/i) : null;
+  const mAliqIcms = (!isPureNotaFiscalOrTicket && !isCteIcmsIsento) ? (
     text.match(/(?:AL[ÍI]QUOTA\s+(?:DO\s+)?ICMS|AL[ÍI]Q\s+ICMS|AL[ÍI]Q\.\s*ICMS)[\s\S]{0,20}?([\d.,]+)\s*%/i) ||
-    text.match(/([\d.,]+)\s*%\s*(?:VALOR\s+(?:DO\s+)?ICMS)?/i)
+    text.match(/(?:ICMS\s*:\s*|ICMS\s+)([\d.,]+)\s*%/i) ||
+    text.match(/AL[ÍI]Q(?:UOTA)?\s*[:=]?\s*([\d.,]+)\s*%/i)
   ) : null;
   const mPix = !isPureNotaFiscalOrTicket ? text.match(/(?:PIX|CHAVE\s+PIX)[:\s]+([^\s\n\r]{4,50})/i) : null;
 
@@ -1361,9 +1368,9 @@ function parseDetailedText(text: string, declaredDocType: string = ''): Detailed
     valorSaldo: parseCurrencyPtBr(mSaldo?.[1]),
     valorPedagio: contractVals.tollValue,
     valorCombustivel: parseCurrencyPtBr(mCombustivel?.[1]),
-    baseCalculoIcms: parseCurrencyPtBr(mBcIcms?.[1]),
-    valorIcms: parseCurrencyPtBr(mIcms?.[1]),
-    aliquotaIcms: parseCurrencyPtBr(mAliqIcms?.[1]),
+    baseCalculoIcms: isCteIcmsIsento ? 0 : parseCurrencyPtBr(mBcIcms?.[1]),
+    valorIcms: isCteIcmsIsento ? 0 : parseCurrencyPtBr(mIcms?.[1]),
+    aliquotaIcms: isCteIcmsIsento ? 0 : parseCurrencyPtBr(mAliqIcms?.[1]),
     chavePix: mPix?.[1]?.trim(),
   };
 

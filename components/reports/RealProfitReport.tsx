@@ -307,7 +307,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente N/A';
       
       // Apuração Completa e Parametrizada idêntica à "Automatização do CT-e"
-      const calculatedExpenses = calculateShipmentExpenses(s, cargo);
+      const calculatedExpenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       const {
         companyFreight: baseCompanyFreight,
         driverFreight: baseDriverFreight,
@@ -419,14 +419,31 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         attachmentUrl,
         calculatedExpenses,
         weight: normalizeWeightTonnage(s.unloadedTonnage || s.loadedTonnage || s.shipmentTonnage || cargo?.totalVolume || 0),
-        icms: (
-          (s as any)?.isIcmsExempt ||
-          (s.documents as any)?.is_icms_exempt ||
-          s.realProfitData?.isIcmsExempt ||
-          s.icmsValue === 0 ||
-          (s.documents as any)?.icms_value === 0 ||
-          s.realProfitData?.icmsDifference === 0
-        ) ? 0 : Number((calculatedExpenses.icms || (s.documents as any)?.icms_value || s.icmsValue || s.realProfitData?.icmsDifference || 0).toFixed(2)),
+        icms: (() => {
+          const isCargoWithoutIcms = Boolean(
+            cargo &&
+            !cargo.hasIcms &&
+            !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+            !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+            !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+            (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+            !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+            !(s as any)?.hasIcms
+          );
+
+          if (
+            isCargoWithoutIcms ||
+            (s as any)?.isIcmsExempt ||
+            (s.documents as any)?.is_icms_exempt ||
+            s.realProfitData?.isIcmsExempt ||
+            s.icmsValue === 0 ||
+            (s.documents as any)?.icms_value === 0 ||
+            s.realProfitData?.icmsDifference === 0
+          ) {
+            return 0;
+          }
+          return Number((calculatedExpenses.icms || (s.documents as any)?.icms_value || s.icmsValue || s.realProfitData?.icmsDifference || 0).toFixed(2));
+        })(),
         federalTax: (s.realProfitData?.federalTax !== undefined && s.realProfitData.federalTax !== null)
           ? Number(s.realProfitData.federalTax)
           : Number(calculatedExpenses.impostoFederal || 0),

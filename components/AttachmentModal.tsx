@@ -989,8 +989,20 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   }, [cteExtractedServiceTotal, systemCompanyFreight]);
 
   // ICMS: Comparação entre Sistema e CT-e
+  const isCargoWithoutIcms = Boolean(
+    cargo &&
+    !cargo.hasIcms &&
+    !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+    !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+    !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+    (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+    !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+    !(shipment as any)?.hasIcms
+  );
+
   const systemIcms = React.useMemo(() => {
     if (
+      isCargoWithoutIcms ||
       shipment.isIcmsExempt ||
       (shipment.documents as any)?.is_icms_exempt ||
       (shipment.documents as any)?.isIcmsExempt ||
@@ -1013,9 +1025,10 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       return (companyFreight * cargo.icmsPercentage) / 100;
     }
     return 0;
-  }, [shipment.isIcmsExempt, shipment.icmsValue, shipment.documents, shipment.realProfitData, shipment.shipmentTonnage, cargo]);
+  }, [shipment.isIcmsExempt, shipment.icmsValue, shipment.documents, shipment.realProfitData, shipment.shipmentTonnage, cargo, isCargoWithoutIcms]);
 
   const icmsDivergenceInfo = React.useMemo(() => {
+    if (isCargoWithoutIcms) return null; // Nunca cria divergência de ICMS se a carga não tem ICMS
     if (cteExtractedIcms === undefined) return null;
     const diff = Math.abs((systemIcms || 0) - cteExtractedIcms);
     if (diff > 1.00) {
@@ -1027,7 +1040,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       };
     }
     return null;
-  }, [cteExtractedIcms, systemIcms]);
+  }, [cteExtractedIcms, systemIcms, isCargoWithoutIcms]);
 
   // Vale-Pedágio: Comparação entre Sistema e Documento Fiscal (CT-e / Carta Frete)
   const systemToll = React.useMemo(() => {
@@ -2474,16 +2487,20 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           ? Number(loadedTonnage) 
           : (isAguardandoFiscal && weightDecision === 'use_cte' && weightDivergenceInfo ? weightDivergenceInfo.cteTon : undefined),
         driverFreightValue: finalDriverFreightToSave,
-        icmsValue: (isAguardandoFiscal && icmsDecision === 'use_cte' && icmsDivergenceInfo) 
-          ? icmsDivergenceInfo.cteIcms 
-          : (isAguardandoFiscal && cteExtractedIcms !== undefined && !icmsDivergenceInfo ? cteExtractedIcms : undefined),
+        icmsValue: isCargoWithoutIcms
+          ? 0
+          : ((isAguardandoFiscal && icmsDecision === 'use_cte' && icmsDivergenceInfo) 
+              ? icmsDivergenceInfo.cteIcms 
+              : (isAguardandoFiscal && cteExtractedIcms !== undefined && !icmsDivergenceInfo ? cteExtractedIcms : undefined)),
         realProfitData: (isAguardandoFiscal && companyFreightDecision === 'use_cte' && companyFreightDivergenceInfo) 
           ? ({
               ...(shipment.realProfitData || {}),
               companyFreight: companyFreightDivergenceInfo.cteServiceTotal,
-              ...(icmsDecision === 'use_cte' && icmsDivergenceInfo ? { icmsDifference: icmsDivergenceInfo.cteIcms } : {}),
+              ...(isCargoWithoutIcms ? { isIcmsExempt: true, icmsDifference: 0 } : (icmsDecision === 'use_cte' && icmsDivergenceInfo ? { icmsDifference: icmsDivergenceInfo.cteIcms } : {})),
             } as any)
-          : (icmsDecision === 'use_cte' && icmsDivergenceInfo ? ({ ...(shipment.realProfitData || {}), icmsDifference: icmsDivergenceInfo.cteIcms } as any) : undefined),
+          : (isCargoWithoutIcms
+              ? ({ ...(shipment.realProfitData || {}), isIcmsExempt: true, icmsDifference: 0 } as any)
+              : (icmsDecision === 'use_cte' && icmsDivergenceInfo ? ({ ...(shipment.realProfitData || {}), icmsDifference: icmsDivergenceInfo.cteIcms } as any) : undefined)),
         advancePercentage: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advancePercentage) : undefined,
         advanceValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advanceValue) : undefined,
         tollValue: (isAguardandoFiscal && tollDecision === 'use_doc' && tollDivergenceInfo) 

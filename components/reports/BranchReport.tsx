@@ -56,7 +56,7 @@ const BranchReport: React.FC<BranchReportProps> = ({ shipments, cargos, branches
       const stats = statsMap.get(effectiveBranchId);
       if (!stats) return;
 
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       
       const demurrageRevenue = shipmentStays
           .reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);

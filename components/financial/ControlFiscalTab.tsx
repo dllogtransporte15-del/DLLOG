@@ -484,7 +484,7 @@ export const ControlFiscalTab: React.FC<ControlFiscalTabProps> = ({
   const handleStartEditType = (type: FiscalDocumentType) => {
     setEditingTypeId(type.id);
     setNewTypeName(type.name);
-    setNewTypeCategory(type.category);
+    setNewTypeCategory(type.category || 'certidao');
     setNewTypeDescription(type.description || '');
     setNewTypeColor(type.color || 'blue');
   };

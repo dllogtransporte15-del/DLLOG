@@ -57,6 +57,7 @@ import SystemUpdateModal from './components/SystemUpdateModal';
 import SelectEmbarcadorModal from './components/SelectEmbarcadorModal';
 import CargoDetailsModal from './components/CargoDetailsModal';
 import ShipmentDetailsModal from './components/ShipmentDetailsModal';
+import CargoSyncShipmentsModal, { CargoChangedField } from './components/CargoSyncShipmentsModal';
 import { shouldShowUpdateModal } from './utils/systemUpdates';
 import { dispatchShipmentWhatsAppTrigger, ShipmentWhatsAppTriggerType } from './services/shipmentWhatsAppAutomation';
 import { reconcileCargoWithShipments, calculateCargoBalance } from './utils/cargoBalance';
@@ -300,6 +301,13 @@ const App: React.FC = () => {
   };
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [cargoSyncModalData, setCargoSyncModalData] = useState<{
+    isOpen: boolean;
+    oldCargo: Cargo;
+    newCargo: Cargo;
+    changedFields: CargoChangedField[];
+    linkedShipments: Shipment[];
+  } | null>(null);
   const [isGlobalWhatsAppFloatingOpen, setIsGlobalWhatsAppFloatingOpen] = useState(false);
   const [globalWhatsAppInitialPhone, setGlobalWhatsAppInitialPhone] = useState<string | undefined>(undefined);
   const [globalWhatsAppInitialName, setGlobalWhatsAppInitialName] = useState<string | undefined>(undefined);
@@ -433,7 +441,7 @@ const App: React.FC = () => {
     }
   };
 
-  const isAnyModalActive = isAnyModalOpen || isSelectEmbarcadorModalOpen || !!offerForNewShipment;
+  const isAnyModalActive = isAnyModalOpen || isSelectEmbarcadorModalOpen || !!offerForNewShipment || !!cargoSyncModalData?.isOpen;
   
   // Sincronização de modais para supressão de real-time
   useEffect(() => {
@@ -2488,10 +2496,26 @@ const App: React.FC = () => {
         historyLogs.push(`Frete Motorista atualizado conforme Carta Frete: ${formattedVal}.`);
     }
 
-    if (icmsValue !== undefined) {
-        const formattedVal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsValue);
-        historyLogs.push(`ICMS atualizado conforme CT-e: ${formattedVal}.`);
-        updatedDocuments.icms_value = icmsValue;
+    const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === originalShipment.cargoId));
+    const isCargoWithoutIcms = Boolean(
+      relatedCargo &&
+      !relatedCargo.hasIcms &&
+      !(relatedCargo.icmsPercentage && Number(relatedCargo.icmsPercentage) > 0) &&
+      !(relatedCargo.freightLegs && relatedCargo.freightLegs[0]?.hasIcms === true) &&
+      !(relatedCargo.freightLegs && Number(relatedCargo.freightLegs[0]?.icmsPercentage) > 0) &&
+      (relatedCargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+      !(relatedCargo.freightLegs && (relatedCargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms')
+    );
+
+    if (isCargoWithoutIcms) {
+      updatedDocuments.is_icms_exempt = true;
+      updatedDocuments.isIcmsExempt = true;
+      updatedDocuments.icms_value = 0;
+      updatedDocuments.valor_icms = 0;
+    } else if (icmsValue !== undefined) {
+      const formattedVal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(icmsValue);
+      historyLogs.push(`ICMS atualizado conforme CT-e: ${formattedVal}.`);
+      updatedDocuments.icms_value = icmsValue;
     }
     
     let calculatedAdvanceValue = originalShipment.advanceValue;
@@ -2600,15 +2624,16 @@ const App: React.FC = () => {
         ciot: extractedCiotNumber,
         nfeNumber: extractedNfeNumber,
         mdfeNumber: extractedMdfeNumber,
-        icmsValue: icmsValue !== undefined ? icmsValue : originalShipment.icmsValue,
+        isIcmsExempt: isCargoWithoutIcms ? true : (originalShipment.isIcmsExempt ?? (updatedDocuments.is_icms_exempt === true || updatedDocuments.isIcmsExempt === true)),
+        icmsValue: isCargoWithoutIcms ? 0 : (icmsValue !== undefined ? icmsValue : originalShipment.icmsValue),
         codigoAtua: (codigoAtua !== undefined && codigoAtua !== null && String(codigoAtua).trim() !== '') ? String(codigoAtua).trim() : originalShipment.codigoAtua,
-        realProfitData: (realProfitData || originalShipment.realProfitData || extractedFiscalNums?.sestSenatValue !== undefined || icmsValue !== undefined)
+        realProfitData: (realProfitData || originalShipment.realProfitData || extractedFiscalNums?.sestSenatValue !== undefined || icmsValue !== undefined || isCargoWithoutIcms)
           ? {
               ...(originalShipment.realProfitData || {}),
               ...(realProfitData || {}),
               ...(extractedFiscalNums?.sestSenatValue !== undefined ? { sestSenat: extractedFiscalNums.sestSenatValue } : {}),
               ...(extractedFiscalNums?.inssRetidoValue !== undefined ? { inssRetido: extractedFiscalNums.inssRetidoValue } : {}),
-              ...(icmsValue !== undefined ? { icmsDifference: icmsValue } : {}),
+              ...(isCargoWithoutIcms ? { isIcmsExempt: true, icmsDifference: 0, icms: 0 } : (icmsValue !== undefined ? { icmsDifference: icmsValue } : {})),
             } as any
           : undefined,
         history: [...originalShipment.history, statusChangeLog],
@@ -2635,7 +2660,6 @@ const App: React.FC = () => {
 
     const updatedShipments = shipments.map(s => s.id === shipmentId ? updatedShipment : s);
     let updatedCargo: Cargo | undefined;
-    const relatedCargo = cargos.find(c => c.id === originalShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === originalShipment.cargoId));
     if (relatedCargo) {
         const reconciled = reconcileCargoWithShipments(relatedCargo, updatedShipments);
         let logDesc = '';
@@ -3663,17 +3687,16 @@ const App: React.FC = () => {
         delete loadData.branchId;
     }
 
-    if ('id' in loadData) {
-      const oldCargo = cargos.find(l => l.id === loadData.id);
-
+    const executeSaveCargo = async (cargoToSave: Cargo) => {
+      const oldCargo = cargos.find(l => l.id === cargoToSave.id);
       if (!oldCargo) return;
 
       const changes: string[] = [];
-      (Object.keys(loadData) as Array<keyof Cargo>).forEach(key => {
+      (Object.keys(cargoToSave) as Array<keyof Cargo>).forEach(key => {
         if (key === 'scheduledVolume' || key === 'loadedVolume') return;
 
         const oldValue: any = oldCargo[key];
-        const newValue: any = loadData[key];
+        const newValue: any = cargoToSave[key];
 
         const isChanged = JSON.stringify(oldValue ?? null) !== JSON.stringify(newValue ?? null);
         if (key !== 'id' && key !== 'history' && key !== 'createdAt' && isChanged) {
@@ -3736,20 +3759,117 @@ const App: React.FC = () => {
       let updatedCargo: Cargo;
       if (changes.length > 0) {
         const newHistory = createHistoryLog(`Carga atualizada: ${changes.join('; ')}.`);
-        updatedCargo = { ...oldCargo, ...loadData, history: [...oldCargo.history, newHistory] };
+        updatedCargo = { ...oldCargo, ...cargoToSave, history: [...oldCargo.history, newHistory] };
       } else {
-        updatedCargo = { ...oldCargo, ...loadData };
+        updatedCargo = { ...oldCargo, ...cargoToSave };
       }
 
-      setCargos(prev => prev.map(l => l.id === loadData.id ? updatedCargo : l));
+      setCargos(prev => prev.map(l => l.id === cargoToSave.id ? updatedCargo : l));
       try {
         await upsertCargo(updatedCargo);
-        showToast('Carga atualizada com sucesso!', 'success');
       } catch (err: any) {
         console.error('Erro ao salvar carga no Supabase:', err);
         const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
         showToast(`[ERRO CRÍTICO] A carga não pôde ser atualizada no banco de dados: ${errorMessage}`, 'error');
+        throw err;
       }
+    };
+
+    if ('id' in loadData) {
+      const oldCargo = cargos.find(l => l.id === loadData.id);
+      if (!oldCargo) return;
+
+      const fiscalChanges: CargoChangedField[] = [];
+
+      const oldHasIcms = Boolean(oldCargo.hasIcms);
+      const newHasIcms = Boolean(loadData.hasIcms);
+      const oldIcmsPct = Number(oldCargo.icmsPercentage || 0);
+      const newIcmsPct = Number(loadData.icmsPercentage || 0);
+      const oldCalcType = oldCargo.freightCalculationType;
+      const newCalcType = loadData.freightCalculationType;
+
+      if (oldHasIcms !== newHasIcms || (newHasIcms && oldIcmsPct !== newIcmsPct) || oldCalcType !== newCalcType) {
+        fiscalChanges.push({
+          key: 'icms',
+          label: 'ICMS Destacado / Alíquota',
+          oldValue: oldHasIcms ? `${oldIcmsPct}% (Destacado)` : 'Isento (Sem ICMS)',
+          newValue: newHasIcms ? `${newIcmsPct}% (Destacado)` : 'Isento (Sem ICMS)',
+          category: 'icms',
+        });
+      }
+
+      const oldCompRate = Number(oldCargo.companyFreightValuePerTon || 0);
+      const newCompRate = Number(loadData.companyFreightValuePerTon || 0);
+      if (Math.abs(oldCompRate - newCompRate) > 0.001) {
+        fiscalChanges.push({
+          key: 'companyFreightValuePerTon',
+          label: 'Valor Frete Empresa (por ton)',
+          oldValue: oldCompRate > 0 ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(oldCompRate) : 'R$ 0,00',
+          newValue: newCompRate > 0 ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(newCompRate) : 'R$ 0,00',
+          category: 'company_freight',
+        });
+      }
+
+      const oldDriverRate = Number(oldCargo.driverFreightValuePerTon || 0);
+      const newDriverRate = Number(loadData.driverFreightValuePerTon || 0);
+
+      if (Math.abs(oldDriverRate - newDriverRate) > 0.001) {
+        fiscalChanges.push({
+          key: 'driverFreightValuePerTon',
+          label: 'Valor Frete Motorista (por ton)',
+          oldValue: oldDriverRate > 0 ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(oldDriverRate) : 'R$ 0,00',
+          newValue: newDriverRate > 0 ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(newDriverRate) : 'R$ 0,00',
+          category: 'driver_freight',
+        });
+      }
+
+      const oldFinEnabled = Boolean(oldCargo.financialCostEnabled);
+      const newFinEnabled = Boolean(loadData.financialCostEnabled);
+      const oldFinRate = Number(oldCargo.financialCostEffectiveRate || oldCargo.financialCostPerTon || 0);
+      const newFinRate = Number(loadData.financialCostEffectiveRate || loadData.financialCostPerTon || 0);
+      if (oldFinEnabled !== newFinEnabled || (newFinEnabled && Math.abs(oldFinRate - newFinRate) > 0.001)) {
+        fiscalChanges.push({
+          key: 'financialCost',
+          label: 'Custo Financeiro',
+          oldValue: oldFinEnabled ? (oldCargo.financialCostEffectiveRate ? `${oldCargo.financialCostEffectiveRate}%` : (oldCargo.financialCostPerTon ? `R$ ${oldCargo.financialCostPerTon}/t` : 'Habilitado')) : 'Não habilitado',
+          newValue: newFinEnabled ? (loadData.financialCostEffectiveRate ? `${loadData.financialCostEffectiveRate}%` : (loadData.financialCostPerTon ? `R$ ${loadData.financialCostPerTon}/t` : 'Habilitado')) : 'Não habilitado',
+          category: 'financial_cost',
+        });
+      }
+
+      const oldCompToll = Boolean(oldCargo.companyFreightHasToll);
+      const newCompToll = Boolean(loadData.companyFreightHasToll);
+      const oldDriverToll = Boolean(oldCargo.driverFreightHasToll);
+      const newDriverToll = Boolean(loadData.driverFreightHasToll);
+      if (oldCompToll !== newCompToll || oldDriverToll !== newDriverToll) {
+        fiscalChanges.push({
+          key: 'toll',
+          label: 'Inclusão de Pedágio',
+          oldValue: `Emp: ${oldCompToll ? 'Sim' : 'Não'} | Mot: ${oldDriverToll ? 'Sim' : 'Não'}`,
+          newValue: `Emp: ${newCompToll ? 'Sim' : 'Não'} | Mot: ${newDriverToll ? 'Sim' : 'Não'}`,
+          category: 'toll',
+        });
+      }
+
+      const linkedShipments = shipments.filter(s => 
+        s.cargoId === loadData.id || 
+        (oldCargo.sequenceId && s.cargoId === `CRG-${oldCargo.sequenceId}`) ||
+        (loadData.sequenceId && s.cargoId === `CRG-${loadData.sequenceId}`)
+      );
+
+      if (fiscalChanges.length > 0 && linkedShipments.length > 0) {
+        setCargoSyncModalData({
+          isOpen: true,
+          oldCargo,
+          newCargo: loadData as Cargo,
+          changedFields: fiscalChanges,
+          linkedShipments,
+        });
+        return;
+      }
+
+      await executeSaveCargo(loadData as Cargo);
+      showToast('Carga atualizada com sucesso!', 'success');
     } else { 
       if (!currentUser) return;
       
@@ -3816,6 +3936,178 @@ const App: React.FC = () => {
         const errorMessage = err?.message || 'Erro desconhecido ao salvar no banco de dados.';
         showToast(`[ERRO CRÍTICO] A carga não pôde ser salva no banco de dados: ${errorMessage}. Verifique as informações preenchidas.`, 'error');
       }
+    }
+  };
+
+  const handleSaveCargoOnlyFromSync = async () => {
+    if (!cargoSyncModalData) return;
+    const targetCargo = cargoSyncModalData.newCargo;
+    setCargoSyncModalData(null);
+    try {
+      const oldCargo = cargos.find(l => l.id === targetCargo.id);
+      if (oldCargo) {
+        const updatedCargo = { ...oldCargo, ...targetCargo };
+        setCargos(prev => prev.map(l => l.id === targetCargo.id ? updatedCargo : l));
+        await upsertCargo(updatedCargo);
+      }
+      showToast('Carga atualizada com sucesso! (Embarques existentes mantidos inalterados)', 'success');
+    } catch (err: any) {
+      console.error('Erro ao salvar carga:', err);
+      showToast('Erro ao salvar carga no banco de dados.', 'error');
+    }
+  };
+
+  const handleConfirmSyncShipments = async (selectedShipmentIds: string[]) => {
+    if (!cargoSyncModalData) return;
+    const targetCargo = cargoSyncModalData.newCargo;
+    const { changedFields, linkedShipments } = cargoSyncModalData;
+    setCargoSyncModalData(null);
+
+    try {
+      // 1. Salva a carga
+      const oldCargo = cargos.find(l => l.id === targetCargo.id);
+      if (oldCargo) {
+        const changesSummary = changedFields.map(c => `${c.label}: de "${c.oldValue}" para "${c.newValue}"`).join('; ');
+        const newHistory = createHistoryLog(`Carga atualizada com sincronização de embarques: ${changesSummary}`);
+        const updatedCargo = { ...oldCargo, ...targetCargo, history: [...oldCargo.history, newHistory] };
+        setCargos(prev => prev.map(l => l.id === targetCargo.id ? updatedCargo : l));
+        await upsertCargo(updatedCargo);
+      }
+
+      // 2. Processa os embarques selecionados
+      const updatedShipmentsList: Shipment[] = [];
+      const selectedSet = new Set(selectedShipmentIds);
+      const changesSummary = changedFields.map(c => `${c.label}: de "${c.oldValue}" para "${c.newValue}"`).join('; ');
+
+      for (const s of linkedShipments) {
+        if (!selectedSet.has(s.id)) continue;
+
+        const ton = Number(s.loadedTonnage || s.shipmentTonnage || s.unloadedTonnage || 0);
+        const docs = (s.documents && typeof s.documents === 'object') ? { ...s.documents } : {};
+        let realProfit = (s.realProfitData || docs.real_profit_data) ? { ...(s.realProfitData || docs.real_profit_data) } : null;
+
+        let newDriverFreight = s.driverFreightValue;
+        let newDriverFreightRate = s.driverFreightRateSnapshot;
+        let newCompanyFreightRate = s.companyFreightRateSnapshot;
+        let newIcmsVal = s.icmsValue;
+        let newIsIcmsExempt = s.isIcmsExempt;
+        let newAdvanceValue = s.advanceValue;
+        let newBalanceValue = s.balanceToReceiveValue;
+        let newNetBalanceValue = s.netBalanceValue;
+        let newFinancialCost = s.financialCostValue;
+
+        // A. ICMS
+        const isNewCargoWithoutIcms = !targetCargo.hasIcms || !targetCargo.icmsPercentage || targetCargo.icmsPercentage <= 0;
+        if (isNewCargoWithoutIcms) {
+          newIsIcmsExempt = true;
+          newIcmsVal = 0;
+          docs.is_icms_exempt = true;
+          docs.isIcmsExempt = true;
+          docs.icms_value = 0;
+          docs.valor_icms = 0;
+          if (realProfit) {
+            realProfit.isIcmsExempt = true;
+            realProfit.icmsDifference = 0;
+            realProfit.icms = 0;
+          }
+        } else {
+          const compRateForIcms = targetCargo.companyFreightValuePerTon || s.companyFreightRateSnapshot || 0;
+          const compFreightForIcms = ton > 0 ? (compRateForIcms * ton) : (realProfit?.companyFreight || s.driverFreightValue || 0);
+          const calculatedIcms = Number(((compFreightForIcms * targetCargo.icmsPercentage) / 100).toFixed(2));
+          newIsIcmsExempt = false;
+          newIcmsVal = calculatedIcms;
+          docs.is_icms_exempt = false;
+          docs.isIcmsExempt = false;
+          docs.icms_value = calculatedIcms;
+          docs.valor_icms = calculatedIcms;
+          if (realProfit) {
+            realProfit.isIcmsExempt = false;
+            realProfit.icmsDifference = calculatedIcms;
+          }
+        }
+
+        // B. Frete Empresa
+        if (targetCargo.companyFreightValuePerTon !== undefined) {
+          newCompanyFreightRate = targetCargo.companyFreightValuePerTon;
+          if (ton > 0 && realProfit) {
+            realProfit.companyFreight = Number((targetCargo.companyFreightValuePerTon * ton).toFixed(2));
+          }
+        }
+
+        // C. Frete Motorista
+        const targetDriverRate = targetCargo.driverFreightValuePerTon;
+
+        if (targetDriverRate !== undefined && targetDriverRate > 0) {
+          newDriverFreightRate = targetDriverRate;
+          if (ton > 0) {
+            newDriverFreight = Number((targetDriverRate * ton).toFixed(2));
+
+            const canRecalcAdvance = s.status !== ShipmentStatus.Finalizado && s.status !== ShipmentStatus.AguardandoPagamentoSaldo;
+            if (canRecalcAdvance) {
+              const isPf = s.driverFreightType === 'PF' || s.anttModality === 'TAC';
+              const calc = calculateAdvanceAndBalance({
+                driverFreightValue: newDriverFreight,
+                tollValue: s.tollValue || 0,
+                advancePercentage: s.advancePercentage !== undefined ? s.advancePercentage : 70,
+                driverFreightType: isPf ? 'PF' : 'PJ'
+              });
+              newAdvanceValue = calc.advanceInAccountValue;
+              newBalanceValue = calc.balanceToReceiveValue;
+              newNetBalanceValue = calc.balanceToReceiveValue;
+            }
+          }
+        }
+
+        // D. Custo Financeiro
+        if (targetCargo.financialCostEnabled) {
+          if (targetCargo.financialCostEffectiveRate) {
+            const baseFreight = realProfit?.companyFreight || ((newCompanyFreightRate || 0) * ton);
+            newFinancialCost = Number(((baseFreight * (targetCargo.financialCostEffectiveRate / 100))).toFixed(2));
+          } else if (targetCargo.financialCostPerTon) {
+            newFinancialCost = Number((targetCargo.financialCostPerTon * ton).toFixed(2));
+          }
+          docs.financial_cost_value = newFinancialCost;
+        } else if (!targetCargo.financialCostEnabled) {
+          newFinancialCost = 0;
+          docs.financial_cost_value = 0;
+        }
+
+        if (realProfit) {
+          docs.real_profit_data = realProfit;
+        }
+
+        const auditLog = createHistoryLog(
+          `Sincronização em massa a partir da Carga #${targetCargo.sequenceId || targetCargo.id} por ${currentUser?.name || 'Sistema'}: ${changesSummary}`
+        );
+
+        const updatedShipment: Shipment = {
+          ...s,
+          isIcmsExempt: newIsIcmsExempt,
+          icmsValue: newIcmsVal,
+          companyFreightRateSnapshot: newCompanyFreightRate,
+          driverFreightRateSnapshot: newDriverFreightRate,
+          driverFreightValue: newDriverFreight,
+          advanceValue: newAdvanceValue,
+          balanceToReceiveValue: newBalanceValue,
+          netBalanceValue: newNetBalanceValue,
+          financialCostValue: newFinancialCost,
+          documents: docs,
+          realProfitData: realProfit || undefined,
+          history: [...(s.history || []), auditLog],
+        };
+
+        updatedShipmentsList.push(updatedShipment);
+      }
+
+      if (updatedShipmentsList.length > 0) {
+        await handleBatchUpdateShipments(updatedShipmentsList);
+        showToast(`Carga e ${updatedShipmentsList.length} embarque(s) sincronizados com sucesso!`, 'success');
+      } else {
+        showToast('Carga atualizada com sucesso!', 'success');
+      }
+    } catch (err: any) {
+      console.error('Erro na sincronização de carga e embarques:', err);
+      showToast(`Erro ao sincronizar: ${err?.message || 'Falha desconhecida'}`, 'error');
     }
   };
 
@@ -4244,7 +4536,7 @@ const App: React.FC = () => {
           <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
           <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
           <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
-          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} products={products} vehicles={vehicles} owners={owners} />} />
+          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} products={products} vehicles={vehicles} owners={owners} stays={stays} />} />
           <Route path="/commissions" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
           <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
           <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />
@@ -4549,6 +4841,19 @@ const App: React.FC = () => {
         onClose={() => setIsUpdateModalOpen(false)} 
         currentUser={currentUser} 
       />
+
+      {cargoSyncModalData && (
+        <CargoSyncShipmentsModal
+          isOpen={cargoSyncModalData.isOpen}
+          onClose={() => setCargoSyncModalData(null)}
+          oldCargo={cargoSyncModalData.oldCargo}
+          newCargo={cargoSyncModalData.newCargo}
+          changedFields={cargoSyncModalData.changedFields}
+          linkedShipments={cargoSyncModalData.linkedShipments}
+          onConfirmSync={handleConfirmSyncShipments}
+          onSaveCargoOnly={handleSaveCargoOnlyFromSync}
+        />
+      )}
 
 
     </div>

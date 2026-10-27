@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Shipment, Cargo, Client, User, FinancialTransaction, BankAccount, FinancialTab, Branch, Product, Vehicle, Owner } from '../types';
+import type { StayRecord } from '../utils/toolStorage';
 import { FinancialTransactionStatus } from '../types';
 import { 
   DollarSign, 
@@ -43,6 +44,7 @@ interface FinancialPageProps {
   products?: Product[];
   vehicles?: Vehicle[];
   owners?: Owner[];
+  stays?: StayRecord[];
 }
 
 const STORAGE_TRANSACTIONS_KEY = 'transcunha_financial_transactions';
@@ -60,6 +62,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   products = [],
   vehicles = [],
   owners = [],
+  stays = [],
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab') as FinancialTab | null;
@@ -495,6 +498,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             vehicles={vehicles}
             owners={owners}
             branches={branches}
+            stays={stays}
             onNavigateToFiscal={() => handleTabChange('control-fiscal')}
           />
         )}

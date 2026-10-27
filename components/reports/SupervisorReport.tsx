@@ -174,7 +174,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       
       const cargo = cargoMap.get(s.cargoId);
 
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
 
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
       const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
@@ -341,7 +341,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       if (!hasCte) return;
 
       const cargo = cargoMap.get(s.cargoId);
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
       const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);
       const opProfit = expenses.netProfit + demurrageProfit;
@@ -509,7 +509,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
       if (!belongsToUser) return;
 
-      const expenses = calculateShipmentExpenses(s, cargo);
+      const expenses = calculateShipmentExpenses(s, cargo, undefined, stays);
       const shipmentStays = stays.filter(stay => isStayForShipment(stay, s));
       const demurrageRevenue = shipmentStays.reduce((sum, stay) => sum + (stay.approvedValue || 0), 0);
       const demurrageProfit = shipmentStays.reduce((sum, stay) => sum + ((stay.approvedValue || 0) - (stay.driverPaidValue || 0)), 0);

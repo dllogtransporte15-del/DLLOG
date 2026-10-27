@@ -1,5 +1,7 @@
 import { Shipment, Cargo, OperationalExpenseItem, RealProfitData, RISK_QUERY_COST_MAP, ShipmentStatus } from '../types';
 import { calculateTacTaxDeductions } from './freightCalculation';
+import { StayRecord } from './toolStorage';
+import { isStayForShipment } from '../utils';
 
 export interface OperationalExpensesConfig {
   insuranceAcidenteRate: number; // 0.0125% -> 0.000125
@@ -47,6 +49,9 @@ export interface CalculatedOperationalExpenses {
   shipperCommission: number;
   agencyCommission: number;
   driverExtraPayments?: number;
+  demurrageRevenue?: number;
+  demurrageDriverPaid?: number;
+  demurrageProfit?: number;
   riskCost: number;
   financialCostValue: number;
   financialCostEffectiveRate: number;
@@ -79,7 +84,8 @@ export interface CalculatedOperationalExpenses {
 export function calculateShipmentExpenses(
   shipment: Shipment,
   cargo?: Cargo,
-  config: OperationalExpensesConfig = DEFAULT_EXPENSES_CONFIG
+  config: OperationalExpensesConfig = DEFAULT_EXPENSES_CONFIG,
+  stays?: StayRecord[]
 ): CalculatedOperationalExpenses {
   const companyFreightRate = shipment.companyFreightRateSnapshot || cargo?.companyFreightValuePerTon || 0;
   const tonnage = shipment.shipmentTonnage || cargo?.totalVolume || 0;
@@ -130,8 +136,21 @@ export function calculateShipmentExpenses(
           ));
 
   // 3. ICMS Destacado Completo
-  // Prioridade 1: Isenção explícita ou ICMS zerado
+  // Se a carga NÃO tem ICMS destacado no seu cadastro, nenhum embarque vinculado pode destacar/deduzir ICMS
+  const isCargoWithoutIcms = Boolean(
+    cargo &&
+    !cargo.hasIcms &&
+    !(cargo.icmsPercentage && Number(cargo.icmsPercentage) > 0) &&
+    !(cargo.freightLegs && cargo.freightLegs[0]?.hasIcms === true) &&
+    !(cargo.freightLegs && Number(cargo.freightLegs[0]?.icmsPercentage) > 0) &&
+    (cargo as any).freightCalculationType !== 'per_ton_plus_icms' &&
+    !(cargo.freightLegs && (cargo.freightLegs[0] as any)?.freightCalculationType === 'per_ton_plus_icms') &&
+    !(shipment as any)?.hasIcms
+  );
+
+  // Prioridade 1: Carga sem ICMS, isenção explícita ou ICMS zerado
   const isIcmsExemptExplicit = Boolean(
+    isCargoWithoutIcms ||
     (shipment as any)?.isIcmsExempt ||
     (shipment.documents as any)?.is_icms_exempt ||
     (shipment.documents as any)?.isIcmsExempt ||
@@ -580,16 +599,56 @@ export function calculateShipmentExpenses(
   }
 
   // 14.4 Acréscimo Avulso ao Motorista (Diárias, Estadia, Bônus, Ajuda de Custo)
-  const driverExtraPayments = (Array.isArray(shipment.driverExtraPayments)
-    ? shipment.driverExtraPayments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
-    : 0) || Number(shipment.driverExtraPaymentsTotal || 0) || Number(shipment.realProfitData?.driverSurcharge || 0) || 0;
+  // Identifica se há estadias vinculadas (via parâmetro stays ou shipment.stays)
+  const linkedStays = (stays && stays.length > 0)
+    ? stays.filter(st => isStayForShipment(st, shipment))
+    : ((shipment as any).stays && Array.isArray((shipment as any).stays) ? (shipment as any).stays.filter((st: any) => isStayForShipment(st, shipment)) : []);
 
-  if (driverExtraPayments > 0) {
+  const demurrageRevenue = linkedStays.reduce((sum: number, st: any) => sum + (Number(st.approvedValue ?? st.approved_value) || 0), 0);
+  const demurrageDriverPaid = linkedStays.reduce((sum: number, st: any) => sum + (Number(st.driverPaidValue ?? st.driver_paid_value) || 0), 0);
+  const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
+
+  const rawExtraPayments = Array.isArray(shipment.driverExtraPayments) ? shipment.driverExtraPayments : [];
+  let stayExtraPayments = 0;
+  let otherExtraPayments = 0;
+
+  if (rawExtraPayments.length > 0) {
+    for (const p of rawExtraPayments) {
+      const amt = Number(p.amount) || 0;
+      if (/di[aá]ria|estadia/i.test(p.reason || '')) {
+        stayExtraPayments += amt;
+      } else {
+        otherExtraPayments += amt;
+      }
+    }
+  } else {
+    const totalExtra = Number(shipment.driverExtraPaymentsTotal || 0) || Number(shipment.realProfitData?.driverSurcharge || 0) || 0;
+    if (demurrageDriverPaid > 0 && Math.abs(totalExtra - demurrageDriverPaid) < 1.0) {
+      stayExtraPayments = totalExtra;
+    } else {
+      otherExtraPayments = totalExtra;
+    }
+  }
+
+  // Se o pagamento de estadia ao motorista já está computado nas estadias vinculadas
+  // (demurrageDriverPaid > 0) ou se houver receita de CT-e complementar (demurrageRevenue > 0):
+  // o valor pago ao motorista já é integrado na apuração de estadias (demurrageProfit = demurrageRevenue - demurrageDriverPaid).
+  // Abater novamente o valor da estadia como "Acréscimo Avulso" duplicaria o desconto ao motorista sem a contrapartida da receita!
+  const stayAlreadyAccountedFor = demurrageDriverPaid > 0
+    ? Math.min(demurrageDriverPaid, stayExtraPayments)
+    : (demurrageRevenue > 0 ? Math.min(demurrageRevenue, stayExtraPayments) : 0);
+
+  const effectiveStayExtra = Math.max(0, stayExtraPayments - stayAlreadyAccountedFor);
+  const effectiveDriverExtra = Number((otherExtraPayments + effectiveStayExtra).toFixed(2));
+
+  if (effectiveDriverExtra > 0) {
     const hasExistingExtra = expenseItems.some(i => i.name.toLowerCase().includes('acréscimo avulso') || i.name.toLowerCase().includes('acrescimo avulso'));
     if (!hasExistingExtra) {
       expenseItems.push({
-        name: 'Acréscimo Avulso Motorista (Diárias / Bônus / Estadia)',
-        value: Number(driverExtraPayments.toFixed(2)),
+        name: otherExtraPayments > 0 && effectiveStayExtra > 0
+          ? 'Acréscimo Avulso Motorista (Bônus / Diária Excedente)'
+          : (effectiveStayExtra > 0 ? 'Acréscimo Avulso (Estadia não Faturada)' : 'Acréscimo Avulso Motorista (Bônus / Ajuda de Custo)'),
+        value: Number(effectiveDriverExtra.toFixed(2)),
         type: 'negative'
       });
     }
@@ -642,7 +701,10 @@ export function calculateShipmentExpenses(
     salespersonCommission,
     shipperCommission,
     agencyCommission,
-    driverExtraPayments,
+    driverExtraPayments: effectiveDriverExtra,
+    demurrageRevenue,
+    demurrageDriverPaid,
+    demurrageProfit,
     riskCost,
     financialCostValue,
     financialCostEffectiveRate,
