@@ -45,6 +45,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
     availableForDriverRequests: true,
     agencyRole: 'lider',
     agencyCommissionPercentage: 30,
+    operatorCommissionPercentage: undefined,
     agencyLeaderId: undefined,
     corporateEmail: '',
     corporateEmailPassword: '',
@@ -68,6 +69,9 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
               ...userWithoutPass, 
               branchId: userToEdit.branchId || (userToEdit as any).filialId || undefined,
               availableForDriverRequests: userToEdit.availableForDriverRequests !== false,
+              operatorCommissionPercentage: userToEdit.operatorCommissionPercentage !== undefined 
+                ? userToEdit.operatorCommissionPercentage 
+                : (userToEdit.agencyRole === 'embarque' && userToEdit.agencyCommissionPercentage !== undefined && userToEdit.agencyCommissionPercentage < 30 ? userToEdit.agencyCommissionPercentage : undefined),
               corporateEmail: userToEdit.corporateEmail || existingCorpAccount?.email || '',
               corporateEmailPassword: userToEdit.corporateEmailPassword || existingCorpAccount?.password || '',
               corporateEmailQuotaMb: userToEdit.corporateEmailQuotaMb || (existingCorpAccount ? existingCorpAccount.quotaMb : 5120),
@@ -95,6 +99,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
       availableForDriverRequests: sourceUser.availableForDriverRequests !== false,
       agencyRole: sourceUser.agencyRole,
       agencyCommissionPercentage: sourceUser.agencyCommissionPercentage,
+      operatorCommissionPercentage: sourceUser.operatorCommissionPercentage,
       agencyLeaderId: sourceUser.agencyLeaderId,
       customPermissions: sourceUser.customPermissions ? JSON.parse(JSON.stringify(sourceUser.customPermissions)) : undefined,
     }));
@@ -577,13 +582,47 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                           const branch = branches.find(b => b.id === leader.branchId);
                           return (
                             <option key={leader.id} value={leader.id}>
-                              {leader.name} {branch ? `(${branch.name} - ${branch.city}/${branch.state})` : '(Sem Filial)'} - Comissão: {leader.agencyCommissionPercentage ?? 30}%
+                              {leader.name} {branch ? `(${branch.name} - ${branch.city}/${branch.state})` : '(Sem Filial)'} - Comissão da Agência: {leader.agencyCommissionPercentage ?? 30}%
                             </option>
                           );
                         })}
                       </select>
                     )}
                   </div>
+
+                  {/* CAMPO DE COMISSÃO DO AGECIADOR DE EMBARQUE */}
+                  <div className="p-3 bg-purple-50/70 dark:bg-purple-950/40 rounded-xl border border-purple-200/80 dark:border-purple-800/80 space-y-2">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <label className="text-xs font-bold text-purple-900 dark:text-purple-200">
+                        Porcentagem de Comissão do Operador (%):
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="100"
+                          name="operatorCommissionPercentage"
+                          value={user.operatorCommissionPercentage ?? (user.agencyCommissionPercentage !== undefined && user.agencyCommissionPercentage < 30 ? user.agencyCommissionPercentage : '')}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : (parseFloat(e.target.value) || 0);
+                            setUser(prev => ({ 
+                              ...prev, 
+                              operatorCommissionPercentage: val,
+                              agencyCommissionPercentage: val ?? 30
+                            }));
+                          }}
+                          placeholder="Ex: 10"
+                          className="p-1.5 text-xs w-20 border rounded dark:bg-gray-700 dark:border-gray-600 font-mono font-bold text-center"
+                        />
+                        <span className="text-xs text-purple-700 dark:text-purple-300 font-bold">%</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-purple-800 dark:text-purple-300">
+                      Defina a porcentagem de comissão deste operador (ex: 1% a 20%) calculada sobre o <strong>Lucro Real Líquido</strong> dos embarques operados por ele, repassada a partir da comissão da agência ({agencyLeaders.find(l => l.id === user.agencyLeaderId)?.agencyCommissionPercentage ?? 30}%).
+                    </p>
+                  </div>
+
                   <p className="text-[11px] text-purple-800 dark:text-purple-300">
                     Todo embarque solicitado por este agenciador será contabilizado automaticamente no faturamento, lucro líquido e comissão da agência do <strong>Agenciador Líder</strong> selecionado.
                   </p>

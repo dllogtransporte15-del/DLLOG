@@ -328,12 +328,19 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const demurrageDriverPaid = shipmentStays.reduce((sum, stay) => sum + (stay.driverPaidValue || 0), 0);
       const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
 
+      // Totais Consolidados (base + estadia)
       const companyFreight = baseCompanyFreight + demurrageRevenue;
       const driverFreight = baseDriverFreight + demurrageDriverPaid;
       const freightDifference = companyFreight - driverFreight;
       const freightDifferenceMarginPercent = companyFreight > 0 ? (freightDifference / companyFreight) * 100 : 0;
       const netProfit = Number((calculatedExpenses.netProfit + demurrageProfit).toFixed(2));
       const profitMarginPercent = companyFreight > 0 ? (netProfit / companyFreight) * 100 : 0;
+
+      // Valores exclusivos do Frete Base / CT-e Principal (Desacoplados)
+      const baseFreightDifference = baseCompanyFreight - baseDriverFreight;
+      const baseFreightDifferenceMarginPercent = baseCompanyFreight > 0 ? (baseFreightDifference / baseCompanyFreight) * 100 : 0;
+      const baseNetProfit = Number(calculatedExpenses.netProfit.toFixed(2));
+      const baseProfitMarginPercent = baseCompanyFreight > 0 ? (baseNetProfit / baseCompanyFreight) * 100 : 0;
 
       // Apuração de Comissões de Agência e Embarcador
       const requesterUser = users.find(u => u.id === s.embarcadorId || u.id === s.createdById);
@@ -383,6 +390,22 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       const netProfitWithCommissions = Number((netProfit - totalCommissions).toFixed(2));
       const marginWithCommissionsPercent = companyFreight > 0 ? (netProfitWithCommissions / companyFreight) * 100 : 0;
 
+      // Comissões desacopladas do Frete Base e do Complementar
+      const opProfitBaseBeforeAgency = Math.max(0, baseNetProfit - shipperCommission);
+      const baseAgencyCommission = (isAgencyCommEnabled && opProfitBaseBeforeAgency > 0)
+        ? Number((opProfitBaseBeforeAgency * (effectiveAgencyPercentage / 100)).toFixed(2))
+        : 0;
+      const baseTotalCommissions = Number((shipperCommission + baseAgencyCommission).toFixed(2));
+      const baseNetProfitWithCommissions = Number((baseNetProfit - baseTotalCommissions).toFixed(2));
+      const baseMarginWithCommissionsPercent = baseCompanyFreight > 0 ? (baseNetProfitWithCommissions / baseCompanyFreight) * 100 : 0;
+
+      const demurrageDifference = demurrageRevenue - demurrageDriverPaid;
+      const demurrageAgencyComm = (isAgencyCommEnabled && demurrageProfit > 0)
+        ? Number((demurrageProfit * (effectiveAgencyPercentage / 100)).toFixed(2))
+        : 0;
+      const demurrageNetProfitWithCommissions = Number((demurrageProfit - demurrageAgencyComm).toFixed(2));
+      const hasComplement = Boolean((demurrageRevenue > 0 || demurrageDriverPaid > 0) || (complementCtes && complementCtes.length > 0));
+
       // Comprovante / Anexo de saldo ou despesas
       const saldoDoc = s.documents?.['Comprovante de Pagamento de Saldo'] || 
                        s.documents?.['Comprovante de Saldo'] || 
@@ -400,6 +423,21 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         cte: getShipmentCte(s),
         companyFreight,
         driverFreight,
+        baseCompanyFreight,
+        baseDriverFreight,
+        baseFreightDifference,
+        baseFreightDifferenceMarginPercent,
+        baseNetProfit,
+        baseProfitMarginPercent,
+        baseAgencyCommission,
+        baseTotalCommissions,
+        baseNetProfitWithCommissions,
+        baseMarginWithCommissionsPercent,
+        demurrageDifference,
+        demurrageAgencyComm,
+        demurrageNetProfitWithCommissions,
+        hasComplement,
+        shipmentStays,
         toll,
         driverFreightNetToll,
         freightDifference,
@@ -558,33 +596,88 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       pdfTotals.consolidatedMarginWithCommissions = (pdfTotals.sumNetProfitWithCommissions / pdfTotals.sumCompanyFreight) * 100;
     }
 
-    const tableData = validRows.map(r => {
-      let cteDisplay = r.cte || '---';
-      if (r.complementCtes && r.complementCtes.length > 0) {
-        cteDisplay += `\n(Comp: ${r.complementCtes.join('/')})`;
+    const tableData = validRows.flatMap(r => {
+      const cteDisplay = r.cte || '---';
+
+      if (!r.hasComplement) {
+        const rowArr = [
+          r.shipment.id,
+          cteDisplay,
+          r.shipment.scheduledDate || '---',
+          r.clientName,
+          `${r.shipment.driverName} (${r.shipment.horsePlate})`,
+          r.weight > 0 ? `${r.weight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t` : '---',
+          `R$ ${r.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          r.toll > 0 ? `R$ ${r.toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
+          `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
+          r.icms > 0 ? `R$ ${r.icms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
+          r.federalTax > 0 ? `R$ ${r.federalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
+          `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---',
+          `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
+        ];
+        if (canViewFinalNetProfit) {
+          rowArr.push(`R$ ${r.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.marginWithCommissionsPercent.toFixed(1)}%)`);
+        }
+        rowArr.push(r.hasOcr ? 'Sim (IA)' : 'Estimado');
+        return [rowArr];
       }
-      const rowArr = [
+
+      // Linha Principal do Embarque (Frete Base)
+      const mainRowArr = [
         r.shipment.id,
         cteDisplay,
         r.shipment.scheduledDate || '---',
         r.clientName,
         `${r.shipment.driverName} (${r.shipment.horsePlate})`,
         r.weight > 0 ? `${r.weight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t` : '---',
-        `R$ ${r.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        `R$ ${r.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `R$ ${r.baseCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `R$ ${r.baseDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         r.toll > 0 ? `R$ ${r.toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
-        `R$ ${r.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.freightDifferenceMarginPercent.toFixed(1)}%)`,
+        `R$ ${r.baseFreightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.baseFreightDifferenceMarginPercent.toFixed(1)}%)`,
         r.icms > 0 ? `R$ ${r.icms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
         r.federalTax > 0 ? `R$ ${r.federalTax.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00',
         `R$ ${r.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         r.generatedCredit > 0 ? `R$ ${r.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---',
-        `R$ ${r.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.profitMarginPercent.toFixed(1)}%)`,
+        `R$ ${r.baseNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.baseProfitMarginPercent.toFixed(1)}%)`,
       ];
       if (canViewFinalNetProfit) {
-        rowArr.push(`R$ ${r.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.marginWithCommissionsPercent.toFixed(1)}%)`);
+        mainRowArr.push(`R$ ${r.baseNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${r.baseMarginWithCommissionsPercent.toFixed(1)}%)`);
       }
-      rowArr.push(r.hasOcr ? 'Sim (IA)' : 'Estimado');
-      return rowArr;
+      mainRowArr.push(r.hasOcr ? 'Sim (IA)' : 'Estimado');
+
+      // Sub-linha Subordinada (CT-e Complementar de Estadia)
+      const compCteText = r.complementCtes && r.complementCtes.length > 0
+        ? `Comp: ${r.complementCtes.join('/')}`
+        : 'CT-e Comp.';
+      const compMarginFreight = r.demurrageRevenue > 0 ? (r.demurrageDifference / r.demurrageRevenue) * 100 : 0;
+      const compMarginNet = r.demurrageRevenue > 0 ? (r.demurrageProfit / r.demurrageRevenue) * 100 : 0;
+      const compMarginWithComms = r.demurrageRevenue > 0 ? (r.demurrageNetProfitWithCommissions / r.demurrageRevenue) * 100 : 0;
+
+      const compRowArr = [
+        `↳ ${r.shipment.id}-COMP`,
+        compCteText,
+        '---',
+        r.clientName,
+        'Estadia / Complemento',
+        '---',
+        `R$ ${r.demurrageRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `R$ ${r.demurrageDriverPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        'R$ 0,00',
+        `R$ ${r.demurrageDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${compMarginFreight.toFixed(1)}%)`,
+        'R$ 0,00',
+        'R$ 0,00',
+        'R$ 0,00',
+        '---',
+        `R$ ${r.demurrageProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${compMarginNet.toFixed(1)}%)`,
+      ];
+      if (canViewFinalNetProfit) {
+        compRowArr.push(`R$ ${r.demurrageNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${compMarginWithComms.toFixed(1)}%)`);
+      }
+      compRowArr.push('Vinculado');
+
+      return [mainRowArr, compRowArr];
     });
 
     const headRow = [
@@ -647,6 +740,14 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
           data.cell.styles.textColor = [253, 224, 71];
           data.cell.styles.fontStyle = 'bold';
         }
+        if (data.section === 'body') {
+          const rawFirstCell = Array.isArray(data.row.raw) ? String(data.row.raw[0] || '') : '';
+          if (rawFirstCell.includes('↳')) {
+            data.cell.styles.fillColor = [245, 243, 255];
+            data.cell.styles.textColor = [109, 40, 217];
+            data.cell.styles.fontStyle = 'italic';
+          }
+        }
       }
     });
 
@@ -688,12 +789,49 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       'Processado via OCR'
     ];
 
-    const rows = enrichedRows.map(r => {
+    const rows = enrichedRows.flatMap(r => {
       const expenseDesc = r.expenseItems.map(e => `${e.name}: R$ ${e.value}`).join(' | ');
-      const compCteStr = r.complementCtes && r.complementCtes.length > 0 ? ` (Comp: ${r.complementCtes.join('/')})` : '';
-      const rowData = [
+
+      if (!r.hasComplement) {
+        const rowData = [
+          r.shipment.id,
+          r.cte || '',
+          r.shipment.scheduledDate || '',
+          r.shipment.status,
+          `"${r.clientName.replace(/"/g, '""')}"`,
+          `"${(r.cargo?.origin || '').replace(/"/g, '""')}"`,
+          `"${(r.cargo?.destination || '').replace(/"/g, '""')}"`,
+          `"${r.shipment.driverName.replace(/"/g, '""')}"`,
+          r.shipment.horsePlate,
+          r.weight.toFixed(2),
+          r.companyFreight.toFixed(2),
+          r.driverFreight.toFixed(2),
+          r.toll.toFixed(2),
+          r.freightDifference.toFixed(2),
+          r.freightDifferenceMarginPercent.toFixed(2),
+          r.icms.toFixed(2),
+          r.federalTax.toFixed(2),
+          r.totalExpenses.toFixed(2),
+          r.generatedCredit.toFixed(2),
+          r.netProfit.toFixed(2),
+          r.profitMarginPercent.toFixed(2),
+          ...(canViewFinalNetProfit ? [
+            r.shipperCommission.toFixed(2),
+            r.agencyCommission.toFixed(2),
+            r.totalCommissions.toFixed(2),
+            r.netProfitWithCommissions.toFixed(2),
+            r.marginWithCommissionsPercent.toFixed(2)
+          ] : []),
+          `"${expenseDesc.replace(/"/g, '""')}"`,
+          r.hasOcr ? 'SIM' : 'NAO'
+        ];
+        return [rowData.join(';')];
+      }
+
+      // Desacoplado: Linha Frete Base
+      const mainRowData = [
         r.shipment.id,
-        (r.cte || '') + compCteStr,
+        r.cte || '',
         r.shipment.scheduledDate || '',
         r.shipment.status,
         `"${r.clientName.replace(/"/g, '""')}"`,
@@ -702,28 +840,68 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
         `"${r.shipment.driverName.replace(/"/g, '""')}"`,
         r.shipment.horsePlate,
         r.weight.toFixed(2),
-        r.companyFreight.toFixed(2),
-        r.driverFreight.toFixed(2),
+        r.baseCompanyFreight.toFixed(2),
+        r.baseDriverFreight.toFixed(2),
         r.toll.toFixed(2),
-        r.freightDifference.toFixed(2),
-        r.freightDifferenceMarginPercent.toFixed(2),
+        r.baseFreightDifference.toFixed(2),
+        r.baseFreightDifferenceMarginPercent.toFixed(2),
         r.icms.toFixed(2),
         r.federalTax.toFixed(2),
         r.totalExpenses.toFixed(2),
         r.generatedCredit.toFixed(2),
-        r.netProfit.toFixed(2),
-        r.profitMarginPercent.toFixed(2),
+        r.baseNetProfit.toFixed(2),
+        r.baseProfitMarginPercent.toFixed(2),
         ...(canViewFinalNetProfit ? [
           r.shipperCommission.toFixed(2),
-          r.agencyCommission.toFixed(2),
-          r.totalCommissions.toFixed(2),
-          r.netProfitWithCommissions.toFixed(2),
-          r.marginWithCommissionsPercent.toFixed(2)
+          r.baseAgencyCommission.toFixed(2),
+          r.baseTotalCommissions.toFixed(2),
+          r.baseNetProfitWithCommissions.toFixed(2),
+          r.baseMarginWithCommissionsPercent.toFixed(2)
         ] : []),
         `"${expenseDesc.replace(/"/g, '""')}"`,
         r.hasOcr ? 'SIM' : 'NAO'
       ];
-      return rowData.join(';');
+
+      // Desacoplado: Sub-linha Subordinada CT-e Complementar
+      const compCtesStr = r.complementCtes && r.complementCtes.length > 0 ? r.complementCtes.join('/') : 'COMPLEMENTAR';
+      const compMarginFreight = r.demurrageRevenue > 0 ? (r.demurrageDifference / r.demurrageRevenue) * 100 : 0;
+      const compMarginNet = r.demurrageRevenue > 0 ? (r.demurrageProfit / r.demurrageRevenue) * 100 : 0;
+      const compMarginWithComms = r.demurrageRevenue > 0 ? (r.demurrageNetProfitWithCommissions / r.demurrageRevenue) * 100 : 0;
+
+      const compRowData = [
+        `↳ ${r.shipment.id}-COMP`,
+        compCtesStr,
+        r.shipment.scheduledDate || '',
+        'Estadia / Complemento',
+        `"${r.clientName.replace(/"/g, '""')}"`,
+        '""',
+        '""',
+        `"${r.shipment.driverName.replace(/"/g, '""')}"`,
+        r.shipment.horsePlate,
+        '0.00',
+        r.demurrageRevenue.toFixed(2),
+        r.demurrageDriverPaid.toFixed(2),
+        '0.00',
+        r.demurrageDifference.toFixed(2),
+        compMarginFreight.toFixed(2),
+        '0.00',
+        '0.00',
+        '0.00',
+        '0.00',
+        r.demurrageProfit.toFixed(2),
+        compMarginNet.toFixed(2),
+        ...(canViewFinalNetProfit ? [
+          '0.00',
+          r.demurrageAgencyComm.toFixed(2),
+          r.demurrageAgencyComm.toFixed(2),
+          r.demurrageNetProfitWithCommissions.toFixed(2),
+          compMarginWithComms.toFixed(2)
+        ] : []),
+        '"CT-e Complementar de Estadia vinculado"',
+        'NAO'
+      ];
+
+      return [mainRowData.join(';'), compRowData.join(';')];
     });
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n');
@@ -1173,219 +1351,418 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {enrichedRows.length > 0 ? (
                 enrichedRows.map((row) => (
-                  <tr key={row.shipment.id} className="hover:bg-gray-50/70 dark:hover:bg-gray-700/30 transition-colors">
-                    {/* ID / Data */}
-                    <td className="py-2.5 px-2 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
-                        <span className="font-mono font-bold text-gray-900 dark:text-white">
-                          {row.shipment.id}
-                        </span>
-                        {row.hasOcr && (
-                          <span title="Processado via IA Multimodal" className="inline-flex items-center px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 text-[8px] font-extrabold">
-                            IA
+                  <React.Fragment key={row.shipment.id}>
+                    {/* Linha Principal do Embarque (Frete Base) */}
+                    <tr className="hover:bg-gray-50/70 dark:hover:bg-gray-700/30 transition-colors">
+                      {/* ID / Data */}
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono font-bold text-gray-900 dark:text-white">
+                            {row.shipment.id}
                           </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                        {row.shipment.scheduledDate ? new Date(row.shipment.scheduledDate + 'T00:00:00').toLocaleDateString('pt-BR') : '---'}
-                      </p>
-                      {row.requesterName && row.requesterName !== 'N/A' && (
-                        <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate max-w-[120px]" title={`Solicitante: ${row.requesterName}`}>
-                          <span className="font-semibold text-gray-600 dark:text-gray-300">Sol:</span> {row.requesterName}
-                        </p>
-                      )}
-                      <span className="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                        {row.shipment.status}
-                      </span>
-                    </td>
-
-                    {/* Cliente / Trajeto */}
-                    <td className="py-2.5 px-2 max-w-[140px] xl:max-w-[180px]">
-                      <p className="font-semibold text-gray-900 dark:text-white truncate" title={row.clientName}>
-                        {row.clientName}
-                      </p>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate" title={`${row.cargo?.origin || ''} → ${row.cargo?.destination || ''}`}>
-                        {row.cargo?.origin || '---'} → {row.cargo?.destination || '---'}
-                      </p>
-                      {row.cte ? (
-                        <span className="inline-block mt-0.5 text-[9px] font-mono text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800">
-                          CT-e nº {row.cte}
-                        </span>
-                      ) : null}
-                      {row.complementCtes && row.complementCtes.length > 0 && (
-                        <div className="mt-0.5 flex flex-wrap gap-1">
-                          {row.complementCtes.map((compNum, idx) => (
-                            <span 
-                              key={idx} 
-                              className="inline-block text-[9px] font-mono text-purple-700 dark:text-purple-300 font-bold bg-purple-50 dark:bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800 shadow-2xs"
-                              title="CT-e Complementar de Estadia vinculado a este embarque"
-                            >
-                              Comp: {compNum}
+                          {row.hasOcr && (
+                            <span title="Processado via IA Multimodal" className="inline-flex items-center px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 text-[8px] font-extrabold">
+                              IA
                             </span>
-                          ))}
+                          )}
                         </div>
-                      )}
-                    </td>
-
-                    {/* Motorista / Placa */}
-                    <td className="py-2.5 px-2 max-w-[130px] xl:max-w-[160px]">
-                      <p className="font-semibold text-gray-900 dark:text-white truncate" title={row.shipment.driverName}>
-                        {row.shipment.driverName}
-                      </p>
-                      <p className="text-[10px] font-mono text-gray-500 dark:text-gray-400 truncate">
-                        Placa: {row.shipment.horsePlate}
-                      </p>
-                    </td>
-
-                    {/* Frete Empresa */}
-                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
-                      <span className="font-bold text-gray-900 dark:text-white text-xs">
-                        R$ {row.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {row.shipment.realProfitData?.complementCharged ? (
-                        <p className="text-[9px] text-blue-600 dark:text-blue-400">
-                          + R$ {row.shipment.realProfitData.complementCharged.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                          {row.shipment.scheduledDate ? new Date(row.shipment.scheduledDate + 'T00:00:00').toLocaleDateString('pt-BR') : '---'}
                         </p>
-                      ) : null}
-                    </td>
-
-                    {/* Frete Motorista */}
-                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
-                      <span className="font-bold text-gray-800 dark:text-gray-200 text-xs">
-                        R$ {row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {row.toll > 0 && (
-                        <p className="text-[9px] text-gray-400 dark:text-gray-500" title={`Líquido de Pedágio (R$ ${row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} - R$ ${row.toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}>
-                          Líq. Ped: R$ {row.driverFreightNetToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </p>
-                      )}
-                    </td>
-
-                    {/* Diferença de Frete */}
-                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
-                      <p className="font-bold text-indigo-600 dark:text-indigo-400 text-xs">
-                        R$ {row.freightDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <span className="text-[9px] font-semibold text-gray-500 dark:text-gray-400">
-                        {row.freightDifferenceMarginPercent.toFixed(1)}%
-                      </span>
-                    </td>
-
-                    {/* Despesas Operacionais */}
-                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                      {row.totalExpenses > 0 || row.expenseItems.length > 0 ? (
-                        <div className="flex flex-col items-center">
-                          <span className="font-mono font-bold text-red-600 dark:text-red-400 text-xs">
-                            - R$ {row.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedShipmentForDetail(row.shipment)}
-                            className="mt-0.5 text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-0.5"
-                          >
-                            <Receipt className="w-2.5 h-2.5" />
-                            Ver {row.expenseItems.length} despesa(s)
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-[10px]">R$ 0,00</span>
-                      )}
-                    </td>
-
-                    {/* Crédito Fiscal Gerado (Exportação) - Informativo - Oculto para Agenciador */}
-                    {!isAgenciador && (
-                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
-                        {row.generatedCredit > 0 ? (
-                          <div>
-                            <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                              R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                            <p className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">
-                              Informativo
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500 text-[10px]">---</span>
+                        {row.requesterName && row.requesterName !== 'N/A' && (
+                          <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate max-w-[120px]" title={`Solicitante: ${row.requesterName}`}>
+                            <span className="font-semibold text-gray-600 dark:text-gray-300">Sol:</span> {row.requesterName}
+                          </p>
                         )}
-                      </td>
-                    )}
-
-                    {/* Resultado Final (Lucro Real da Operação) */}
-                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
-                      <div className="flex flex-col items-end">
-                        <span className={`text-xs font-black ${
-                          row.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
-                        }`}>
-                          R$ {row.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                        <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
-                          row.netProfit >= 0 
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' 
-                            : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
-                        }`}>
-                          {row.profitMarginPercent.toFixed(1)}%
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* NOVO: Líquido Real Final Pós Comissões (Visível para Comercial, Admin, Diretor e Financeiro) */}
-                    {canViewFinalNetProfit && (
-                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap bg-teal-50/30 dark:bg-teal-950/20">
-                        <div className="flex flex-col items-end">
-                          <span className={`text-xs font-black ${
-                            row.netProfitWithCommissions >= 0 ? 'text-teal-700 dark:text-teal-300' : 'text-rose-600 dark:text-rose-400'
-                          }`}>
-                            R$ {row.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className="inline-block text-[9px] font-bold px-1.5 py-0.2 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                            {row.shipment.status}
                           </span>
-                          <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
-                            row.netProfitWithCommissions >= 0 
-                              ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300' 
-                              : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300'
-                          }`}>
-                            {row.marginWithCommissionsPercent.toFixed(1)}%
-                          </span>
-                          {row.totalCommissions > 0 ? (
-                            <span 
-                              className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold mt-0.5 truncate max-w-[120px]"
-                              title={`Comissões abatidas: R$ ${row.totalCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Agência: R$ ${row.agencyCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Embarcador: R$ ${row.shipperCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}
-                            >
-                              - R$ {row.totalCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com.
-                            </span>
-                          ) : (
-                            <span className="text-[8px] text-gray-400 dark:text-gray-500 mt-0.5">
-                              Sem comissão
+                          {row.hasComplement && (
+                            <span className="inline-block text-[8px] font-bold px-1 py-0.2 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800" title="Possui CT-e complementar discriminado na linha abaixo">
+                              Comp. ↳
                             </span>
                           )}
                         </div>
                       </td>
-                    )}
 
-                    {/* Acesso ao Anexo e Ação de Correção */}
-                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1">
-                        {row.attachmentUrl ? (
+                      {/* Cliente / Trajeto */}
+                      <td className="py-2.5 px-2 max-w-[140px] xl:max-w-[180px]">
+                        <p className="font-semibold text-gray-900 dark:text-white truncate" title={row.clientName}>
+                          {row.clientName}
+                        </p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate" title={`${row.cargo?.origin || ''} → ${row.cargo?.destination || ''}`}>
+                          {row.cargo?.origin || '---'} → {row.cargo?.destination || '---'}
+                        </p>
+                        {row.cte ? (
+                          <span className="inline-block mt-0.5 text-[9px] font-mono text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800">
+                            CT-e nº {row.cte}
+                          </span>
+                        ) : null}
+                      </td>
+
+                      {/* Motorista / Placa */}
+                      <td className="py-2.5 px-2 max-w-[130px] xl:max-w-[160px]">
+                        <p className="font-semibold text-gray-900 dark:text-white truncate" title={row.shipment.driverName}>
+                          {row.shipment.driverName}
+                        </p>
+                        <p className="text-[10px] font-mono text-gray-500 dark:text-gray-400 truncate">
+                          Placa: {row.shipment.horsePlate}
+                        </p>
+                      </td>
+
+                      {/* Frete Empresa */}
+                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                        {row.hasComplement ? (
+                          <div>
+                            <span className="font-bold text-gray-900 dark:text-white text-xs">
+                              R$ {row.baseCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <p className="text-[8.5px] text-purple-600 dark:text-purple-400 font-bold tracking-tight" title={`Consolidado do embarque: Frete Base (R$ ${row.baseCompanyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) + CT-e Comp (R$ ${row.demurrageRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}>
+                              Total: R$ {row.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-gray-900 dark:text-white text-xs">
+                              R$ {row.companyFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            {row.shipment.realProfitData?.complementCharged ? (
+                              <p className="text-[9px] text-blue-600 dark:text-blue-400">
+                                + R$ {row.shipment.realProfitData.complementCharged.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Frete Motorista */}
+                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                        {row.hasComplement ? (
+                          <div>
+                            <span className="font-bold text-gray-800 dark:text-gray-200 text-xs">
+                              R$ {row.baseDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <p className="text-[8.5px] text-purple-600 dark:text-purple-400 font-bold tracking-tight" title={`Consolidado motorista: Frete Base (R$ ${row.baseDriverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}) + CT-e Comp (R$ ${row.demurrageDriverPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}>
+                              Total: R$ {row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-gray-800 dark:text-gray-200 text-xs">
+                              R$ {row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            {row.toll > 0 && (
+                              <p className="text-[9px] text-gray-400 dark:text-gray-500" title={`Líquido de Pedágio (R$ ${row.driverFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} - R$ ${row.toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}>
+                                Líq. Ped: R$ {row.driverFreightNetToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Diferença de Frete */}
+                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                        <p className="font-bold text-indigo-600 dark:text-indigo-400 text-xs">
+                          R$ {(row.hasComplement ? row.baseFreightDifference : row.freightDifference).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <span className="text-[9px] font-semibold text-gray-500 dark:text-gray-400">
+                          {(row.hasComplement ? row.baseFreightDifferenceMarginPercent : row.freightDifferenceMarginPercent).toFixed(1)}%
+                        </span>
+                      </td>
+
+                      {/* Despesas Operacionais */}
+                      <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                        {row.totalExpenses > 0 || row.expenseItems.length > 0 ? (
+                          <div className="flex flex-col items-center">
+                            <span className="font-mono font-bold text-red-600 dark:text-red-400 text-xs">
+                              - R$ {row.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedShipmentForDetail(row.shipment)}
+                              className="mt-0.5 text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-0.5"
+                            >
+                              <Receipt className="w-2.5 h-2.5" />
+                              Ver {row.expenseItems.length} despesa(s)
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-[10px]">R$ 0,00</span>
+                        )}
+                      </td>
+
+                      {/* Crédito Fiscal Gerado (Exportação) - Informativo - Oculto para Agenciador */}
+                      {!isAgenciador && (
+                        <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                          {row.generatedCredit > 0 ? (
+                            <div>
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                                R$ {row.generatedCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              <p className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">
+                                Informativo
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 text-[10px]">---</span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* Resultado Final (Lucro Real da Operação) */}
+                      <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                        {row.hasComplement ? (
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xs font-black ${
+                              row.baseNetProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              R$ {row.baseNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
+                              row.baseNetProfit >= 0 
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' 
+                                : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
+                            }`}>
+                              {row.baseProfitMarginPercent.toFixed(1)}%
+                            </span>
+                            <p className="text-[8.5px] text-purple-600 dark:text-purple-400 font-bold tracking-tight mt-0.5" title={`Consolidado do embarque: R$ ${row.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${row.profitMarginPercent.toFixed(1)}%)`}>
+                              Total: R$ {row.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xs font-black ${
+                              row.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              R$ {row.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
+                              row.netProfit >= 0 
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' 
+                                : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
+                            }`}>
+                              {row.profitMarginPercent.toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* NOVO: Líquido Real Final Pós Comissões (Visível para Comercial, Admin, Diretor e Financeiro) */}
+                      {canViewFinalNetProfit && (
+                        <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap bg-teal-50/30 dark:bg-teal-950/20">
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xs font-black ${
+                              (row.hasComplement ? row.baseNetProfitWithCommissions : row.netProfitWithCommissions) >= 0 
+                                ? 'text-teal-700 dark:text-teal-300' 
+                                : 'text-rose-600 dark:text-rose-400'
+                            }`}>
+                              R$ {(row.hasComplement ? row.baseNetProfitWithCommissions : row.netProfitWithCommissions).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className={`text-[9px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
+                              (row.hasComplement ? row.baseNetProfitWithCommissions : row.netProfitWithCommissions) >= 0 
+                                ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300' 
+                                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300'
+                            }`}>
+                              {(row.hasComplement ? row.baseMarginWithCommissionsPercent : row.marginWithCommissionsPercent).toFixed(1)}%
+                            </span>
+                            {row.hasComplement ? (
+                              <p className="text-[8.5px] text-purple-600 dark:text-purple-400 font-bold tracking-tight mt-0.5" title={`Consolidado final com comissões: R$ ${row.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${row.marginWithCommissionsPercent.toFixed(1)}%)`}>
+                                Total: R$ {row.netProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            ) : (
+                              row.totalCommissions > 0 ? (
+                                <span 
+                                  className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold mt-0.5 truncate max-w-[120px]"
+                                  title={`Comissões abatidas: R$ ${row.totalCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Agência: R$ ${row.agencyCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Embarcador: R$ ${row.shipperCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`}
+                                >
+                                  - R$ {row.totalCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com.
+                                </span>
+                              ) : (
+                                <span className="text-[8px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                  Sem comissão
+                                </span>
+                              )
+                            )}
+                          </div>
+                        </td>
+                      )}
+
+                      {/* Acesso ao Anexo e Ação de Correção */}
+                      <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          {row.attachmentUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => openDocumentInNewTab(row.attachmentUrl!, `Resumo Custos - ${row.shipment.id}`)}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-[10px] font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800"
+                              title="Visualizar Comprovante / Imagem Original"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>Ver</span>
+                            </button>
+                          ) : null}
                           <button
                             type="button"
-                            onClick={() => openDocumentInNewTab(row.attachmentUrl!, `Resumo Custos - ${row.shipment.id}`)}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-[10px] font-semibold transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800"
-                            title="Visualizar Comprovante / Imagem Original"
+                            onClick={() => setEditingShipmentForAttachment(row.shipment)}
+                            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-[10px] font-semibold transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800"
+                            title="Anexar ou corrigir imagem do resumo de custos e recalcular o Lucro Real"
                           >
-                            <Eye className="w-3 h-3" />
-                            <span>Ver</span>
+                            <Upload className="w-3 h-3" />
+                            <span>{row.hasOcr ? 'Editar' : 'Anexar'}</span>
                           </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setEditingShipmentForAttachment(row.shipment)}
-                          className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-[10px] font-semibold transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800"
-                          title="Anexar ou corrigir imagem do resumo de custos e recalcular o Lucro Real"
-                        >
-                          <Upload className="w-3 h-3" />
-                          <span>{row.hasOcr ? 'Editar' : 'Anexar'}</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Sub-linha Subordinada para CT-e Complementar de Estadia */}
+                    {row.hasComplement && (
+                      <tr 
+                        key={`${row.shipment.id}-complement`}
+                        className="bg-purple-50/50 dark:bg-purple-950/25 border-l-4 border-l-purple-500 hover:bg-purple-50/80 dark:hover:bg-purple-950/40 transition-colors"
+                      >
+                        {/* ID / Subordinado */}
+                        <td className="py-2 px-2 whitespace-nowrap pl-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-purple-600 dark:text-purple-400 font-bold text-sm select-none leading-none">↳</span>
+                            <span className="font-mono font-bold text-purple-900 dark:text-purple-200 text-xs">
+                              {row.shipment.id}-COMP
+                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[8px] font-extrabold uppercase tracking-wide">
+                              CT-e Comp.
+                            </span>
+                          </div>
+                          <p className="text-[9px] text-purple-600/90 dark:text-purple-400/90 font-medium mt-0.5">
+                            Estadia / Demurrage
+                          </p>
+                        </td>
+
+                        {/* CT-e Complementar / Info */}
+                        <td className="py-2 px-2 max-w-[140px] xl:max-w-[180px]">
+                          <div className="flex flex-col gap-0.5">
+                            {row.complementCtes && row.complementCtes.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {row.complementCtes.map((compCte, idx) => (
+                                  <span 
+                                    key={idx}
+                                    className="inline-flex items-center gap-1 text-[9px] font-mono text-purple-800 dark:text-purple-200 font-black bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border border-purple-300 dark:border-purple-700 shadow-2xs"
+                                  >
+                                    CT-e nº {compCte}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[9px] font-mono text-purple-700 dark:text-purple-300 font-semibold">
+                                CT-e Complementar (Estadia)
+                              </span>
+                            )}
+                            <span className="text-[9px] text-gray-500 dark:text-gray-400 italic">
+                              Ref. Embarque {row.shipment.id}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Motorista / Ref */}
+                        <td className="py-2 px-2 max-w-[130px] xl:max-w-[160px]">
+                          <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 truncate">
+                            {row.shipment.driverName}
+                          </p>
+                          <p className="text-[9px] text-gray-500 dark:text-gray-400">
+                            Repasse de diária
+                          </p>
+                        </td>
+
+                        {/* Frete Empresa (Receita da Estadia) */}
+                        <td className="py-2 px-2 text-right font-mono whitespace-nowrap">
+                          <span className="font-bold text-purple-700 dark:text-purple-300 text-xs">
+                            + R$ {row.demurrageRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <p className="text-[8px] text-purple-500 dark:text-purple-400 font-semibold">
+                            Cobrado Cliente
+                          </p>
+                        </td>
+
+                        {/* Frete Motorista (Repasse ao motorista) */}
+                        <td className="py-2 px-2 text-right font-mono whitespace-nowrap">
+                          <span className="font-bold text-gray-700 dark:text-gray-300 text-xs">
+                            - R$ {row.demurrageDriverPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <p className="text-[8px] text-gray-400 dark:text-gray-500 font-semibold">
+                            Pago Motorista
+                          </p>
+                        </td>
+
+                        {/* Dif. Frete da Estadia */}
+                        <td className="py-2 px-2 text-right font-mono whitespace-nowrap">
+                          <p className="font-bold text-indigo-700 dark:text-indigo-300 text-xs">
+                            R$ {row.demurrageDifference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <span className="text-[9px] font-semibold text-gray-500 dark:text-gray-400">
+                            {row.demurrageRevenue > 0 ? ((row.demurrageDifference / row.demurrageRevenue) * 100).toFixed(1) : '0.0'}%
+                          </span>
+                        </td>
+
+                        {/* Despesas Operac. (R$ 0,00 no complementar) */}
+                        <td className="py-2 px-2 text-center whitespace-nowrap">
+                          <span className="text-gray-400 text-[10px]">—</span>
+                        </td>
+
+                        {/* Créd. Exp. (Informativo - Oculto para Agenciador) */}
+                        {!isAgenciador && (
+                          <td className="py-2 px-2 text-right font-mono whitespace-nowrap">
+                            <span className="text-gray-400 dark:text-gray-500 text-[10px]">—</span>
+                          </td>
+                        )}
+
+                        {/* Resultado (=) */}
+                        <td className="py-2 px-2 text-right font-mono whitespace-nowrap">
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xs font-black ${
+                              row.demurrageProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              R$ {row.demurrageProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className={`text-[8px] font-extrabold px-1 py-0.2 rounded mt-0.5 ${
+                              row.demurrageProfit >= 0 
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300' 
+                                : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
+                            }`}>
+                              {row.demurrageRevenue > 0 ? ((row.demurrageProfit / row.demurrageRevenue) * 100).toFixed(1) : '0.0'}%
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Líquido Real Final Pós Comissões */}
+                        {canViewFinalNetProfit && (
+                          <td className="py-2 px-2 text-right font-mono whitespace-nowrap bg-purple-100/40 dark:bg-purple-950/40">
+                            <div className="flex flex-col items-end">
+                              <span className={`text-xs font-black ${
+                                row.demurrageNetProfitWithCommissions >= 0 ? 'text-teal-700 dark:text-teal-300' : 'text-rose-600 dark:text-rose-400'
+                              }`}>
+                                R$ {row.demurrageNetProfitWithCommissions.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              {row.demurrageAgencyComm > 0 ? (
+                                <span className="text-[8px] text-purple-600 dark:text-purple-400 font-semibold mt-0.5">
+                                  - R$ {row.demurrageAgencyComm.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com.
+                                </span>
+                              ) : (
+                                <span className="text-[8px] text-gray-400 dark:text-gray-500 mt-0.5">
+                                  Sem comissão
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )}
+
+                        {/* Ações */}
+                        <td className="py-2 px-2 text-center whitespace-nowrap">
+                          <span className="text-[9px] text-purple-600/70 dark:text-purple-400/70 font-semibold italic">
+                            Subordinado
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))
               ) : (
                 <tr>

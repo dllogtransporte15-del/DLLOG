@@ -21,6 +21,64 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_27_v2_87_0',
+    version: 'v2.87.0',
+    date: '27/10/2026',
+    title: 'Desacoplamento de CT-e Complementar em Sub-linhas Dedicadas no Lucro Real',
+    summary: 'Apresentação desacoplada de CT-e complementares (estadias e demurrage) tanto na tabela web quanto nas exportações em PDF e CSV/Excel do relatório de Lucro Real. Os conhecimentos complementares agora aparecem como sub-linhas subordinadas (↳) imediatamente abaixo do frete original, viabilizando conciliação contábil e conferência 1-para-1 com os relatórios do Atua TMS, sem alterar os somatórios e KPIs consolidados.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Sub-linhas Subordinadas (↳) no Relatório Web de Lucro Real',
+        description: 'Embarques com estadia faturada agora exibem o Frete Base na linha principal e o CT-e complementar discriminado em sub-linha destacada logo abaixo, com valores individuais de receita, repasse ao motorista, margem e comissões.'
+      },
+      {
+        category: 'improvement',
+        title: 'Conciliação Contábil 1-para-1 com Atua TMS no PDF',
+        description: 'No PDF exportado, o CT-e complementar é impresso em linha própria com identificador subordinado e destaque visual, permitindo auditoria cruzada direta com os lançamentos de faturamento do Atua TMS.'
+      },
+      {
+        category: 'improvement',
+        title: 'Exportação em Planilha (CSV) Estruturada',
+        description: 'No arquivo CSV/Excel, o frete base e o CT-e complementar são gerados como registros autônomos e correlacionados, facilitando filtros dinâmicos e conciliações em planilhas financeiras.'
+      },
+      {
+        category: 'fix',
+        title: 'Precisão nos Totais Gerais e KPIs de Margem',
+        description: 'A soma das linhas desacopladas (Frete Original + CT-e Complementar) equivale matematicamente com precisão absoluta aos totais gerais dos cards de KPI e rodapés de relatórios.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_86_0',
+    version: 'v2.86.0',
+    date: '27/10/2026',
+    title: 'Comissão Individual e Visão Exclusiva para Agenciadores de Embarque',
+    summary: 'Implementado o módulo de comissionamento individualizado para Agenciadores de Embarque vinculados à agência. Agora é possível configurar a porcentagem acordada (ex: 1% a 20%) diretamente no cadastro do operador. No painel de relatórios do agenciador de embarque, os resultados consolidados globais da agência e dos demais operadores são ocultados em respeito ao sigilo operacional, apresentando a seção personalizada "Meu Resultado" e extratos em PDF com sua comissão líquida a receber.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Porcentagem de Comissão Individual no Cadastro de Usuários',
+        description: 'Disponibilizado campo dedicado no cadastro/edição de usuários para definir a alíquota percentual do Agenciador de Embarque (ex: 10% sobre o Lucro Real Líquido repassada da comissão da agência).'
+      },
+      {
+        category: 'security',
+        title: 'Sigilo dos Resultados Globais da Agência',
+        description: 'Ocultada a tabela de resultado consolidado da agência e de outros operadores quando o usuário logado for um Agenciador de Embarque, mantendo visíveis apenas seus próprios fretes e métricas.'
+      },
+      {
+        category: 'improvement',
+        title: 'Painel Personalizado "Meu Resultado"',
+        description: 'A tabela de operadores agora se transforma automaticamente em "Meu Resultado" para o Agenciador de Embarque, calculando exatamente o valor líquido de comissão a receber com base na taxa pactuada.'
+      },
+      {
+        category: 'improvement',
+        title: 'Extrato e Relatório em PDF Individualizado',
+        description: 'Os botões de Listagem e Exportação em PDF calculam e discriminam a alíquota do operador e sua comissão apurada sobre os embarques com CT-e emitido.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_27_v2_85_0',
     version: 'v2.85.0',
     date: '27/10/2026',

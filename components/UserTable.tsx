@@ -113,7 +113,7 @@ const UserTable: React.FC<UserTableProps> = ({
                       {user.profile === UserProfile.Agenciador && (
                         user.agencyRole === 'embarque' ? (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300">
-                            Agenciador Embarque
+                            Agenciador Embarque {user.operatorCommissionPercentage !== undefined ? `(${user.operatorCommissionPercentage}%)` : (user.agencyCommissionPercentage !== undefined && user.agencyCommissionPercentage < 30 ? `(${user.agencyCommissionPercentage}%)` : '')}
                           </span>
                         ) : (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">

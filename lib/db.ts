@@ -1073,6 +1073,7 @@ export const toUser = (row: any): User => {
     availableForDriverRequests: perms.availableForDriverRequests ?? row.available_for_driver_requests ?? true,
     shipperCommissionRatePerTon: perms.shipperCommissionRatePerTon !== undefined ? Number(perms.shipperCommissionRatePerTon) : (row.shipper_commission_rate_per_ton !== undefined ? Number(row.shipper_commission_rate_per_ton) : undefined),
     agencyCommissionPercentage: perms.agencyCommissionPercentage !== undefined ? Number(perms.agencyCommissionPercentage) : (row.agency_commission_percentage !== undefined ? Number(row.agency_commission_percentage) : undefined),
+    operatorCommissionPercentage: perms.operatorCommissionPercentage !== undefined ? Number(perms.operatorCommissionPercentage) : (row.operator_commission_percentage !== undefined ? Number(row.operator_commission_percentage) : undefined),
     agencyRole: perms.agencyRole ?? row.agency_role ?? (row.profile === 'Agenciador' ? 'lider' : undefined),
     agencyLeaderId: perms.agencyLeaderId ?? row.agency_leader_id ?? undefined,
   };
@@ -1096,6 +1097,7 @@ export const fromUser = (u: User | Omit<User, 'id'>) => {
     availableForDriverRequests: u.availableForDriverRequests !== undefined ? u.availableForDriverRequests : true,
     shipperCommissionRatePerTon: u.shipperCommissionRatePerTon,
     agencyCommissionPercentage: u.agencyCommissionPercentage,
+    operatorCommissionPercentage: u.operatorCommissionPercentage,
     agencyRole: u.agencyRole,
     agencyLeaderId: u.agencyLeaderId,
   };

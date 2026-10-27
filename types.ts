@@ -127,6 +127,7 @@ export interface User {
   availableForDriverRequests?: boolean;
   shipperCommissionRatePerTon?: number;
   agencyCommissionPercentage?: number;
+  operatorCommissionPercentage?: number;
   agencyRole?: 'lider' | 'embarque';
   agencyLeaderId?: string;
   customPermissions?: { [key in Page]?: CrudPermissions };
