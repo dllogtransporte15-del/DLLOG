@@ -12,7 +12,7 @@ import {
   ChevronRight,
   ArrowRight
 } from 'lucide-react';
-import { SYSTEM_RELEASES, LATEST_SYSTEM_RELEASE, markUpdateAsSeen, SystemRelease } from '../utils/systemUpdates';
+import { getReleasesForUser, markUpdateAsSeen, SystemRelease } from '../utils/systemUpdates';
 import type { User } from '../types';
 import { UserProfile } from '../types';
 
@@ -27,14 +27,24 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
   onClose,
   currentUser
 }) => {
-  const [selectedRelease, setSelectedRelease] = useState<SystemRelease>(LATEST_SYSTEM_RELEASE);
+  const visibleReleases = React.useMemo(() => getReleasesForUser(currentUser), [currentUser]);
+  const latestRelease = visibleReleases[0];
+  const [selectedRelease, setSelectedRelease] = useState<SystemRelease | null>(latestRelease || null);
   const [activeTab, setActiveTab] = useState<'latest' | 'history'>('latest');
 
-  if (!isOpen || currentUser?.profile === UserProfile.Cliente) return null;
+  React.useEffect(() => {
+    if (latestRelease) {
+      setSelectedRelease(latestRelease);
+    }
+  }, [latestRelease?.id]);
+
+  if (!isOpen || currentUser?.profile === UserProfile.Cliente || !latestRelease) return null;
+
+  const currentDisplayRelease = selectedRelease || latestRelease;
 
   const handleDismiss = () => {
-    if (currentUser?.id) {
-      markUpdateAsSeen(currentUser.id, LATEST_SYSTEM_RELEASE.id);
+    if (currentUser?.id && latestRelease?.id) {
+      markUpdateAsSeen(currentUser.id, latestRelease.id);
     }
     onClose();
   };
@@ -89,7 +99,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
                 <span>Atualização do Sistema</span>
                 <span className="opacity-40">•</span>
-                <span className="font-mono text-white font-extrabold">{LATEST_SYSTEM_RELEASE.version}</span>
+                <span className="font-mono text-white font-extrabold">{latestRelease.version}</span>
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-snug">
                 O que há de novo no Transcunha Logística?
@@ -115,7 +125,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
               type="button"
               onClick={() => {
                 setActiveTab('latest');
-                setSelectedRelease(LATEST_SYSTEM_RELEASE);
+                setSelectedRelease(latestRelease);
               }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'latest'
@@ -124,10 +134,10 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
               }`}
             >
               <Rocket className="w-3.5 h-3.5" />
-              <span>Versão Atual ({LATEST_SYSTEM_RELEASE.version})</span>
+              <span>Versão Atual ({latestRelease.version})</span>
             </button>
 
-            {SYSTEM_RELEASES.length > 1 && (
+            {visibleReleases.length > 1 && (
               <button
                 type="button"
                 onClick={() => setActiveTab('history')}
@@ -152,7 +162,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
                 Selecione uma atualização anterior para visualizar os detalhes:
               </p>
               <div className="grid grid-cols-1 gap-3">
-                {SYSTEM_RELEASES.map(release => (
+                {visibleReleases.map(release => (
                   <button
                     key={release.id}
                     type="button"
@@ -161,7 +171,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
                       setActiveTab('latest');
                     }}
                     className={`p-4 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer ${
-                      selectedRelease.id === release.id
+                      currentDisplayRelease.id === release.id
                         ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 ring-2 ring-blue-500/20'
                         : 'border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40 hover:border-gray-300 dark:hover:border-gray-700'
                     }`}
@@ -197,14 +207,14 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-black text-sm text-gray-900 dark:text-white">
-                      {selectedRelease.title}
+                      {currentDisplayRelease.title}
                     </h3>
                     <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400">
-                      • {selectedRelease.date}
+                      • {currentDisplayRelease.date}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
-                    {selectedRelease.summary}
+                    {currentDisplayRelease.summary}
                   </p>
                 </div>
               </div>
@@ -212,11 +222,11 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
               {/* LIST OF UPDATE HIGHLIGHTS */}
               <div className="space-y-3">
                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Destaques desta atualização ({selectedRelease.items.length})
+                  Destaques desta atualização ({currentDisplayRelease.items.length})
                 </p>
 
                 <div className="space-y-3">
-                  {selectedRelease.items.map((item, index) => (
+                  {currentDisplayRelease.items.map((item, index) => (
                     <div 
                       key={index} 
                       className="p-4 rounded-2xl bg-white dark:bg-gray-900/80 border border-gray-200/90 dark:border-gray-800 shadow-sm space-y-2 hover:border-gray-300 dark:hover:border-gray-700 transition-all"

@@ -1,3 +1,6 @@
+import type { User } from '../types';
+import { UserProfile } from '../types';
+
 export interface UpdateItem {
   title: string;
   description: string;
@@ -12,6 +15,9 @@ export interface SystemRelease {
   title: string;
   summary: string;
   items: UpdateItem[];
+  targetProfiles?: UserProfile[];
+  excludeProfiles?: UserProfile[];
+  excludeAgencyRoles?: string[];
 }
 
 /**
@@ -20,6 +26,32 @@ export interface SystemRelease {
  * incremente a versão ou adicione um novo registro no topo da lista.
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
+  {
+    id: 'rel_2026_10_27_v2_88_2',
+    version: 'v2.88.2',
+    date: '27/10/2026',
+    title: 'Restrição de Relatórios Globais e Proteção de Dados para Agenciador de Embarque',
+    summary: 'Ocultadas as abas de relatórios globais da empresa (Clientes, Vendedores, Tempo de Operação, Filiais, Financeiro Estadias, Previsão de Demandas, Outros, Lucro Real e Embarcadores) e KPIs consolidados de faturamento para usuários com perfil de Agenciador de Embarque. O acesso passa a ser estritamente restrito ao seu próprio extrato individual de embarques e apuração de comissão a receber.',
+    excludeAgencyRoles: ['embarque'],
+    excludeProfiles: [UserProfile.Embarcador, UserProfile.Motorista],
+    items: [
+      {
+        category: 'security',
+        title: 'Ocultação de Abas e Relatórios Globais para Agenciador de Embarque',
+        description: 'Os operadores vinculados com papel "Agenciador Embarque" visualizam exclusivamente a aba "Meu Relatório de Agenciamento", eliminando o acesso às informações de clientes da empresa, filiais, estadias, vendedores externos, previsão de demandas e lucro real geral.'
+      },
+      {
+        category: 'security',
+        title: 'Proteção de Métricas Globais e KPIs de Faturamento',
+        description: 'Bloqueada a exibição dos cards globais de Faturamento Bruto e Lucro Efetivado geral no topo da página de relatórios para o perfil de Agenciador de Embarque, mantendo visíveis apenas os indicadores individuais pertinentes à sua operação direta.'
+      },
+      {
+        category: 'improvement',
+        title: 'Padronização da Nomenclatura das Abas de Relatório',
+        description: 'A aba principal de relatórios comerciais foi personalizada para refletir a modalidade do usuário ("Meu Relatório de Agenciamento" para operadores de embarque e "Relatório da Agência" para agenciadores líderes).'
+      }
+    ]
+  },
   {
     id: 'rel_2026_10_27_v2_88_1',
     version: 'v2.88.1',
@@ -6149,15 +6181,62 @@ export const LATEST_SYSTEM_RELEASE = SYSTEM_RELEASES[0];
 const STORAGE_PREFIX = 'transcunha_seen_update_';
 
 /**
- * Verifica se o modal de novidades deve ser exibido para o usuário.
- * Retorna true apenas no primeiro acesso após uma nova atualização.
+ * Determina se um lançamento específico deve ser ocultado para o usuário
  */
-export const shouldShowUpdateModal = (userId?: string): boolean => {
+export const isUserExcludedFromRelease = (release: SystemRelease, user?: User | null): boolean => {
+  if (!user) return false;
+
+  // Perfis explicitamente excluídos (ex: Embarcadores, Motoristas)
+  if (release.excludeProfiles && release.excludeProfiles.includes(user.profile)) {
+    return true;
+  }
+
+  // Papéis de agência excluídos (ex: operadores de embarque)
+  if (release.excludeAgencyRoles && user.agencyRole && release.excludeAgencyRoles.includes(user.agencyRole)) {
+    return true;
+  }
+
+  // Perfis alvos específicos (se configurado, apenas os perfis listados visualizam)
+  if (release.targetProfiles && release.targetProfiles.length > 0) {
+    if (!release.targetProfiles.includes(user.profile)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Retorna os lançamentos visíveis para o usuário considerando as restrições de perfil
+ */
+export const getReleasesForUser = (user?: User | null): SystemRelease[] => {
+  if (!user) return SYSTEM_RELEASES;
+  return SYSTEM_RELEASES.filter(release => !isUserExcludedFromRelease(release, user));
+};
+
+/**
+ * Retorna o lançamento mais recente visível para o usuário
+ */
+export const getLatestReleaseForUser = (user?: User | null): SystemRelease => {
+  const visible = getReleasesForUser(user);
+  return visible[0] || SYSTEM_RELEASES[0];
+};
+
+/**
+ * Verifica se o modal de novidades deve ser exibido para o usuário.
+ * Retorna true apenas no primeiro acesso após uma nova atualização aplicável ao perfil do usuário.
+ */
+export const shouldShowUpdateModal = (userOrId?: User | string | null): boolean => {
+  if (!userOrId) return false;
+  const userId = typeof userOrId === 'string' ? userOrId : userOrId.id;
+  const user = typeof userOrId === 'string' ? null : userOrId;
   if (!userId) return false;
+
   try {
+    const latestRelease = getLatestReleaseForUser(user);
     const key = `${STORAGE_PREFIX}${userId}`;
     const lastSeenId = localStorage.getItem(key);
-    return lastSeenId !== LATEST_SYSTEM_RELEASE.id;
+    return lastSeenId !== latestRelease.id;
   } catch {
     return false;
   }

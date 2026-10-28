@@ -363,7 +363,29 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     ].includes(currentUser.profile);
   }, [currentUser]);
 
+  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador;
+  const isCliente = currentUser?.profile === UserProfile.Cliente;
+  const isAgenciador = currentUser?.profile === UserProfile.Agenciador;
+  const isAgenciadorEmbarque = isAgenciador && currentUser?.agencyRole === 'embarque';
+
   const renderReport = () => {
+    if (isAgenciadorEmbarque && activeReport !== 'comercial') {
+      return (
+        <SupervisorReport 
+          shipments={filteredShipments} 
+          cargos={cargos} 
+          users={users} 
+          branches={branches} 
+          stays={stays} 
+          clients={clients}
+          companyLogo={companyLogo}
+          startDate={startDate}
+          endDate={endDate}
+          onSaveUser={onSaveUser as any} 
+          currentUser={currentUser} 
+        />
+      );
+    }
     switch(activeReport) {
       case 'comercial':
         return (
@@ -404,7 +426,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       case 'previsao-demandas':
         return <DemandForecastReport cargos={cargos} clients={clients} shipments={shipments} companyLogo={companyLogo} />;
       case 'lucro-real':
-        if (isCliente) return null;
+        if (isCliente || isAgenciadorEmbarque) return null;
         return (
           <RealProfitReport
             shipments={shipments}
@@ -425,6 +447,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
           />
         );
       case 'outros':
+        if (isAgenciadorEmbarque) return null;
         return (
           <OthersReport
             shipments={shipments}
@@ -443,22 +466,25 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
         return null;
     }
   };
-  
-  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador;
-  const isCliente = currentUser?.profile === UserProfile.Cliente;
 
   const navItems = [
-      ...(canViewCommercialReport ? [{ id: 'comercial', label: 'Relatório Comercial', icon: BriefcaseIcon }] : []),
-      ...(!isCliente ? [
+      ...(canViewCommercialReport ? [{ 
+        id: 'comercial', 
+        label: isAgenciadorEmbarque 
+          ? 'Meu Relatório de Agenciamento' 
+          : (isAgenciador ? 'Relatório da Agência' : 'Relatório Comercial'), 
+        icon: BriefcaseIcon 
+      }] : []),
+      ...(!isCliente && !isAgenciadorEmbarque ? [
         { id: 'lucro-real', label: 'Lucro Real da Operação', icon: Receipt },
         { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }
       ] : []),
-      ...(!isEmbarcador ? [
+      ...(!isEmbarcador && !isAgenciadorEmbarque ? [
         { id: 'clientes', label: isCliente ? 'Histórico & Desempenho por CNPJ' : 'Clientes', icon: UsersIcon },
         ...(!isCliente ? [{ id: 'vendedores', label: 'Vendedores', icon: UsersIcon }] : []),
       ] : []),
-      { id: 'tempo-operacao', label: 'Tempo de Operação', icon: ClockIcon },
-      ...(!isCliente ? [
+      ...(!isAgenciadorEmbarque ? [{ id: 'tempo-operacao', label: 'Tempo de Operação', icon: ClockIcon }] : []),
+      ...(!isCliente && !isAgenciadorEmbarque ? [
         { id: 'filiais', label: 'Filiais', icon: Building2 },
         { id: 'estadias', label: 'Financeiro Estadias', icon: DollarSign },
         { id: 'previsao-demandas', label: 'Previsão de Demandas', icon: TrendingUp },
@@ -466,14 +492,20 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       ] : []),
   ];
 
-  /* Ensure initial tab is permissible */
-  useState(() => {
+  /* Ensure initial and active tab is permissible */
+  React.useEffect(() => {
     if (isCliente) {
-      setActiveReport('clientes');
+      if (activeReport !== 'clientes' && activeReport !== 'tempo-operacao') {
+        setActiveReport('clientes');
+      }
+    } else if (isAgenciadorEmbarque) {
+      if (activeReport !== 'comercial') {
+        setActiveReport('comercial');
+      }
     } else if (!canViewCommercialReport && activeReport === 'comercial') {
       setActiveReport('embarcadores');
     }
-  });
+  }, [isCliente, isAgenciadorEmbarque, canViewCommercialReport, activeReport]);
 
   const activeFiltersCount = (filterStatus.length > 0 ? 1 : 0) + 
     (filterExport.length > 0 ? 1 : 0) + 
@@ -547,13 +579,13 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
                     <MultiSelectDropdown label="Status do Embarque" options={statusOptions} selectedValues={filterStatus} onChange={setFilterStatus} placeholder="Todos..." />
                     <MultiSelectDropdown label="Destinação Carga" options={exportOptions} selectedValues={filterExport} onChange={setFilterExport} placeholder="Todas..." />
                     <MultiSelectDropdown label="Regime Tributário" options={driverRegimeOptions} selectedValues={filterDriverRegime} onChange={setFilterDriverRegime} placeholder="Todos..." />
-                    {!isCliente && (
+                    {!isCliente && !isAgenciadorEmbarque && (
                       <MultiSelectDropdown label="Cliente (Empresa)" options={clientOptions} selectedValues={filterClient} onChange={setFilterClient} placeholder="Todos..." />
                     )}
                     <MultiSelectDropdown label="CNPJ / Filial" options={cnpjOptions} selectedValues={filterClientCnpj} onChange={setFilterClientCnpj} placeholder="Todos os CNPJs..." />
                     <MultiSelectDropdown label="Origem" options={originOptions} selectedValues={filterOrigin} onChange={setFilterOrigin} placeholder="Todas..." />
                     <MultiSelectDropdown label="Destino" options={destOptions} selectedValues={filterDest} onChange={setFilterDest} placeholder="Todos..." />
-                    {!isCliente && (
+                    {!isCliente && !isAgenciadorEmbarque && (
                       <MultiSelectDropdown label="Filial Transcunha" options={branchOptions} selectedValues={filterBranch} onChange={setFilterBranch} placeholder="Todas..." />
                     )}
                 </div>
@@ -569,7 +601,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
       </div>
 
       {/* GLOBAL KPIs SECTION (para relatórios gerais) */}
-      {activeReport !== 'lucro-real' && activeReport !== 'outros' && (
+      {activeReport !== 'lucro-real' && activeReport !== 'outros' && !isAgenciadorEmbarque && (
         isCliente ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
              <div className="p-3.5 bg-white dark:bg-gray-800/90 rounded-xl border border-gray-200/80 dark:border-gray-700/80 flex items-center gap-3 hover:scale-[1.02] transition-transform duration-300 shadow-sm">

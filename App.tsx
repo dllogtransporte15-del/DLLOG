@@ -328,14 +328,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (currentUser?.id && !isLoading) {
-      if (currentUser?.profile !== UserProfile.Cliente && shouldShowUpdateModal(currentUser.id)) {
+      if (currentUser?.profile !== UserProfile.Cliente && shouldShowUpdateModal(currentUser)) {
         const timer = setTimeout(() => {
           setIsUpdateModalOpen(true);
         }, 800);
         return () => clearTimeout(timer);
       }
     }
-  }, [currentUser?.id, currentUser?.profile, isLoading]);
+  }, [currentUser, isLoading]);
 
   // Sincronizar o Código ATUA histórico dos motoristas cadastrados
   useEffect(() => {
