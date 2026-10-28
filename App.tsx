@@ -35,6 +35,7 @@ const ShipmentHistoryPage = React.lazy(() => import('./pages/ShipmentHistoryPage
 const LoadHistoryPage = React.lazy(() => import('./pages/LoadHistoryPage'));
 const LayoverCalculatorPage = React.lazy(() => import('./pages/LayoverCalculatorPage'));
 const FreightQuotePage = React.lazy(() => import('./pages/FreightQuotePage'));
+const AtuaReconciliationPage = React.lazy(() => import('./pages/AtuaReconciliationPage'));
 const ToolsHistoryPage = React.lazy(() => import('./pages/ToolsHistoryPage'));
 const FreightOffersHistoryPage = React.lazy(() => import('./pages/FreightOffersHistoryPage'));
 const BranchesPage = React.lazy(() => import('./pages/BranchesPage'));
@@ -4547,6 +4548,7 @@ const App: React.FC = () => {
           <Route path="/load-history" element={<LoadHistoryPage loads={closedLoads} clients={clients} products={products} users={users} currentUser={currentUser} shipments={shipments} onDeleteLoad={handleDeleteCargo} onReactivateLoad={handleReactivateLoad} />} />
           <Route path="/layover-calculator" element={<LayoverCalculatorPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />} />
           <Route path="/freight-quote" element={<FreightQuotePage currentUser={currentUser} cargos={cargos} />} />
+          <Route path="/atua-reconciliation" element={!can('read', currentUser, 'atua-reconciliation', profilePermissions) ? <Navigate to="/" replace /> : <AtuaReconciliationPage currentUser={currentUser} shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} vehicles={vehicles} users={users} branches={branches} stays={stays} companyLogo={companyLogo} />} />
           <Route path="/tools-history" element={<ToolsHistoryPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />} />
           <Route path="/branches" element={<BranchesPage branches={branches} onSaveBranch={handleSaveBranch} onDeleteBranch={handleDeleteBranch} currentUser={currentUser} profilePermissions={profilePermissions} />} />
           <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} onSwapCargo={handleSwapCargo} />} />

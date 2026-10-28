@@ -22,7 +22,7 @@ import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe, Headphones } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe, Headphones, Scale } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -121,6 +121,7 @@ const navItems: NavItem[] = [
     children: [
       { id: 'layover-calculator', label: 'Cálculo de Estadias', icon: CalculatorIcon },
       { id: 'freight-quote', label: 'Cotação de Frete', icon: MapIcon },
+      { id: 'atua-reconciliation', label: 'Auditoria Atua TMS', icon: Scale },
       { id: 'messenger', label: 'Mensageiro WhatsApp', icon: Send },
       { id: 'tools-history', label: 'Histórico', icon: HistoryIcon },
       { id: 'freight-offers-history', label: 'Histórico de Ofertas', icon: HistoryIcon },

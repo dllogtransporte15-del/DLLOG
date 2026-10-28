@@ -35,6 +35,7 @@ const PAGE_NAMES: Record<Page, string> = {
   'appearance': 'Aparência',
   'layover-calculator': 'Cálculo de Estadias',
   'freight-quote': 'Cotação de Frete',
+  'atua-reconciliation': 'Auditoria Atua TMS',
   'ai-assistant': 'Assistente de IA',
   'tools-history': 'Histórico de Ferramentas',
   'freight-offers-history': 'Histórico de Ofertas',
@@ -57,7 +58,7 @@ const CATEGORIES = [
   { name: 'Relatórios', pages: ['reports'] as Page[] },
   { name: 'Cadastros', pages: ['clients', 'owners', 'embarcadores', 'drivers', 'vehicles', 'locations', 'products', 'users-register', 'branches', 'risk-query-types'] as Page[] },
   { name: 'Configurações', pages: ['appearance'] as Page[] },
-  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor', 'messenger'] as Page[] }
+  { name: 'Ferramentas', pages: ['layover-calculator', 'freight-quote', 'atua-reconciliation', 'ai-assistant', 'freight-offers-history', 'tools-history', 'system-monitor', 'messenger'] as Page[] }
 ];
 
 const READ_ONLY_PAGES = [

@@ -21,6 +21,59 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_27_v2_88_1',
+    version: 'v2.88.1',
+    date: '27/10/2026',
+    title: 'Aprimoramento no Extrator do Atua TMS e Suporte a Importação Dupla de Relatórios',
+    summary: 'Correção de alta precisão na extração de dados do Relatório Detalhado do CTRC do Atua TMS (MaisFrete) via coordenadas espaciais e regex tolerante a espaçamentos de fontes vetoriais. Além disso, adicionada detecção automática do Relatório de Lucro Real da Transcunha e possibilidade de importar ambos os relatórios para conciliação mútua.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Extração Geométrica de Alta Precisão do CTRC do Atua',
+        description: 'Implementado mapeamento por coordenadas X/Y para o layout em formato paisagem do Atua TMS, garantindo 100% de acurácia na captura de CT-es, peso, fretes, pedágio, ICMS e resultado, eliminando o erro de nenhum registro encontrado.'
+      },
+      {
+        category: 'feature',
+        title: 'Detecção Inteligente e Suporte ao Lucro Real da Transcunha',
+        description: 'Se o usuário enviar o relatório de Lucro Real da Transcunha, o sistema reconhece automaticamente o tipo do arquivo, carrega os embarques na base de auditoria e orienta o envio do relatório do Atua TMS para o confronto.'
+      },
+      {
+        category: 'improvement',
+        title: 'Resiliência no Worker do PDF.js em Navegadores',
+        description: 'Adicionado mecanismo com fallback automático local e blob worker, impedindo que bloqueios de CORS ou falhas de rede interrompam a leitura de arquivos PDF pesados no cliente.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_27_v2_88_0',
+    version: 'v2.88.0',
+    date: '27/10/2026',
+    title: 'Nova Ferramenta: Auditoria e Conciliação Atua TMS vs. Transcunha',
+    summary: 'Lançado no menu de Ferramentas o módulo de Auditoria e Conciliação automatizada entre o "Relatório Detalhado do CTRC" (do Atua TMS / MaisFrete) e o sistema Transcunha. A ferramenta analisa e cruza em tempo real todos os CT-es, destacando divergências de Frete Empresa, Frete Motorista, Vale-Pedágio, ICMS, Impostos Federais, Peso e Lucro Real/Resultado, além de identificar CT-es órfãos e pendentes de faturamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Importador Multiformato do Atua TMS (PDF, Excel e Texto)',
+        description: 'Permite carregar o arquivo PDF original do relatório detalhado do CTRC do Atua, planilhas Excel (.xlsx, .xls, .csv) ou colar o texto diretamente para decodificação instantânea.'
+      },
+      {
+        category: 'feature',
+        title: 'Motor de Confronto Linha a Linha (Transcunha vs. Atua)',
+        description: 'Cruza por número de CT-e (incluindo conhecimentos complementares de estadia) ou por placa/data próxima, calculando as variações absolutas e percentuais com margem de tolerância ajustável em centavos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Painel de Indicadores e Filtros Inteligentes',
+        description: 'Cards de resumo com percentual de conciliação 100% OK, contagem de divergências, conhecimentos órfãos e saldo financeiro líquido divergente, com alternância entre visão Lado a Lado e visão de Deltas (Δ).'
+      },
+      {
+        category: 'improvement',
+        title: 'Exportação Completa para PDF e Planilha Excel (CSV)',
+        description: 'Gera relatórios institucionais com logotipo da Transcunha e planilhas tabulares prontas para conferência e envio direto às equipes fiscal, financeira e de controladoria.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_27_v2_87_0',
     version: 'v2.87.0',
     date: '27/10/2026',
