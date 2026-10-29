@@ -1,6 +1,7 @@
 import React from 'react';
-import type { Branch } from '../types';
+import type { Branch, User } from '../types';
 import { UserProfile } from '../types';
+import { filterVisibleProfiles } from '../auth';
 
 export interface UserFilters {
   id: string;
@@ -15,9 +16,10 @@ interface UserFilterProps {
   onFilterChange: (filters: UserFilters) => void;
   availableProfiles?: UserProfile[];
   branches?: Branch[];
+  currentUser?: User | null;
 }
 
-const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availableProfiles, branches }) => {
+const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availableProfiles, branches, currentUser }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     onFilterChange({ ...filters, [name]: value });
@@ -34,7 +36,8 @@ const UserFilter: React.FC<UserFilterProps> = ({ filters, onFilterChange, availa
   };
 
   const isFiltered = filters.id !== '' || filters.name !== '' || filters.profile !== '' || filters.status !== '' || (filters.branchId !== '' && filters.branchId !== undefined);
-  const profilesToRender = availableProfiles && availableProfiles.length > 0 ? availableProfiles : Object.values(UserProfile);
+  const baseProfiles = availableProfiles && availableProfiles.length > 0 ? availableProfiles : Object.values(UserProfile);
+  const profilesToRender = filterVisibleProfiles(baseProfiles, currentUser);
   const hasBranches = Boolean(branches && branches.length > 0);
 
   return (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { User, Shipment, FreightOffer, Cargo, Driver, Ticket, Page, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, FreightOfferStatus, TicketStatus, CargoStatus } from '../types';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { BellIcon } from './icons/BellIcon';
 import { playAlertSound } from '../utils/audioAlert';
 import { 
@@ -121,14 +121,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const isFiscal = user.profile === UserProfile.Fiscal;
     const isSeguradora = user.profile === UserProfile.GerenciadoraDeRisco;
     const isFinanceiro = user.profile === UserProfile.Financeiro;
-    const isAdminOrDiretor = !isDemo && (user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor || user.profile === UserProfile.GerenciadoraDeRisco);
-    const isCommercialOrSupervisor = !isDemo && [
+    const isAdminOrDiretor = !isDemo && (isDeveloperUser(user) || user.profile === UserProfile.Desenvolvedor || user.profile === UserProfile.Admin || user.profile === UserProfile.Diretor || user.profile === UserProfile.GerenciadoraDeRisco);
+    const isCommercialOrSupervisor = !isDemo && (isDeveloperUser(user) || [
+      UserProfile.Desenvolvedor,
       UserProfile.Comercial,
       UserProfile.GerenteComercial,
       UserProfile.Supervisor,
       UserProfile.Admin,
       UserProfile.Diretor
-    ].includes(user.profile);
+    ].includes(user.profile));
     const isMotorista = user.profile === UserProfile.Motorista;
 
     // 1. REGRA EMBARCADORES: Solicitação de ordem de algum motorista
@@ -354,7 +355,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     });
 
     // 7. REGRA NOVA CARGA CADASTRADA: Alerta para Comercial, Administrador do Sistema, Agenciador e Embarcador
-    const isEligibleForNewCargoAlert = !isDemo && [
+    const isEligibleForNewCargoAlert = !isDemo && (isDeveloperUser(user) || [
+      UserProfile.Desenvolvedor,
       UserProfile.Comercial,
       UserProfile.GerenteComercial,
       UserProfile.Admin,
@@ -362,7 +364,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       UserProfile.Diretor,
       UserProfile.Agenciador,
       UserProfile.Embarcador,
-    ].includes(user.profile);
+    ].includes(user.profile));
 
     if (isEligibleForNewCargoAlert) {
       cargos.forEach(cargo => {

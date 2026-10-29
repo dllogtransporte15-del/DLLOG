@@ -10,7 +10,7 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
 import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { useToast } from '../hooks/useToast';
 
 
@@ -167,7 +167,9 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
 
   const isDemo = isDemoUser(currentUser);
   const isFinalized = shipment.status === ShipmentStatus.Finalizado;
-  const isAdmin = currentUser?.profile === UserProfile.Admin ||
+  const isAdmin = isDeveloperUser(currentUser) ||
+    currentUser?.profile === UserProfile.Desenvolvedor ||
+    currentUser?.profile === UserProfile.Admin ||
     currentUser?.profile === UserProfile.GerenciadoraDeRisco ||
     (currentUser?.profile as string) === 'Administrador do Sistema' ||
     (currentUser?.profile as string) === 'Gerenciadora de Risco' ||
@@ -1369,7 +1371,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                                         <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
                                                                         <span className="truncate">{fileName}</span>
                                                                     </button>
-                                                                    {onDeleteAttachment && !isDemo && (currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
+                                                                    {onDeleteAttachment && !isDemo && (isDeveloperUser(currentUser) || currentUser?.profile === UserProfile.Desenvolvedor || currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
                                                                         <button
                                                                             onClick={() => {
                                                                                 if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {

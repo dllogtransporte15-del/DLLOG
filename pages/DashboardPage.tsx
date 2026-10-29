@@ -736,7 +736,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const canViewRanking = useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
+    return [UserProfile.Desenvolvedor, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const dashboardStats = useMemo(() => {
@@ -749,7 +749,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     });
 
     const monthlyCommission = monthlyEffectiveTonnage * 2;
-    const canViewCommission = currentUser && [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Demonstracao].includes(currentUser.profile);
+    const canViewCommission = currentUser && [UserProfile.Desenvolvedor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Demonstracao].includes(currentUser.profile);
 
     return {
       monthlyEffectiveTonnage,
@@ -862,6 +862,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
   const canSwitchView = useMemo(() => {
     if (!currentUser) return false;
     return [
+      UserProfile.Desenvolvedor,
       UserProfile.Admin,
       UserProfile.GerenciadoraDeRisco,
       UserProfile.Diretor,
@@ -2002,7 +2003,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     o.driverId === currentUser?.id && o.status === FreightOfferStatus.Pendente
   );
 
-  const canViewOffers = currentUser && [UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
+  const canViewOffers = currentUser && [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Comercial, UserProfile.Supervisor, UserProfile.Diretor, UserProfile.Demonstracao].includes(currentUser.profile);
   const isMotorista = currentUser?.profile === UserProfile.Motorista;
 
   return (

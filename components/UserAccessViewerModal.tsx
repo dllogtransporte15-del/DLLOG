@@ -5,7 +5,7 @@ import type {
   Vehicle, Product, Cargo, Shipment, Branch, FreightOffer, RiskQueryOption, Ticket
 } from '../types';
 import { UserProfile, CargoStatus, ShipmentStatus } from '../types';
-import { can, INITIAL_PERMISSIONS } from '../auth';
+import { can, INITIAL_PERMISSIONS, isDeveloperUser, isDemoUser, filterVisibleUsers } from '../auth';
 import { 
   Eye, 
   Shield, 
@@ -210,6 +210,10 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
     };
   }, [targetUser, editableUserPermissions]);
 
+  const simulatedVisibleUsers = useMemo(() => {
+    return filterVisibleUsers(users, simulatedUser);
+  }, [users, simulatedUser]);
+
   // Read-only filterings for simulated data matching App.tsx exactly
   const simulatedVisibleLoads = useMemo(() => {
     if (!simulatedUser) return [];
@@ -234,6 +238,8 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
       return shipments.filter(s => s.embarcadorId === simulatedUser.id || s.createdById === simulatedUser.id || (simulatedUser.branchId && s.branchId === simulatedUser.branchId));
     }
     if (
+      isDeveloperUser(simulatedUser) ||
+      simulatedUser.profile === UserProfile.Desenvolvedor ||
       simulatedUser.profile === UserProfile.Admin ||
       simulatedUser.profile === UserProfile.GerenciadoraDeRisco ||
       (simulatedUser.profile as string) === 'Gerenciadora de Risco' ||
@@ -249,7 +255,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
     if (simulatedUser.profile === UserProfile.Cliente && simulatedUser.clientId) {
       return shipments.filter(s => visibleCargoIds.has(s.cargoId));
     }
-    if (simulatedUser.branchId && ![UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro].includes(simulatedUser.profile as UserProfile)) {
+    if (simulatedUser.branchId && ![UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro].includes(simulatedUser.profile as UserProfile)) {
       return shipments.filter(s => visibleCargoIds.has(s.cargoId) && (s.branchId === simulatedUser.branchId || !s.branchId));
     }
     return shipments.filter(s => visibleCargoIds.has(s.cargoId));
@@ -278,12 +284,12 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
 
   const simulatedVisibleEmbarcadores = useMemo(() => {
     if (!simulatedUser) return [];
-    const allEmbarcadorUsers = users.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
+    const allEmbarcadorUsers = simulatedVisibleUsers.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
     if (simulatedUser.profile === UserProfile.Embarcador || simulatedUser.profile === UserProfile.Agenciador) {
       return allEmbarcadorUsers.filter(u => u.id === simulatedUser.id);
     }
     return allEmbarcadorUsers;
-  }, [simulatedUser, users]);
+  }, [simulatedUser, simulatedVisibleUsers]);
 
   // Read-only block notifications
   const handleReadOnlyActionAttempt = async (..._args: any[]): Promise<void> => {
@@ -430,7 +436,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <DashboardPage
             cargos={cargos}
             shipments={simulatedVisibleShipments}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             products={products}
@@ -515,7 +521,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             onUpdatePrice={handleReadOnlyActionAttempt}
             currentUser={simulatedUser}
             profilePermissions={profilePermissions}
-            users={users}
+            users={simulatedVisibleUsers}
             shipments={simulatedVisibleShipments}
             allShipments={shipments}
             onDeleteLoad={handleReadOnlyActionAttempt}
@@ -564,7 +570,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             vehicles={vehicles}
             currentUser={simulatedUser}
             profilePermissions={profilePermissions}
-            users={users}
+            users={simulatedVisibleUsers}
             onUpdateAttachment={handleReadOnlyActionAttempt}
             onAddAttachments={handleReadOnlyActionAttempt}
             onUpdatePrice={handleReadOnlyActionAttempt}
@@ -604,7 +610,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             profilePermissions={profilePermissions}
             shipments={simulatedVisibleShipments}
             allShipments={shipments}
-            users={users}
+            users={simulatedVisibleUsers}
             onDeleteLoad={handleReadOnlyActionAttempt}
             onUpdatePrice={handleReadOnlyActionAttempt}
             onUpdateShipmentData={handleReadOnlyActionAttempt}
@@ -631,7 +637,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             vehicles={vehicles}
             onCreateShipment={handleReadOnlyActionAttempt}
             currentUser={simulatedUser}
-            users={users}
+            users={simulatedVisibleUsers}
             onModalStateChange={() => {}}
             onDeleteAttachment={handleReadOnlyActionAttempt}
           />
@@ -641,7 +647,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <CommissionsPage
             shipments={simulatedVisibleShipments}
             cargos={cargos}
-            users={users}
+            users={simulatedVisibleUsers}
             stays={stays}
             clients={clients}
           />
@@ -652,7 +658,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             shipments={simulatedVisibleShipments}
             embarcadores={simulatedVisibleEmbarcadores}
             cargos={cargos}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             branches={branches}
@@ -673,7 +679,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             shipments={simulatedVisibleShipments}
             cargos={cargos}
             drivers={drivers}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             products={products}
@@ -694,7 +700,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             loads={simulatedClosedLoads}
             clients={clients}
             products={products}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             shipments={shipments}
             onDeleteLoad={handleReadOnlyActionAttempt}
@@ -745,7 +751,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             products={products}
             drivers={drivers}
             vehicles={vehicles}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             companyLogo={companyLogo}
             riskQueryOptions={riskQueryOptions}
@@ -780,7 +786,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             clients={clients}
             products={products}
             cargos={cargos}
-            users={users}
+            users={simulatedVisibleUsers}
             onSaveFreightOffer={handleReadOnlyActionAttempt}
             onDeleteFreightOffer={handleReadOnlyActionAttempt}
             onConvertToCargo={handleReadOnlyActionAttempt}
@@ -810,7 +816,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
           <DashboardPage
             cargos={cargos}
             shipments={simulatedVisibleShipments}
-            users={users}
+            users={simulatedVisibleUsers}
             currentUser={simulatedUser}
             clients={clients}
             products={products}
@@ -993,7 +999,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
               clients={clients}
               products={products}
               vehicles={vehicles}
-              users={users}
+              users={simulatedVisibleUsers}
               themeMode={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}
               onThemeModeChange={(mode) => {
                 if (mode === 'dark') {
@@ -1064,8 +1070,8 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
                       defaultValue=""
                     >
                       <option value="" disabled>Selecione um usuário...</option>
-                      {users
-                        .filter(u => u.id !== targetUser.id)
+                      {filterVisibleUsers(users, currentUser)
+                        .filter(u => u.id !== targetUser.id && !isDeveloperUser(u) && !isDemoUser(u))
                         .map(u => (
                           <option key={u.id} value={u.id}>
                             {u.name} ({u.profile})

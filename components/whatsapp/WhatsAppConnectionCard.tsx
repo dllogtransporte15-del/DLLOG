@@ -77,7 +77,8 @@ export const WhatsAppConnectionCard: React.FC<WhatsAppConnectionCardProps> = ({
   if (userToCheck) {
     const name = (userToCheck.name || '').trim().toLowerCase();
     const email = (userToCheck.email || '').trim().toLowerCase();
-    isSupportUser = name.includes('suporte') || email.includes('suporte');
+    const profile = (userToCheck.profile || '').trim().toLowerCase();
+    isSupportUser = name.includes('suporte') || name.includes('desenvolvedor') || email.includes('suporte') || email.includes('dllogtransporte15') || profile.includes('desenvolvedor');
   }
 
   const pollingRef = useRef<any>(null);

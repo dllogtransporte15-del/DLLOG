@@ -12,7 +12,7 @@ import { getMatchedCargo } from '../utils';
 import FreightOfferModal from './FreightOfferModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { calculateOfferRoute, type ResolvedWaypoint } from '../services/routeDistanceService';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -891,7 +891,7 @@ const FreightOffersList: React.FC<FreightOffersListProps> = ({
                       <HistoryIcon className="w-4 h-4" />
                     </button>
                     {/* Botão de Excluir (Apenas Admin) */}
-                    {onDelete && currentUser?.profile === UserProfile.Admin && !isDemo && (
+                    {onDelete && (currentUser?.profile === UserProfile.Admin || isDeveloperUser(currentUser)) && !isDemo && (
                       <button onClick={() => onDelete(offer)} title="Excluir Oferta" className="p-1.5 text-red-600 bg-red-50 hover:bg-red-200 rounded-lg transition-colors">
                         <TrashIcon className="w-4 h-4" />
                       </button>

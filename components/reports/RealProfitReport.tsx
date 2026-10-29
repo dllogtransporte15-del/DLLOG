@@ -289,6 +289,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
   const canViewFinalNetProfit = useMemo(() => {
     if (!currentUser) return false;
     return [
+      UserProfile.Desenvolvedor,
       UserProfile.Comercial,
       UserProfile.GerenteComercial,
       UserProfile.Admin,
@@ -296,7 +297,7 @@ export const RealProfitReport: React.FC<RealProfitReportProps> = ({
       UserProfile.Financeiro,
       UserProfile.Demonstracao
     ].includes(currentUser.profile) ||
-    ['Comercial', 'Admin', 'Administrador', 'Diretor', 'Financeiro', 'Demonstração', 'Demo'].includes(currentUser.profile as string);
+    ['Desenvolvedor', 'Comercial', 'Admin', 'Administrador', 'Diretor', 'Financeiro', 'Demonstração', 'Demo'].includes(currentUser.profile as string);
   }, [currentUser]);
 
   // Cálculos consolidados para cada embarque (Conforme Automatização do CT-e e Estadias)

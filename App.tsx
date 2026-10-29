@@ -8,7 +8,7 @@ import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority,
 import { formatId, isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, findCargoById, findProductForCargo, checkRequiresRiskManagement } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
 import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
-import { INITIAL_PERMISSIONS, can, isDemoUser } from './auth';
+import { INITIAL_PERMISSIONS, can, isDemoUser, isDeveloperUser, isAdminUser } from './auth';
 import { useToast } from './hooks/useToast';
 import { getExpedidoresRecebedores, saveExpedidorRecebedor, deleteExpedidorRecebedor, syncLocationsFromCargos } from './utils/locationStorage';
 
@@ -579,6 +579,8 @@ const App: React.FC = () => {
     }
 
     const isAllowedProfile = 
+      currentUser.profile === UserProfile.Desenvolvedor ||
+      isDeveloperUser(currentUser) ||
       currentUser.profile === UserProfile.Admin ||
       currentUser.profile === UserProfile.GerenciadoraDeRisco ||
       currentUser.profile === UserProfile.Diretor ||
@@ -792,9 +794,9 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentUser && users.length > 0) {
       const dbMatch = users.find(u => u.id === currentUser.id || u.email?.toLowerCase() === currentUser.email?.toLowerCase());
-      if (dbMatch && (dbMatch.profile !== currentUser.profile || JSON.stringify(dbMatch.customPermissions) !== JSON.stringify(currentUser.customPermissions))) {
+      if (dbMatch && (dbMatch.name !== currentUser.name || dbMatch.profile !== currentUser.profile || JSON.stringify(dbMatch.customPermissions) !== JSON.stringify(currentUser.customPermissions))) {
         console.log('[Auth] Sincronizando perfil atualizado do usuário no estado local:', dbMatch.profile);
-        setCurrentUser(prev => prev ? { ...prev, profile: dbMatch.profile, customPermissions: dbMatch.customPermissions } : null);
+        setCurrentUser(prev => prev ? { ...prev, name: dbMatch.name, profile: dbMatch.profile, customPermissions: dbMatch.customPermissions } : null);
       }
     }
   }, [users, currentUser]);
@@ -1120,6 +1122,8 @@ const App: React.FC = () => {
     return cargos.filter(c => {
       // 1. Admin, Gerenciadora de Risco and Demo always see all loads
       if (
+        currentUser.profile === UserProfile.Desenvolvedor ||
+        isDeveloperUser(currentUser) ||
         currentUser.profile === UserProfile.Admin ||
         currentUser.profile === UserProfile.GerenciadoraDeRisco ||
         (currentUser.profile as string) === 'Gerenciadora de Risco' ||
@@ -1150,11 +1154,11 @@ const App: React.FC = () => {
 
       // 4. Filter by allowed user IDs if defined on cargo (Admin, Diretor, Fiscal & Financeiro have global access)
       if (c.allowedUserIds && c.allowedUserIds.length > 0) {
-        if (!c.allowedUserIds.includes(currentUser.id) && ![UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
+        if (!c.allowedUserIds.includes(currentUser.id) && ![UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
           return false;
         }
       } else if (c.allowedProfiles && c.allowedProfiles.length > 0) {
-        if (!c.allowedProfiles.includes(currentUser.profile) && ![UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
+        if (!c.allowedProfiles.includes(currentUser.profile) && ![UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Fiscal, UserProfile.Financeiro, UserProfile.Demonstracao].includes(currentUser.profile as UserProfile)) {
           return false;
         }
       }
@@ -1194,6 +1198,8 @@ const App: React.FC = () => {
 
     // Admin, Gerenciadora de Risco, Demo & Financeiro see all shipments
     if (
+      currentUser.profile === UserProfile.Desenvolvedor ||
+      isDeveloperUser(currentUser) ||
       currentUser.profile === UserProfile.Admin ||
       currentUser.profile === UserProfile.GerenciadoraDeRisco ||
       (currentUser.profile as string) === 'Gerenciadora de Risco' ||
@@ -1226,16 +1232,22 @@ const App: React.FC = () => {
     return shipments.filter(s => visibleCargoIds.has(s.cargoId));
   }, [currentUser, shipments, visibleLoads]);
   
+  const isDevUser = isDeveloperUser(currentUser);
+  const visibleUsers = useMemo(() => {
+    if (isDevUser) return users;
+    return users.filter(u => !isDeveloperUser(u) && !isDemoUser(u));
+  }, [users, isDevUser]);
+
   const visibleEmbarcadores = useMemo(() => {
     if (!currentUser) return [];
-    const allEmbarcadorUsers = users.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
+    const allEmbarcadorUsers = visibleUsers.filter(u => u.profile === UserProfile.Embarcador || u.profile === UserProfile.Agenciador);
 
     if (currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador) {
         return allEmbarcadorUsers.filter(u => u.id === currentUser.id);
     }
     
     return allEmbarcadorUsers;
-  }, [currentUser, users]);
+  }, [currentUser, visibleUsers]);
 
 
   const inProgressLoads = useMemo(() => {
@@ -2275,7 +2287,9 @@ const App: React.FC = () => {
     let alertMessage = '';
 
     // Check permissions based on the current status
-    if (currentStatus === ShipmentStatus.PreCadastro) {
+    if (isDeveloperUser(currentUser) || currentUser.profile === UserProfile.Desenvolvedor) {
+        isUserAllowed = true;
+    } else if (currentStatus === ShipmentStatus.PreCadastro) {
         isUserAllowed = [UserProfile.Fiscal, UserProfile.Diretor, UserProfile.Supervisor, UserProfile.Embarcador, UserProfile.Comercial, UserProfile.Admin, UserProfile.Agenciador, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile);
         alertMessage = 'Apenas os perfis Gerenciadora de Risco, Comercial, Fiscal, Diretor, Supervisor, Embarcador, Agenciador ou Administrador podem realizar esta ação.';
     } else if (currentStatus === ShipmentStatus.AguardandoSeguradora) {
@@ -3090,7 +3104,9 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
-    const isAdmin = currentUser.profile === UserProfile.Admin ||
+    const isAdmin = currentUser.profile === UserProfile.Desenvolvedor ||
+      isDeveloperUser(currentUser) ||
+      currentUser.profile === UserProfile.Admin ||
       currentUser.profile === UserProfile.GerenciadoraDeRisco ||
       (currentUser.profile as string) === 'Administrador do Sistema' ||
       (currentUser.profile as string) === 'Gerenciadora de Risco' ||
@@ -3510,7 +3526,7 @@ const App: React.FC = () => {
       return;
     }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
-    if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
+    if (!currentUser || (currentUser.profile !== UserProfile.Admin && !isDeveloperUser(currentUser))) return;
     
     const relatedShipments = shipments.filter(s => s.cargoId === cargoId);
     const confirmMsg = relatedShipments.length > 0
@@ -3536,7 +3552,7 @@ const App: React.FC = () => {
       return;
     }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
-    if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
+    if (!currentUser || (currentUser.profile !== UserProfile.Admin && !isDeveloperUser(currentUser))) return;
     
     const shipmentToDelete = shipments.find(s => s.id === shipmentId);
     if (!shipmentToDelete) return;
@@ -4179,6 +4195,19 @@ const App: React.FC = () => {
       showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
       return;
     }
+    if (!isDeveloperUser(currentUser)) {
+      if (userData.profile === UserProfile.Desenvolvedor || (userData.profile as string) === 'Desenvolvedor') {
+        showToast('Você não tem permissão para atribuir este perfil.', 'error');
+        return;
+      }
+      if ('id' in userData) {
+        const targetExisting = users.find(u => u.id === userData.id);
+        if (targetExisting && (isDeveloperUser(targetExisting) || isDemoUser(targetExisting))) {
+          showToast('Você não tem permissão para alterar este usuário.', 'error');
+          return;
+        }
+      }
+    }
     const cleanBranchId = userData.branchId && userData.branchId.trim() !== '' 
       ? userData.branchId.trim() 
       : ((userData as any).filialId && (userData as any).filialId.trim() !== '' ? (userData as any).filialId.trim() : undefined);
@@ -4217,9 +4246,14 @@ const App: React.FC = () => {
       return;
     }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
-    if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
+    if (!currentUser || (currentUser.profile !== UserProfile.Admin && !isDeveloperUser(currentUser))) return;
     if (userId === currentUser.id) {
         showToast("Você não pode excluir seu próprio usuário.", 'warning');
+        return;
+    }
+    const targetToDelete = users.find(u => u.id === userId);
+    if (!isDeveloperUser(currentUser) && targetToDelete && (isDeveloperUser(targetToDelete) || isDemoUser(targetToDelete))) {
+        showToast("Você não tem permissão para excluir este usuário.", 'error');
         return;
     }
     
@@ -4260,7 +4294,7 @@ const App: React.FC = () => {
       return;
     }
     if (!window.confirm("Tem certeza que deseja excluir permanentemente esta informação?")) return;
-    if (!currentUser || currentUser.profile !== UserProfile.Admin) return;
+    if (!currentUser || (currentUser.profile !== UserProfile.Admin && !isDeveloperUser(currentUser))) return;
     if (confirm('Tem certeza que deseja excluir esta filial?')) {
       try {
         await deleteBranch(branchId);
@@ -4281,7 +4315,7 @@ const App: React.FC = () => {
     const shipment = shipments.find(s => s.id === shipmentId);
     if (!shipment || !currentUser) return;
     
-    const canRevert = [UserProfile.Admin, UserProfile.Diretor, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile) ||
+    const canRevert = [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.Diretor, UserProfile.GerenciadoraDeRisco].includes(currentUser.profile) ||
       (currentUser.profile as string) === 'Gerenciadora de Risco' ||
       Boolean(currentUser.name && (currentUser.name.toLowerCase().includes('samanta') || currentUser.name.toLowerCase().includes('samantha'))) ||
       Boolean(currentUser.email && (currentUser.email.toLowerCase().includes('samanta') || currentUser.email.toLowerCase().includes('samantha')));
@@ -4525,43 +4559,43 @@ const App: React.FC = () => {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
         <Routes>
-          <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
+          <Route path="/" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={visibleUsers} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route path="/clients" element={<ClientsPage clients={clients} setClients={setClients} onSaveClient={handleSaveClient} onDeleteClient={handleDeleteClient} onMergeClients={handleMergeClients} currentUser={currentUser} profilePermissions={profilePermissions} loadingOrderModels={loadingOrderModels} />} />
           <Route path="/owners" element={<OwnersPage owners={owners} setOwners={setOwners} onSaveOwner={handleSaveOwner} currentUser={currentUser} profilePermissions={profilePermissions} vehicles={vehicles} drivers={drivers} shipments={shipments} />} />
           <Route path="/drivers" element={<DriversPage drivers={drivers} setDrivers={setDrivers} onSaveDriver={handleSaveDriver} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
           <Route path="/vehicles" element={<VehiclesPage vehicles={vehicles} setVehicles={setVehicles} onSaveVehicle={handleSaveVehicle} owners={owners} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} cargos={cargos} />} />
-          <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} locations={locations} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={users} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} onSwapCargo={handleSwapCargo} />} />
+          <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} locations={locations} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={visibleUsers} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} onSwapCargo={handleSwapCargo} />} />
           <Route path="/locations" element={!can('read', currentUser, 'locations', profilePermissions) ? <Navigate to="/" replace /> : <LocationsPage locations={locations} onSaveLocation={handleSaveLocation} onDeleteLocation={handleDeleteLocation} currentUser={currentUser} profilePermissions={profilePermissions} />} />
           <Route path="/products" element={<ProductsPage products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} currentUser={currentUser} profilePermissions={profilePermissions} />} />
-          <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={users} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
-          <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={users} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
-          <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={users} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
-          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={users} currentUser={currentUser} branches={branches} products={products} vehicles={vehicles} owners={owners} stays={stays} />} />
-          <Route path="/commissions" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={users} stays={stays} clients={clients} />} />
-          <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={users} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
-          <Route path="/users-register" element={<UsersPage users={users} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />
-          <Route path="/corporate-email" element={!can('read', currentUser, 'corporate-email', profilePermissions) ? <Navigate to="/" replace /> : <CorporateEmailPage currentUser={currentUser} users={users} companyLogo={companyLogo} />} />
+          <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={visibleUsers} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
+          <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={visibleUsers} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
+          <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={visibleUsers} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
+          <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={visibleUsers} currentUser={currentUser} branches={branches} products={products} vehicles={vehicles} owners={owners} stays={stays} />} />
+          <Route path="/commissions" element={<CommissionsPage shipments={visibleShipments} cargos={cargos} users={visibleUsers} stays={stays} clients={clients} />} />
+          <Route path="/reports" element={!can('read', currentUser, 'reports', profilePermissions) ? <Navigate to="/" replace /> : <ReportsPage shipments={visibleShipments} embarcadores={visibleEmbarcadores} cargos={cargos} users={visibleUsers} currentUser={currentUser} clients={clients} branches={branches} stays={stays} companyLogo={companyLogo} onSaveUser={handleSaveUser} drivers={drivers} vehicles={vehicles} products={products} onUpdateAttachment={handleUpdateShipmentAttachment} onBatchUpdateShipments={handleBatchUpdateShipments} onUpdateShipmentData={handleUpdateShipmentData} />} />
+          <Route path="/users-register" element={<UsersPage users={visibleUsers} setUsers={setUsers} onSaveUser={handleSaveUser} currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} clients={clients} onDeleteUser={handleDeleteUser} branches={branches} cargos={cargos} shipments={shipments} owners={owners} drivers={drivers} vehicles={vehicles} products={products} freightOffers={freightOffers} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} companyLogo={companyLogo} />} />
+          <Route path="/corporate-email" element={!can('read', currentUser, 'corporate-email', profilePermissions) ? <Navigate to="/" replace /> : <CorporateEmailPage currentUser={currentUser} users={visibleUsers} companyLogo={companyLogo} />} />
           <Route path="/appearance" element={<AppearancePage currentLogo={companyLogo} onSaveLogo={handleSaveLogo} currentTheme={themeImage} onSaveTheme={handleSaveThemeImage} themeMode={themeMode} onThemeModeChange={handleThemeModeChange} />} />
           <Route path="/system-monitor" element={<SystemMonitorPage currentUser={currentUser} profilePermissions={profilePermissions} onSavePermissions={handleSavePermissions} />} />
-          <Route path="/shipment-history" element={<ShipmentHistoryPage shipments={visibleShipments} cargos={cargos} drivers={drivers} users={users} currentUser={currentUser} clients={clients} products={products} vehicles={vehicles} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onUpdateAttachment={handleUpdateShipmentAttachment} stays={stays} riskQueryOptions={riskQueryOptions} />} />
-          <Route path="/load-history" element={<LoadHistoryPage loads={closedLoads} clients={clients} products={products} users={users} currentUser={currentUser} shipments={shipments} onDeleteLoad={handleDeleteCargo} onReactivateLoad={handleReactivateLoad} />} />
+          <Route path="/shipment-history" element={<ShipmentHistoryPage shipments={visibleShipments} cargos={cargos} drivers={drivers} users={visibleUsers} currentUser={currentUser} clients={clients} products={products} vehicles={vehicles} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onUpdateAttachment={handleUpdateShipmentAttachment} stays={stays} riskQueryOptions={riskQueryOptions} />} />
+          <Route path="/load-history" element={<LoadHistoryPage loads={closedLoads} clients={clients} products={products} users={visibleUsers} currentUser={currentUser} shipments={shipments} onDeleteLoad={handleDeleteCargo} onReactivateLoad={handleReactivateLoad} />} />
           <Route path="/layover-calculator" element={<LayoverCalculatorPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />} />
           <Route path="/freight-quote" element={<FreightQuotePage currentUser={currentUser} cargos={cargos} />} />
-          <Route path="/atua-reconciliation" element={!can('read', currentUser, 'atua-reconciliation', profilePermissions) ? <Navigate to="/" replace /> : <AtuaReconciliationPage currentUser={currentUser} shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} vehicles={vehicles} users={users} branches={branches} stays={stays} companyLogo={companyLogo} />} />
+          <Route path="/atua-reconciliation" element={!can('read', currentUser, 'atua-reconciliation', profilePermissions) ? <Navigate to="/" replace /> : <AtuaReconciliationPage currentUser={currentUser} shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} vehicles={vehicles} users={visibleUsers} branches={branches} stays={stays} companyLogo={companyLogo} />} />
           <Route path="/tools-history" element={<ToolsHistoryPage currentUser={currentUser} shipments={shipments} cargos={cargos} clients={clients} />} />
           <Route path="/branches" element={<BranchesPage branches={branches} onSaveBranch={handleSaveBranch} onDeleteBranch={handleDeleteBranch} currentUser={currentUser} profilePermissions={profilePermissions} />} />
-          <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} users={users} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} onSwapCargo={handleSwapCargo} />} />
+          <Route path="/risk-management" element={!can('read', currentUser, 'risk-management', profilePermissions) ? <Navigate to="/" replace /> : <RiskManagementPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} users={visibleUsers} currentUser={currentUser} companyLogo={companyLogo} riskQueryOptions={riskQueryOptions} onSaveRiskQueryOption={handleSaveRiskQueryOption} onDeleteRiskQueryOption={handleDeleteRiskQueryOption} onRestoreRiskQueryDefaults={handleRestoreRiskQueryDefaults} profilePermissions={profilePermissions} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onDeleteAttachment={handleDeleteShipmentAttachment} onModalStateChange={setIsAnyModalOpen} onSwapCargo={handleSwapCargo} />} />
           <Route path="/risk-query-types" element={!can('read', currentUser, 'risk-query-types', profilePermissions) ? <Navigate to="/" replace /> : <RiskQueryTypesPage riskQueryOptions={riskQueryOptions} onSaveOption={handleSaveRiskQueryOption} onDeleteOption={handleDeleteRiskQueryOption} onRestoreDefaults={handleRestoreRiskQueryDefaults} currentUser={currentUser} profilePermissions={profilePermissions} />} />
-          <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={users} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
+          <Route path="/freight-offers-history" element={!can('read', currentUser, 'freight-offers-history', profilePermissions) ? <Navigate to="/" replace /> : <FreightOffersHistoryPage currentUser={currentUser} freightOffers={freightOffers} clients={clients} products={products} cargos={cargos} users={visibleUsers} onSaveFreightOffer={handleSaveFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onConvertToCargo={(offer) => { setOfferToConvert(offer); setCurrentPage('loads'); }} />} />
           <Route path="/whatsapp" element={<Navigate to="/messenger" replace />} />
-          <Route path="/messenger" element={!can('read', currentUser, 'messenger', profilePermissions) ? <Navigate to="/" replace /> : <MessengerPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} users={users} currentUser={currentUser} />} />
+          <Route path="/messenger" element={!can('read', currentUser, 'messenger', profilePermissions) ? <Navigate to="/" replace /> : <MessengerPage shipments={visibleShipments} cargos={cargos} clients={clients} drivers={drivers} users={visibleUsers} currentUser={currentUser} />} />
           <Route path="/apresentacao" element={<CommercialPresentationPage companyLogo={companyLogo} currentUser={currentUser} onBackToApp={() => navigate('/')} />} />
           <Route path="/apresentacao-comercial" element={<CommercialPresentationPage companyLogo={companyLogo} currentUser={currentUser} onBackToApp={() => navigate('/')} />} />
           <Route path="/site" element={<InstitutionalWebsitePage companyLogo={companyLogo} isLoggedIn={!!currentUser} onGoToSystem={() => navigate('/')} onOpenPresentation={() => navigate('/apresentacao')} />} />
           <Route path="/website" element={<InstitutionalWebsitePage companyLogo={companyLogo} isLoggedIn={!!currentUser} onGoToSystem={() => navigate('/')} onOpenPresentation={() => navigate('/apresentacao')} />} />
           <Route path="/institucional" element={<InstitutionalWebsitePage companyLogo={companyLogo} isLoggedIn={!!currentUser} onGoToSystem={() => navigate('/')} onOpenPresentation={() => navigate('/apresentacao')} />} />
-          <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={users} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
+          <Route path="*" element={<DashboardPage cargos={cargos} shipments={visibleShipments} users={visibleUsers} currentUser={currentUser} clients={clients} products={products} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} onDeleteAttachment={handleDeleteShipmentAttachment} onUpdateAttachment={handleUpdateShipmentAttachment} onUpdateShipmentData={handleUpdateShipmentData} onAddAttachments={handleAddShipmentAttachments} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onUpdatePrice={handleUpdateShipmentPrice} onSwapCargo={handleSwapCargo} freightOffers={freightOffers} onSaveFreightOffer={handleSaveFreightOffer} onAcceptFreightOffer={handleAcceptFreightOffer} onDeleteFreightOffer={handleDeleteFreightOffer} onCreateShipment={handleCreateShipment} allShipments={shipments} riskQueryOptions={riskQueryOptions} realtimeStatus={realtimeStatus} lastSyncTime={lastSyncTime} onRefreshData={loadAllData} />} />
         </Routes>
       </React.Suspense>
     );
@@ -4622,7 +4656,7 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
-        <LoginPage onLogin={handleLogin} users={users} companyLogo={companyLogo} profilePermissions={profilePermissions} />
+        <LoginPage onLogin={handleLogin} users={visibleUsers} companyLogo={companyLogo} profilePermissions={profilePermissions} />
       </React.Suspense>
     );
   }
@@ -4646,7 +4680,7 @@ const App: React.FC = () => {
           isOpen={isSelectEmbarcadorModalOpen}
           onClose={() => setIsSelectEmbarcadorModalOpen(false)}
           onConfirm={handleConfirmRequestOrder}
-          users={users}
+          users={visibleUsers}
           cargo={selectedCargoForRequest}
         />
         {currentUser?.requirePasswordChange && (
@@ -4708,7 +4742,7 @@ const App: React.FC = () => {
         clients={clients}
         products={products}
         vehicles={vehicles}
-        users={users}
+        users={visibleUsers}
         themeMode={themeMode}
         onThemeModeChange={handleThemeModeChange}
         onAcceptOrderRequest={handleAcceptOrderRequestFromNotification}
@@ -4729,7 +4763,7 @@ const App: React.FC = () => {
          isOpen={isSelectEmbarcadorModalOpen}
          onClose={() => setIsSelectEmbarcadorModalOpen(false)}
          onConfirm={handleConfirmRequestOrder}
-         users={users}
+         users={visibleUsers}
          cargo={selectedCargoForRequest}
        />
        <TicketModal
@@ -4740,7 +4774,7 @@ const App: React.FC = () => {
         }}
         initialCreate={ticketModalInitialCreate}
         tickets={tickets}
-        users={users}
+        users={visibleUsers}
         currentUser={currentUser}
         onSave={handleSaveTicket}
         onUpdate={handleUpdateTicket}
@@ -4776,7 +4810,7 @@ const App: React.FC = () => {
           cargo={currentCargoForDetails}
           client={clients.find(c => c.id === currentCargoForDetails.clientId)}
           product={products.find(p => p.id === currentCargoForDetails.productId)}
-          commercialUser={users.find(u => u.id === currentCargoForDetails.createdById)}
+          commercialUser={visibleUsers.find(u => u.id === currentCargoForDetails.createdById)}
           stays={stays}
           shipments={shipments}
           currentUser={currentUser || undefined}
@@ -4798,7 +4832,7 @@ const App: React.FC = () => {
           products={products}
           companyLogo={companyLogo}
           vehicles={vehicles}
-          users={users}
+          users={visibleUsers}
           onDeleteAttachment={handleDeleteShipmentAttachment}
         />
       )}
@@ -4826,7 +4860,7 @@ const App: React.FC = () => {
           vehicles={vehicles}
           currentUser={currentUser}
           shipments={shipments}
-          users={users}
+          users={visibleUsers}
           owners={owners}
           offer={offerForNewShipment}
         />

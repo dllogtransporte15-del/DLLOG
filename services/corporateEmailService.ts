@@ -5,6 +5,7 @@ import type {
   CorporateEmailStatus,
   User 
 } from '../types';
+import { isDeveloperUser, isDemoUser } from '../auth';
 
 const STORAGE_EMAILS_KEY = 'transcunha_corporate_emails';
 const STORAGE_CONFIG_KEY = 'transcunha_corporate_email_config';
@@ -267,6 +268,7 @@ class CorporateEmailService {
     if (users && users.length > 0) {
       let changed = false;
       users.forEach(u => {
+        if (isDeveloperUser(u) || isDemoUser(u)) return;
         const corpEmail = (u.corporateEmail || (u.email && (u.email.toLowerCase().endsWith('@transcunhaoficial.com.br') || u.email.toLowerCase().endsWith('@transcunha.com.br')) ? u.email.replace(/@transcunha\.com\.br$/i, '@transcunhaoficial.com.br') : '')).trim().toLowerCase();
         if (corpEmail) {
           const existing = accounts.find(a => a.email.toLowerCase() === corpEmail || a.userId === u.id);

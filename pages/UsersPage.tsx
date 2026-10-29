@@ -11,7 +11,7 @@ import type {
   Driver, Vehicle, Product, FreightOffer, RiskQueryOption, Ticket 
 } from '../types';
 import { UserProfile } from '../types';
-import { can } from '../auth';
+import { can, isDeveloperUser, filterVisibleUsers, filterVisibleProfiles } from '../auth';
 import { useToast } from '../hooks/useToast';
 import { Building2, Globe, Truck, Users, Mail } from 'lucide-react';
 
@@ -78,29 +78,35 @@ const UsersPage: React.FC<UsersPageProps> = ({
     status: '',
   });
 
-  const isAdmin = currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco;
+  const isDev = isDeveloperUser(currentUser);
+  const isAdmin = currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || isDev;
 
   const canCreateUser = can('create', currentUser, 'users-register', profilePermissions);
   const canUpdateUser = can('update', currentUser, 'users-register', profilePermissions);
   const canDeleteUser = can('delete', currentUser, 'users-register', profilePermissions);
 
-  const internalCount = useMemo(() => users.filter(u => u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista).length, [users]);
-  const externalClientsCount = useMemo(() => users.filter(u => u.profile === UserProfile.Cliente).length, [users]);
-  const externalDriversCount = useMemo(() => users.filter(u => u.profile === UserProfile.Motorista).length, [users]);
-  const allCount = users.length;
+  const visibleUsersList = useMemo(() => {
+    return filterVisibleUsers(users, currentUser);
+  }, [users, currentUser]);
+
+  const internalCount = useMemo(() => visibleUsersList.filter(u => u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista).length, [visibleUsersList]);
+  const externalClientsCount = useMemo(() => visibleUsersList.filter(u => u.profile === UserProfile.Cliente).length, [visibleUsersList]);
+  const externalDriversCount = useMemo(() => visibleUsersList.filter(u => u.profile === UserProfile.Motorista).length, [visibleUsersList]);
+  const allCount = visibleUsersList.length;
 
   const availableProfiles = useMemo(() => {
+    let base: UserProfile[];
     if (activeTab === 'internal') {
-      return Object.values(UserProfile).filter(p => p !== UserProfile.Cliente && p !== UserProfile.Motorista);
+      base = Object.values(UserProfile).filter(p => p !== UserProfile.Cliente && p !== UserProfile.Motorista);
+    } else if (activeTab === 'external_clients') {
+      base = [UserProfile.Cliente];
+    } else if (activeTab === 'external_drivers') {
+      base = [UserProfile.Motorista];
+    } else {
+      base = Object.values(UserProfile);
     }
-    if (activeTab === 'external_clients') {
-      return [UserProfile.Cliente];
-    }
-    if (activeTab === 'external_drivers') {
-      return [UserProfile.Motorista];
-    }
-    return Object.values(UserProfile);
-  }, [activeTab]);
+    return filterVisibleProfiles(base, currentUser);
+  }, [activeTab, currentUser]);
 
   const handleTabChange = (tab: UserTabType) => {
     setActiveTab(tab);
@@ -116,7 +122,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
   };
 
   const filteredUsers = useMemo(() => {
-    return users.filter(user => {
+    return visibleUsersList.filter(user => {
       // Category Tab Filter
       if (activeTab === 'internal' && isExternalUserProfile(user.profile)) return false;
       if (activeTab === 'external_clients' && user.profile !== UserProfile.Cliente) return false;
@@ -131,7 +137,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
 
       return idMatch && nameMatch && profileMatch && statusMatch && branchMatch;
     });
-  }, [users, filters, activeTab]);
+  }, [visibleUsersList, filters, activeTab]);
 
   const { showToast } = useToast();
 
@@ -284,11 +290,12 @@ const UsersPage: React.FC<UsersPageProps> = ({
         onFilterChange={setFilters} 
         availableProfiles={availableProfiles}
         branches={branches}
+        currentUser={currentUser}
       />
 
       <UserTable 
         users={filteredUsers} 
-        allUsers={users}
+        allUsers={visibleUsersList}
         onEdit={canUpdateUser ? handleEditUser : undefined} 
         onDelete={canDeleteUser ? handleDeleteUser : undefined}
         onInspectUser={isAdmin ? (user) => setUserToInspect(user) : undefined}
@@ -305,9 +312,10 @@ const UsersPage: React.FC<UsersPageProps> = ({
         userToEdit={userToEdit}
         clients={clients}
         branches={branches}
-        users={users}
+        users={visibleUsersList}
         defaultProfile={defaultProfileForNewUser}
         availableProfiles={availableProfiles}
+        currentUser={currentUser}
       />
       
       <PermissionsModal
@@ -315,13 +323,14 @@ const UsersPage: React.FC<UsersPageProps> = ({
         onClose={() => setIsPermissionsModalOpen(false)}
         onSaveProfilePermissions={onSavePermissions}
         onSaveUserPermissions={(userId, customPermissions) => {
-          const user = users.find(u => u.id === userId);
+          const user = visibleUsersList.find(u => u.id === userId);
           if (user) {
             onSaveUser({ ...user, customPermissions });
           }
         }}
         permissions={profilePermissions}
-        users={users}
+        users={visibleUsersList}
+        currentUser={currentUser}
       />
 
       <UserAccessViewerModal
@@ -331,7 +340,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         currentUser={currentUser}
         profilePermissions={profilePermissions}
         onSaveUserPermissions={(userId, customPermissions) => {
-          const user = users.find(u => u.id === userId);
+          const user = visibleUsersList.find(u => u.id === userId);
           if (user) {
             const updatedUser = { ...user, customPermissions };
             onSaveUser(updatedUser);
@@ -346,7 +355,7 @@ const UsersPage: React.FC<UsersPageProps> = ({
         vehicles={vehicles}
         products={products}
         branches={branches}
-        users={users}
+        users={visibleUsersList}
         freightOffers={freightOffers}
         stays={stays}
         tickets={tickets}

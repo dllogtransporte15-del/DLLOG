@@ -35,7 +35,7 @@ const ShipperRankingCard: React.FC<ShipperRankingCardProps> = ({
 }) => {
   const canViewCommission = React.useMemo(() => {
     if (!currentUser) return false;
-    return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Demonstracao].includes(currentUser.profile);
+    return [UserProfile.Desenvolvedor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Demonstracao].includes(currentUser.profile);
   }, [currentUser]);
 
   const getWhatsAppLink = (shipperId: string): string | null => {

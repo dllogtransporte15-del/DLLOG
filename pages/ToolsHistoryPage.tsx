@@ -20,7 +20,7 @@ import { extractDetailedDocData } from '../utils/fiscalDocParser';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import type { User as AppUser, Shipment, Cargo, Client as AppClient } from '../types';
 import { UserProfile, ShipmentStatus } from '../types';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { openDocumentInNewTab } from '../utils/documentViewer';
 import { addPdfLogo } from '../utils/pdfGenerator';
@@ -84,7 +84,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     if (!currentUser) return;
     
     // Check if user is an administrator/manager who should see everything
-    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+    const isAdmin = !isDemo && (isDeveloperUser(currentUser) || [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile));
     
     const [staysData, quotesData, clientsData] = await Promise.all([
       isAdmin ? getAllToolStays() : getToolStays(currentUser.id),

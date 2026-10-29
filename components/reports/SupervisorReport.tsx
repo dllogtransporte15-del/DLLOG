@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Shipment, User, Cargo, Branch, Client } from '../../types';
 import { ShipmentStatus, UserProfile } from '../../types';
+import { isDeveloperUser, isDemoUser } from '../../auth';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
@@ -265,7 +266,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
   // Filtrar usuários comerciais e agenciadores líderes (Supervisores, Diretores, Administradores, Embarcadores, Clientes, Motoristas, Fiscal, Financeiro, etc. NUNCA entram no relatório comercial)
   const commercialUsers = useMemo(() => {
     return users.filter(u => {
-      if (u.profile === UserProfile.Demonstracao || (u.profile as string) === 'Demo' || u.name?.toUpperCase().includes('DEMO')) {
+      if (isDeveloperUser(u) || isDemoUser(u) || u.profile === UserProfile.Demonstracao || (u.profile as string) === 'Demo' || u.name?.toUpperCase().includes('DEMO')) {
         return false;
       }
       

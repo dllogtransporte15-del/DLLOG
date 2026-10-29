@@ -27,6 +27,20 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_28_v2_88_3',
+    version: 'v2.88.3',
+    date: '28/10/2026',
+    title: 'Comparativo de Peso Efetivado/Carregado na Conciliação Atua TMS',
+    summary: 'Substituída a coluna de Resultado financeiro pela confrontação direta de Peso Efetivado/Carregado (em toneladas) na tabela de Auditoria e Conciliação do Atua TMS, tanto na visão lado a lado quanto na visão compacta com destaque de divergências.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Exibição do Peso Efetivado/Carregado na Tabela de Auditoria',
+        description: 'A tabela de confronto entre Atua TMS e Transcunha passa a exibir as tonelagens de cada conhecimento (Peso Trans vs. Peso Atua no modo lado a lado, ou Peso Efetivado com alerta de variação Δ no modo compacto), facilitando a identificação imediata de divergências de peso entre os sistemas.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_27_v2_88_2',
     version: 'v2.88.2',
     date: '27/10/2026',

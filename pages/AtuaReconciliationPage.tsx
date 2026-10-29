@@ -779,9 +779,9 @@ const AtuaReconciliationPage: React.FC<AtuaReconciliationPageProps> = ({
       'Pedágio (Atua)',
       'ICMS (Trans)',
       'ICMS (Atua)',
-      'Lucro (Trans)',
-      'Result. (Atua)',
-      'Δ Lucro / Result.'
+      'Peso Trans (t)',
+      'Peso Atua (t)',
+      'Δ Peso (t)'
     ];
 
     const tableData = filteredItems.map(item => {
@@ -804,9 +804,9 @@ const AtuaReconciliationPage: React.FC<AtuaReconciliationPageProps> = ({
         item.atua ? `R$ ${item.atua.toll.toFixed(2)}` : '---',
         item.transcunha ? `R$ ${item.transcunha.icms.toFixed(2)}` : '---',
         item.atua ? `R$ ${item.atua.icms.toFixed(2)}` : '---',
-        item.transcunha ? `R$ ${item.transcunha.netProfit.toFixed(2)}` : '---',
-        item.atua ? `R$ ${item.atua.netProfit.toFixed(2)}` : '---',
-        item.delta.netProfit !== 0 ? `R$ ${item.delta.netProfit.toFixed(2)}` : 'R$ 0,00',
+        item.transcunha ? `${item.transcunha.weight.toFixed(2)} t` : '---',
+        item.atua ? `${item.atua.weight.toFixed(2)} t` : '---',
+        Math.abs(item.delta.weight) > weightTolerance ? `${item.delta.weight > 0 ? '+' : ''}${item.delta.weight.toFixed(2)} t` : '0,00 t',
       ];
     });
 
@@ -1391,8 +1391,8 @@ const AtuaReconciliationPage: React.FC<AtuaReconciliationPageProps> = ({
                     <th className="py-2.5 px-2 text-right">Frete Mot. (Atua)</th>
                     <th className="py-2.5 px-2 text-right">Pedágio</th>
                     <th className="py-2.5 px-2 text-right">ICMS</th>
-                    <th className="py-2.5 px-2 text-right font-black">Lucro Trans</th>
-                    <th className="py-2.5 px-2 text-right font-black">Result. Atua</th>
+                    <th className="py-2.5 px-2 text-right font-bold">Peso Trans (t)</th>
+                    <th className="py-2.5 px-2 text-right font-bold">Peso Atua (t)</th>
                   </>
                 ) : (
                   <>
@@ -1401,7 +1401,7 @@ const AtuaReconciliationPage: React.FC<AtuaReconciliationPageProps> = ({
                     <th className="py-2.5 px-2 text-right">Pedágio</th>
                     <th className="py-2.5 px-2 text-right">ICMS</th>
                     <th className="py-2.5 px-2 text-right">Imp. Federal</th>
-                    <th className="py-2.5 px-2 text-right font-black">Resultado (=)</th>
+                    <th className="py-2.5 px-2 text-right font-bold">Peso Efetivado (t)</th>
                   </>
                 )}
                 <th className="py-2.5 px-3 text-center">Ações</th>
@@ -1573,27 +1573,27 @@ const AtuaReconciliationPage: React.FC<AtuaReconciliationPageProps> = ({
                               </div>
                             </td>
 
-                            {/* Lucro Trans */}
-                            <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap font-black">
+                            {/* Peso Trans */}
+                            <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
                               {item.transcunha ? (
-                                <span className={item.transcunha.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                  R$ {item.transcunha.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {item.transcunha.weight.toFixed(2)} t
                                 </span>
                               ) : (
                                 <span className="text-slate-400">---</span>
                               )}
                             </td>
 
-                            {/* Result Atua */}
-                            <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap font-black">
+                            {/* Peso Atua */}
+                            <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
                               {item.atua ? (
                                 <div>
-                                  <span className={item.atua.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                    R$ {item.atua.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {item.atua.weight.toFixed(2)} t
                                   </span>
-                                  {Math.abs(item.delta.netProfit) > tolerance && (
-                                    <p className={`text-[9px] font-black ${item.delta.netProfit > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                      Δ {item.delta.netProfit > 0 ? '+' : ''}{item.delta.netProfit.toFixed(2)}
+                                  {Math.abs(item.delta.weight) > weightTolerance && (
+                                    <p className="text-[9px] font-bold text-rose-600">
+                                      Δ {item.delta.weight > 0 ? '+' : ''}{item.delta.weight.toFixed(2)} t
                                     </p>
                                   )}
                                 </div>
@@ -1655,14 +1655,14 @@ const AtuaReconciliationPage: React.FC<AtuaReconciliationPageProps> = ({
                               </span>
                             </td>
 
-                            {/* Resultado */}
-                            <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap font-black">
-                              <span className={(item.transcunha?.netProfit ?? item.atua?.netProfit ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                                R$ {(item.transcunha?.netProfit ?? item.atua?.netProfit ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            {/* Peso Efetivado */}
+                            <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">
+                              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                {(item.transcunha?.weight ?? item.atua?.weight ?? 0).toFixed(2)} t
                               </span>
-                              {Math.abs(item.delta.netProfit) > tolerance && (
-                                <p className={`text-[9px] font-black ${item.delta.netProfit > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                  Δ {item.delta.netProfit > 0 ? '+' : ''}{item.delta.netProfit.toFixed(2)}
+                              {Math.abs(item.delta.weight) > weightTolerance && (
+                                <p className="text-[9px] font-bold text-rose-600">
+                                  Δ {item.delta.weight > 0 ? '+' : ''}{item.delta.weight.toFixed(2)} t
                                 </p>
                               )}
                             </td>

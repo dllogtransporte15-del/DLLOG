@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Shipment, User, Cargo, Client } from '../../types';
 import { ShipmentStatus, UserProfile } from '../../types';
+import { isDeveloperUser, isDemoUser } from '../../auth';
 import { TruckIcon } from '../icons/TruckIcon';
 import { ClockIcon } from '../icons/ClockIcon';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon';
@@ -96,7 +97,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
 
     const canViewCommission = useMemo(() => {
         if (!currentUser) return false;
-        return [UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao, UserProfile.Supervisor, UserProfile.GerenteComercial].includes(currentUser.profile);
+        return [UserProfile.Desenvolvedor, UserProfile.Diretor, UserProfile.Comercial, UserProfile.Admin, UserProfile.Demonstracao, UserProfile.Supervisor, UserProfile.GerenteComercial].includes(currentUser.profile);
     }, [currentUser]);
 
     const cargoMap = useMemo(() => new Map(cargos.map(c => [c.id, c])), [cargos]);
@@ -153,7 +154,12 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                 completionRate,
                 ...stats,
             };
-        }).filter(item => item.total > 0 || (users.find(u => u.id === item.id)?.profile === UserProfile.Embarcador))
+        }).filter(item => {
+            if (!isDeveloperUser(currentUser) && (item.id === 'USR-001' || item.id === 'USR-292')) return false;
+            const matchedUser = users.find(u => u.id === item.id);
+            if (!isDeveloperUser(currentUser) && matchedUser && (isDeveloperUser(matchedUser) || isDemoUser(matchedUser))) return false;
+            return item.total > 0 || (matchedUser?.profile === UserProfile.Embarcador);
+        })
           .sort((a, b) => b.total - a.total);
     }, [shipments, users]);
 

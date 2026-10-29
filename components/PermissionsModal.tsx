@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ProfilePermissions, Page, CrudPermissions, User } from '../types';
 import { UserProfile } from '../types';
+import { isDemoUser, isDeveloperUser, filterVisibleUsers } from '../auth';
 import { Copy, RotateCcw } from 'lucide-react';
 
 interface PermissionsModalProps {
@@ -10,6 +11,7 @@ interface PermissionsModalProps {
   onSaveUserPermissions: (userId: string, customPermissions: { [key in Page]?: CrudPermissions }) => void;
   permissions: ProfilePermissions;
   users: User[];
+  currentUser?: User | null;
 }
 
 const PAGE_NAMES: Record<Page, string> = {
@@ -75,7 +77,7 @@ const PERMISSION_NAMES: Record<keyof CrudPermissions, string> = {
 };
 
 const PermissionsModal: React.FC<PermissionsModalProps> = ({ 
-  isOpen, onClose, onSaveProfilePermissions, onSaveUserPermissions, permissions, users 
+  isOpen, onClose, onSaveProfilePermissions, onSaveUserPermissions, permissions, users, currentUser 
 }) => {
   const [mode, setMode] = useState<'profile' | 'user'>('profile');
   
@@ -88,7 +90,7 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setEditableProfilePermissions(JSON.parse(JSON.stringify(permissions)));
-      const firstNonAdminUser = users.find(u => u.profile !== UserProfile.Admin);
+      const firstNonAdminUser = filterVisibleUsers(users, currentUser).find(u => u.profile !== UserProfile.Admin && !isDeveloperUser(u) && !isDemoUser(u));
       if (firstNonAdminUser) setSelectedUserId(firstNonAdminUser.id);
     }
   }, [permissions, isOpen, users]);
@@ -216,8 +218,9 @@ const PermissionsModal: React.FC<PermissionsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const availableProfiles = Object.values(UserProfile).filter(p => p !== UserProfile.Admin);
-  const availableUsers = users.filter(u => u.profile !== UserProfile.Admin);
+  const isDev = isDeveloperUser(currentUser);
+  const availableProfiles = Object.values(UserProfile).filter(p => p !== UserProfile.Admin && (isDev || p !== UserProfile.Desenvolvedor));
+  const availableUsers = filterVisibleUsers(users, currentUser).filter(u => u.profile !== UserProfile.Admin && !isDeveloperUser(u) && !isDemoUser(u));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">

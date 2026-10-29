@@ -12,6 +12,7 @@ import type {
   PayrollAdvanceRecord
 } from '../../types';
 import { FinancialTransactionStatus, UserProfile, ShipmentStatus, INTERNAL_PROFILES } from '../../types';
+import { isDeveloperUser, isDemoUser } from '../../auth';
 import { 
   Plus, 
   Search, 
@@ -495,6 +496,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     const excludedSet = new Set(excludedPayrollUserIds);
 
     (users || []).forEach(u => {
+      // Ocultar sempre o Desenvolvedor e o usuário de Demonstração na folha de pagamento
+      if (isDeveloperUser(u) || isDemoUser(u)) return;
+
       // Ignorar se o usuário foi excluído da folha de pagamento
       if (excludedSet.has(u.id)) return;
 

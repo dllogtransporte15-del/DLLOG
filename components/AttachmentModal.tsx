@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shipment, ShipmentStatus, User, UserProfile, Cargo, RiskQueryType, RISK_QUERY_COST_MAP, Product, Client, ClientBranchCnpj, PaymentMethod, RiskQueryOption, DEFAULT_RISK_QUERY_OPTIONS, RealProfitData, CancelledCteRecord, DriverExtraPayment } from '../types';
 import { upsertClient, upsertCargo, uploadShipmentAttachment } from '../lib/db';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { PaperclipIcon, ExternalLinkIcon, MapPinIcon, LoaderIcon } from './icons';
 import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../services/routing';
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
@@ -2707,6 +2707,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
 
                         {/* CT-e cancelado NÃO pode ser excluído do sistema (regra explícita) */}
                         {!isCancelled && onDeleteAttachment && !isDemo && (
+                          isDeveloperUser(currentUser) ||
+                          currentUser?.profile === UserProfile.Desenvolvedor ||
                           currentUser?.profile === UserProfile.Admin ||
                           currentUser?.profile === UserProfile.Diretor ||
                           currentUser?.profile === UserProfile.Supervisor ||

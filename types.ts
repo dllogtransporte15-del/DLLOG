@@ -63,6 +63,7 @@ export interface CorporateEmailServerConfig {
 }
 
 export enum UserProfile {
+  Desenvolvedor = "Desenvolvedor",
   Embarcador = "Embarcador",
   Agenciador = "Agenciador",
   Supervisor = "Supervisor",
@@ -79,6 +80,7 @@ export enum UserProfile {
 }
 
 export const INTERNAL_PROFILES: UserProfile[] = [
+  UserProfile.Desenvolvedor,
   UserProfile.Admin,
   UserProfile.Diretor,
   UserProfile.Supervisor,

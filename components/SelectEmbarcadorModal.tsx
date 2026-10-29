@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { User, UserProfile, Cargo } from '../types';
+import { isDeveloperUser, isDemoUser } from '../auth';
 
 interface SelectEmbarcadorModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ const SelectEmbarcadorModal: React.FC<SelectEmbarcadorModalProps> = ({ isOpen, o
   if (!isOpen) return null;
 
   const embarcadores = users
-    .filter(u => u.active !== false && u.profile !== UserProfile.Motorista && u.profile !== UserProfile.Cliente && u.availableForDriverRequests !== false)
+    .filter(u => u.active !== false && u.profile !== UserProfile.Motorista && u.profile !== UserProfile.Cliente && u.availableForDriverRequests !== false && !isDeveloperUser(u) && !isDemoUser(u))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
   const handleConfirm = () => {

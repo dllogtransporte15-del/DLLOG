@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import type { FinancialInvoice, FinancialDocumentType, CostCenter, CostType, InvoiceCostNature, InvoicePaymentStatus, User } from '../types';
+import { isDeveloperUser, isDemoUser } from '../auth';
 
 const STORAGE_INVOICES_KEY = 'transcunha_financial_invoices';
 const STORAGE_COST_CENTERS_KEY = 'transcunha_financial_cost_centers';
@@ -30,9 +31,10 @@ export const INITIAL_COST_TYPES: CostType[] = [
 ];
 
 export const getInitialInvoicesSeed = (users: User[]): FinancialInvoice[] => {
-  const adminUser = users.find(u => u.profile?.includes('Administrador') || u.profile?.includes('Admin')) || users[0] || { id: 'usr_admin', name: 'Administrador Transcunha', profile: 'Administrador do Sistema' };
-  const operUser = users.find(u => u.profile?.includes('Embarcador') || u.profile?.includes('Operador')) || users[1] || adminUser;
-  const agencUser = users.find(u => u.profile?.includes('Agenciador') || u.profile?.includes('Comercial')) || users[2] || adminUser;
+  const safeUsers = (users || []).filter(u => !isDeveloperUser(u) && !isDemoUser(u));
+  const adminUser = safeUsers.find(u => u.profile?.includes('Administrador') || u.profile?.includes('Admin')) || safeUsers[0] || { id: 'usr_admin', name: 'Administrador Transcunha', profile: 'Administrador do Sistema' };
+  const operUser = safeUsers.find(u => u.profile?.includes('Embarcador') || u.profile?.includes('Operador')) || safeUsers[1] || adminUser;
+  const agencUser = safeUsers.find(u => u.profile?.includes('Agenciador') || u.profile?.includes('Comercial')) || safeUsers[2] || adminUser;
 
   const now = new Date();
   const y = now.getFullYear();

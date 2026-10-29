@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Cargo, Client, Product, User, FreightLeg, DailyScheduleEntry, Branch, FreightOffer, ExpedidorRecebedor } from '../types';
 import { CargoStatus, CargoType, UserProfile, VehicleSetType, VehicleBodyType, DailyScheduleType, FreightCalculationType, INTERNAL_PROFILES } from '../types';
+import { isDeveloperUser, isDemoUser, filterVisibleUsers } from '../auth';
+
+const DEFAULT_CARGO_ALLOWED_PROFILES: UserProfile[] = INTERNAL_PROFILES.filter(p => p !== UserProfile.Desenvolvedor);
 import { PlusIcon } from './icons/PlusIcon';
 import { XIcon } from './icons/XIcon';
 import { PaperclipIcon } from './icons/PaperclipIcon';
@@ -116,7 +119,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
         schedulingSystemUrl: '',
         schedulingUser: '',
         schedulingPassword: '',
-        allowedProfiles: [...INTERNAL_PROFILES],
+        allowedProfiles: [...DEFAULT_CARGO_ALLOWED_PROFILES],
         tmsLoteNumber: '',
         clientCnpj: offerToConvert.clientCnpj || '',
         clientBranchId: offerToConvert.clientBranchId || '',
@@ -174,7 +177,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
       schedulingSystemUrl: '',
       schedulingUser: '',
       schedulingPassword: '',
-      allowedProfiles: [...INTERNAL_PROFILES],
+      allowedProfiles: [...DEFAULT_CARGO_ALLOWED_PROFILES],
       tmsLoteNumber: '',
       clientCnpj: firstClient?.cnpj || '',
       clientBranchId: '',
@@ -256,11 +259,15 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
   };
 
   const commercialUsers = useMemo(() => {
-    return users.filter(u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin);
-  }, [users]);
+    return filterVisibleUsers(users, currentUser).filter(
+      u => u.profile === UserProfile.Comercial || u.profile === UserProfile.Admin || (isDeveloperUser(currentUser) && isDeveloperUser(u))
+    );
+  }, [users, currentUser]);
 
   const internalUsers = useMemo(() => {
-    return users.filter(u => u.active !== false && u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista);
+    return users.filter(
+      u => u.active !== false && u.profile !== UserProfile.Cliente && u.profile !== UserProfile.Motorista && !isDeveloperUser(u) && !isDemoUser(u)
+    );
   }, [users]);
 
   const filteredInternalUsers = useMemo(() => {
@@ -355,7 +362,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                 schedulingSystemUrl: editableLoad.schedulingSystemUrl || '',
                 schedulingUser: editableLoad.schedulingUser || '',
                 schedulingPassword: editableLoad.schedulingPassword || '',
-                allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles : [...INTERNAL_PROFILES],
+                allowedProfiles: (editableLoad.allowedProfiles && editableLoad.allowedProfiles.length > 0) ? editableLoad.allowedProfiles.filter(p => p !== UserProfile.Desenvolvedor) : [...DEFAULT_CARGO_ALLOWED_PROFILES],
                 allowedUserIds: (editableLoad.allowedUserIds && editableLoad.allowedUserIds.length > 0) ? editableLoad.allowedUserIds : internalUsers.map(u => u.id),
                 tmsLoteNumber: editableLoad.tmsLoteNumber || '',
                 clientCnpj: editableLoad.clientCnpj || '',
@@ -1565,7 +1572,7 @@ const LoadFormModal: React.FC<LoadFormModalProps> = ({
                         </div>
                         <div className="flex items-center gap-2 self-start sm:self-auto">
                             <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700 shadow-2xs">
-                                {(load.allowedUserIds || []).length} / {internalUsers.length} com acesso
+                                {(load.allowedUserIds || []).filter(id => internalUsers.some(u => u.id === id)).length} / {internalUsers.length} com acesso
                             </span>
                         </div>
                     </div>

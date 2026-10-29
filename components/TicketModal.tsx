@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { Ticket, User, TicketHistory, Cargo, Shipment, TicketAttachment } from '../types';
 import { TicketStatus, TicketPriority, UserProfile } from '../types';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser, filterVisibleUsers } from '../auth';
 import { useToast } from '../hooks/useToast';
 import SearchableSelect, { SearchableOption } from './SearchableSelect';
 import { autoFormatInput } from '../utils/formatters';
@@ -176,7 +176,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
   isOpen, 
   onClose, 
   tickets, 
-  users, 
+  users: rawUsers, 
   currentUser, 
   onSave, 
   onUpdate, 
@@ -187,6 +187,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
   initialCreate = false 
 }) => {
   const isDemo = isDemoUser(currentUser);
+  const users = useMemo(() => filterVisibleUsers(rawUsers, currentUser), [rawUsers, currentUser]);
   const { showToast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [filter, setFilter] = useState<MainFilterType>('abertos');
@@ -1477,7 +1478,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
 
                             {/* Botões de Ação do Card */}
                             <div className="flex items-center justify-between gap-1.5 pt-1">
-                              {!isDemo && currentUser.profile === UserProfile.Admin && (
+                              {!isDemo && (currentUser.profile === UserProfile.Admin || isDeveloperUser(currentUser)) && (
                                 <button
                                   type="button"
                                   onClick={() => onDelete(ticket.id)}
@@ -1646,7 +1647,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
-                              {!isDemo && currentUser.profile === UserProfile.Admin && (
+                              {!isDemo && (currentUser.profile === UserProfile.Admin || isDeveloperUser(currentUser)) && (
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); onDelete(ticket.id); }} 
                                   className="text-gray-400 hover:text-red-500 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" 

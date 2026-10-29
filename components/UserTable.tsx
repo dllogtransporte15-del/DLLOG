@@ -110,6 +110,16 @@ const UserTable: React.FC<UserTableProps> = ({
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-medium text-gray-900 dark:text-white">{user.profile}</span>
+                      {user.profile === UserProfile.Desenvolvedor && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-500/30">
+                          ⚡ Desenvolvedor (Oculto)
+                        </span>
+                      )}
+                      {user.profile === UserProfile.Demonstracao && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300 border border-sky-500/30">
+                          🔒 Demonstração (Oculto)
+                        </span>
+                      )}
                       {user.profile === UserProfile.Agenciador && (
                         user.agencyRole === 'embarque' ? (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300">

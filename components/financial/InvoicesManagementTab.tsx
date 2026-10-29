@@ -8,6 +8,7 @@ import type {
   InvoicePaymentStatus, 
   User 
 } from '../../types';
+import { filterVisibleUsers } from '../../auth';
 import { 
   financialInvoiceService,
   subscribeToFinancialInvoices,
@@ -1387,7 +1388,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             >
               <option value="all">👤 Todos os Responsáveis</option>
-              {users.map(u => (
+              {filterVisibleUsers(users, currentUser).map(u => (
                 <option key={u.id} value={u.id}>
                   {u.name} ({u.profile || 'Usuário'})
                 </option>
@@ -2786,7 +2787,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   >
                     <option value="">Selecione quem solicitou ou gerou o custo...</option>
-                    {users.map(u => (
+                    {filterVisibleUsers(users, currentUser).map(u => (
                       <option key={u.id} value={u.id}>
                         {u.name} — {u.profile || 'Colaborador'} ({u.email})
                       </option>

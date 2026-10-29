@@ -21,7 +21,7 @@ import { StayRecord } from '../utils/toolStorage';
 import type { Ticket, Driver } from '../types';
 import { TicketStatus } from '../types';
 import { useDriverLocations, normalizeDriverKey } from '../hooks/useDriverLocations';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 
 import MultiSelectDropdown from './MultiSelectDropdown';
 import ShipmentDetailsModal from './ShipmentDetailsModal';
@@ -1746,7 +1746,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                               </a>
                                           )}
           
-                                          {shipment.status === ShipmentStatus.Cancelado && currentUser.profile !== UserProfile.Admin && currentUser.profile !== UserProfile.Diretor && currentUser.profile !== UserProfile.GerenciadoraDeRisco && !isGerenciadora ? (
+                                          {shipment.status === ShipmentStatus.Cancelado && !isDeveloperUser(currentUser) && currentUser.profile !== UserProfile.Desenvolvedor && currentUser.profile !== UserProfile.Admin && currentUser.profile !== UserProfile.Diretor && currentUser.profile !== UserProfile.GerenciadoraDeRisco && !isGerenciadora ? (
                                               <span className="text-xs text-gray-400 dark:text-gray-500 italic px-2">Cancelado</span>
                                           ) : (
                                               <div className="relative">
@@ -1784,7 +1784,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                         />
                                                                       )}
                                                                       {shipment.status === ShipmentStatus.PreCadastro && onOpenCadastroAntt && <ActionMenuItem icon={ExternalLinkIcon} text="Fazer Cadastro" onClick={() => onOpenCadastroAntt(shipment)} />}
-                                                                      {isActionable && onEditPrice && (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || isGerenciadora || (currentUser.profile as string) === 'Administrador do Sistema' || currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador || currentUser.profile === UserProfile.Comercial) && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
+                                                                      {isActionable && onEditPrice && (isDeveloperUser(currentUser) || currentUser.profile === UserProfile.Desenvolvedor || currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.GerenciadoraDeRisco || isGerenciadora || (currentUser.profile as string) === 'Administrador do Sistema' || currentUser.profile === UserProfile.Embarcador || currentUser.profile === UserProfile.Agenciador || currentUser.profile === UserProfile.Comercial) && <ActionMenuItem icon={DollarSignIcon} text="Alterar Preço" onClick={() => onEditPrice(shipment)} />}
                                                                       {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
                                                                       {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora || shipment.status === ShipmentStatus.AguardandoCarregamento) && onSwapCargo && <ActionMenuItem icon={Package} text="Trocar Carga" onClick={() => onSwapCargo(shipment)} />}
                                                                       {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Alterar Data/Hora" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
@@ -1792,7 +1792,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       {isActionable && onCancel && (currentUser.profile !== UserProfile.Fiscal || shipment.status === ShipmentStatus.AguardandoSeguradora) && <ActionMenuItem icon={XIcon} text="Cancelar Embarque" onClick={() => onCancel(shipment)} isDestructive />}
                                                                   </>
                                                               )}
-                                                              {onRevertStatus && (statusHistoryCount > 1 || shipment.status !== ShipmentStatus.PreCadastro) && (currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Diretor || currentUser.profile === UserProfile.GerenciadoraDeRisco || isGerenciadora) && (
+                                                              {onRevertStatus && (statusHistoryCount > 1 || shipment.status !== ShipmentStatus.PreCadastro) && (isDeveloperUser(currentUser) || currentUser.profile === UserProfile.Desenvolvedor || currentUser.profile === UserProfile.Admin || currentUser.profile === UserProfile.Diretor || currentUser.profile === UserProfile.GerenciadoraDeRisco || isGerenciadora) && (
                                                                   <ActionMenuItem 
                                                                       icon={RotateCcw} 
                                                                       text="Voltar Status Anterior" 
@@ -1803,7 +1803,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       }} 
                                                                   />
                                                               )}
-                                                              {onDelete && currentUser.profile === UserProfile.Admin && <ActionMenuItem icon={Trash2} text="Excluir Embarque" onClick={() => onDelete(shipment.id)} isDestructive />}
+                                                              {onDelete && (currentUser.profile === UserProfile.Admin || isDeveloperUser(currentUser)) && <ActionMenuItem icon={Trash2} text="Excluir Embarque" onClick={() => onDelete(shipment.id)} isDestructive />}
                                                           </div>
                                                       </div>,
                                                       document.body

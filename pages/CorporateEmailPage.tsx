@@ -6,6 +6,7 @@ import type {
   CorporateEmailDepartment, 
   CorporateEmailStatus 
 } from '../types';
+import { isDeveloperUser, filterVisibleUsers } from '../auth';
 import { 
   corporateEmailService, 
   DEFAULT_EMAIL_SERVER_CONFIG, 
@@ -140,9 +141,14 @@ export const CorporateEmailPage: React.FC<CorporateEmailPageProps> = ({
   const [composeBody, setComposeBody] = useState('');
   const [isSendingTest, setIsSendingTest] = useState(false);
 
+  const visibleUsersForEmail = useMemo(() => filterVisibleUsers(users, currentUser), [users, currentUser]);
+
   // Carregar dados iniciais e ouvir atualizações
   const loadData = () => {
-    const accs = corporateEmailService.getEmailAccounts(users);
+    const rawAccs = corporateEmailService.getEmailAccounts(visibleUsersForEmail);
+    const accs = isDeveloperUser(currentUser)
+      ? rawAccs
+      : rawAccs.filter(a => a.userId !== 'USR-001' && a.userId !== 'USR-292' && a.email.toLowerCase() !== 'dllogtransporte15@gmail.com' && a.email.toLowerCase() !== 'demo@demo.com');
     const cfg = corporateEmailService.getServerConfig();
     setAccounts(accs);
     setServerConfig(cfg);
@@ -246,7 +252,7 @@ export const CorporateEmailPage: React.FC<CorporateEmailPageProps> = ({
     setFormUserId(selectedId);
     if (!selectedId) return;
 
-    const selected = users.find(u => u.id === selectedId);
+    const selected = visibleUsersForEmail.find(u => u.id === selectedId);
     if (selected) {
       if (!formDisplayName) setFormDisplayName(selected.name);
       if (!formEmailPrefix) {
@@ -1390,7 +1396,7 @@ export const CorporateEmailPage: React.FC<CorporateEmailPageProps> = ({
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
                   <option value="">Nenhum (Caixa Departamental / Compartilhada)</option>
-                  {users.map(u => (
+                  {visibleUsersForEmail.map(u => (
                     <option key={u.id} value={u.id}>
                       {u.name} — {u.profile} ({u.email})
                     </option>

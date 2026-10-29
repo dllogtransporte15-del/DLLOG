@@ -36,6 +36,8 @@ const supervisorAndDiretorPages = allPages.filter(p => p !== 'appearance');
 const gerenciadoraDeRiscoPages = allPages.filter(p => p !== 'financial' && p !== 'reports');
 
 export const INITIAL_PERMISSIONS: ProfilePermissions = {
+  [UserProfile.Desenvolvedor]: createPermissions(allPages),
+  [UserProfile.Admin]: createPermissions(allPages),
   [UserProfile.Comercial]: createPermissions(['dashboard', 'clients', 'owners', 'drivers', 'vehicles', 'loads', 'locations', 'shipments', 'reports', 'operational-loads', 'financial', 'operational-map', 'commissions', 'shipment-history', 'load-history', 'layover-calculator', 'freight-quote', 'atua-reconciliation', 'freight-offers-history', 'risk-management', 'risk-query-types', 'messenger']),
   [UserProfile.Fiscal]: createPermissions(['dashboard', 'shipments', 'reports', 'atua-reconciliation', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types'], true),
   [UserProfile.Financeiro]: createPermissions(['dashboard', 'shipments', 'reports', 'financial', 'commissions', 'atua-reconciliation', 'shipment-history', 'load-history', 'risk-management', 'risk-query-types', 'messenger'], true),
@@ -58,14 +60,47 @@ if (INITIAL_PERMISSIONS[UserProfile.Embarcador] && INITIAL_PERMISSIONS[UserProfi
     INITIAL_PERMISSIONS[UserProfile.Embarcador]!['shipments']!.create = true;
 }
 
+export const isDeveloperUser = (user: User | null | undefined): boolean => {
+  if (!user) return false;
+  return (
+    user.profile === UserProfile.Desenvolvedor ||
+    (user.profile as string) === 'Desenvolvedor' ||
+    user.id === 'USR-001' ||
+    Boolean(user.email && user.email.toLowerCase() === 'dllogtransporte15@gmail.com') ||
+    Boolean(user.name && user.name.trim().toLowerCase() === 'desenvolvedor')
+  );
+};
+
 export const isDemoUser = (user: User | null | undefined): boolean => {
   if (!user) return false;
   return (
     user.profile === UserProfile.Demonstracao ||
     (user.profile as string) === 'Demo' ||
     (user.profile as string) === 'Demonstração' ||
-    Boolean(user.name && user.name.toUpperCase().includes('DEMONSTRA'))
+    user.id === 'USR-292' ||
+    Boolean(user.email && user.email.toLowerCase() === 'demo@demo.com') ||
+    Boolean(user.name && user.name.toUpperCase().includes('DEMONSTRA')) ||
+    Boolean(user.name && user.name.trim().toUpperCase() === 'DEMO')
   );
+};
+
+export const isAdminUser = (user: User | null | undefined): boolean => {
+  if (!user) return false;
+  return (
+    user.profile === UserProfile.Admin ||
+    (user.profile as string) === 'Administrador do Sistema' ||
+    isDeveloperUser(user)
+  );
+};
+
+export const filterVisibleUsers = (users: User[], viewer: User | null | undefined): User[] => {
+  if (isDeveloperUser(viewer)) return users;
+  return users.filter(u => !isDeveloperUser(u) && !isDemoUser(u));
+};
+
+export const filterVisibleProfiles = (profiles: UserProfile[], viewer: User | null | undefined): UserProfile[] => {
+  if (isDeveloperUser(viewer)) return profiles;
+  return profiles.filter(p => p !== UserProfile.Desenvolvedor);
 };
 
 export const can = (
@@ -81,8 +116,8 @@ export const can = (
     return action === 'read';
   }
 
-  // Admin can do everything, always.
-  if (user.profile === UserProfile.Admin) return true;
+  // Desenvolvedor and Admin can do everything, always.
+  if (isDeveloperUser(user) || user.profile === UserProfile.Admin) return true;
 
   // Gerenciadora de Risco: same functions and permissions as Admin,
   // EXCEPT: access to 'financial' and 'reports', and any 'delete' commands.

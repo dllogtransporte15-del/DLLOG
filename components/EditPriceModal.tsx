@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
+import { isDeveloperUser } from '../auth';
 import type { Shipment, User, Cargo } from '../types';
 
 interface EditPriceModalProps {
@@ -48,7 +49,9 @@ const EditPriceModal: React.FC<EditPriceModalProps> = ({ isOpen, onClose, onSave
     }
   };
 
-  const isAdmin = currentUser.profile === UserProfile.Admin ||
+  const isAdmin = isDeveloperUser(currentUser) ||
+    currentUser.profile === UserProfile.Desenvolvedor ||
+    currentUser.profile === UserProfile.Admin ||
     currentUser.profile === UserProfile.GerenciadoraDeRisco ||
     (currentUser.profile as string) === 'Administrador do Sistema' ||
     (currentUser.profile as string) === 'Gerenciadora de Risco' ||

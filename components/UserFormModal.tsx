@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { User, Client, Branch } from '../types';
 import { UserProfile } from '../types';
+import { isDeveloperUser, filterVisibleUsers, filterVisibleProfiles } from '../auth';
 import { useToast } from '../hooks/useToast';
 import { autoFormatInput, formatCPF } from '../utils/formatters';
 import { X, Copy, CheckCircle2, Mail, Key, Building2 } from 'lucide-react';
@@ -17,6 +18,7 @@ interface UserFormModalProps {
   users?: User[];
   defaultProfile?: UserProfile;
   availableProfiles?: UserProfile[];
+  currentUser?: User | null;
 }
 
 const UserFormModal: React.FC<UserFormModalProps> = ({ 
@@ -28,7 +30,8 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
   branches, 
   users, 
   defaultProfile,
-  availableProfiles 
+  availableProfiles,
+  currentUser
 }) => {
   const { showToast } = useToast();
   const [selectedUserToMirror, setSelectedUserToMirror] = useState<string>('');
@@ -84,11 +87,15 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
     }
   }, [userToEdit, isOpen, defaultProfile]);
 
+  const visibleUsersForModal = filterVisibleUsers(users || [], currentUser);
+  const selectableProfiles = filterVisibleProfiles(availableProfiles || Object.values(UserProfile), currentUser);
+
   const handleMirrorUser = (sourceUserId: string) => {
     setSelectedUserToMirror(sourceUserId);
     if (!sourceUserId) return;
-    const sourceUser = (users || []).find(u => u.id === sourceUserId);
+    const sourceUser = visibleUsersForModal.find(u => u.id === sourceUserId);
     if (!sourceUser) return;
+    if (!isDeveloperUser(currentUser) && sourceUser.profile === UserProfile.Desenvolvedor) return;
 
     setUser(prev => ({
       ...prev,
@@ -140,6 +147,11 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isDeveloperUser(currentUser) && user.profile === UserProfile.Desenvolvedor) {
+      showToast('Perfil inválido para o operador atual.', 'error');
+      return;
+    }
     
     if (user.profile === UserProfile.Cliente && !user.clientId) {
       showToast('Por favor, selecione um cliente para associar a este usuário.', 'warning');
@@ -190,7 +202,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const agencyLeaders = (users || []).filter(u => 
+  const agencyLeaders = visibleUsersForModal.filter(u => 
     u.profile === UserProfile.Agenciador && 
     (u.agencyRole === 'lider' || !u.agencyRole) && 
     u.id !== userToEdit?.id
@@ -391,7 +403,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                   className="p-2 w-full text-xs font-medium border border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-xs"
                 >
                   <option value="">Selecione um usuário para espelhar acessos...</option>
-                  {(users || [])
+                  {visibleUsersForModal
                     .filter(u => u.id !== userToEdit?.id)
                     .map(u => (
                       <option key={u.id} value={u.id}>
@@ -403,7 +415,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                 {selectedUserToMirror && (
                   <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium pt-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Acessos espelhados de: <strong>{(users || []).find(u => u.id === selectedUserToMirror)?.name}</strong></span>
+                    <span>Acessos espelhados de: <strong>{visibleUsersForModal.find(u => u.id === selectedUserToMirror)?.name}</strong></span>
                   </div>
                 )}
               </div>
@@ -412,7 +424,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
             <div>
               <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-1">Perfil de Acesso</label>
               <select name="profile" value={user.profile} onChange={handleChange} className="p-2 w-full border rounded dark:bg-gray-700 dark:border-gray-600 text-sm">
-                {(availableProfiles || Object.values(UserProfile)).map(p => <option key={p} value={p}>{p}</option>)}
+                {selectableProfiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
 

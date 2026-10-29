@@ -354,6 +354,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
   const canViewCommercialReport = useMemo(() => {
     if (!currentUser) return false;
     return [
+      UserProfile.Desenvolvedor,
       UserProfile.Comercial, 
       UserProfile.GerenteComercial, 
       UserProfile.Admin, 

@@ -10,7 +10,7 @@ import {
 import Header from '../components/Header';
 import { saveToolStay, getToolClients, saveToolClient, ToolClient, getAllToolClients } from '../utils/toolStorage';
 import { User as AppUser, Shipment, Cargo, Client as AppClient, ShipmentStatus, UserProfile } from '../types';
-import { isDemoUser } from '../auth';
+import { isDemoUser, isDeveloperUser } from '../auth';
 import { autoFormatInput } from '../utils/formatters';
 import { addPdfLogo } from '../utils/pdfGenerator';
 
@@ -47,7 +47,7 @@ export default function LayoverCalculatorPage({ currentUser, shipments, cargos, 
   const loadClients = useCallback(async () => {
     if (!currentUser) return;
     const isDemo = isDemoUser(currentUser);
-    const isAdmin = !isDemo && [UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile);
+    const isAdmin = !isDemo && (isDeveloperUser(currentUser) || [UserProfile.Desenvolvedor, UserProfile.Admin, UserProfile.GerenciadoraDeRisco, UserProfile.Diretor, UserProfile.Supervisor].includes(currentUser.profile));
     const data = await (isAdmin ? getAllToolClients() : getToolClients(currentUser.id));
     setClients(data);
   }, [currentUser]);
