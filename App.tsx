@@ -166,6 +166,7 @@ const FIELD_TRANSLATIONS: Record<string, string> = {
   driverReferences: 'Referências do Motorista',
   ownerContact: 'Contato do Proprietário',
   cancellationReason: 'Motivo do Cancelamento',
+  statusPendingObservation: 'Pendência do Status Atual',
 };
 
 interface NewShipmentRequestData extends Omit<Shipment, 'id' | 'orderId' | 'status' | 'documents' | 'history' | 'createdAt' | 'createdById' | 'statusHistory'> {
@@ -2503,6 +2504,23 @@ const App: React.FC = () => {
         if (loadedTonnage !== originalShipment.shipmentTonnage) {
           historyLogs.push(`Peso/Toneladas efetivadas atualizadas: ${loadedTonnage.toLocaleString('pt-BR')} ton (Frete Motorista: ${formattedVal}).`);
         }
+
+        // Recalcular Custo Financeiro proporcional ao peso carregado real
+        const relatedCargoForFin = cargos.find(c => c.id === originalShipment.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === originalShipment.cargoId));
+        if (relatedCargoForFin?.financialCostEnabled) {
+          const effectiveRate = originalShipment.financialCostRate ?? relatedCargoForFin.financialCostEffectiveRate ?? (
+            relatedCargoForFin.financialCostMonthlyRate && relatedCargoForFin.financialCostDaysTerm
+              ? Number(((relatedCargoForFin.financialCostMonthlyRate * relatedCargoForFin.financialCostDaysTerm) / (relatedCargoForFin.financialCostBaseDays || 30)).toFixed(4))
+              : undefined
+          );
+          const compRate = originalShipment.companyFreightRateSnapshot || relatedCargoForFin.companyFreightValuePerTon || 0;
+          if (effectiveRate !== undefined && effectiveRate > 0 && compRate > 0) {
+            const newFinCost = Number(((compRate * loadedTonnage) * (effectiveRate / 100)).toFixed(2));
+            updatedDocuments.financial_cost_value = newFinCost;
+          } else if (relatedCargoForFin.financialCostPerTon) {
+            updatedDocuments.financial_cost_value = Number((relatedCargoForFin.financialCostPerTon * loadedTonnage).toFixed(2));
+          }
+        }
     }
 
     if (driverFreightValue !== undefined && driverFreightValue > 0) {
@@ -2609,6 +2627,9 @@ const App: React.FC = () => {
     if (isStatusSame) {
         logMessage = `Alterações em Gerenciar Anexos: ${historyLogs.join(' ') || 'Dados e anexos salvos com sucesso.'}`;
     } else {
+        if (!isStatusSame && originalShipment.statusPendingObservation) {
+            historyLogs.push(`(Pendência arquivada do status anterior "${originalShipment.status}": "${originalShipment.statusPendingObservation}")`);
+        }
         logMessage = `Status alterado para "${nextStatus}". ${historyLogs.join(' ')}`;
     }
     const statusChangeLog = createHistoryLog(logMessage);
@@ -2616,8 +2637,10 @@ const App: React.FC = () => {
     const updatedShipment: Shipment = {
         ...originalShipment,
         status: nextStatus,
+        statusPendingObservation: isStatusSame ? originalShipment.statusPendingObservation : undefined,
         cancellationReason: cancellationReason,
         documents: updatedDocuments,
+        financialCostValue: updatedDocuments.financial_cost_value !== undefined ? updatedDocuments.financial_cost_value : originalShipment.financialCostValue,
         bankDetails: bankDetails || originalShipment.bankDetails,
         shipmentTonnage: updatedTonnage,
         driverFreightValue: updatedDriverFreight,
@@ -2663,6 +2686,11 @@ const App: React.FC = () => {
                 }
             ],
     };
+
+    if (!isStatusSame && updatedDocuments) {
+        delete (updatedDocuments as any).status_pending_observation;
+        delete (updatedDocuments as any).statusPendingObservation;
+    }
 
     // 3. Prepare Cargo Update (if applicable)
     const statusOrder = [
@@ -2926,7 +2954,7 @@ const App: React.FC = () => {
       'advancePercentage', 'advanceValue', 'tollValue',
       'balanceToReceiveValue', 'discountValue', 'netBalanceValue', 'isBreakageWaived',
       'driverExtraPaymentsTotal',
-      'route', 'paymentMethod', 'pixKey', 'cancellationReason'
+      'route', 'paymentMethod', 'pixKey', 'cancellationReason', 'statusPendingObservation'
     ];
 
     fieldsToTrack.forEach(field => {
@@ -2950,7 +2978,17 @@ const App: React.FC = () => {
           newVal = rawNew ? 'Sim' : 'Não';
         }
 
-        changes.push(`${FIELD_TRANSLATIONS[field] || field} alterado de "${oldVal}" para "${newVal}".`);
+        if (field === 'statusPendingObservation') {
+          if (!rawNew || rawNew === 'Não informado') {
+            changes.push(`Pendência do status "${shipmentToUpdate.status}" removida (era: "${oldVal}").`);
+          } else if (!rawOld || rawOld === 'Não informado') {
+            changes.push(`Pendência do status "${shipmentToUpdate.status}" informada: "${newVal}".`);
+          } else {
+            changes.push(`Pendência do status "${shipmentToUpdate.status}" alterada de "${oldVal}" para "${newVal}".`);
+          }
+        } else {
+          changes.push(`${FIELD_TRANSLATIONS[field] || field} alterado de "${oldVal}" para "${newVal}".`);
+        }
       }
     });
 
@@ -2958,6 +2996,7 @@ const App: React.FC = () => {
 
     let updatedDriverFreight = data.driverFreightValue !== undefined ? data.driverFreightValue : shipmentToUpdate.driverFreightValue;
     let updatedCargo: Cargo | undefined;
+    let calculatedFinCostFromTonnage: number | undefined;
 
     const rateToUse = data.driverFreightRateSnapshot !== undefined 
       ? data.driverFreightRateSnapshot 
@@ -2986,6 +3025,22 @@ const App: React.FC = () => {
                 history: [...cargo.history, createHistoryLog(`Volume ajustado devido à correção de tonelagem no embarque ${shipmentId} (${shipmentToUpdate.shipmentTonnage} -> ${data.shipmentTonnage}).`)]
             };
         }
+
+        // Recalcular Custo Financeiro proporcional se a tonelagem do embarque foi alterada
+        const relatedCargoForFin = cargos.find(c => c.id === shipmentToUpdate.cargoId || (c.sequenceId && `CRG-${c.sequenceId}` === shipmentToUpdate.cargoId));
+        if (relatedCargoForFin?.financialCostEnabled && targetTonnage > 0 && data.financialCostValue === undefined) {
+          const effectiveRate = shipmentToUpdate.financialCostRate ?? relatedCargoForFin.financialCostEffectiveRate ?? (
+            relatedCargoForFin.financialCostMonthlyRate && relatedCargoForFin.financialCostDaysTerm
+              ? Number(((relatedCargoForFin.financialCostMonthlyRate * relatedCargoForFin.financialCostDaysTerm) / (relatedCargoForFin.financialCostBaseDays || 30)).toFixed(4))
+              : undefined
+          );
+          const compRate = shipmentToUpdate.companyFreightRateSnapshot || relatedCargoForFin.companyFreightValuePerTon || 0;
+          if (effectiveRate !== undefined && effectiveRate > 0 && compRate > 0) {
+            calculatedFinCostFromTonnage = Number(((compRate * targetTonnage) * (effectiveRate / 100)).toFixed(2));
+          } else if (relatedCargoForFin.financialCostPerTon) {
+            calculatedFinCostFromTonnage = Number((relatedCargoForFin.financialCostPerTon * targetTonnage).toFixed(2));
+          }
+        }
     } else if (data.driverFreightRateSnapshot !== undefined && data.driverFreightRateSnapshot !== shipmentToUpdate.driverFreightRateSnapshot) {
         updatedDriverFreight = rateToUse * targetTonnage;
     } else if (data.driverFreightValue === undefined && rateToUse > 0 && targetTonnage > 0) {
@@ -2998,6 +3053,7 @@ const App: React.FC = () => {
 
     const updatedDocs = {
       ...(shipmentToUpdate.documents || {}),
+      ...(calculatedFinCostFromTonnage !== undefined ? { financial_cost_value: calculatedFinCostFromTonnage } : {}),
       ...(data.documents || {}),
       ...(data.cteNumber !== undefined ? { cte_number: data.cteNumber } : {}),
       ...(data.cteEmissionDate !== undefined ? { cte_emission_date: data.cteEmissionDate } : {}),
@@ -3040,12 +3096,23 @@ const App: React.FC = () => {
       calculatedAdvancePct = calc.advancePercentage;
     }
 
-    const updatedShipment: Shipment = { 
-      ...shipmentToUpdate, 
-      ...data, 
+    if (data.statusPendingObservation !== undefined) {
+      if (data.statusPendingObservation.trim()) {
+        (updatedDocs as any).status_pending_observation = data.statusPendingObservation.trim();
+      } else {
+        delete (updatedDocs as any).status_pending_observation;
+        delete (updatedDocs as any).statusPendingObservation;
+      }
+    }
+
+    const updatedShipment: Shipment = {
+      ...shipmentToUpdate,
+      ...data,
+      statusPendingObservation: data.statusPendingObservation !== undefined ? (data.statusPendingObservation.trim() || undefined) : shipmentToUpdate.statusPendingObservation, 
       advancePercentage: calculatedAdvancePct,
       advanceValue: calculatedAdvanceVal,
       balanceToReceiveValue: calculatedBalanceVal,
+      financialCostValue: calculatedFinCostFromTonnage !== undefined ? calculatedFinCostFromTonnage : (data.financialCostValue !== undefined ? data.financialCostValue : shipmentToUpdate.financialCostValue),
       documents: updatedDocs,
       driverFreightRateSnapshot: rateToUse,
       driverFreightValue: updatedDriverFreight,
@@ -3065,7 +3132,11 @@ const App: React.FC = () => {
       await upsertShipment(updatedShipment);
       if (updatedCargo) await upsertCargo(updatedCargo);
       if (!options?.silent) {
-        showToast('Dados do embarque atualizados com sucesso!', 'success');
+        if (data.statusPendingObservation !== undefined && Object.keys(data).length === 1) {
+          showToast('Pendência do status atual atualizada com sucesso!', 'success');
+        } else {
+          showToast('Dados do embarque atualizados com sucesso!', 'success');
+        }
       }
     } catch (err) {
       console.error('Erro ao atualizar dados do embarque:', err);
@@ -3245,11 +3316,13 @@ const App: React.FC = () => {
     if (!shipmentToCancel || !currentUser) return;
     
     const oldStatus = shipmentToCancel.status;
-    const historyEntry = `Status alterado de "${oldStatus}" para "${ShipmentStatus.Cancelado}". Motivo: ${reason}`;
+    const pendArchived = shipmentToCancel.statusPendingObservation ? ` (Pendência arquivada do status anterior: "${shipmentToCancel.statusPendingObservation}")` : '';
+    const historyEntry = `Status alterado de "${oldStatus}" para "${ShipmentStatus.Cancelado}". Motivo: ${reason}${pendArchived}`;
     
     const cancelledShipment: Shipment = { 
       ...shipmentToCancel, 
       status: ShipmentStatus.Cancelado,
+      statusPendingObservation: undefined,
       cancellationReason: reason,
       history: [...shipmentToCancel.history, createHistoryLog(historyEntry)], 
       statusHistory: [...(shipmentToCancel.statusHistory || []), { status: ShipmentStatus.Cancelado, timestamp: new Date().toISOString(), userId: currentUser.id }] 
@@ -4568,7 +4641,7 @@ const App: React.FC = () => {
           <Route path="/loads" element={<LoadsPage loads={activeLoads} setLoads={setCargos} clients={clients} products={products} locations={locations} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} onUpdatePrice={handleUpdateShipmentPrice} currentUser={currentUser} profilePermissions={profilePermissions} users={visibleUsers} shipments={visibleShipments} allShipments={shipments} onDeleteLoad={handleDeleteCargo} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} vehicles={vehicles} drivers={drivers} owners={owners} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} offerToConvert={offerToConvert} setOfferToConvert={setOfferToConvert} onCreateShipment={handleCreateShipment} onSwapCargo={handleSwapCargo} />} />
           <Route path="/locations" element={!can('read', currentUser, 'locations', profilePermissions) ? <Navigate to="/" replace /> : <LocationsPage locations={locations} onSaveLocation={handleSaveLocation} onDeleteLocation={handleDeleteLocation} currentUser={currentUser} profilePermissions={profilePermissions} />} />
           <Route path="/products" element={<ProductsPage products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} currentUser={currentUser} profilePermissions={profilePermissions} />} />
-          <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={visibleUsers} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} />} />
+          <Route path="/shipments" element={<ShipmentsPage shipments={visibleShipments} cargos={cargos} clients={clients} products={products} drivers={drivers} vehicles={vehicles} currentUser={currentUser} profilePermissions={profilePermissions} users={visibleUsers} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} onUpdatePrice={handleUpdateShipmentPrice} onConfirmCancel={handleConfirmCancelShipment} onUpdateAnttAndBankDetails={handleUpdateShipmentAnttAndBankDetails} onMarkArrival={handleMarkArrival} onTransferShipment={handleTransferShipment} onDeleteShipment={handleDeleteShipment} onRevertStatus={handleRevertShipmentStatus} onUpdateScheduledDateTime={handleUpdateScheduledDateTime} onUpdateShipmentData={handleUpdateShipmentData} onDeleteAttachment={handleDeleteShipmentAttachment} onSwapCargo={handleSwapCargo} activeLocks={activeLocks} onModalStateChange={setIsAnyModalOpen} companyLogo={companyLogo} stays={stays} tickets={tickets} riskQueryOptions={riskQueryOptions} onBatchUpdateShipments={handleBatchUpdateShipments} onCreateShipment={handleCreateShipment} />} />
           <Route path="/operational-loads" element={<OperationalLoadsPage loads={inProgressLoads} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} onSaveLoad={handleSaveLoad} onBulkSaveLoads={handleBulkSaveLoads} onReactivateLoad={handleReactivateLoad} onSuspendLoad={handleSuspendLoad} currentUser={currentUser} profilePermissions={profilePermissions} shipments={visibleShipments} allShipments={shipments} users={visibleUsers} onDeleteLoad={handleDeleteCargo} onUpdatePrice={handleUpdateShipmentPrice} onUpdateShipmentData={handleUpdateShipmentData} onRequestLoadOrder={handleRequestLoadOrder} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} branches={branches} stays={stays} tickets={tickets} onUpdateAttachment={handleUpdateShipmentAttachment} onAddAttachments={handleAddShipmentAttachments} riskQueryOptions={riskQueryOptions} onSwapCargo={handleSwapCargo} />} />
           <Route path="/operational-map" element={<OperationalMapPage cargos={cargos} shipments={shipments} clients={clients} products={products} drivers={drivers} owners={owners} vehicles={vehicles} onCreateShipment={handleCreateShipment} currentUser={currentUser} users={visibleUsers} onModalStateChange={setIsAnyModalOpen} onDeleteAttachment={handleDeleteShipmentAttachment} />} />
           <Route path="/financial" element={!can('read', currentUser, 'financial', profilePermissions) ? <Navigate to="/" replace /> : <FinancialPage shipments={visibleShipments} cargos={cargos} clients={clients} users={visibleUsers} currentUser={currentUser} branches={branches} products={products} vehicles={vehicles} owners={owners} stays={stays} />} />

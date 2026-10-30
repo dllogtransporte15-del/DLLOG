@@ -63,6 +63,29 @@ declare const L: any;
 
 const notaFiscalDocTypes = ['Nota Fiscal'];
 const travelDocTypes = ['CT-e', 'MDF-e', 'Carta Frete', 'Outros'];
+
+export const TRAVEL_DOC_CONFIG: Record<string, { labelDisplay: string; subtext: string; isRequired: boolean }> = {
+  'CT-e': {
+    labelDisplay: 'CT-e * (Obrigatório)',
+    subtext: 'Anexe o DACTE (PDF ou Imagem). O sistema valida automaticamente o cabeçalho e chave do CT-e.',
+    isRequired: true,
+  },
+  'MDF-e': {
+    labelDisplay: 'MDF-e * (Obrigatório)',
+    subtext: 'Anexe o DAMDFE (PDF ou Imagem). O sistema valida a autenticidade do Manifesto Eletrônico.',
+    isRequired: true,
+  },
+  'Carta Frete': {
+    labelDisplay: 'Carta Frete * (Obrigatório)',
+    subtext: 'Anexe a Carta Frete / Contrato de Transporte contendo valores, pedágio e adiantamento.',
+    isRequired: true,
+  },
+  'Outros': {
+    labelDisplay: 'Outros (Opcional)',
+    subtext: 'Anexos complementares de apoio à viagem.',
+    isRequired: false,
+  },
+};
 const allowedDocsForClient = [
   'Ticket de Carregamento',
   'Nota Fiscal',
@@ -84,6 +107,9 @@ export const isDischargeTicketCategory = (categoryOrLabel?: string, currentStatu
 
 const FileInput: React.FC<{
   label: string;
+  displayLabel?: string;
+  subtext?: string;
+  isRequired?: boolean;
   onFileChange: (files: FileList | File[] | null) => void;
   files: File[];
   allowPaste?: boolean;
@@ -96,6 +122,9 @@ const FileInput: React.FC<{
   bypassDuplicateCheck?: boolean;
 }> = ({
   label,
+  displayLabel,
+  subtext,
+  isRequired,
   onFileChange,
   files,
   allowPaste = true,
@@ -155,11 +184,17 @@ const FileInput: React.FC<{
       // 3. Validação de mismatch de tipo de documento
       const mismatch = detectAttachmentMismatch(f, label, detectedTypesMap?.[f.name]);
       if (mismatch) {
-        showToast(
-          `⚠️ Atenção: O arquivo "${f.name}" foi detectado como ${mismatch.detectedType}, mas está sendo anexado no campo "${label}". Você pode movê-lo para "${mismatch.suggestedCategory}" com 1 clique.`,
-          'warning',
-          7000
-        );
+        let errorMsg = mismatch.message;
+        if (label === 'CT-e') {
+          errorMsg = `Documento inválido no campo CT-e: O arquivo anexado foi identificado como ${mismatch.detectedType}. Por favor, anexe o DACTE correspondente.`;
+        } else if (label === 'MDF-e') {
+          errorMsg = `Documento inválido no campo MDF-e: O arquivo anexado não é um Manifesto (MDF-e/DAMDFE) válido.`;
+        } else if (label === 'Carta Frete') {
+          errorMsg = `Documento inválido no campo Carta Frete: O arquivo anexado não corresponde a uma Carta Frete / Contrato de Transporte.`;
+        } else {
+          errorMsg = `⚠️ Atenção: O arquivo "${f.name}" foi detectado como ${mismatch.detectedType}, mas está sendo anexado no campo "${label}". Você pode movê-lo para "${mismatch.suggestedCategory}" com 1 clique.`;
+        }
+        showToast(errorMsg, 'error', 9000);
       }
 
       validFiles.push(f);
@@ -242,8 +277,17 @@ const FileInput: React.FC<{
       className="mb-4"
       onPaste={allowPaste ? handlePaste : undefined}
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">{label}</label>
+      <div className="flex items-start justify-between mb-1.5 gap-2">
+        <div>
+          <label className="block text-sm font-bold text-gray-800 dark:text-gray-200">
+            {displayLabel || label}
+          </label>
+          {subtext && (
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+              {subtext}
+            </p>
+          )}
+        </div>
         <button
           type="button"
           onClick={handleClipboardButtonClick}
@@ -260,7 +304,9 @@ const FileInput: React.FC<{
         onDrop={handleDrop}
         className={`relative border-2 border-dashed rounded-xl p-3 transition-all ${isDragging
             ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 scale-[1.01]'
-            : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/60 hover:border-indigo-400'
+            : files.some(f => detectAttachmentMismatch(f, label, detectedTypesMap?.[f.name])?.isMismatch)
+              ? 'border-rose-400 dark:border-rose-600 bg-rose-50/40 dark:bg-rose-950/20'
+              : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/60 hover:border-indigo-400'
           }`}
       >
         <label
@@ -367,8 +413,14 @@ const FileInput: React.FC<{
                         <span className="font-extrabold text-rose-700 dark:text-rose-200">
                           Documento Incorreto:
                         </span>
-                        <span className="ml-1">
-                          Este arquivo é um <strong>{mismatch.detectedType}</strong>, mas foi anexado no campo <strong>{label}</strong>.
+                        <span className="ml-1 font-medium">
+                          {label === 'CT-e'
+                            ? `O arquivo anexado foi identificado como ${mismatch.detectedType}. Por favor, anexe o DACTE correspondente.`
+                            : label === 'MDF-e'
+                              ? 'O arquivo anexado não é um Manifesto (MDF-e/DAMDFE) válido.'
+                              : label === 'Carta Frete'
+                                ? 'O arquivo anexado não corresponde a uma Carta Frete / Contrato de Transporte.'
+                                : `Este arquivo é um ${mismatch.detectedType}, mas foi anexado no campo ${label}.`}
                         </span>
                       </div>
                     </div>
@@ -1151,6 +1203,72 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const hasUnresolvedTomadorDivergence = !!tomadorDivergenceInfo && tomadorDecision === 'unresolved';
   const hasUnresolvedAdvanceDivergence = isAguardandoAdiantamento && !!advanceDivergenceInfo && Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00;
   const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedCompanyFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTollDivergence || hasUnresolvedTomadorDivergence;
+
+  const hasDocForCategory = React.useCallback((catName: 'CT-e' | 'MDF-e' | 'Carta Frete'): boolean => {
+    const newFiles = multiFiles[catName];
+    if (Array.isArray(newFiles) && newFiles.length > 0) return true;
+    if (catName === 'CT-e' && (multiFiles['DACTE']?.length > 0 || multiFiles['Conhecimento de Transporte']?.length > 0)) return true;
+    if (catName === 'MDF-e' && (multiFiles['DAMDFE']?.length > 0 || multiFiles['Manifesto']?.length > 0)) return true;
+    if (catName === 'Carta Frete' && (multiFiles['Contrato de Transporte']?.length > 0 || multiFiles['Carta de Frete']?.length > 0)) return true;
+
+    if (shipment.documents && typeof shipment.documents === 'object') {
+      for (const [key, val] of Object.entries(shipment.documents)) {
+        if (!val || isDocumentMetadataKey(key)) continue;
+        const keyLower = key.toLowerCase().trim();
+        const hasUrl = Array.isArray(val) ? val.some(isActualDocumentUrl) : isActualDocumentUrl(val);
+        if (!hasUrl) continue;
+        if (catName === 'CT-e' && (keyLower === 'ct-e' || keyLower === 'cte' || keyLower === 'dacte' || keyLower.includes('conhecimento'))) return true;
+        if (catName === 'MDF-e' && (keyLower === 'mdf-e' || keyLower === 'mdfe' || keyLower === 'damdfe' || keyLower.includes('manifesto'))) return true;
+        if (catName === 'Carta Frete' && (keyLower === 'carta frete' || keyLower === 'carta de frete' || keyLower === 'contrato de transporte' || keyLower.includes('carta frete'))) return true;
+      }
+    }
+    return false;
+  }, [multiFiles, shipment.documents]);
+
+  const hasValidDocForCategory = React.useCallback((catName: 'CT-e' | 'MDF-e' | 'Carta Frete'): boolean => {
+    const newFiles = multiFiles[catName] || [];
+    const hasMismatchInField = newFiles.some(f => {
+      const mm = detectAttachmentMismatch(f, catName, detectedDocTypes[f.name]);
+      return mm?.isMismatch;
+    });
+    if (hasMismatchInField) return false;
+    if (newFiles.length > 0) return true;
+    return hasDocForCategory(catName);
+  }, [multiFiles, detectedDocTypes, hasDocForCategory]);
+
+  const missingFiscalDocs = React.useMemo(() => {
+    if (!isAguardandoFiscal) return [];
+    const missing: string[] = [];
+    if (!hasValidDocForCategory('CT-e')) missing.push('CT-e');
+    if (!hasValidDocForCategory('MDF-e')) missing.push('MDF-e');
+    if (!hasValidDocForCategory('Carta Frete')) missing.push('Carta Frete');
+    return missing;
+  }, [isAguardandoFiscal, hasValidDocForCategory]);
+
+  const hasMissingFiscalDocs = isAguardandoFiscal && missingFiscalDocs.length > 0;
+
+  const fiscalAttachmentMismatches = React.useMemo(() => {
+    if (!isAguardandoFiscal) return [];
+    const errors: { field: string; fileName: string; detectedType: string; message: string }[] = [];
+    ['CT-e', 'MDF-e', 'Carta Frete'].forEach(cat => {
+      const files = multiFiles[cat] || [];
+      files.forEach(f => {
+        const mismatch = detectAttachmentMismatch(f, cat, detectedDocTypes[f.name]);
+        if (mismatch?.isMismatch) {
+          let msg = mismatch.message;
+          if (cat === 'CT-e') {
+            msg = `Documento inválido no campo CT-e: O arquivo anexado foi identificado como ${mismatch.detectedType}. Por favor, anexe o DACTE correspondente.`;
+          } else if (cat === 'MDF-e') {
+            msg = `Documento inválido no campo MDF-e: O arquivo anexado não é um Manifesto (MDF-e/DAMDFE) válido.`;
+          } else if (cat === 'Carta Frete') {
+            msg = `Documento inválido no campo Carta Frete: O arquivo anexado não corresponde a uma Carta Frete / Contrato de Transporte.`;
+          }
+          errors.push({ field: cat, fileName: f.name, detectedType: mismatch.detectedType, message: msg });
+        }
+      });
+    });
+    return errors;
+  }, [isAguardandoFiscal, multiFiles, detectedDocTypes]);
 
   const hasAttachmentMismatch = React.useMemo(() => {
     for (const [cat, list] of Object.entries(multiFiles)) {
@@ -2306,6 +2424,18 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
         return;
       }
       if (isAguardandoFiscal) {
+        if (hasMissingFiscalDocs) {
+          const msg = `Para avançar, anexe obrigatoriamente o CT-e, o MDF-e e a Carta Frete corretos em seus respectivos campos. Documentos pendentes: ${missingFiscalDocs.join(', ')}.`;
+          showToast(`⛔ ${msg}`, 'error', 9000);
+          setError(msg);
+          return;
+        }
+        if (fiscalAttachmentMismatches.length > 0) {
+          const firstErr = fiscalAttachmentMismatches[0];
+          showToast(`⛔ ${firstErr.message}`, 'error', 9000);
+          setError(firstErr.message);
+          return;
+        }
         if (hasUnresolvedWeightDivergence) {
           showToast(`⚠️ Divergência de Peso pendente: Confirme se o peso correto é o do Ticket (${weightDivergenceInfo?.ticketTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) ou do CT-e (${weightDivergenceInfo?.cteTon.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}t) antes de avançar.`, 'warning');
           setError('É obrigatório confirmar qual valor de Toneladas é o correto antes de avançar.');
@@ -3292,20 +3422,97 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             ) : shipment.status === ShipmentStatus.AguardandoFiscal ? (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                  {travelDocTypes.map(docType => (
-                    <FileInput
-                      key={docType}
-                      label={docType}
-                      files={multiFiles[docType] || []}
-                      onFileChange={(f) => handleMultiFileChange(docType, f)}
-                      onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
-                      onMoveFile={handleMoveFile}
-                      onRemoveFile={handleRemoveFile}
-                      detectedTypesMap={detectedDocTypes}
-                      availableTargetCategories={travelDocTypes}
-                      checkDuplicateFile={checkDuplicateFile}
-                    />
-                  ))}
+                  {travelDocTypes.map(docType => {
+                    const config = TRAVEL_DOC_CONFIG[docType];
+                    return (
+                      <FileInput
+                        key={docType}
+                        label={docType}
+                        displayLabel={config?.labelDisplay || docType}
+                        subtext={config?.subtext}
+                        isRequired={config?.isRequired}
+                        files={multiFiles[docType] || []}
+                        onFileChange={(f) => handleMultiFileChange(docType, f)}
+                        onInspectFile={(file, type) => setSelectedDocForDetails({ fileOrUrl: file, docType: type, docName: file.name })}
+                        onMoveFile={handleMoveFile}
+                        onRemoveFile={handleRemoveFile}
+                        detectedTypesMap={detectedDocTypes}
+                        availableTargetCategories={travelDocTypes}
+                        checkDuplicateFile={checkDuplicateFile}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Banner de Obrigatoriedade dos 3 Documentos Fiscais */}
+                <div className={`p-4 rounded-xl border-2 transition-all ${
+                  hasMissingFiscalDocs || fiscalAttachmentMismatches.length > 0
+                    ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 shadow-xs'
+                    : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-600 shadow-xs'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      hasMissingFiscalDocs || fiscalAttachmentMismatches.length > 0
+                        ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                        : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                    }`}>
+                      {hasMissingFiscalDocs || fiscalAttachmentMismatches.length > 0 ? (
+                        <AlertTriangle className="w-5 h-5" />
+                      ) : (
+                        <CheckCircle2 className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                          <span>Obrigatoriedade dos Documentos Fiscais de Viagem</span>
+                          {hasMissingFiscalDocs || fiscalAttachmentMismatches.length > 0 ? (
+                            <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                              Avanço Bloqueado
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                              Documentos Validados ✓
+                            </span>
+                          )}
+                        </h4>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                        Para avançar para o status <strong>"Aguardando Adiantamento"</strong>, é estritamente obrigatório anexar e validar os 3 documentos:
+                      </p>
+                      <div className="mt-2.5 flex flex-wrap gap-2 text-xs">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold border transition-all ${
+                          !hasValidDocForCategory('CT-e')
+                            ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 shadow-xs'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                        }`}>
+                          {hasValidDocForCategory('CT-e') ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />} 1. CT-e (DACTE)
+                        </span>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold border transition-all ${
+                          !hasValidDocForCategory('MDF-e')
+                            ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 shadow-xs'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                        }`}>
+                          {hasValidDocForCategory('MDF-e') ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />} 2. MDF-e (DAMDFE)
+                        </span>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold border transition-all ${
+                          !hasValidDocForCategory('Carta Frete')
+                            ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 shadow-xs'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                        }`}>
+                          {hasValidDocForCategory('Carta Frete') ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />} 3. Carta Frete
+                        </span>
+                      </div>
+                      {fiscalAttachmentMismatches.length > 0 && (
+                        <div className="mt-2.5 p-2.5 rounded-lg bg-rose-100 dark:bg-rose-900/60 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-100 text-xs flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong>⛔ Incompatibilidade detectada:</strong> {fiscalAttachmentMismatches[0].message}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Banner de Erro caso haja documento anexado na categoria errada (ex: MDF-e em Carta Frete) */}
@@ -5363,6 +5570,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       hasUnresolvedFiscalDivergence ||
                       (isAguardandoAdiantamento && hasUnresolvedAdvanceDivergence) ||
                       hasAttachmentMismatch
+                      || hasMissingFiscalDocs
+                      || fiscalAttachmentMismatches.length > 0
                     }
                     className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(
                       isSaving || 
@@ -5372,6 +5581,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       hasUnresolvedFiscalDivergence ||
                       (isAguardandoAdiantamento && hasUnresolvedAdvanceDivergence) ||
                       hasAttachmentMismatch
+                      || hasMissingFiscalDocs
+                      || fiscalAttachmentMismatches.length > 0
                     )
                         ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-none'
                         : 'bg-primary hover:bg-primary-dark shadow-primary/20'
@@ -5383,6 +5594,16 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       </>
                     ) : 'Salvar e Avançar'}
                   </button>
+                  {hasMissingFiscalDocs && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-rose-950 text-rose-200 border border-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⛔ Para avançar, anexe obrigatoriamente o CT-e, o MDF-e e a Carta Frete corretos em seus respectivos campos. Pendente: {missingFiscalDocs.join(', ')}
+                    </div>
+                  )}
+                  {fiscalAttachmentMismatches.length > 0 && !hasMissingFiscalDocs && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-rose-950 text-rose-200 border border-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⛔ {fiscalAttachmentMismatches[0].message}
+                    </div>
+                  )}
                   {hasAttachmentMismatch && (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-rose-950 text-rose-200 border border-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
                       ⚠️ Corrija os documentos anexados em campos incorretos (ex: MDF-e em Carta Frete) para liberar o avanço

@@ -35,7 +35,42 @@ export interface StayRecord {
   paymentProofUrl?: string;
   status?: string;
   shipmentId?: string;
+  icmsValue?: number;        // Valor do ICMS do CT-e complementar de estadia (R$)
+  icmsPercentage?: number;   // Alíquota de ICMS aplicada (%)
+  federalTaxValue?: number;  // Valor do Imposto Federal informado manualmente (R$)
   date: string; // = created_at, para compatibilidade com o histórico
+}
+
+const STAY_TAXES_STORAGE_KEY = 'transcunha_stay_taxes';
+
+export interface StayTaxesData {
+  icmsValue?: number;
+  icmsPercentage?: number;
+  federalTaxValue?: number;
+}
+
+export function getStoredStayTaxes(): Record<string, StayTaxesData> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const saved = localStorage.getItem(STAY_TAXES_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveStayTaxes(stayId: string, taxes: Partial<StayTaxesData>): void {
+  if (typeof window === 'undefined' || !stayId) return;
+  try {
+    const current = getStoredStayTaxes();
+    current[stayId] = {
+      ...(current[stayId] || {}),
+      ...taxes
+    };
+    localStorage.setItem(STAY_TAXES_STORAGE_KEY, JSON.stringify(current));
+  } catch (err) {
+    console.warn('Erro ao salvar tributos da estadia no storage local:', err);
+  }
 }
 
 const STAY_CTE_STORAGE_KEY = 'transcunha_stay_cte_numbers';
@@ -188,33 +223,41 @@ export async function getToolStays(userId: string): Promise<StayRecord[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({
-    id: row.id,
-    clientName: row.client_name ?? undefined,
-    driver: row.driver,
-    plate: row.plate,
-    invoice: row.invoice ?? '',
-    origin: row.origin,
-    destination: row.destination,
-    location: row.location as 'Origem' | 'Destino',
-    entryDate: row.entry_date,
-    exitDate: row.exit_date,
-    totalHours: Number(row.total_hours),
-    weight: Number(row.weight),
-    valuePerHour: Number(row.value_per_hour),
-    tolerance: Number(row.tolerance),
-    totalValue: Number(row.total_value),
-    calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
-    dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
-    approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
-    driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
-    cteUrl: row.cte_url ?? undefined,
-    cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
-    paymentProofUrl: row.payment_proof_url ?? undefined,
-    status: row.status ?? undefined,
-    shipmentId: row.shipment_id ?? undefined,
-    date: row.created_at,
-  }));
+  const storedTaxes = getStoredStayTaxes();
+
+  return (data ?? []).map(row => {
+    const taxInfo = storedTaxes[row.id] || {};
+    return {
+      id: row.id,
+      clientName: row.client_name ?? undefined,
+      driver: row.driver,
+      plate: row.plate,
+      invoice: row.invoice ?? '',
+      origin: row.origin,
+      destination: row.destination,
+      location: row.location as 'Origem' | 'Destino',
+      entryDate: row.entry_date,
+      exitDate: row.exit_date,
+      totalHours: Number(row.total_hours),
+      weight: Number(row.weight),
+      valuePerHour: Number(row.value_per_hour),
+      tolerance: Number(row.tolerance),
+      totalValue: Number(row.total_value),
+      calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+      dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
+      approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
+      driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
+      cteUrl: row.cte_url ?? undefined,
+      cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
+      paymentProofUrl: row.payment_proof_url ?? undefined,
+      status: row.status ?? undefined,
+      shipmentId: row.shipment_id ?? undefined,
+      icmsValue: row.icms_value != null ? Number(row.icms_value) : taxInfo.icmsValue,
+      icmsPercentage: row.icms_percentage != null ? Number(row.icms_percentage) : taxInfo.icmsPercentage,
+      federalTaxValue: row.federal_tax_value != null ? Number(row.federal_tax_value) : taxInfo.federalTaxValue,
+      date: row.created_at,
+    };
+  });
 }
 
 export async function getAllToolStays(): Promise<StayRecord[]> {
@@ -228,33 +271,41 @@ export async function getAllToolStays(): Promise<StayRecord[]> {
     return [];
   }
 
-  return (data ?? []).map(row => ({
-    id: row.id,
-    clientName: row.client_name ?? undefined,
-    driver: row.driver,
-    plate: row.plate,
-    invoice: row.invoice ?? '',
-    origin: row.origin,
-    destination: row.destination,
-    location: row.location as 'Origem' | 'Destino',
-    entryDate: row.entry_date,
-    exitDate: row.exit_date,
-    totalHours: Number(row.total_hours),
-    weight: Number(row.weight),
-    valuePerHour: Number(row.value_per_hour),
-    tolerance: Number(row.tolerance),
-    totalValue: Number(row.total_value),
-    calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
-    dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
-    approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
-    driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
-    cteUrl: row.cte_url ?? undefined,
-    cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
-    paymentProofUrl: row.payment_proof_url ?? undefined,
-    status: row.status ?? undefined,
-    shipmentId: row.shipment_id ?? undefined,
-    date: row.created_at,
-  }));
+  const storedTaxes = getStoredStayTaxes();
+
+  return (data ?? []).map(row => {
+    const taxInfo = storedTaxes[row.id] || {};
+    return {
+      id: row.id,
+      clientName: row.client_name ?? undefined,
+      driver: row.driver,
+      plate: row.plate,
+      invoice: row.invoice ?? '',
+      origin: row.origin,
+      destination: row.destination,
+      location: row.location as 'Origem' | 'Destino',
+      entryDate: row.entry_date,
+      exitDate: row.exit_date,
+      totalHours: Number(row.total_hours),
+      weight: Number(row.weight),
+      valuePerHour: Number(row.value_per_hour),
+      tolerance: Number(row.tolerance),
+      totalValue: Number(row.total_value),
+      calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+      dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
+      approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
+      driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
+      cteUrl: row.cte_url ?? undefined,
+      cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
+      paymentProofUrl: row.payment_proof_url ?? undefined,
+      status: row.status ?? undefined,
+      shipmentId: row.shipment_id ?? undefined,
+      icmsValue: row.icms_value != null ? Number(row.icms_value) : taxInfo.icmsValue,
+      icmsPercentage: row.icms_percentage != null ? Number(row.icms_percentage) : taxInfo.icmsPercentage,
+      federalTaxValue: row.federal_tax_value != null ? Number(row.federal_tax_value) : taxInfo.federalTaxValue,
+      date: row.created_at,
+    };
+  });
 }
 
 export async function getToolStaysByShipment(shipmentId: string): Promise<StayRecord[]> {
@@ -270,33 +321,41 @@ export async function getToolStaysByShipment(shipmentId: string): Promise<StayRe
     return [];
   }
 
-  return (data ?? []).map(row => ({
-    id: row.id,
-    clientName: row.client_name ?? undefined,
-    driver: row.driver,
-    plate: row.plate,
-    invoice: row.invoice ?? '',
-    origin: row.origin,
-    destination: row.destination,
-    location: row.location as 'Origem' | 'Destino',
-    entryDate: row.entry_date,
-    exitDate: row.exit_date,
-    totalHours: Number(row.total_hours),
-    weight: Number(row.weight),
-    valuePerHour: Number(row.value_per_hour),
-    tolerance: Number(row.tolerance),
-    totalValue: Number(row.total_value),
-    calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
-    dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
-    approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
-    driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
-    status: row.status ?? undefined,
-    shipmentId: row.shipment_id ?? undefined,
-    cteUrl: row.cte_url ?? undefined,
-    cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
-    paymentProofUrl: row.payment_proof_url ?? undefined,
-    date: row.created_at,
-  }));
+  const storedTaxes = getStoredStayTaxes();
+
+  return (data ?? []).map(row => {
+    const taxInfo = storedTaxes[row.id] || {};
+    return {
+      id: row.id,
+      clientName: row.client_name ?? undefined,
+      driver: row.driver,
+      plate: row.plate,
+      invoice: row.invoice ?? '',
+      origin: row.origin,
+      destination: row.destination,
+      location: row.location as 'Origem' | 'Destino',
+      entryDate: row.entry_date,
+      exitDate: row.exit_date,
+      totalHours: Number(row.total_hours),
+      weight: Number(row.weight),
+      valuePerHour: Number(row.value_per_hour),
+      tolerance: Number(row.tolerance),
+      totalValue: Number(row.total_value),
+      calculationType: (row.status === 'DAILY_FIXED' ? 'DAILY_FIXED' : 'TON_HOUR') as 'TON_HOUR' | 'DAILY_FIXED',
+      dailyRate: row.status === 'DAILY_FIXED' ? Number(row.value_per_hour) : undefined,
+      approvedValue: row.approved_value != null ? Number(row.approved_value) : undefined,
+      driverPaidValue: row.driver_paid_value != null ? Number(row.driver_paid_value) : undefined,
+      status: row.status ?? undefined,
+      shipmentId: row.shipment_id ?? undefined,
+      cteUrl: row.cte_url ?? undefined,
+      cteNumber: row.cte_number || extractCteNumberFromStay({ id: row.id, cteUrl: row.cte_url }),
+      paymentProofUrl: row.payment_proof_url ?? undefined,
+      icmsValue: row.icms_value != null ? Number(row.icms_value) : taxInfo.icmsValue,
+      icmsPercentage: row.icms_percentage != null ? Number(row.icms_percentage) : taxInfo.icmsPercentage,
+      federalTaxValue: row.federal_tax_value != null ? Number(row.federal_tax_value) : taxInfo.federalTaxValue,
+      date: row.created_at,
+    };
+  });
 }
 
 export async function saveToolStay(
@@ -340,6 +399,14 @@ export async function saveToolStay(
     return null;
   }
 
+  if (data && (stay.icmsValue !== undefined || stay.icmsPercentage !== undefined || stay.federalTaxValue !== undefined)) {
+    saveStayTaxes(data.id, {
+      icmsValue: stay.icmsValue,
+      icmsPercentage: stay.icmsPercentage,
+      federalTaxValue: stay.federalTaxValue
+    });
+  }
+
   return data
     ? {
         id: data.id,
@@ -365,6 +432,9 @@ export async function saveToolStay(
         shipmentId: data.shipment_id ?? undefined,
         cteUrl: data.cte_url ?? undefined,
         paymentProofUrl: data.payment_proof_url ?? undefined,
+        icmsValue: stay.icmsValue,
+        icmsPercentage: stay.icmsPercentage,
+        federalTaxValue: stay.federalTaxValue,
         date: data.created_at,
       }
     : null;
@@ -407,6 +477,15 @@ export async function updateToolStay(
     saveStayCteNumber(id, updates.cteNumber);
   }
 
+  // Persistir tributos da estadia no storage local garantindo persistência imediata
+  if (updates.icmsValue !== undefined || updates.icmsPercentage !== undefined || updates.federalTaxValue !== undefined) {
+    saveStayTaxes(id, {
+      icmsValue: updates.icmsValue,
+      icmsPercentage: updates.icmsPercentage,
+      federalTaxValue: updates.federalTaxValue
+    });
+  }
+
   const payload: any = {};
   if (updates.clientName !== undefined) payload.client_name = updates.clientName;
   if (updates.driver !== undefined) payload.driver = updates.driver;
@@ -428,8 +507,12 @@ export async function updateToolStay(
   if (updates.paymentProofUrl !== undefined) payload.payment_proof_url = updates.paymentProofUrl;
   if (updates.status !== undefined) payload.status = updates.status;
   if (updates.shipmentId !== undefined) payload.shipment_id = updates.shipmentId;
+  if (updates.icmsValue !== undefined) payload.icms_value = updates.icmsValue;
+  if (updates.icmsPercentage !== undefined) payload.icms_percentage = updates.icmsPercentage;
+  if (updates.federalTaxValue !== undefined) payload.federal_tax_value = updates.federalTaxValue;
 
   if (Object.keys(payload).length === 0) {
+    const storedTaxes = getStoredStayTaxes()[id] || {};
     return {
       id,
       driver: '',
@@ -446,21 +529,42 @@ export async function updateToolStay(
       tolerance: 0,
       totalValue: 0,
       cteNumber: updates.cteNumber || extractCteNumberFromStay({ id }),
+      icmsValue: updates.icmsValue ?? storedTaxes.icmsValue,
+      icmsPercentage: updates.icmsPercentage ?? storedTaxes.icmsPercentage,
+      federalTaxValue: updates.federalTaxValue ?? storedTaxes.federalTaxValue,
       date: new Date().toISOString()
     };
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('tool_stays')
     .update(payload)
     .eq('id', id)
     .select('*')
     .single();
 
+  // Se falhar porque as colunas de tributos ainda não existem no banco Supabase, tenta novamente sem elas
+  if (error && (payload.icms_value !== undefined || payload.icms_percentage !== undefined || payload.federal_tax_value !== undefined)) {
+    console.warn('Tentativa com colunas de tributos em tool_stays falhou, salvando campos padrão e mantendo tributos em cache local:', error.message);
+    delete payload.icms_value;
+    delete payload.icms_percentage;
+    delete payload.federal_tax_value;
+    const retry = await supabase
+      .from('tool_stays')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) {
     console.error('Erro ao atualizar estadia:', error);
     return null;
   }
+
+  const storedTaxes = getStoredStayTaxes()[id] || {};
 
   return data
     ? {
@@ -488,6 +592,9 @@ export async function updateToolStay(
         cteUrl: data.cte_url ?? undefined,
         cteNumber: updates.cteNumber || data.cte_number || extractCteNumberFromStay({ id: data.id, cteUrl: data.cte_url }),
         paymentProofUrl: data.payment_proof_url ?? undefined,
+        icmsValue: updates.icmsValue !== undefined ? updates.icmsValue : (data.icms_value != null ? Number(data.icms_value) : storedTaxes.icmsValue),
+        icmsPercentage: updates.icmsPercentage !== undefined ? updates.icmsPercentage : (data.icms_percentage != null ? Number(data.icms_percentage) : storedTaxes.icmsPercentage),
+        federalTaxValue: updates.federalTaxValue !== undefined ? updates.federalTaxValue : (data.federal_tax_value != null ? Number(data.federal_tax_value) : storedTaxes.federalTaxValue),
         date: data.created_at,
       }
     : null;

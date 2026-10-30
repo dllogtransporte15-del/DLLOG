@@ -873,6 +873,7 @@ export const toShipment = (row: any): Shipment => {
       : (docs.financial_cost_monthly_rate !== undefined && docs.financial_cost_monthly_rate !== null 
           ? Number(docs.financial_cost_monthly_rate) 
           : undefined),
+    statusPendingObservation: row.status_pending_observation || docs.status_pending_observation || docs.statusPendingObservation || undefined,
   };
 };
 
@@ -991,6 +992,7 @@ const fromShipment = (s: Shipment) => {
     financial_cost_monthly_rate: s.financialCostMonthlyRate !== undefined ? s.financialCostMonthlyRate : (s.documents?.financial_cost_monthly_rate ?? null),
     owner_name: s.ownerName !== undefined ? s.ownerName : (s.documents?.owner_name ?? null),
     owner_contact: s.ownerContact !== undefined ? s.ownerContact : (s.documents?.owner_contact ?? null),
+    status_pending_observation: s.statusPendingObservation !== undefined ? (s.statusPendingObservation || null) : (s.documents?.status_pending_observation ?? null),
   };
 
   return {
@@ -1040,6 +1042,7 @@ const fromShipment = (s: Shipment) => {
     branch_id: s.branchId || null,
     vehicle_set_type: s.vehicleSetType ?? null,
     vehicle_body_type: s.vehicleBodyType ?? null,
+    status_pending_observation: s.statusPendingObservation || null,
   };
 };
 

@@ -72,6 +72,7 @@ interface ShipmentsPageProps {
   tickets?: Ticket[];
   riskQueryOptions?: RiskQueryOption[];
   onBatchUpdateShipments?: (updatedShipments: Shipment[]) => Promise<void> | void;
+  onCreateShipment?: (data: any) => Promise<void> | void;
 }
 
 
@@ -84,7 +85,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
   onUpdateAnttAndBankDetails, onTransferShipment, onMarkArrival, onDeleteShipment,
   onRevertStatus, onUpdateScheduledDateTime, onUpdateShipmentData, activeLocks, onModalStateChange,
   companyLogo, onDeleteAttachment, onSwapCargo, stays = [], tickets = [], riskQueryOptions,
-  onBatchUpdateShipments
+  onBatchUpdateShipments, onCreateShipment
 }) => {
 
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus | 'all'>(ShipmentStatus.PreCadastro);
@@ -346,6 +347,7 @@ const ShipmentsPage: React.FC<ShipmentsPageProps> = ({
         onSwapCargo={!isDemo ? handleOpenSwapCargoModal : undefined}
         onPerformSwapCargo={!isDemo ? onSwapCargo : undefined}
         tickets={tickets}
+        onCreateShipment={!isDemo ? onCreateShipment : undefined}
       />
 
       {selectedShipment && (

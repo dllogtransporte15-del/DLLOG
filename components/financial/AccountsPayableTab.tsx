@@ -9,7 +9,9 @@ import type {
   FinancialInvoice,
   InvoicePaymentStatus,
   PayrollSettlementDoc,
-  PayrollAdvanceRecord
+  PayrollAdvanceRecord,
+  PayrollAdvanceItem,
+  PayrollAdvanceInstallment
 } from '../../types';
 import { FinancialTransactionStatus, UserProfile, ShipmentStatus, INTERNAL_PROFILES } from '../../types';
 import { isDeveloperUser, isDemoUser } from '../../auth';
@@ -74,6 +76,7 @@ import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, par
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { useToast } from '../../hooks/useToast';
 import { PayrollDocsModal } from './PayrollDocsModal';
+import { AccountsPayableSettlementModal, type SettlingAccountItem } from './AccountsPayableSettlementModal';
 
 export const formatMonthKeyToLabel = (monthKey: string): string => {
   if (!monthKey) return '-';
@@ -82,6 +85,50 @@ export const formatMonthKeyToLabel = (monthKey: string): string => {
   const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const mIndex = parseInt(parts[1], 10) - 1;
   return `${months[mIndex] || parts[1]}/${parts[0]}`;
+};
+
+export const addMonthsToMonthKey = (monthKey: string, monthsToAdd: number): string => {
+  if (!monthKey) return monthKey;
+  const parts = monthKey.split('-');
+  if (parts.length !== 2) return monthKey;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10) - 1;
+  const d = new Date(y, m + monthsToAdd, 1);
+  const newY = d.getFullYear();
+  const newM = String(d.getMonth() + 1).padStart(2, '0');
+  return `${newY}-${newM}`;
+};
+
+export const getMonthKeyFromDate = (dateStr?: string): string => {
+  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+};
+
+export const calculateInstallments = (
+  totalAmount: number,
+  installmentsCount: number,
+  startMonthKey: string
+): PayrollAdvanceInstallment[] => {
+  const count = Math.max(1, Math.floor(installmentsCount));
+  const baseAmount = Math.floor((totalAmount / count) * 100) / 100;
+  const remainder = Math.round((totalAmount - (baseAmount * count)) * 100) / 100;
+
+  const result: PayrollAdvanceInstallment[] = [];
+  for (let i = 0; i < count; i++) {
+    const installmentNumber = i + 1;
+    const monthKey = addMonthsToMonthKey(startMonthKey, i);
+    const amount = i === 0 ? Number((baseAmount + remainder).toFixed(2)) : baseAmount;
+    result.push({
+      installmentNumber,
+      totalInstallments: count,
+      monthKey,
+      amount,
+      isSettled: false,
+    });
+  }
+  return result;
 };
 
 export interface PayrollSettlementItem {
@@ -135,6 +182,7 @@ export interface PayrollSettlementItem {
   advanceDate?: string;
   advanceReceiptUrl?: string;
   advanceReceiptFileName?: string;
+  activeValesCount?: number;
 
   shipments: Array<{
     id: string;
@@ -158,6 +206,7 @@ interface AccountsPayableTabProps {
   transactions: FinancialTransaction[];
   onAddTransaction: (t: Omit<FinancialTransaction, 'id' | 'createdAt'>) => void;
   onUpdateStatus: (id: string, status: FinancialTransactionStatus) => void;
+  onUpdateTransaction?: (id: string, updates: Partial<FinancialTransaction>) => void;
   onDeleteTransaction?: (id: string) => void;
   shipments?: Shipment[];
   cargos?: Cargo[];
@@ -172,6 +221,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   transactions = [],
   onAddTransaction,
   onUpdateStatus,
+  onUpdateTransaction,
   onDeleteTransaction,
   shipments = [],
   cargos = [],
@@ -193,6 +243,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const [periodPreset, setPeriodPreset] = useState<'all' | 'current_month' | 'last_month' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+
+  // Modal de Baixa de Pagamento e Anexação de Comprovante
+  const [settlingItem, setSettlingItem] = useState<SettlingAccountItem | null>(null);
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
 
   // Estado das Notas Fiscais
   const [invoices, setInvoices] = useState<FinancialInvoice[]>([]);
@@ -319,7 +373,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     }
   });
 
-  // Adiantamentos Estruturados com Data e Comprovante de Transferência (por userId_monthKey)
+  // Adiantamentos Estruturados com Data e Comprovante de Transferência (por userId_monthKey - legado)
   const [payrollAdvances, setPayrollAdvances] = useState<Record<string, PayrollAdvanceRecord>>(() => {
     try {
       const raw = localStorage.getItem('transcunha_payroll_advances_v2');
@@ -328,6 +382,61 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return {};
     }
   });
+
+  // Adiantamentos / Vales Múltiplos e Parcelados
+  const [payrollAdvanceItems, setPayrollAdvanceItems] = useState<PayrollAdvanceItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('transcunha_payroll_advance_items_v1');
+      if (raw) return JSON.parse(raw);
+
+      // Migração inicial transparente de transcunha_payroll_advances_v2
+      const legacyRaw = localStorage.getItem('transcunha_payroll_advances_v2');
+      if (legacyRaw) {
+        const legacy = JSON.parse(legacyRaw) as Record<string, PayrollAdvanceRecord>;
+        const list: PayrollAdvanceItem[] = [];
+        Object.entries(legacy).forEach(([key, rec]) => {
+          if (rec && rec.amount > 0) {
+            list.push({
+              id: `legacy_${key}`,
+              userId: rec.userId,
+              description: rec.notes || 'Adiantamento concedido',
+              amount: rec.amount,
+              issueDate: rec.date || new Date().toISOString().split('T')[0],
+              receiptFileUrl: rec.receiptFileUrl,
+              receiptFileName: rec.receiptFileName,
+              installmentsCount: 1,
+              startMonthKey: rec.monthKey,
+              installments: [{
+                installmentNumber: 1,
+                totalInstallments: 1,
+                monthKey: rec.monthKey,
+                amount: rec.amount,
+                isSettled: false,
+              }],
+              createdAt: rec.updatedAt || new Date().toISOString(),
+              updatedAt: rec.updatedAt,
+            });
+          }
+        });
+        return list;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
+
+  const savePayrollAdvanceItems = (updater: (prev: PayrollAdvanceItem[]) => PayrollAdvanceItem[]) => {
+    setPayrollAdvanceItems(prev => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem('transcunha_payroll_advance_items_v1', JSON.stringify(next));
+      } catch (err) {
+        console.error('Erro ao salvar vales no localStorage:', err);
+      }
+      return next;
+    });
+  };
 
   // Modal de Configuração de Valores do Colaborador (Salário, Tributos, Comissão, Regime)
   const [editingUserForValues, setEditingUserForValues] = useState<User | null>(null);
@@ -343,7 +452,114 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const advanceFileInputRef = useRef<HTMLInputElement>(null);
   const [editPixKey, setEditPixKey] = useState('');
 
-  // Upload do Comprovante de Transferência do Adiantamento
+  // Formulário para registrar e conceder novo vale
+  const [newValeAmount, setNewValeAmount] = useState('');
+  const [newValeDate, setNewValeDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newValeInstallmentsCount, setNewValeInstallmentsCount] = useState<number>(1);
+  const [newValeStartMonth, setNewValeStartMonth] = useState('');
+  const [newValeDescription, setNewValeDescription] = useState('');
+  const [newValeReceiptUrl, setNewValeReceiptUrl] = useState('');
+  const [newValeReceiptName, setNewValeReceiptName] = useState('');
+  const [isUploadingValeReceipt, setIsUploadingValeReceipt] = useState(false);
+  const valeFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload do Comprovante do Vale
+  const handleValeFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingValeReceipt(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = reader.result as string;
+        try {
+          const uploadedUrl = await uploadInvoiceAttachmentToStorage(
+            dataUrl,
+            `vale_${editingUserForValues?.id || 'temp'}_${Date.now()}`,
+            'comprovante_transferencia',
+            file.name,
+            file.type
+          );
+          setNewValeReceiptUrl(uploadedUrl || dataUrl);
+          setNewValeReceiptName(file.name);
+          showToast('Comprovante de transferência do vale anexado!', 'success');
+        } catch (err) {
+          console.warn('Erro ao enviar comprovante do vale:', err);
+          setNewValeReceiptUrl(dataUrl);
+          setNewValeReceiptName(file.name);
+          showToast('Comprovante anexado.', 'info');
+        } finally {
+          setIsUploadingValeReceipt(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Erro ao processar arquivo do vale:', err);
+      setIsUploadingValeReceipt(false);
+      showToast('Falha ao processar arquivo.', 'error');
+    }
+  };
+
+  // Salvar Vale e Parcelamento
+  const handleAddNewVale = () => {
+    if (!editingUserForValues) return;
+    const parsedAmount = parseBrazilianCurrency(newValeAmount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      showToast('Informe um valor válido maior que zero para o vale.', 'warning');
+      return;
+    }
+    const issueDate = newValeDate || new Date().toISOString().split('T')[0];
+    const startMonth = newValeStartMonth || addMonthsToMonthKey(getMonthKeyFromDate(issueDate), 1);
+    const count = Math.max(1, newValeInstallmentsCount || 1);
+
+    const installments = calculateInstallments(parsedAmount, count, startMonth);
+
+    const newValeItem: PayrollAdvanceItem = {
+      id: `vale_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      userId: editingUserForValues.id,
+      description: newValeDescription.trim() || (count > 1 ? `Vale parcelado em ${count}x` : 'Vale adiantamento'),
+      amount: parsedAmount,
+      issueDate,
+      receiptFileUrl: newValeReceiptUrl || undefined,
+      receiptFileName: newValeReceiptName || undefined,
+      installmentsCount: count,
+      startMonthKey: startMonth,
+      installments,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    savePayrollAdvanceItems(prev => [newValeItem, ...prev]);
+
+    showToast(
+      count > 1 
+        ? `Vale de ${formatBrl(parsedAmount)} gravado em ${count}x (primeira parcela em ${formatMonthKeyToLabel(startMonth)})!`
+        : `Vale de ${formatBrl(parsedAmount)} gravado com sucesso!`,
+      'success'
+    );
+
+    // Resetar campos para permitir criar outro vale imediatamente!
+    setNewValeAmount('');
+    setNewValeReceiptUrl('');
+    setNewValeReceiptName('');
+    setNewValeDescription('');
+    setNewValeInstallmentsCount(1);
+    if (valeFileInputRef.current) {
+      valeFileInputRef.current.value = '';
+    }
+  };
+
+  // Excluir Vale
+  const handleDeleteVale = (valeId: string, valeAmount: number) => {
+    if (!confirm(`Tem certeza que deseja excluir este vale de ${formatBrl(valeAmount)}? As parcelas serão removidas das folhas correspondentes.`)) {
+      return;
+    }
+    savePayrollAdvanceItems(prev => prev.filter(v => v.id !== valeId));
+    showToast('Vale excluído com sucesso.', 'info');
+  };
+
+  // Upload do Comprovante de Transferência do Adiantamento (legado)
   const handleAdvanceFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -566,15 +782,30 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     const tax = userTaxes[u.id] !== undefined ? userTaxes[u.id] : 0;
     setEditTaxes(tax > 0 ? tax.toFixed(2).replace('.', ',') : '');
 
+    const userVales = payrollAdvanceItems.filter(v => v.userId === u.id);
+    const activeValesInMonth = userVales.flatMap(v => v.installments || []).filter(i => i.monthKey === currentMonthPrefix);
+    const valesSum = activeValesInMonth.reduce((s, i) => s + i.amount, 0);
+
     const docKey = `${u.id}_${currentMonthPrefix}`;
     const advRecord = payrollAdvances[docKey];
-    const adv = advRecord !== undefined 
-      ? advRecord.amount 
-      : (userCustomAdvances[u.id] !== undefined ? userCustomAdvances[u.id] : 0);
+    const adv = userVales.length > 0
+      ? valesSum
+      : (advRecord !== undefined 
+          ? advRecord.amount 
+          : (userCustomAdvances[u.id] !== undefined ? userCustomAdvances[u.id] : 0));
     setEditAdvance(adv > 0 ? adv.toFixed(2).replace('.', ',') : '');
     setEditAdvanceDate(advRecord?.date || new Date().toISOString().split('T')[0]);
     setEditAdvanceReceiptUrl(advRecord?.receiptFileUrl || '');
     setEditAdvanceReceiptName(advRecord?.receiptFileName || '');
+
+    // Resetar campos de novo vale
+    setNewValeAmount('');
+    setNewValeDate(todayStr);
+    setNewValeInstallmentsCount(1);
+    setNewValeStartMonth(addMonthsToMonthKey(currentMonthPrefix, 1));
+    setNewValeDescription('');
+    setNewValeReceiptUrl('');
+    setNewValeReceiptName('');
 
     setEditPixKey(u.phone || u.corporateEmail || u.email || '');
   };
@@ -619,6 +850,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return next;
     });
 
+    // Se o usuário preencheu o formulário de novo vale e salvou as configurações gerais, grava o vale também
+    if (newValeAmount && parseBrazilianCurrency(newValeAmount) > 0) {
+      handleAddNewVale();
+    }
+
     // Salvar Adiantamento com Data e Comprovante de Transferência
     setPayrollAdvances(prev => {
       const next = {
@@ -643,7 +879,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return next;
     });
 
-    showToast(`Configurações e adiantamento de "${editingUserForValues.name}" gravados com sucesso!`, 'success');
+    showToast(`Configurações de "${editingUserForValues.name}" gravadas com sucesso!`, 'success');
     setEditingUserForValues(null);
   };
 
@@ -723,6 +959,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         paymentMethod: inv.paymentMethod,
         paymentDetails: inv.paymentDetails,
         description: inv.description,
+        receiptFileUrl: inv.receiptFileUrl,
+        receiptFileName: inv.receiptFileName,
+        receiptFileType: inv.receiptFileType,
+        receiptFileSize: inv.receiptFileSize,
+        paymentAuthCode: inv.paymentAuthCode,
+        notes: inv.notes,
+        originalItem: inv,
       };
     }).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }, [invoices, todayStr]);
@@ -758,6 +1001,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           notes: t.notes,
           pixKey: parsedPixKey,
           documentNumber: t.documentNumber,
+          receiptFileUrl: t.receiptFileUrl,
+          receiptFileName: t.receiptFileName,
+          receiptFileType: t.receiptFileType,
+          receiptFileSize: t.receiptFileSize,
+          paymentAuthCode: t.paymentAuthCode,
+          originalItem: t,
         };
       })
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
@@ -785,13 +1034,39 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           rawStatus: t.status,
           shipmentId: t.shipmentId,
           documentNumber: t.documentNumber,
+          receiptFileUrl: t.receiptFileUrl,
+          receiptFileName: t.receiptFileName,
+          receiptFileType: t.receiptFileType,
+          receiptFileSize: t.receiptFileSize,
+          paymentAuthCode: t.paymentAuthCode,
+          originalItem: t,
         };
       })
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }, [transactions, todayStr, leaderUsers]);
 
-  // Alternar status de Nota Fiscal (Dar Baixa)
+  // Alternar status de Nota Fiscal (Dar Baixa rápida ou Reabrir)
   const handleToggleInvoiceStatus = async (invoiceId: string, currentStatus: string) => {
+    const targetInvoice = invoices.find(inv => inv.id === invoiceId);
+    if (targetInvoice && currentStatus !== 'Pago') {
+      handleOpenSettlementModal({
+        id: targetInvoice.id,
+        kind: 'invoice',
+        docNumber: targetInvoice.documentType === 'Fatura' ? `Fatura nº ${targetInvoice.invoiceNumber}` : `NF nº ${targetInvoice.invoiceNumber}`,
+        title: `NF-e ${targetInvoice.supplierName}`,
+        entityName: targetInvoice.supplierName,
+        categoryOrCenter: `${targetInvoice.costCenterName} • ${targetInvoice.costTypeName}`,
+        dueDate: targetInvoice.dueDate,
+        totalAmount: targetInvoice.totalAmount,
+        payableAmount: targetInvoice.payableAmount || targetInvoice.totalAmount,
+        status: targetInvoice.status,
+        receiptUrl: targetInvoice.receiptFileUrl,
+        receiptName: targetInvoice.receiptFileName,
+        originalItem: targetInvoice
+      });
+      return;
+    }
+
     const newStatus: InvoicePaymentStatus = currentStatus === 'Pago' ? 'Pendente' : 'Pago';
     try {
       await financialInvoiceService.updateInvoiceStatus(
@@ -805,9 +1080,188 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         paymentDate: newStatus === 'Pago' ? todayStr : undefined
       } : inv));
     } catch (err) {
-      console.error('Erro ao dar baixa na nota fiscal:', err);
+      console.error('Erro ao alternar status da nota fiscal:', err);
     }
   };
+  // Abertura da Modal de Baixa / Anexação de Comprovante
+  const handleOpenSettlementModal = (item: {
+    id: string;
+    kind: 'invoice' | 'manual' | 'leader';
+    docNumber: string;
+    title: string;
+    entityName: string;
+    categoryOrCenter: string;
+    dueDate: string;
+    totalAmount: number;
+    payableAmount: number;
+    status: 'Pendente' | 'Pago' | 'Atrasado' | InvoicePaymentStatus;
+    paymentDate?: string;
+    paymentMethod?: FinancialInvoice['paymentMethod'];
+    paymentDetails?: string;
+    receiptUrl?: string | null;
+    receiptName?: string | null;
+    originalItem: any;
+  }) => {
+    const orig = item.originalItem;
+    setSettlingItem({
+      id: orig.id,
+      kind: item.kind,
+      docNumber: item.docNumber,
+      title: item.title,
+      entityName: item.entityName,
+      entityCpfCnpj: orig.supplierCnpjCpf || orig.supplierOrClientCpfCnpj,
+      categoryOrCenter: item.categoryOrCenter,
+      dueDate: item.dueDate,
+      totalAmount: item.totalAmount,
+      payableAmount: item.payableAmount,
+      currentStatus: item.status,
+      paymentDate: orig.paymentDate || (item.status === 'Pago' ? todayStr : undefined),
+      paymentMethod: orig.paymentMethod || 'Pix',
+      paymentDetails: orig.paymentDetails || orig.pixKey,
+      receiptFileUrl: item.receiptUrl || orig.receiptFileUrl,
+      receiptFileName: item.receiptName || orig.receiptFileName,
+      receiptFileType: orig.receiptFileType,
+      receiptFileSize: orig.receiptFileSize,
+      paymentAuthCode: orig.paymentAuthCode,
+      notes: orig.notes,
+      originalItem: orig,
+    });
+    setIsSettlementModalOpen(true);
+  };
+
+  // Abrir modal a partir da tabela de Líderes
+  const handleOpenSettlementModalForLeader = (leaderItem: any) => {
+    setSettlingItem({
+      id: leaderItem.id,
+      kind: 'leader',
+      docNumber: leaderItem.documentNumber ? `Doc ${leaderItem.documentNumber}` : 'Planejamento Líder',
+      title: leaderItem.description,
+      entityName: leaderItem.supplierName,
+      entityCpfCnpj: leaderItem.supplierOrClientCpfCnpj,
+      categoryOrCenter: `${leaderItem.category} • ${leaderItem.costCenter}`,
+      dueDate: leaderItem.dueDate,
+      totalAmount: leaderItem.totalAmount,
+      payableAmount: leaderItem.payableAmount,
+      currentStatus: leaderItem.status,
+      paymentDate: leaderItem.paymentDate || (leaderItem.status === 'Pago' ? todayStr : undefined),
+      paymentMethod: 'Pix',
+      paymentDetails: leaderItem.pixKey,
+      receiptFileUrl: leaderItem.receiptFileUrl,
+      receiptFileName: leaderItem.receiptFileName,
+      receiptFileType: leaderItem.receiptFileType,
+      receiptFileSize: leaderItem.receiptFileSize,
+      paymentAuthCode: leaderItem.paymentAuthCode,
+      notes: leaderItem.notes,
+      originalItem: leaderItem.originalItem || leaderItem,
+    });
+    setIsSettlementModalOpen(true);
+  };
+
+  // Confirmação da Baixa e Salvamento do Comprovante
+  const handleConfirmSettlement = async (data: {
+    status: 'Pago';
+    paymentDate: string;
+    paymentMethod?: FinancialInvoice['paymentMethod'];
+    paymentAuthCode?: string;
+    notes?: string;
+    receiptFile?: File | null;
+    receiptFileUrl?: string | null;
+    receiptFileName?: string | null;
+    receiptFileType?: string | null;
+    receiptFileSize?: number | null;
+  }) => {
+    if (!settlingItem) return;
+
+    try {
+      if (settlingItem.kind === 'invoice') {
+        await financialInvoiceService.updateInvoicePayment(settlingItem.id, {
+          status: 'Pago',
+          paymentDate: data.paymentDate,
+          paymentMethod: data.paymentMethod,
+          paymentAuthCode: data.paymentAuthCode,
+          receiptFileUrl: data.receiptFileUrl,
+          receiptFileName: data.receiptFileName,
+          receiptFileType: data.receiptFileType,
+          receiptFileSize: data.receiptFileSize,
+          notes: data.notes
+        });
+
+        setInvoices(prev => prev.map(inv => inv.id === settlingItem.id ? {
+          ...inv,
+          status: 'Pago',
+          paymentDate: data.paymentDate,
+          paymentMethod: data.paymentMethod || inv.paymentMethod,
+          paymentAuthCode: data.paymentAuthCode || inv.paymentAuthCode,
+          receiptFileUrl: data.receiptFileUrl || undefined,
+          receiptFileName: data.receiptFileName || undefined,
+          receiptFileType: data.receiptFileType || undefined,
+          receiptFileSize: data.receiptFileSize || undefined,
+          notes: data.notes || inv.notes
+        } : inv));
+
+        showToast('Baixa confirmada com sucesso! Status atualizado para Pago.', 'success');
+      } else {
+        // Lançamentos Manuais e Líderes
+        if (onUpdateTransaction) {
+          onUpdateTransaction(settlingItem.id, {
+            status: FinancialTransactionStatus.Pago,
+            paymentDate: data.paymentDate,
+            receiptFileUrl: data.receiptFileUrl || undefined,
+            receiptFileName: data.receiptFileName || undefined,
+            receiptFileType: data.receiptFileType || undefined,
+            receiptFileSize: data.receiptFileSize || undefined,
+            paymentAuthCode: data.paymentAuthCode || undefined,
+            notes: data.notes || undefined
+          });
+        } else {
+          onUpdateStatus(settlingItem.id, FinancialTransactionStatus.Pago);
+        }
+        showToast('Baixa confirmada com sucesso! Status atualizado para Pago.', 'success');
+      }
+
+      setIsSettlementModalOpen(false);
+      setSettlingItem(null);
+    } catch (err) {
+      console.error('Erro ao confirmar baixa de pagamento:', err);
+      showToast('Erro ao confirmar baixa de pagamento.', 'error');
+    }
+  };
+
+  // Reabrir conta para Pendente
+  const handleReopenItem = async (target: SettlingAccountItem | any) => {
+    const origId = target.id || target.originalItem?.id;
+    const kind = target.kind;
+    try {
+      if (kind === 'invoice') {
+        await financialInvoiceService.updateInvoicePayment(origId, {
+          status: 'Pendente',
+          paymentDate: undefined
+        });
+        setInvoices(prev => prev.map(inv => inv.id === origId ? {
+          ...inv,
+          status: 'Pendente',
+          paymentDate: undefined
+        } : inv));
+        showToast('Lançamento reaberto para Pendente.', 'info');
+      } else {
+        if (onUpdateTransaction) {
+          onUpdateTransaction(origId, {
+            status: FinancialTransactionStatus.Pendente,
+            paymentDate: undefined
+          });
+        } else {
+          onUpdateStatus(origId, FinancialTransactionStatus.Pendente);
+        }
+        showToast('Lançamento reaberto para Pendente.', 'info');
+      }
+      setIsSettlementModalOpen(false);
+      setSettlingItem(null);
+    } catch (err) {
+      console.error('Erro ao reabrir conta:', err);
+      showToast('Erro ao reabrir conta.', 'error');
+    }
+  };
+
 
   // Filtro de Período
   const matchesPeriod = (dateStr: string) => {
@@ -983,12 +1437,33 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         ? (userTaxes[user.id] !== undefined ? userTaxes[user.id] : 0)
         : 0;
 
+      // Identificar vales múltiplos e parcelados do colaborador
+      const userVales = (payrollAdvanceItems || []).filter(v => v.userId === user.id);
+      const activeValesInMonth: Array<{
+        vale: PayrollAdvanceItem;
+        installment: PayrollAdvanceInstallment;
+      }> = [];
+
+      userVales.forEach(v => {
+        (v.installments || []).forEach(inst => {
+          if (inst.monthKey === monthKey) {
+            activeValesInMonth.push({ vale: v, installment: inst });
+          }
+        });
+      });
+
+      const valesInstallmentsTotal = activeValesInMonth.reduce((sum, item) => sum + item.installment.amount, 0);
+
       // Adiantamento manual registrado (com data e comprovante)
       const advKey = `${user.id}_${monthKey}`;
       const advRecord = payrollAdvances[advKey];
-      const customAdvance = advRecord !== undefined
-        ? advRecord.amount
-        : (userCustomAdvances[user.id] !== undefined ? userCustomAdvances[user.id] : 0);
+
+      // Se houver vales estruturados cadastrados para o colaborador, utiliza a apuração exata das parcelas do mês
+      const customAdvance = userVales.length > 0
+        ? valesInstallmentsTotal
+        : (advRecord !== undefined
+            ? advRecord.amount
+            : (userCustomAdvances[user.id] !== undefined ? userCustomAdvances[user.id] : 0));
 
       let shipmentsCount = 0;
       let totalFreightRevenue = 0;
@@ -1289,10 +1764,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         isDocumentPending,
         missingDocsText,
 
-        // Detalhes do Adiantamento
-        advanceDate: advRecord?.date || (advanceTxs[0]?.paymentDate || advanceTxs[0]?.dueDate),
-        advanceReceiptUrl: advRecord?.receiptFileUrl,
-        advanceReceiptFileName: advRecord?.receiptFileName,
+        // Detalhes do Adiantamento / Vales Concedidos
+        advanceDate: activeValesInMonth[0]?.vale.issueDate || advRecord?.date || (advanceTxs[0]?.paymentDate || advanceTxs[0]?.dueDate),
+        advanceReceiptUrl: activeValesInMonth.find(it => it.vale.receiptFileUrl)?.vale.receiptFileUrl || advRecord?.receiptFileUrl,
+        advanceReceiptFileName: activeValesInMonth.find(it => it.vale.receiptFileName)?.vale.receiptFileName || advRecord?.receiptFileName,
+        activeValesCount: activeValesInMonth.length,
 
         shipments: shipmentDetails,
       };
@@ -1337,7 +1813,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       pendingPayrollItems: pendingItems,
       completedPayrollItems: completedItems
     };
-  }, [payrollUsers, leaderPayables, shipments, cargos, clients, users, branchMap, cargoMap, userMap, getLeaderIdForUser, currentMonthPrefix, lastMonthPrefix, userRegimes, userSalaries, userCustomCommissions, userTaxes, userCustomAdvances, payrollAdvances, payrollDocs, todayStr]);
+  }, [payrollUsers, leaderPayables, shipments, cargos, clients, users, branchMap, cargoMap, userMap, getLeaderIdForUser, currentMonthPrefix, lastMonthPrefix, userRegimes, userSalaries, userCustomCommissions, userTaxes, userCustomAdvances, payrollAdvances, payrollAdvanceItems, payrollDocs, todayStr]);
 
   // Totais consolidados e separados por Mês da Folha de Pagamento
   const payrollMonthTotals = useMemo(() => {
@@ -1456,9 +1932,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       dueDate: string;
       totalAmount: number;
       payableAmount: number;
-      status: 'Pendente' | 'Pago' | 'Atrasado';
+      status: 'Pendente' | 'Pago' | 'Atrasado' | InvoicePaymentStatus;
       documentUrl?: string | null;
       boletoUrl?: string | null;
+      receiptUrl?: string | null;
+      receiptName?: string | null;
       details?: string;
       pixKey?: string;
       originalItem: any;
@@ -1480,6 +1958,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           status: inv.status,
           documentUrl: inv.fileUrl,
           boletoUrl: inv.boletoFileUrl,
+          receiptUrl: inv.receiptFileUrl,
+          receiptName: inv.receiptFileName,
           details: inv.description,
           originalItem: inv,
         });
@@ -1499,8 +1979,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           totalAmount: man.totalAmount,
           payableAmount: man.payableAmount,
           status: man.status,
+          documentUrl: null,
+          boletoUrl: null,
+          receiptUrl: man.receiptFileUrl,
+          receiptName: man.receiptFileName,
           details: man.shipmentId ? `Embarque ${man.shipmentId}` : undefined,
-          originalItem: man,
+          originalItem: man.originalItem || man,
         });
       });
     }
@@ -1518,9 +2002,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           totalAmount: lead.totalAmount,
           payableAmount: lead.payableAmount,
           status: lead.status,
+          documentUrl: null,
+          boletoUrl: null,
+          receiptUrl: lead.receiptFileUrl,
+          receiptName: lead.receiptFileName,
           details: lead.notes,
           pixKey: lead.pixKey,
-          originalItem: lead,
+          originalItem: lead.originalItem || lead,
         });
       });
     }
@@ -2700,6 +3188,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <span className="text-[10px] uppercase tracking-wider font-semibold">
                                     (-) Adiantamentos / Vales
                                   </span>
+                                  {item.activeValesCount !== undefined && item.activeValesCount > 1 && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-200/80 dark:bg-orange-900/80 text-orange-900 dark:text-orange-200 font-bold font-mono">
+                                      {item.activeValesCount} vales
+                                    </span>
+                                  )}
                                   {item.advanceDate && item.totalAdvances > 0 && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-mono font-bold">
                                       {new Date(item.advanceDate + 'T00:00:00').toLocaleDateString('pt-BR')}
@@ -2784,6 +3277,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <span className="text-[10px] uppercase tracking-wider font-semibold">
                                     (-) Adiantamentos / Vales
                                   </span>
+                                  {item.activeValesCount !== undefined && item.activeValesCount > 1 && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-200/80 dark:bg-orange-900/80 text-orange-900 dark:text-orange-200 font-bold font-mono">
+                                      {item.activeValesCount} vales
+                                    </span>
+                                  )}
                                   {item.advanceDate && item.totalAdvances > 0 && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-mono font-bold">
                                       {new Date(item.advanceDate + 'T00:00:00').toLocaleDateString('pt-BR')}
@@ -2864,6 +3362,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <span className="text-[10px] uppercase tracking-wider font-semibold">
                                     (-) Adiantamentos
                                   </span>
+                                  {item.activeValesCount !== undefined && item.activeValesCount > 1 && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-200/80 dark:bg-orange-900/80 text-orange-900 dark:text-orange-200 font-bold font-mono">
+                                      {item.activeValesCount} vales
+                                    </span>
+                                  )}
                                   {item.advanceDate && item.totalAdvances > 0 && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-mono font-bold">
                                       {new Date(item.advanceDate + 'T00:00:00').toLocaleDateString('pt-BR')}
@@ -3222,22 +3725,50 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           {/* 7. Ações */}
                           <td className="py-3 px-4 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
-                              {/* Botão de Dar Baixa / Reabrir */}
-                              <button
-                                type="button"
-                                onClick={() => onUpdateStatus(
-                                  item.id,
-                                  isPaid ? FinancialTransactionStatus.Pendente : FinancialTransactionStatus.Pago
-                                )}
-                                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                                  isPaid
-                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200'
-                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                                }`}
-                                title={isPaid ? 'Reabrir lançamento para Pendente' : 'Confirmar quitação deste pagamento'}
-                              >
-                                {isPaid ? 'Reabrir' : 'Dar Baixa'}
-                              </button>
+                              {isPaid ? (
+                                <>
+                                  {item.receiptFileUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDocumentInNewTab(item.receiptFileUrl!, `Comprovante_${item.supplierName}`)}
+                                      className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 transition-colors cursor-pointer border border-purple-200 dark:border-purple-800"
+                                      title="Visualizar Comprovante de Pagamento"
+                                    >
+                                      <Receipt className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSettlementModalForLeader(item)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 transition-all cursor-pointer"
+                                    title="Editar comprovante ou dados da baixa"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    <span>Editar Baixa</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateStatus(
+                                      item.id,
+                                      FinancialTransactionStatus.Pendente
+                                    )}
+                                    className="px-2 py-1 rounded-lg text-[11px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                    title="Reabrir lançamento para Pendente"
+                                  >
+                                    Reabrir
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSettlementModalForLeader(item)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all cursor-pointer"
+                                  title="Confirmar quitação deste pagamento e anexar comprovante"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>Dar Baixa</span>
+                                </button>
+                              )}
 
                               {/* Botão de Excluir Lançamento Planejado */}
                               {onDeleteTransaction && (
@@ -3488,44 +4019,79 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <span>{item.boletoUrl ? 'NF' : 'Ver Doc'}</span>
                                 <ExternalLink className="w-2.5 h-2.5 opacity-70" />
                               </button>
-                            ) : (
-                              !item.boletoUrl && <span className="text-slate-400 text-[10px] italic">Sem anexo</span>
+                            ) : null}
+
+                            {/* COMPROVANTE DE PAGAMENTO ANEXADO */}
+                            {item.receiptUrl && (
+                              <button
+                                type="button"
+                                onClick={() => openDocumentInNewTab(item.receiptUrl!, `Comprovante_${item.docNumber}`)}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 dark:text-purple-300 rounded-lg text-[11px] font-bold border border-purple-200 dark:border-purple-800/60 transition-colors cursor-pointer shadow-xs"
+                                title="Visualizar Comprovante de Pagamento em nova aba"
+                              >
+                                <FileCheck className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                <span>Comprovante</span>
+                                <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                              </button>
+                            )}
+
+                            {!item.documentUrl && !item.boletoUrl && !item.receiptUrl && (
+                              <span className="text-slate-400 text-[10px] italic">Sem anexo</span>
                             )}
                           </div>
                         </td>
 
-                        {/* 9. Ações: Dar Baixa / Alternar */}
+                        {/* 9. Ações: Dar Baixa / Editar Comprovante / Reabrir */}
                         <td className="py-3 px-4 text-right whitespace-nowrap">
-                          {item.kind === 'invoice' && (
-                            <button
-                              type="button"
-                              onClick={() => handleToggleInvoiceStatus(item.originalItem.id, item.status)}
-                              className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                                isPaid
-                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                              }`}
-                            >
-                              {isPaid ? 'Reabrir' : 'Dar Baixa'}
-                            </button>
-                          )}
+                          <div className="flex items-center justify-end gap-1.5">
+                            {isPaid ? (
+                              <>
+                                {/* Se já está pago e possui comprovante anexado, atalho rápido para ver */}
+                                {item.receiptUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDocumentInNewTab(item.receiptUrl!, `Comprovante_${item.docNumber}`)}
+                                    className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 dark:text-purple-300 transition-colors cursor-pointer border border-purple-200 dark:border-purple-800/60"
+                                    title="Visualizar Comprovante de Pagamento"
+                                  >
+                                    <Receipt className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
 
-                          {(item.kind === 'manual' || item.kind === 'leader') && (
-                            <button
-                              type="button"
-                              onClick={() => onUpdateStatus(
-                                item.originalItem.id, 
-                                isPaid ? FinancialTransactionStatus.Pendente : FinancialTransactionStatus.Pago
-                              )}
-                              className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                                isPaid
-                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                              }`}
-                            >
-                              {isPaid ? 'Reabrir' : 'Dar Baixa'}
-                            </button>
-                          )}
+                                {/* Editar Baixa / Comprovante */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSettlementModal(item)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 transition-all cursor-pointer"
+                                  title="Editar data de pagamento, dados da baixa ou comprovante anexado"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  <span>Editar Baixa</span>
+                                </button>
+
+                                {/* Reabrir lançamento para Pendente */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleReopenItem(item)}
+                                  className="px-2 py-1 rounded-lg text-[11px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
+                                  title="Reabrir lançamento para Pendente"
+                                >
+                                  Reabrir
+                                </button>
+                              </>
+                            ) : (
+                              /* Botão principal de Dar Baixa com opção de anexar comprovante */
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSettlementModal(item)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all cursor-pointer"
+                                title="Dar Baixa e anexar comprovante de pagamento"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>Dar Baixa</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -4052,123 +4618,393 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 </div>
               )}
 
-              {/* Adiantamento Salarial / Vale Registrado com Data e Comprovante */}
-              <div className="p-3.5 rounded-2xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/60 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-orange-700 dark:text-orange-400 flex items-center gap-1.5">
-                    <Wallet className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                    <span>Adiantamento / Vale Concedido</span>
-                  </label>
-                  <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300 bg-orange-200/60 dark:bg-orange-900/60 px-2 py-0.5 rounded-md border border-orange-300 dark:border-orange-800">
-                    Comprovante & Data
-                  </span>
-                </div>
+              {/* Adiantamento Salarial / Vales Concedidos Múltiplos e Parcelados */}
+              {(() => {
+                const userExistingVales = (payrollAdvanceItems || []).filter(v => v.userId === editingUserForValues.id);
+                const currentMonthValesDiscount = userExistingVales
+                  .flatMap(v => v.installments || [])
+                  .filter(i => i.monthKey === currentMonthPrefix)
+                  .reduce((s, i) => s + i.amount, 0);
+                const futureValesDiscount = userExistingVales
+                  .flatMap(v => v.installments || [])
+                  .filter(i => i.monthKey > currentMonthPrefix)
+                  .reduce((s, i) => s + i.amount, 0);
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Valor do Adiantamento (R$)
-                    </label>
-                    <input
-                      type="text"
-                      value={editAdvance}
-                      onChange={(e) => setEditAdvance(e.target.value)}
-                      placeholder="0,00"
-                      className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-orange-300 dark:border-orange-800 bg-white dark:bg-slate-900 text-orange-900 dark:text-orange-200 font-bold outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
-                    />
-                  </div>
+                const parsedValeAmount = parseBrazilianCurrency(newValeAmount);
+                const previewTotal = parsedValeAmount > 0 ? parsedValeAmount : 0;
+                const previewCount = Math.max(1, newValeInstallmentsCount || 1);
+                const sameMonthOfVale = getMonthKeyFromDate(newValeDate || todayStr);
+                const nextMonthOfVale = addMonthsToMonthKey(sameMonthOfVale, 1);
+                const effectiveStartMonth = newValeStartMonth || nextMonthOfVale;
+                const previewInstallments = previewTotal > 0 ? calculateInstallments(previewTotal, previewCount, effectiveStartMonth) : [];
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Data da Transferência *
-                    </label>
-                    <input
-                      type="date"
-                      value={editAdvanceDate}
-                      onChange={(e) => setEditAdvanceDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
-                    />
-                  </div>
-                </div>
+                const futureMonthsOptions = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => addMonthsToMonthKey(sameMonthOfVale, m));
 
-                {/* Comprovante de Transferência Bancária */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Comprovante de Transferência Bancária / PIX
-                  </label>
-
-                  {editAdvanceReceiptUrl ? (
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 shadow-2xs">
-                      <div className="flex items-center gap-2 truncate mr-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <div className="truncate">
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate" title={editAdvanceReceiptName || 'Comprovante_Transferencia'}>
-                            {editAdvanceReceiptName || 'Comprovante_Transferencia'}
+                return (
+                  <div className="p-3.5 rounded-2xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/60 space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-orange-700 dark:text-orange-400 flex items-center gap-1.5">
+                        <Wallet className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                        <span>Adiantamentos / Vales Concedidos</span>
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        {userExistingVales.length > 0 && (
+                          <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300 bg-orange-200/80 dark:bg-orange-900/80 px-2 py-0.5 rounded-md border border-orange-300 dark:border-orange-800 font-mono">
+                            {userExistingVales.length} {userExistingVales.length === 1 ? 'vale' : 'vales'}
                           </span>
-                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block">
-                            Comprovante anexado e gravado
+                        )}
+                        <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300 bg-orange-200/60 dark:bg-orange-900/60 px-2 py-0.5 rounded-md border border-orange-300 dark:border-orange-800">
+                          Múltiplos Vales & Parcelamento
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Resumo do Impacto da Folha Atual vs Meses Subsequentes */}
+                    {userExistingVales.length > 0 && (
+                      <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-orange-200 dark:border-orange-800/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-2xs">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">
+                            Desconto na Folha Atual ({formatMonthKeyToLabel(currentMonthPrefix)})
+                          </span>
+                          <span className="text-sm font-black text-orange-600 dark:text-orange-400 font-mono">
+                            {formatBrl(currentMonthValesDiscount)}
                           </span>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => openDocumentInNewTab(editAdvanceReceiptUrl, editAdvanceReceiptName || 'Comprovante_Transferencia')}
-                          className="px-2.5 py-1 text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Abrir e Visualizar Comprovante de Transferência"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Ver</span>
-                          <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditAdvanceReceiptUrl('');
-                            setEditAdvanceReceiptName('');
-                          }}
-                          className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
-                          title="Remover Comprovante"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <input
-                        type="file"
-                        ref={advanceFileInputRef}
-                        onChange={handleAdvanceFileSelected}
-                        accept="image/*,application/pdf"
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        disabled={isUploadingAdvanceReceipt}
-                        onClick={() => advanceFileInputRef.current?.click()}
-                        className="w-full py-2.5 px-3 border border-dashed border-orange-300 dark:border-orange-800 hover:border-orange-500 bg-white dark:bg-slate-900 rounded-xl text-xs font-bold text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/40 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
-                      >
-                        {isUploadingAdvanceReceipt ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-                            <span>Carregando Comprovante...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Paperclip className="w-4 h-4 text-orange-500" />
-                            <span>Anexar Comprovante de Transferência (PDF ou Imagem)</span>
-                          </>
+                        {futureValesDiscount > 0 && (
+                          <div className="sm:text-right border-t sm:border-t-0 pt-1.5 sm:pt-0 border-slate-100 dark:border-slate-800">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">
+                              Parcelas em Meses Subsequentes
+                            </span>
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-mono">
+                              {formatBrl(futureValesDiscount)}
+                            </span>
+                          </div>
                         )}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                      </div>
+                    )}
 
-                <span className="text-[10px] text-slate-400 block leading-tight">
-                  A data informada e o comprovante de transferência ficam gravados no acerto mensal da folha.
-                </span>
-              </div>
+                    {/* Formulário: Conceder / Adicionar Novo Vale */}
+                    <div className="p-3 rounded-xl bg-white/95 dark:bg-slate-900/95 border border-orange-200/80 dark:border-orange-800/80 space-y-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-orange-100 dark:border-orange-950/60">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <Plus className="w-3.5 h-3.5 text-orange-600" />
+                          <span>Conceder / Registrar Novo Vale</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Gere, parcele e salve múltiplos vales
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            Valor do Vale (R$) *
+                          </label>
+                          <input
+                            type="text"
+                            value={newValeAmount}
+                            onChange={(e) => setNewValeAmount(e.target.value)}
+                            placeholder="Ex: 1.000,00"
+                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-orange-300 dark:border-orange-800 bg-orange-50/30 dark:bg-slate-900 text-orange-900 dark:text-orange-200 font-bold outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            Data da Concessão / Transferência *
+                          </label>
+                          <input
+                            type="date"
+                            value={newValeDate}
+                            onChange={(e) => {
+                              const newD = e.target.value;
+                              setNewValeDate(newD);
+                              if (newD) {
+                                const subMonth = addMonthsToMonthKey(getMonthKeyFromDate(newD), 1);
+                                setNewValeStartMonth(subMonth);
+                              }
+                            }}
+                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            Parcelamento do Vale *
+                          </label>
+                          <select
+                            value={newValeInstallmentsCount}
+                            onChange={(e) => setNewValeInstallmentsCount(parseInt(e.target.value, 10))}
+                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs cursor-pointer"
+                          >
+                            <option value={1}>1x (À vista na folha)</option>
+                            <option value={2}>2x parcelado</option>
+                            <option value={3}>3x parcelado</option>
+                            <option value={4}>4x parcelado</option>
+                            <option value={5}>5x parcelado</option>
+                            <option value={6}>6x parcelado</option>
+                            <option value={8}>8x parcelado</option>
+                            <option value={10}>10x parcelado</option>
+                            <option value={12}>12x parcelado</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                            Mês Inicial do Desconto na Folha *
+                          </label>
+                          <select
+                            value={effectiveStartMonth}
+                            onChange={(e) => setNewValeStartMonth(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs cursor-pointer"
+                          >
+                            <option value={nextMonthOfVale}>
+                              Mês Subsequente ({formatMonthKeyToLabel(nextMonthOfVale)}) - Recomendado
+                            </option>
+                            <option value={sameMonthOfVale}>
+                              Mês Atual da Concessão ({formatMonthKeyToLabel(sameMonthOfVale)})
+                            </option>
+                            {futureMonthsOptions.map(mKey => (
+                              <option key={mKey} value={mKey}>
+                                {formatMonthKeyToLabel(mKey)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Motivo / Descrição do Vale (Opcional)
+                        </label>
+                        <input
+                          type="text"
+                          value={newValeDescription}
+                          onChange={(e) => setNewValeDescription(e.target.value)}
+                          placeholder="Ex: Adiantamento emergencial, Vale combustível, etc."
+                          className="w-full px-3 py-1.5 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </div>
+
+                      {/* Pré-visualização do Cronograma de Parcelas */}
+                      {previewInstallments.length > 0 && (
+                        <div className="p-2.5 rounded-xl bg-orange-100/70 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 text-[11px] space-y-1.5">
+                          <div className="flex items-center justify-between font-bold text-orange-900 dark:text-orange-200">
+                            <span className="flex items-center gap-1">
+                              <Layers className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+                              <span>Cronograma de Desconto nas Folhas:</span>
+                            </span>
+                            <span className="font-mono text-xs">{formatBrl(previewTotal)}</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {previewInstallments.map((inst, idx) => (
+                              <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-orange-200/60 dark:border-orange-700/60 text-[11px]">
+                                <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                  Parcela {inst.installmentNumber}/{inst.totalInstallments}
+                                </span>
+                                <span className="font-bold text-orange-700 dark:text-orange-300 font-mono">
+                                  {formatBrl(inst.amount)} • {formatMonthKeyToLabel(inst.monthKey)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Comprovante do Vale */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Comprovante de Transferência Bancária / PIX
+                        </label>
+
+                        {newValeReceiptUrl ? (
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-800 shadow-2xs">
+                            <div className="flex items-center gap-2 truncate mr-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <div className="truncate">
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate" title={newValeReceiptName || 'Comprovante'}>
+                                  {newValeReceiptName || 'Comprovante_Transferencia'}
+                                </span>
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block">
+                                  Pronto para salvar com o vale
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openDocumentInNewTab(newValeReceiptUrl, newValeReceiptName || 'Comprovante')}
+                                className="px-2 py-1 text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Ver</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewValeReceiptUrl('');
+                                  setNewValeReceiptName('');
+                                }}
+                                className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
+                                title="Remover Comprovante"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <input
+                              type="file"
+                              ref={valeFileInputRef}
+                              onChange={handleValeFileSelected}
+                              accept="image/*,application/pdf"
+                              className="hidden"
+                            />
+                            <button
+                              type="button"
+                              disabled={isUploadingValeReceipt}
+                              onClick={() => valeFileInputRef.current?.click()}
+                              className="w-full py-2 px-3 border border-dashed border-orange-300 dark:border-orange-800 hover:border-orange-500 bg-white dark:bg-slate-900 rounded-xl text-xs font-bold text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/40 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                            >
+                              {isUploadingValeReceipt ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+                                  <span>Carregando Comprovante...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Paperclip className="w-4 h-4 text-orange-500" />
+                                  <span>Anexar Comprovante de Transferência (PDF ou Imagem)</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Botão de Salvar Vale */}
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleAddNewVale}
+                          disabled={!newValeAmount || parseBrazilianCurrency(newValeAmount) <= 0}
+                          className="w-full sm:w-auto px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/25 cursor-pointer active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Salvar e Gravar Este Vale</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Lista de Vales Já Concedidos para este Colaborador */}
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          <History className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Vales Cadastrados ({userExistingVales.length})</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Total concedido: {formatBrl(userExistingVales.reduce((acc, v) => acc + v.amount, 0))}
+                        </span>
+                      </div>
+
+                      {userExistingVales.length === 0 ? (
+                        <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 text-center text-xs text-slate-400 italic">
+                          Nenhum vale ativo cadastrado para este colaborador. Preencha os campos acima para conceder um novo vale.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {userExistingVales.map((vale) => {
+                            const totalInst = vale.installments?.length || vale.installmentsCount || 1;
+                            const hasReceipt = Boolean(vale.receiptFileUrl);
+
+                            return (
+                              <div 
+                                key={vale.id}
+                                className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-orange-200/70 dark:border-orange-800/70 space-y-1.5 shadow-2xs"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-bold text-xs text-orange-700 dark:text-orange-400">
+                                      {formatBrl(vale.amount)}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/80 text-orange-800 dark:text-orange-300 font-bold border border-orange-200 dark:border-orange-800">
+                                      {totalInst > 1 ? `${totalInst}x parcelado` : 'À vista'}
+                                    </span>
+                                    {vale.issueDate && (
+                                      <span className="text-[10px] text-slate-500 font-medium">
+                                        Concedido em: {new Date(vale.issueDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {hasReceipt && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openDocumentInNewTab(vale.receiptFileUrl!, vale.receiptFileName || 'Comprovante_Transferencia')}
+                                        className="px-2 py-1 text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center gap-1 cursor-pointer transition-colors"
+                                        title="Visualizar Comprovante do Vale"
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        <span>Ver Comprovante</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteVale(vale.id, vale.amount)}
+                                      className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
+                                      title="Excluir este vale e suas parcelas"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {vale.description && (
+                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 italic">
+                                    {vale.description}
+                                  </p>
+                                )}
+
+                                {/* Cronograma de Parcelas deste Vale */}
+                                {vale.installments && vale.installments.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                                    {vale.installments.map((inst, iIdx) => {
+                                      const isCurrent = inst.monthKey === currentMonthPrefix;
+                                      return (
+                                        <span 
+                                          key={iIdx}
+                                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium border ${
+                                            isCurrent
+                                              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold ring-1 ring-amber-400/40'
+                                              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                                          }`}
+                                          title={isCurrent ? 'Descontando na folha deste mês atual' : `Programado para ${formatMonthKeyToLabel(inst.monthKey)}`}
+                                        >
+                                          {inst.installmentNumber}/{inst.totalInstallments}: {formatBrl(inst.amount)} ({formatMonthKeyToLabel(inst.monthKey)})
+                                          {isCurrent && ' • Folha Atual'}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <span className="text-[10px] text-slate-400 block leading-tight">
+                      Cada vale concedido tem suas parcelas descontadas automaticamente nas folhas dos meses programados.
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Chave PIX */}
               <div>
@@ -4189,7 +5025,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 const s = parseBrazilianCurrency(editSalary);
                 const c = parseBrazilianCurrency(editCommission);
                 const t = editRegime === 'CLT' ? parseBrazilianCurrency(editTaxes) : 0;
-                const a = parseBrazilianCurrency(editAdvance);
+                const uVales = (payrollAdvanceItems || []).filter(v => v.userId === editingUserForValues.id);
+                const uMonthDiscount = uVales.flatMap(v => v.installments || []).filter(i => i.monthKey === currentMonthPrefix).reduce((sum, i) => sum + i.amount, 0);
+                const a = uVales.length > 0 ? uMonthDiscount : parseBrazilianCurrency(editAdvance);
                 const gross = s + c;
                 const net = Math.max(0, gross - t - a);
 
@@ -4404,6 +5242,18 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL DE BAIXA DE PAGAMENTO E ANEXAÇÃO DE COMPROVANTE */}
+      <AccountsPayableSettlementModal
+        isOpen={isSettlementModalOpen}
+        onClose={() => {
+          setIsSettlementModalOpen(false);
+          setSettlingItem(null);
+        }}
+        item={settlingItem}
+        onConfirm={handleConfirmSettlement}
+        onReopen={handleReopenItem}
+      />
 
       {/* 8. MODAL DE LANÇAMENTO DE DOCUMENTOS DA FOLHA (NF E COMPROVANTE) */}
       <PayrollDocsModal

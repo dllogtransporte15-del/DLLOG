@@ -611,6 +611,7 @@ export interface Shipment {
   shipmentTonnage: number;
   driverFreightValue: number;
   status: ShipmentStatus;
+  statusPendingObservation?: string; // Observação específica da pendência do status atual
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime?: string; // HH:MM
   arrivalTime?: string; // ISO String
@@ -967,6 +968,12 @@ export interface FinancialTransaction {
   
   notes?: string;
   isReconciled?: boolean;
+  // Anexo do Comprovante de Pagamento / Quitação
+  receiptFileUrl?: string;
+  receiptFileName?: string;
+  receiptFileType?: string;
+  receiptFileSize?: number;
+  paymentAuthCode?: string;
   reconciledAt?: string;
   ofxCheckNum?: string;
   
@@ -996,6 +1003,29 @@ export interface PayrollSettlementDoc {
   isCompleted?: boolean;
   completedAt?: string;
   notes?: string;
+  updatedAt?: string;
+}
+
+export interface PayrollAdvanceInstallment {
+  installmentNumber: number;
+  totalInstallments: number;
+  monthKey: string;
+  amount: number;
+  isSettled?: boolean;
+}
+
+export interface PayrollAdvanceItem {
+  id: string;
+  userId: string;
+  description?: string;
+  amount: number;
+  issueDate: string;
+  receiptFileUrl?: string;
+  receiptFileName?: string;
+  installmentsCount: number;
+  startMonthKey: string;
+  installments: PayrollAdvanceInstallment[];
+  createdAt: string;
   updatedAt?: string;
 }
 
@@ -1110,6 +1140,13 @@ export interface FinancialInvoice {
   boletoFileName?: string;
   boletoFileType?: string;
   boletoFileSize?: number;
+
+  // Anexo do Comprovante de Pagamento (PDF ou imagem)
+  receiptFileUrl?: string;
+  receiptFileName?: string;
+  receiptFileType?: string;
+  receiptFileSize?: number;
+  paymentAuthCode?: string;
   
   createdAt: string;
   updatedAt?: string;
@@ -1279,6 +1316,9 @@ export interface RdoConfig {
 
 // Re-export dos tipos do módulo SIGA GR
 export * from './types/sigaGr';
+
+// Re-export de StayRecord para gestão de estadias
+export type { StayRecord } from './utils/toolStorage';
 
 
 

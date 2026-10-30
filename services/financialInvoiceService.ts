@@ -266,6 +266,10 @@ export function safeSetInvoicesLocalStorage(invoices: FinancialInvoice[]) {
         copy.boletoFileUrl = undefined;
         hasChanges = true;
       }
+      if (typeof copy.receiptFileUrl === 'string' && copy.receiptFileUrl.startsWith('data:')) {
+        copy.receiptFileUrl = undefined;
+        hasChanges = true;
+      }
       return hasChanges ? copy : inv;
     });
     localStorage.setItem(STORAGE_INVOICES_KEY, JSON.stringify(sanitized));
@@ -954,12 +958,28 @@ export const financialInvoiceService = {
       );
     }
 
+    let finalReceiptFileUrl = item.receiptFileUrl;
+    if (finalReceiptFileUrl && finalReceiptFileUrl.startsWith('data:')) {
+      finalReceiptFileUrl = await uploadInvoiceAttachmentToStorage(
+        finalReceiptFileUrl,
+        invoiceId,
+        'comprovante',
+        item.receiptFileName,
+        item.receiptFileType
+      );
+    }
+
     const completeInvoice: FinancialInvoice = {
       ...item,
       id: invoiceId,
       documentType: docType,
       fileUrl: finalFileUrl,
       boletoFileUrl: finalBoletoFileUrl,
+      receiptFileUrl: finalReceiptFileUrl,
+      receiptFileName: item.receiptFileName,
+      receiptFileType: item.receiptFileType,
+      receiptFileSize: item.receiptFileSize,
+      paymentAuthCode: item.paymentAuthCode,
       totalAmount: Number(item.totalAmount) || 0,
       payableAmount: item.payableAmount !== undefined && !isNaN(item.payableAmount) ? Number(item.payableAmount) : (Number(item.totalAmount) || 0),
       createdAt: isEdit ? (item as any).createdAt || nowIso : nowIso,
@@ -1022,6 +1042,11 @@ export const financialInvoiceService = {
         boleto_file_name: item.boletoFileName,
         boleto_file_type: item.boletoFileType,
         boleto_file_size: item.boletoFileSize,
+        receipt_file_url: completeInvoice.receiptFileUrl,
+        receipt_file_name: item.receiptFileName,
+        receipt_file_type: item.receiptFileType,
+        receipt_file_size: item.receiptFileSize,
+        payment_auth_code: item.paymentAuthCode,
         updated_at: nowIso
       };
 
@@ -1044,6 +1069,107 @@ export const financialInvoiceService = {
     broadcastInvoicesChange(isEdit ? 'update' : 'create', invoiceId);
 
     return completeInvoice;
+  },
+
+  updateInvoicePayment: async (
+    id: string,
+    params: {
+      status?: InvoicePaymentStatus;
+      paymentDate?: string;
+      receiptFileUrl?: string | null;
+      receiptFileName?: string | null;
+      receiptFileType?: string | null;
+      receiptFileSize?: number | null;
+      paymentMethod?: FinancialInvoice['paymentMethod'];
+      paymentAuthCode?: string | null;
+      notes?: string;
+    }
+  ): Promise<FinancialInvoice | null> => {
+    const nowIso = new Date().toISOString();
+    
+    // Sempre busca da nuvem para mesclar antes de atualizar
+    const remoteList = await fetchRemoteInvoices();
+    let localList: FinancialInvoice[] = [];
+    try {
+      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
+      if (local) localList = JSON.parse(local);
+    } catch {}
+
+    const currentList = mergeInvoicesList(remoteList, localList);
+    let targetInvoice: FinancialInvoice | null = null;
+
+    const updatedList = currentList.map(inv => {
+      if (inv.id === id) {
+        const nextStatus = params.status !== undefined ? params.status : inv.status;
+        const nextPaymentDate = params.paymentDate !== undefined 
+          ? params.paymentDate 
+          : (nextStatus === 'Pago' ? (inv.paymentDate || new Date().toISOString().split('T')[0]) : undefined);
+
+        const updated: FinancialInvoice = {
+          ...inv,
+          status: nextStatus,
+          paymentDate: nextPaymentDate,
+          updatedAt: nowIso
+        };
+
+        if (params.receiptFileUrl !== undefined) updated.receiptFileUrl = params.receiptFileUrl || undefined;
+        if (params.receiptFileName !== undefined) updated.receiptFileName = params.receiptFileName || undefined;
+        if (params.receiptFileType !== undefined) updated.receiptFileType = params.receiptFileType || undefined;
+        if (params.receiptFileSize !== undefined) updated.receiptFileSize = params.receiptFileSize || undefined;
+        if (params.paymentMethod !== undefined) updated.paymentMethod = params.paymentMethod;
+        if (params.paymentAuthCode !== undefined) updated.paymentAuthCode = params.paymentAuthCode || undefined;
+        if (params.notes !== undefined) updated.notes = params.notes;
+
+        targetInvoice = updated;
+        return updated;
+      }
+      return inv;
+    });
+
+    // Atualiza no Supabase row 888
+    try {
+      if (updatedList.length > 0) {
+        await supabase.from('profile_permissions').upsert({
+          id: SUPABASE_INVOICES_RECORD_ID,
+          permissions: {
+            invoices: updatedList,
+            updatedAt: nowIso
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[Supabase] Erro ao atualizar baixa de NF na nuvem:', err);
+    }
+
+    // Tenta atualizar na tabela dedicada
+    try {
+      const settledInvoice = updatedList.find(inv => inv.id === id);
+      if (settledInvoice) {
+        await supabase
+          .from('financial_invoices')
+          .update({
+            status: settledInvoice.status,
+            payment_date: settledInvoice.paymentDate || null,
+            receipt_file_url: settledInvoice.receiptFileUrl || null,
+            receipt_file_name: settledInvoice.receiptFileName || null,
+            receipt_file_type: settledInvoice.receiptFileType || null,
+            receipt_file_size: settledInvoice.receiptFileSize || null,
+            payment_method: settledInvoice.paymentMethod || null,
+            updated_at: nowIso
+          })
+          .eq('id', id);
+      }
+    } catch {}
+
+    // Atualiza local com seguranca de cota
+    safeSetInvoicesLocalStorage(updatedList);
+
+    // Notifica abas e outros usuarios
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: targetInvoice || { id, status: params.status } }));
+    }
+    broadcastInvoicesChange('update', id);
+    return targetInvoice;
   },
 
   updateInvoiceStatus: async (

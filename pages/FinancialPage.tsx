@@ -254,6 +254,18 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
     }));
   };
 
+  const handleUpdateTransaction = (id: string, updates: Partial<FinancialTransaction>) => {
+    setTransactions(prev => prev.map(t => {
+      if (t.id === id) {
+        return {
+          ...t,
+          ...updates
+        };
+      }
+      return t;
+    }));
+  };
+
   const handleDeleteTransaction = (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
@@ -417,6 +429,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             transactions={transactions}
             onAddTransaction={handleAddTransaction}
             onUpdateStatus={handleUpdateStatus}
+            onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
             shipments={shipments}
             cargos={cargos}

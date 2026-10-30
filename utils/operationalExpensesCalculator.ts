@@ -1,6 +1,6 @@
 import { Shipment, Cargo, OperationalExpenseItem, RealProfitData, RISK_QUERY_COST_MAP, ShipmentStatus } from '../types';
 import { calculateTacTaxDeductions } from './freightCalculation';
-import { StayRecord } from './toolStorage';
+import { StayRecord, extractCteNumberFromStay } from './toolStorage';
 import { isStayForShipment } from '../utils';
 
 export interface OperationalExpensesConfig {
@@ -52,6 +52,8 @@ export interface CalculatedOperationalExpenses {
   demurrageRevenue?: number;
   demurrageDriverPaid?: number;
   demurrageProfit?: number;
+  stayIcmsTotal?: number;
+  stayFederalTaxTotal?: number;
   riskCost: number;
   financialCostValue: number;
   financialCostEffectiveRate: number;
@@ -515,9 +517,11 @@ export function calculateShipmentExpenses(
     ? Number((companyFreight * (financialCostEffectiveRate / 100)).toFixed(2))
     : 0;
 
-  const financialCostValue = (shipment.financialCostValue !== undefined && shipment.financialCostValue !== null && Number(shipment.financialCostValue) > 0)
-    ? Number(shipment.financialCostValue)
-    : (isFinancialCostActive ? calculatedFinancialCost : 0);
+  const financialCostValue = calculatedFinancialCost > 0
+    ? calculatedFinancialCost
+    : ((shipment.financialCostValue !== undefined && shipment.financialCostValue !== null && Number(shipment.financialCostValue) > 0)
+        ? Number(shipment.financialCostValue)
+        : (isFinancialCostActive ? calculatedFinancialCost : 0));
 
   if (financialCostValue > 0) {
     expenseItems.push({
@@ -591,7 +595,10 @@ export function calculateShipmentExpenses(
       lower.includes('agenciador') ||
       lower.includes('custo financeiro') ||
       lower.includes('gr') ||
-      lower.includes('gerenciadora');
+      lower.includes('gerenciadora') ||
+      lower.includes('estadia') ||
+      lower.includes('diária') ||
+      lower.includes('diaria');
 
     if (!isDuplicate && Number(item.value) > 0) {
       expenseItems.push(item);
@@ -607,6 +614,52 @@ export function calculateShipmentExpenses(
   const demurrageRevenue = linkedStays.reduce((sum: number, st: any) => sum + (Number(st.approvedValue ?? st.approved_value) || 0), 0);
   const demurrageDriverPaid = linkedStays.reduce((sum: number, st: any) => sum + (Number(st.driverPaidValue ?? st.driver_paid_value) || 0), 0);
   const demurrageProfit = demurrageRevenue - demurrageDriverPaid;
+
+  // Tributos do CT-e Complementar de Estadia (ICMS e Imposto Federal)
+  let stayIcmsTotal = 0;
+  let stayFederalTaxTotal = 0;
+
+  if (linkedStays.length > 0) {
+    for (const st of linkedStays) {
+      const cteNum = st.cteNumber || extractCteNumberFromStay(st) || 'S/N';
+      const stApproved = Number(st.approvedValue ?? st.approved_value) || 0;
+
+      // ICMS do CT-e Complementar
+      const stIcmsPct = st.icmsPercentage !== undefined && st.icmsPercentage !== null
+        ? Number(st.icmsPercentage)
+        : (icmsPercentage > 0 && !isIcmsExemptExplicit ? icmsPercentage : 0);
+
+      const stIcmsVal = st.icmsValue !== undefined && st.icmsValue !== null
+        ? Number(st.icmsValue)
+        : ((isIcmsExemptExplicit || stIcmsPct <= 0 || stApproved <= 0)
+            ? 0
+            : Number(((stApproved * (stIcmsPct / 100))).toFixed(2)));
+
+      if (stIcmsVal > 0) {
+        stayIcmsTotal += stIcmsVal;
+        expenseItems.push({
+          name: `ICMS CT-e Comp. Estadia (CT-e nº ${cteNum}) (${stIcmsPct}%)`,
+          value: stIcmsVal,
+          type: 'negative'
+        });
+      }
+
+      // Imposto Federal do CT-e Complementar
+      const defaultFedRate = isSimplesNacional ? simplesFederalRate : (isShipmentPf ? 0.03655 : 0.0925);
+      const stFedTaxVal = st.federalTaxValue !== undefined && st.federalTaxValue !== null
+        ? Number(st.federalTaxValue)
+        : (isExportCargo ? 0 : (defaultFedRate > 0 && stApproved > 0 ? Number((stApproved * defaultFedRate).toFixed(2)) : 0));
+
+      if (stFedTaxVal > 0) {
+        stayFederalTaxTotal += stFedTaxVal;
+        expenseItems.push({
+          name: `Imposto Federal CT-e Comp. Estadia (CT-e nº ${cteNum})`,
+          value: stFedTaxVal,
+          type: 'negative'
+        });
+      }
+    }
+  }
 
   const rawExtraPayments = Array.isArray(shipment.driverExtraPayments) ? shipment.driverExtraPayments : [];
   let stayExtraPayments = 0;
@@ -705,6 +758,8 @@ export function calculateShipmentExpenses(
     demurrageRevenue,
     demurrageDriverPaid,
     demurrageProfit,
+    stayIcmsTotal: Number(stayIcmsTotal.toFixed(2)),
+    stayFederalTaxTotal: Number(stayFederalTaxTotal.toFixed(2)),
     riskCost,
     financialCostValue,
     financialCostEffectiveRate,

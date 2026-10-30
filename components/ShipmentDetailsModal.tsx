@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import type { Shipment, Cargo, User, Client, Product, Vehicle } from '../types';
 import { UserProfile, ShipmentStatus, VehicleSetType, VehicleBodyType, DriverPaymentMethod, AnttModality, EtcTaxRegime } from '../types';
 import { generateLoadingOrderPDF, isGoiasOrigin, isMinasOrigin, isSpOrigin } from '../utils/pdfGenerator';
-import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X, Copy } from 'lucide-react';
+import { FileTextIcon, Trash2, ArrowRightLeft, Edit2, Check, X, Copy, AlertCircle } from 'lucide-react';
 import { getToolStaysByShipment, StayRecord } from '../utils/toolStorage';
 import { getShipmentAttachmentUrl } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
+import { StatusPendingModal } from './StatusPendingModal';
 import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
 import { isDemoUser, isDeveloperUser } from '../auth';
@@ -70,6 +71,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
   const [shipmentStays, setShipmentStays] = useState<StayRecord[]>([]);
   const [previewDocument, setPreviewDocument] = useState<{ url: string; name?: string; category?: string } | null>(null);
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [isEditingAdvance, setIsEditingAdvance] = useState(false);
   const [inlineAdvancePercentage, setInlineAdvancePercentage] = useState<number>(70);
   const [isSavingAdvance, setIsSavingAdvance] = useState(false);
@@ -227,9 +229,14 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
     : (cargo?.financialCostEffectiveRate !== undefined 
         ? cargo.financialCostEffectiveRate 
         : ((financialCostMonthlyRate * financialCostDaysTerm) / (cargo?.financialCostBaseDays || 30)));
-  const financialCostValue = (shipment.financialCostValue !== undefined && shipment.financialCostValue > 0)
-    ? shipment.financialCostValue
-    : ((companyRateSnapshot * tonnage) * (financialCostRate / 100));
+  const calculatedFinancialCost = (financialCostRate > 0 && (companyRateSnapshot * tonnage) > 0)
+    ? Number(((companyRateSnapshot * tonnage) * (financialCostRate / 100)).toFixed(2))
+    : 0;
+  const financialCostValue = calculatedFinancialCost > 0
+    ? calculatedFinancialCost
+    : ((shipment.financialCostValue !== undefined && shipment.financialCostValue > 0)
+        ? shipment.financialCostValue
+        : 0);
 
   // Valor original colocado na carga (R$/ton) e teto de +R$ 5,00 para perfis operacionais
   const cargoBaseDriverRate = (cargo?.driverFreightValuePerTon !== undefined && cargo.driverFreightValuePerTon > 0)
@@ -303,6 +310,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       cteEmissionDate: isCteApplicableForStatus(shipment.status) ? (shipment.cteEmissionDate || (getShipmentCteEmissionDate(shipment) || '')) : '',
       ciotNumber: shipment.ciotNumber || shipment.ciot || (getShipmentCiotNumber(shipment) !== '-' ? getShipmentCiotNumber(shipment) : ''),
       ciot: shipment.ciot || shipment.ciotNumber || (getShipmentCiotNumber(shipment) !== '-' ? getShipmentCiotNumber(shipment) : ''),
+      statusPendingObservation: shipment.statusPendingObservation || '',
     });
     setIsEditingData(true);
   };
@@ -320,7 +328,8 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
       onUpdateShipmentData(shipment.id, {
         ...editedData,
         driverFreightRateSnapshot: finalRate,
-        driverFreightValue: finalTotal
+        driverFreightValue: finalTotal,
+        statusPendingObservation: editedData.statusPendingObservation !== undefined ? (editedData.statusPendingObservation.trim() || undefined) : undefined
       });
       setIsEditingData(false);
     }
@@ -470,7 +479,32 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         )}
                     </div>
                 </DetailItem>
-                <DetailItem label="Status Atual" value={shipment.status} />
+                <DetailItem label="Status Atual">
+                    <div className="flex flex-col gap-1.5 mt-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{shipment.status}</span>
+                            {!isDemo && onUpdateShipmentData && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPendingModalOpen(true)}
+                                    className="text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded transition-all"
+                                    title="Editar ou informar pendência do status"
+                                >
+                                    <AlertCircle size={12} />
+                                    <span>{shipment.statusPendingObservation ? 'Editar Pendência' : '+ Pendência'}</span>
+                                </button>
+                            )}
+                        </div>
+                        {shipment.statusPendingObservation && (
+                            <div className="p-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-1.5 shadow-xs">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                                <div className="flex-1">
+                                    <span className="font-bold">Pendência:</span> {shipment.statusPendingObservation}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </DetailItem>
                 <DetailItem label="Comercial (Embarcador)" value={embarcador?.name || 'N/A'} />
                 {shipment.status === 'Cancelado' && shipment.cancellationReason && (
                     <div className="md:col-span-2 mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 rounded-md">
@@ -607,6 +641,19 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     <option value="" disabled>Selecione...</option>
                                     {Object.values(VehicleBodyType).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
+                            </div>
+                            <div className="md:col-span-2 lg:col-span-3 p-3 bg-amber-50/50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800/40">
+                                <label className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 mb-1">
+                                    <AlertCircle size={14} className="text-amber-600 dark:text-amber-400" />
+                                    <span>Pendência do Status Atual ({shipment.status})</span>
+                                </label>
+                                <input 
+                                    type="text"
+                                    className="w-full p-2 text-sm border border-amber-300 dark:border-amber-700 rounded-md dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                                    value={editedData.statusPendingObservation || ''}
+                                    onChange={e => setEditedData({...editedData, statusPendingObservation: e.target.value})}
+                                    placeholder="Ex: Aguardando facial, pendente consulta CNH, fila do pátio..."
+                                />
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Número do CT-e</label>
@@ -1491,7 +1538,18 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
           products={products}
         />
       )}
-    </>
+          {/* Modal de Observação de Pendência do Status */}
+      <StatusPendingModal
+        isOpen={isPendingModalOpen}
+        onClose={() => setIsPendingModalOpen(false)}
+        shipment={shipment}
+        onSave={async (shipmentId, pendingObs) => {
+          if (onUpdateShipmentData) {
+            await onUpdateShipmentData(shipmentId, { statusPendingObservation: pendingObs });
+          }
+        }}
+      />
+</>
   );
 };
 

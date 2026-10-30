@@ -7,7 +7,7 @@ import {
   History as HistoryIcon, Search, Filter, Download, FileText, 
   Truck, Calendar, MapPin, User, Trash2, ChevronRight, 
   ArrowRight, DollarSign, Clock, FileDigit, Building2,
-  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip
+  ChevronDown, ChevronUp, X, FileCode, Scale, Fuel, Route, Paperclip, Landmark
 } from 'lucide-react';
 import Header from '../components/Header';
 import { 
@@ -55,7 +55,11 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     origin: string,
     destination: string,
     shipmentId: string,
-    invoice: string
+    invoice: string,
+    icmsValue?: string,
+    icmsPercentage?: string,
+    federalTaxValue?: string,
+    isIcmsManual?: boolean
   } | null>(null);
   const [isReadingCte, setIsReadingCte] = useState(false);
   const [cteFeedback, setCteFeedback] = useState<string | null>(null);
@@ -166,6 +170,25 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       const stay = stays.find(s => s.id === id);
       if (stay && activeView === 'estadias') {
         const detectedCteNumber = stay.cteNumber || extractCteNumberFromStay(stay) || '';
+        const linkedShipment = stay.shipmentId ? (shipments || []).find(sh => sh.id === stay.shipmentId) : null;
+        const linkedCargo = linkedShipment?.cargoId ? (cargos || []).find(c => c.id === linkedShipment.cargoId) : null;
+        const isExport = Boolean(linkedCargo?.isExport ?? (linkedShipment as any)?.isExport);
+        const shipmentIcmsRate = linkedCargo?.icmsPercentage || (linkedCargo?.hasIcms ? 7 : ((linkedShipment as any)?.icmsPercentage || 0));
+        const isIcmsExempt = Boolean(
+          isExport ||
+          (linkedCargo && !linkedCargo.hasIcms && !linkedCargo.icmsPercentage) ||
+          (linkedShipment as any)?.isIcmsExempt ||
+          (linkedShipment as any)?.realProfitData?.isIcmsExempt
+        );
+
+        let initialIcms = '';
+        if (stay.icmsValue != null) {
+          initialIcms = stay.icmsValue.toString();
+        } else if (!isIcmsExempt && shipmentIcmsRate > 0 && stay.approvedValue) {
+          const autoCalc = Number((stay.approvedValue * (shipmentIcmsRate / 100)).toFixed(2));
+          if (autoCalc > 0) initialIcms = autoCalc.toString();
+        }
+
         setEditValues({
           id,
           approved: stay.approvedValue != null ? stay.approvedValue.toString() : '',
@@ -178,7 +201,11 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
           origin: stay.origin || '',
           destination: stay.destination || '',
           shipmentId: stay.shipmentId || '',
-          invoice: stay.invoice || ''
+          invoice: stay.invoice || '',
+          icmsValue: initialIcms,
+          icmsPercentage: stay.icmsPercentage != null ? stay.icmsPercentage.toString() : (isIcmsExempt ? '0' : (shipmentIcmsRate ? shipmentIcmsRate.toString() : '')),
+          federalTaxValue: stay.federalTaxValue != null ? stay.federalTaxValue.toString() : '',
+          isIcmsManual: stay.icmsValue != null
         });
         
         if (stay.shipmentId && (shipments || []).length > 0) {
@@ -279,16 +306,27 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
     const cargo = (cargos || []).find(c => c.id === shipment.cargoId);
     const client = cargo ? (propsClients || []).find(c => c.id === cargo.clientId) : null;
 
-    setEditValues(prev => prev ? ({
-      ...prev,
-      shipmentId,
-      driver: shipment.driverName || prev.driver,
-      plate: shipment.horsePlate || prev.plate,
-      weight: shipment.shipmentTonnage ? shipment.shipmentTonnage.toString() : prev.weight,
-      origin: cargo?.origin || prev.origin,
-      destination: cargo?.destination || prev.destination,
-      clientName: client?.nomeFantasia || client?.razaoSocial || prev.clientName,
-    }) : null);
+    const isExp = Boolean(cargo?.isExport ?? (shipment as any)?.isExport);
+    const icmsR = cargo?.icmsPercentage || (cargo?.hasIcms ? 7 : ((shipment as any)?.icmsPercentage || 0));
+    const isEx = Boolean(isExp || (cargo && !cargo.hasIcms && !cargo.icmsPercentage) || (shipment as any)?.isIcmsExempt);
+
+    setEditValues(prev => {
+      if (!prev) return null;
+      const appr = parseFlexibleNumber(prev.approved);
+      const autoI = !isEx && icmsR > 0 && appr > 0 ? Number((appr * (icmsR / 100)).toFixed(2)) : 0;
+      return {
+        ...prev,
+        shipmentId,
+        driver: shipment.driverName || prev.driver,
+        plate: shipment.horsePlate || prev.plate,
+        weight: shipment.shipmentTonnage ? shipment.shipmentTonnage.toString() : prev.weight,
+        origin: cargo?.origin || prev.origin,
+        destination: cargo?.destination || prev.destination,
+        clientName: client?.nomeFantasia || client?.razaoSocial || prev.clientName,
+        icmsPercentage: isEx ? '0' : (icmsR ? icmsR.toString() : prev.icmsPercentage),
+        ...(!prev.isIcmsManual ? { icmsValue: autoI > 0 ? autoI.toString() : (isEx ? '0' : prev.icmsValue) } : {})
+      };
+    });
     
     setShipmentSearchTerm(`${shipment.horsePlate} - ${shipment.driverName} - ID: ${shipment.id}`);
     setIsShipmentDropdownOpen(false);
@@ -309,6 +347,37 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       return parseFloat(str.replace(',', '.')) || 0;
     }
     return parseFloat(str) || 0;
+  };
+
+  
+  const handleApprovedValueChange = (val: string) => {
+    setEditValues(prev => {
+      if (!prev) return null;
+      const next = { ...prev, approved: val };
+      if (!next.isIcmsManual) {
+        const linkedShipment = next.shipmentId ? (shipments || []).find(sh => sh.id === next.shipmentId) : null;
+        const linkedCargo = linkedShipment?.cargoId ? (cargos || []).find(c => c.id === linkedShipment.cargoId) : null;
+        const isExport = Boolean(linkedCargo?.isExport ?? (linkedShipment as any)?.isExport);
+        const shipmentIcmsRate = linkedCargo?.icmsPercentage || (linkedCargo?.hasIcms ? 7 : ((linkedShipment as any)?.icmsPercentage || 0));
+        const isIcmsExempt = Boolean(
+          isExport ||
+          (linkedCargo && !linkedCargo.hasIcms && !linkedCargo.icmsPercentage) ||
+          (linkedShipment as any)?.isIcmsExempt ||
+          (linkedShipment as any)?.realProfitData?.isIcmsExempt
+        );
+
+        if (!isExport && !isIcmsExempt && shipmentIcmsRate > 0) {
+          const num = parseFlexibleNumber(val);
+          const autoIcms = Number((num * (shipmentIcmsRate / 100)).toFixed(2));
+          next.icmsValue = autoIcms > 0 ? autoIcms.toFixed(2) : '';
+          next.icmsPercentage = shipmentIcmsRate.toString();
+        } else if (isExport || isIcmsExempt) {
+          next.icmsValue = '0';
+          next.icmsPercentage = '0';
+        }
+      }
+      return next;
+    });
   };
 
   const handleSaveStayFinancials = async () => {
@@ -334,6 +403,9 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
       const approvedVal = editValues.approved !== '' ? parseFlexibleNumber(editValues.approved) : undefined;
       const paidVal = editValues.paid !== '' ? parseFlexibleNumber(editValues.paid) : undefined;
       const weightVal = editValues.weight !== '' ? parseFlexibleNumber(editValues.weight) : 0;
+      const icmsVal = editValues.icmsValue !== undefined && editValues.icmsValue !== '' ? parseFlexibleNumber(editValues.icmsValue) : undefined;
+      const icmsPct = editValues.icmsPercentage !== undefined && editValues.icmsPercentage !== '' ? parseFlexibleNumber(editValues.icmsPercentage) : undefined;
+      const fedTaxVal = editValues.federalTaxValue !== undefined && editValues.federalTaxValue !== '' ? parseFlexibleNumber(editValues.federalTaxValue) : undefined;
 
       const updates: Partial<StayRecord> = {
         approvedValue: approvedVal,
@@ -347,6 +419,9 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
         shipmentId: editValues.shipmentId || undefined,
         invoice: editValues.invoice || undefined,
         cteNumber: cleanCteNum,
+        icmsValue: icmsVal,
+        icmsPercentage: icmsPct,
+        federalTaxValue: fedTaxVal,
         ...(cteUrl && { cteUrl }),
         ...(paymentProofUrl && { paymentProofUrl })
       };
@@ -722,7 +797,7 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                        type="text" 
                                        inputMode="decimal"
                                        value={editValues?.id === item.id ? editValues?.approved : ''} 
-                                       onChange={e => setEditValues(prev => prev ? {...prev, approved: e.target.value} : null)}
+                                       onChange={e => handleApprovedValueChange(e.target.value)}
                                        placeholder="R$ 0,00"
                                        className="w-full px-3 py-1.5 text-sm border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-indigo-500"
                                      />
@@ -795,6 +870,102 @@ export default function ToolsHistoryPage({ currentUser, shipments = [], cargos =
                                      </div>
                                    )}
                                  </div>
+
+                                 {/* Bloco de Gestão Tributária do CT-e Complementar */}
+                                 {(() => {
+                                   const linkedShipment = (editValues?.shipmentId || item.shipmentId) ? (shipments || []).find(sh => sh.id === (editValues?.shipmentId || item.shipmentId)) : null;
+                                   const linkedCargo = linkedShipment?.cargoId ? (cargos || []).find(c => c.id === linkedShipment.cargoId) : null;
+                                   const isExport = Boolean(linkedCargo?.isExport ?? (linkedShipment as any)?.isExport);
+                                   const shipmentIcmsRate = linkedCargo?.icmsPercentage || (linkedCargo?.hasIcms ? 7 : ((linkedShipment as any)?.icmsPercentage || 0));
+                                   const isIcmsExempt = Boolean(
+                                     isExport ||
+                                     (linkedCargo && !linkedCargo.hasIcms && !linkedCargo.icmsPercentage) ||
+                                     (linkedShipment as any)?.isIcmsExempt ||
+                                     (linkedShipment as any)?.realProfitData?.isIcmsExempt
+                                   );
+                                   const currentApprovedNum = parseFlexibleNumber(editValues?.approved ?? item.approvedValue);
+                                   const autoIcmsAmount = (!isIcmsExempt && shipmentIcmsRate > 0 && currentApprovedNum > 0)
+                                     ? Number((currentApprovedNum * (shipmentIcmsRate / 100)).toFixed(2))
+                                     : 0;
+
+                                   return (
+                                     <div className="p-3 bg-gradient-to-br from-amber-50/70 to-orange-50/30 dark:from-amber-950/20 dark:to-orange-950/10 rounded-xl border border-amber-200/80 dark:border-amber-800/40 space-y-3">
+                                       <div className="flex items-center justify-between">
+                                         <span className="text-[10px] font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                                           <Landmark className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                           Tributos do CT-e Complementar
+                                         </span>
+                                         {isIcmsExempt ? (
+                                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                             Isento / Exportação
+                                           </span>
+                                         ) : shipmentIcmsRate > 0 ? (
+                                           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60" title={`Alíquota de ICMS do embarque: ${shipmentIcmsRate}%`}>
+                                             Auto: {shipmentIcmsRate}% do embarque {autoIcmsAmount > 0 ? `= ${formatCurrency(autoIcmsAmount)}` : ''}
+                                           </span>
+                                         ) : null}
+                                       </div>
+
+                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                         {/* Campo ICMS do CT-e Complementar */}
+                                         <div>
+                                           <div className="flex items-center justify-between mb-1">
+                                             <label className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase block">
+                                               ICMS Complementar (R$)
+                                             </label>
+                                             {editValues?.isIcmsManual && !isIcmsExempt && (
+                                               <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                   setEditValues(prev => prev ? {
+                                                     ...prev,
+                                                     isIcmsManual: false,
+                                                     icmsValue: autoIcmsAmount > 0 ? autoIcmsAmount.toFixed(2) : ''
+                                                   } : null);
+                                                 }}
+                                                 className="text-[9px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
+                                                 title="Restaurar cálculo automático da alíquota do embarque"
+                                               >
+                                                 Restaurar Auto
+                                               </button>
+                                             )}
+                                           </div>
+                                           <input 
+                                             type="text" 
+                                             inputMode="decimal"
+                                             value={editValues?.id === item.id ? (editValues?.icmsValue ?? '') : ''} 
+                                             onChange={e => setEditValues(prev => prev ? { ...prev, icmsValue: e.target.value, isIcmsManual: true } : null)}
+                                             placeholder={isIcmsExempt ? "Isento (R$ 0,00)" : "R$ 0,00"}
+                                             className="w-full px-2.5 py-1.5 text-xs font-mono font-bold border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500 text-amber-900 dark:text-amber-200 placeholder:font-normal placeholder:text-slate-400"
+                                           />
+                                           <span className="text-[8px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                                             {isIcmsExempt ? 'Mercado externo ou isenção de ICMS' : `Alíquota: ${shipmentIcmsRate}%. Editável se houver divergência.`}
+                                           </span>
+                                         </div>
+
+                                         {/* Campo Imposto Federal do CT-e Complementar */}
+                                         <div>
+                                           <div className="flex items-center justify-between mb-1">
+                                             <label className="text-[10px] text-slate-600 dark:text-slate-400 font-bold uppercase block">
+                                               Imposto Federal Complementar (R$)
+                                             </label>
+                                           </div>
+                                           <input 
+                                             type="text" 
+                                             inputMode="decimal"
+                                             value={editValues?.id === item.id ? (editValues?.federalTaxValue ?? '') : ''} 
+                                             onChange={e => setEditValues(prev => prev ? { ...prev, federalTaxValue: e.target.value } : null)}
+                                             placeholder="0,00"
+                                             className="w-full px-2.5 py-1.5 text-xs font-mono font-bold border border-slate-200 dark:border-gray-600 dark:text-white dark:bg-gray-700 rounded-lg outline-none focus:border-amber-500 text-amber-900 dark:text-amber-200 placeholder:font-normal placeholder:text-slate-400"
+                                           />
+                                           <span className="text-[8px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                                             Informe PIS/COFINS manual deste CT-e
+                                           </span>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   );
+                                 })()}
                                   <div>
                                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Valor Pago Motorista (Custo)</label>
                                    <div className="flex gap-2 items-center">

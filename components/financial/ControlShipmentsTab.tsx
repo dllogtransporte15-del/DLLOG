@@ -1371,12 +1371,6 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
           return baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0;
         })(),
         custoFinanceiro: (() => {
-          if (s.financialCostValue !== undefined && s.financialCostValue > 0) {
-            return s.financialCostValue;
-          }
-          if (opExp.financialCostValue !== undefined && opExp.financialCostValue > 0) {
-            return opExp.financialCostValue;
-          }
           const monthlyRate = s.financialCostMonthlyRate !== undefined ? s.financialCostMonthlyRate : (cargo?.financialCostMonthlyRate || 0);
           const daysTerm = s.financialCostDaysTerm !== undefined ? s.financialCostDaysTerm : (cargo?.financialCostDaysTerm || 0);
           const effectiveRate = s.financialCostRate !== undefined 
@@ -1384,7 +1378,15 @@ export const ControlShipmentsTab: React.FC<ControlShipmentsTabProps> = ({
             : (cargo?.financialCostEffectiveRate !== undefined ? cargo.financialCostEffectiveRate : ((monthlyRate * daysTerm) / 30));
           if (effectiveRate > 0) {
             const fb = (s.realProfitData?.companyFreight || opExp.companyFreight || freteBruto || 0);
-            return Number(((fb * effectiveRate) / 100).toFixed(2));
+            if (fb > 0) {
+              return Number(((fb * effectiveRate) / 100).toFixed(2));
+            }
+          }
+          if (s.financialCostValue !== undefined && s.financialCostValue > 0) {
+            return s.financialCostValue;
+          }
+          if (opExp.financialCostValue !== undefined && opExp.financialCostValue > 0) {
+            return opExp.financialCostValue;
           }
           return 0;
         })(),

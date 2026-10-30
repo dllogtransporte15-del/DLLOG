@@ -27,6 +27,158 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_10_29_v2_88_9',
+    version: 'v2.88.9',
+    date: '29/10/2026',
+    title: 'Gestão de Custos Tributários para CT-e Complementar de Estadias',
+    summary: 'Implementação completa da gestão de ICMS e Imposto Federal para CT-e complementar de estadias. Inclui cálculo automático de ICMS para mercado interno baseado na alíquota do embarque, campo para informe de Imposto Federal (PIS/COFINS), linhas dedicadas nos rodapés tributários do embarque e abatimento automático na DRE e lucro líquido real.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Cálculo Automático e Edição de ICMS da Estadia',
+        description: 'Cálculo automático do ICMS sobre o valor aprovado da estadia para operações de mercado interno conforme a alíquota do embarque, com badge informativo, isenção em exportações e flexibilidade para ajuste manual.'
+      },
+      {
+        category: 'feature',
+        title: 'Campo de Imposto Federal do CT-e Complementar',
+        description: 'Inserção monetária manual do Imposto Federal (PIS/COFINS) recolhido ou destacado para o CT-e complementar de estadia no módulo de histórico de estadias.'
+      },
+      {
+        category: 'improvement',
+        title: 'Linhas Dedicadas nos Rodapés Tributários do Embarque',
+        description: 'Exibição discriminada de cada CT-e complementar de estadia com seu respectivo número nos cards de Imposto Federal e ICMS Destacado na Automatização do CT-e, somando aos totais consolidados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Abatimento Integrado na DRE e Lucro Real',
+        description: 'Dedução imediata do ICMS e Imposto Federal de estadias nas despesas operacionais da DRE e no cálculo do Lucro Líquido Real em todos os relatórios e painéis financeiros.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_29_v2_88_8',
+    version: 'v2.88.8',
+    date: '29/10/2026',
+    title: 'Obrigatoriedade Estrita e Validação Cruzada de Documentos Fiscais de Viagem',
+    summary: 'Implementação de conformidade fiscal rigorosa no avanço do status "Aguardando Fiscal". Torna-se estritamente obrigatório anexar e validar os três documentos essenciais de transporte: CT-e (DACTE), MDF-e (DAMDFE) e Carta Frete / Contrato de Transporte. O sistema bloqueia anexos com incompatibilidade cruzada de tipo e trava o avanço de status enquanto houver pendência ou documento inválido.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Obrigatoriedade Estrita de CT-e, MDF-e e Carta Frete',
+        description: 'Bloqueio do avanço de status enquanto faltar qualquer um dos 3 documentos obrigatórios no status Aguardando Fiscal, com painel visual detalhado indicando os itens validados e pendentes.'
+      },
+      {
+        category: 'security',
+        title: 'Validação Rigorosa e Trava de Incompatibilidade de Documento',
+        description: 'Detecção cruzada automática por OCR e cabeçalhos. Impede o avanço e exibe notificações imediatas se um MDF-e, Carta Frete ou DANFE for anexado no campo de CT-e, ou vice-versa, com botão de mover em 1 clique.'
+      },
+      {
+        category: 'improvement',
+        title: 'Textos Orientativos e Identificação Visual nos Campos',
+        description: 'Rótulos atualizados com indicação explícita de obrigatoriedade (CT-e *, MDF-e *, Carta Frete *) e subtextos orientativos detalhando o tipo exato de documento esperado em cada caixa de upload.'
+      },
+      {
+        category: 'security',
+        title: 'Bloqueio Preventivo e Tooltip no Botão Salvar e Avançar',
+        description: 'O botão de avanço permanece visualmente desabilitado enquanto houver documentos pendentes ou arquivos com incompatibilidade de tipo, exibindo tooltip explicativo com a lista do que precisa ser corrigido.'
+      }
+    ]
+  },  {
+    id: 'rel_2026_10_29_v2_88_7',
+    version: 'v2.88.7',
+    date: '29/10/2026',
+    title: 'Observação de Pendência do Status e Notas Rápidas Operacionais',
+    summary: 'Novo recurso operacional que permite registrar e visualizar notas rápidas de pendências para cada veículo diretamente na coluna de status atual (ex: Aguardando facial, pendente consulta CNH, fila do pátio, aguardando ordem de coleta). Conta com badge âmbar em destaque, popover com sugestões inteligentes por status, arquivamento automático no histórico e sincronização em tempo real.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Badge Visual de Pendência do Status',
+        description: 'Exibe a pendência atual em destaque visual (tom âmbar) abaixo do status na tabela de embarques e nos cards mobile, permitindo identificar gargalos operacionais em um relance.'
+      },
+      {
+        category: 'feature',
+        title: 'Modal Rápido com Sugestões Inteligentes por Etapa',
+        description: 'Ao clicar no badge ou em "+ Pendência", abre um modal compacto com sugestões contextuais de pendências para a etapa atual do embarque (seguradora, carregamento, nota fiscal, adiantamento, descarga, etc.), além de permitir inserção livre e limpeza com um clique.'
+      },
+      {
+        category: 'improvement',
+        title: 'Integração no Menu de Ações e Detalhes do Embarque',
+        description: 'Opção "Informar Pendência" adicionada no menu de 3 pontos de cada embarque e campo editável no bloco de Status Atual dentro do modal de detalhes do embarque.'
+      },
+      {
+        category: 'improvement',
+        title: 'Arquivamento Automático no Histórico ao Avançar Status',
+        description: 'Ao avançar o embarque para o próximo status operacional, a pendência anterior é arquivada automaticamente no histórico de auditoria e o campo é liberado limpo para a nova etapa.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_29_v2_88_6',
+    version: 'v2.88.6',
+    date: '29/10/2026',
+    title: 'Recurso de Reembarque de Veículo em Ciclo Contínuo',
+    summary: 'Permite programar um novo carregamento para o mesmo motorista e conjunto veicular enquanto a viagem atual está em descarga, validação de ticket ou pagamento de saldo, com herança automática de dados e suporte a repetição da mesma carga.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Ação Reembarcar no Menu do Embarque',
+        description: 'Disponível nas etapas de Aguardando Descarga, Validação de Ticket, Aguardando Saldo e Finalizado para programar o próximo carregamento sem esperar a finalização financeira do frete anterior.'
+      },
+      {
+        category: 'feature',
+        title: 'Seletor de Cargas com Suporte ao Próprio Ciclo',
+        description: 'Modal de busca rápida com listagem de cargas ativas, cálculo de saldo em aberto, frete motorista e opção de selecionar a própria carga atual para veículos em operação contínua.'
+      },
+      {
+        category: 'improvement',
+        title: 'Herança Integral de Dados Cadastrais e Rastreabilidade',
+        description: 'O novo embarque herda automaticamente dados do motorista, placas, ANTT e dados bancários para o status inicial de Ag. Carregamento, preservando intacto o embarque em andamento.'
+      }
+    ]
+  },  {
+    id: 'rel_2026_10_29_v2_88_5',
+    version: 'v2.88.5',
+    date: '29/10/2026',
+    title: 'Gestão de Múltiplos Vales com Parcelamento em Folhas Subsequentes',
+    summary: 'Aprimoramento completo do módulo de Adiantamentos / Vales Concedidos na Folha de Pagamento. Agora é possível gerar e salvar múltiplos vales para o mesmo colaborador, com parcelamento em até 12x, definição flexível do mês de início do desconto (mês subsequente ou atual), pré-visualização do cronograma de parcelas e histórico individual com comprovantes.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Múltiplos Vales por Colaborador com Salvamento Contínuo',
+        description: 'Permite registrar e salvar sucessivos adiantamentos salariais para um mesmo colaborador, mantendo o histórico de todos os vales concedidos, valores e comprovantes de transferência bancária/PIX.'
+      },
+      {
+        category: 'feature',
+        title: 'Parcelamento em Folhas de Meses Subsequentes',
+        description: 'Suporte ao parcelamento de vales em até 12 parcelas mensais, permitindo programar o desconto na folha de meses subsequentes (ex: vale concedido em outubro com desconto parcelado em novembro e dezembro).'
+      },
+      {
+        category: 'improvement',
+        title: 'Cronograma em Tempo Real e Resumo de Impacto',
+        description: 'Exibição em tempo real do cronograma de parcelas e meses de incidência durante o preenchimento, com destaque visual do total que desconta na folha atual versus o que ficará parcelado para os meses futuros.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_29_v2_88_4',
+    version: 'v2.88.4',
+    date: '29/10/2026',
+    title: 'Recálculo Automático de Custo Financeiro por Peso Efetivado do Ticket',
+    summary: 'O custo financeiro pro rata de cada embarque passa a ser recalculado de forma dinâmica e automática sobre o Frete Empresa consolidado após o lançamento do peso efetivado (Ticket de Carregamento), eliminando divergências decorrentes de estimativas iniciais de capacidade.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Proporcionalização do Custo Financeiro pelo Peso Efetivado Real',
+        description: 'Corrigida a persistência de custos financeiros estáticos calculados na abertura do embarque. Sempre que o peso carregado for lançado ou retificado no Ticket de Carregamento, o custo financeiro é recalculado proporcionalmente às toneladas reais e à taxa pro rata da carga.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização em Tempo Real no Painel CT-e e Relatórios Gerenciais',
+        description: 'O Painel de Automação de Custos do CT-e, o DRE Gerencial de Embarques e os relatórios financeiros passam a priorizar o cálculo dinâmico sobre o frete bruto apurado, garantindo correspondência exata entre a taxa (%) e o valor deduzido (R$).'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_28_v2_88_3',
     version: 'v2.88.3',
     date: '28/10/2026',

@@ -12,7 +12,9 @@ import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
-import { Search, Filter, X, Trash2, RotateCcw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip, Copy } from 'lucide-react';
+import { Search, Filter, X, Trash2, RotateCcw, RotateCw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip, Copy, Repeat } from 'lucide-react';
+import { ReembarqueModal } from './ReembarqueModal';
+import { StatusPendingModal } from './StatusPendingModal';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getCargoMapUrl } from '../utils';
 import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
 import { openDocumentInNewTab } from '../utils/documentViewer';
@@ -65,9 +67,11 @@ interface ShipmentTableProps {
   tickets?: Ticket[];
   filterCte?: string;
   onFilterCteChange?: (val: string) => void;
+  onCreateShipment?: (data: any) => Promise<void> | void;
+  onReembarcar?: (shipment: Shipment) => void;
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange, onCreateShipment, onReembarcar }) => {
 
 
   const isDemo = isDemoUser(currentUser);
@@ -82,6 +86,93 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     timestamp?: string;
     isOffline?: boolean;
   } | null>(null);
+
+  // Modal de Observação de Pendência do Status
+  const [pendingModalShipment, setPendingModalShipment] = useState<Shipment | null>(null);
+
+  const handleOpenPendingModal = (shipment: Shipment) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    setPendingModalShipment(shipment);
+  };
+
+  const handleSavePendingObservation = async (shipmentId: string, pendingObservation: string) => {
+    if (isDemo) {
+      showToast('Usuário em modo demonstração possui acesso apenas de visualização.', 'warning');
+      return;
+    }
+    if (onUpdateShipmentData) {
+      await onUpdateShipmentData(shipmentId, { statusPendingObservation: pendingObservation });
+    }
+  };
+
+  // Modal de Reembarque de Veículo
+  const [reembarqueShipment, setReembarqueShipment] = useState<Shipment | null>(null);
+
+  const handleConfirmReembarque = async (data: {
+    selectedCargo: Cargo;
+    scheduledDate: string;
+    scheduledTime?: string;
+    shipmentTonnage: number;
+    driverFreightRate: number;
+    driverFreightValue: number;
+    notes?: string;
+  }) => {
+    if (!reembarqueShipment) return;
+
+    if (!onCreateShipment) {
+      showToast('Ação de criação de novo embarque não disponível nesta visualização.', 'error');
+      return;
+    }
+
+    const payload: any = {
+      cargoId: data.selectedCargo.id,
+      driverName: reembarqueShipment.driverName,
+      driverContact: reembarqueShipment.driverContact,
+      driverCpf: reembarqueShipment.driverCpf,
+      driverCnh: reembarqueShipment.driverCnh,
+      codigoAtua: reembarqueShipment.codigoAtua,
+      horsePlate: reembarqueShipment.horsePlate,
+      trailer1Plate: reembarqueShipment.trailer1Plate,
+      trailer2Plate: reembarqueShipment.trailer2Plate,
+      trailer3Plate: reembarqueShipment.trailer3Plate,
+      shipmentTonnage: data.shipmentTonnage,
+      driverFreightValue: data.driverFreightValue,
+      driverFreightRateSnapshot: data.driverFreightRate,
+      companyFreightRateSnapshot: data.selectedCargo.companyFreightValuePerTon || 0,
+      driverFreightType: reembarqueShipment.driverFreightType || 'PJ',
+      embarcadorId: reembarqueShipment.embarcadorId,
+      status: ShipmentStatus.AguardandoCarregamento,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      paymentMethod: reembarqueShipment.paymentMethod,
+      pixKey: reembarqueShipment.pixKey,
+      bankDetails: reembarqueShipment.bankDetails,
+      advancePercentage: reembarqueShipment.advancePercentage ?? 70,
+      anttOwnerIdentifier: reembarqueShipment.anttOwnerIdentifier,
+      anttModality: reembarqueShipment.anttModality,
+      etcTaxRegime: reembarqueShipment.etcTaxRegime,
+      ownerName: reembarqueShipment.ownerName,
+      ownerContact: reembarqueShipment.ownerContact,
+      vehicleTag: reembarqueShipment.vehicleTag,
+      vehicleSetType: reembarqueShipment.vehicleSetType,
+      vehicleBodyType: reembarqueShipment.vehicleBodyType,
+      history: [
+        {
+          id: `log_reembarque_${Date.now()}`,
+          userId: currentUser.id,
+          timestamp: new Date().toISOString(),
+          description: `Reembarque programado a partir do Embarque anterior #${reembarqueShipment.id} (${reembarqueShipment.horsePlate} - ${reembarqueShipment.driverName}). Carga vinculada: ${data.selectedCargo.sequenceId ? 'CRG-' + data.selectedCargo.sequenceId : data.selectedCargo.id}.${data.notes ? ` Observação: ${data.notes}` : ''}`
+        }
+      ]
+    };
+
+    await onCreateShipment(payload);
+    showToast(`Novo embarque programado com sucesso para o motorista ${reembarqueShipment.driverName}!`, 'success');
+    setReembarqueShipment(null);
+  };
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -717,6 +808,39 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       <Clock className="w-3 h-3 text-gray-400 shrink-0" />
                       <span>Sol.: {formatRequestedDateTime(shipment)}</span>
                     </div>
+                    {shipment.status !== ShipmentStatus.Cancelado && (
+                      <div className="mt-1.5 flex justify-end">
+                        {shipment.statusPendingObservation ? (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPendingModal(shipment);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 shadow-xs hover:bg-amber-100 dark:hover:bg-amber-900/60 cursor-pointer max-w-[180px] transition-all"
+                            title="Clique para editar ou limpar a pendência do status"
+                          >
+                            <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="truncate">{shipment.statusPendingObservation}</span>
+                            <Pencil className="w-2.5 h-2.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                          </div>
+                        ) : (
+                          !isDemo && onUpdateShipmentData && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPendingModal(shipment);
+                              }}
+                              className="text-[10px] font-medium text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 inline-flex items-center gap-1 py-0.5 px-1.5 rounded bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-800/40"
+                              title="Informar nota rápida de pendência para este status"
+                            >
+                              <AlertCircle className="w-2.5 h-2.5 text-amber-600" />
+                              <span>+ Pendência</span>
+                            </button>
+                          )
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1260,6 +1384,41 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                           })()}
                         </div>
                       )}
+
+                      {/* PENDÊNCIA DO STATUS ATUAL */}
+                      {shipment.status !== ShipmentStatus.Cancelado && (
+                        <div className="mt-1.5">
+                          {shipment.statusPendingObservation ? (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPendingModal(shipment);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 shadow-xs hover:bg-amber-100 dark:hover:bg-amber-900/60 cursor-pointer max-w-[210px] group/pend transition-all"
+                              title="Clique para editar ou limpar a pendência do status"
+                            >
+                              <AlertCircle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span className="truncate">{shipment.statusPendingObservation}</span>
+                              <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/pend:opacity-100 shrink-0 text-amber-700 dark:text-amber-300 transition-opacity" />
+                            </div>
+                          ) : (
+                            !isDemo && onUpdateShipmentData && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPendingModal(shipment);
+                                }}
+                                className="text-[11px] font-medium text-amber-700/80 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-200 inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity py-0.5 px-1.5 rounded hover:bg-amber-50/60 dark:hover:bg-amber-950/30"
+                                title="Informar nota rápida de pendência para este status"
+                              >
+                                <AlertCircle className="w-3 h-3 text-amber-600/70 shrink-0" />
+                                <span>+ Pendência</span>
+                              </button>
+                            )
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-[11px] whitespace-nowrap">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1788,7 +1947,35 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                       {isActionable && onTransfer && <ActionMenuItem icon={TransferIcon} text="Transferir Embarque" onClick={() => onTransfer(shipment)} />}
                                                                       {isActionable && (shipment.status === ShipmentStatus.PreCadastro || shipment.status === ShipmentStatus.AguardandoSeguradora || shipment.status === ShipmentStatus.AguardandoCarregamento) && onSwapCargo && <ActionMenuItem icon={Package} text="Trocar Carga" onClick={() => onSwapCargo(shipment)} />}
                                                                       {onOpenEditScheduledDateTime && <ActionMenuItem icon={Clock} text="Alterar Data/Hora" onClick={() => onOpenEditScheduledDateTime(shipment)} />}
+                                                                      {onUpdateShipmentData && (shipment.status as any) !== ShipmentStatus.Cancelado && (
+                                                                          <ActionMenuItem 
+                                                                              icon={AlertCircle} 
+                                                                              text={shipment.statusPendingObservation ? "Editar Pendência" : "Informar Pendência"} 
+                                                                              onClick={() => {
+                                                                                  setOpenActionMenu(null);
+                                                                                  handleOpenPendingModal(shipment);
+                                                                              }} 
+                                                                          />
+                                                                      )}
                                                                       {shipment.status === ShipmentStatus.Finalizado && onAttach && <ActionMenuItem icon={PaperclipIcon} text="Gestor de Anexos" onClick={() => onAttach(shipment)} />}
+                                                                      {/* Ação de Reembarcar (Disponível em Ag. Descarga, Valid. Ticket, Ag. Saldo e Finalizado) */}
+                                                                      {(shipment.status === ShipmentStatus.AguardandoDescarga ||
+                                                                        shipment.status === ShipmentStatus.ValidacaoTicket ||
+                                                                        shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ||
+                                                                        shipment.status === ShipmentStatus.Finalizado) && (
+                                                                        <ActionMenuItem 
+                                                                            icon={RotateCw} 
+                                                                            text="Reembarcar" 
+                                                                            onClick={() => {
+                                                                                setOpenActionMenu(null);
+                                                                                if (onReembarcar) {
+                                                                                    onReembarcar(shipment);
+                                                                                } else {
+                                                                                    setReembarqueShipment(shipment);
+                                                                                }
+                                                                            }} 
+                                                                        />
+                                                                      )}
                                                                       {isActionable && onCancel && (currentUser.profile !== UserProfile.Fiscal || shipment.status === ShipmentStatus.AguardandoSeguradora) && <ActionMenuItem icon={XIcon} text="Cancelar Embarque" onClick={() => onCancel(shipment)} isDestructive />}
                                                                   </>
                                                               )}
@@ -1869,6 +2056,29 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       vehicles={vehicles}
       users={users}
       onDeleteAttachment={onDeleteAttachment}
+    />
+
+    {/* Modal de Reembarque de Veículo */}
+    {reembarqueShipment && (
+      <ReembarqueModal
+        isOpen={Boolean(reembarqueShipment)}
+        onClose={() => setReembarqueShipment(null)}
+        shipment={reembarqueShipment}
+        cargos={cargos}
+        shipments={shipments}
+        clients={clients}
+        products={products}
+        currentUser={currentUser}
+        onConfirmReembarque={handleConfirmReembarque}
+      />
+    )}
+
+    {/* Modal de Observação de Pendência do Status */}
+    <StatusPendingModal
+      isOpen={Boolean(pendingModalShipment)}
+      onClose={() => setPendingModalShipment(null)}
+      shipment={pendingModalShipment}
+      onSave={handleSavePendingObservation}
     />
 
     {activeDriverMap && (
