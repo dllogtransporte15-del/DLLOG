@@ -692,6 +692,7 @@ const UserAccessViewerModal: React.FC<UserAccessViewerModalProps> = ({
             onUpdateAttachment={handleReadOnlyActionAttempt}
             stays={stays}
             riskQueryOptions={riskQueryOptions}
+            onCreateShipment={handleReadOnlyActionAttempt}
           />
         );
       case 'load-history':

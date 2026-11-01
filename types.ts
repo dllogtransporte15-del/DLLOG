@@ -107,6 +107,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username?: string;
   profile: UserProfile;
   active: boolean;
   phone?: string;
@@ -226,6 +227,9 @@ export interface Driver {
   restrictionReason?: string;
   has_app?: boolean;
   codigoAtua?: string;
+  motherName?: string;
+  birthDate?: string;
+  cnhAttachmentUrl?: string;
 }
 
 export interface DriverLocation {
@@ -601,6 +605,8 @@ export interface Shipment {
   driverCnhRegister?: string;
   driverCnhExpiry?: string;
   driverRg?: string;
+  driverMotherName?: string;
+  driverBirthDate?: string;
   ulaNumber?: string;
   loadNum?: string;
   embarcadorId: string;
@@ -968,14 +974,24 @@ export interface FinancialTransaction {
   
   notes?: string;
   isReconciled?: boolean;
+  reconciledAt?: string;
+  ofxCheckNum?: string;
+  ofxTransactionId?: string;
+  reconciledByUserId?: string;
+  reconciledByUserName?: string;
+  unreconciledReason?: string;
+  unreconciledAt?: string;
+  unreconciledByUserName?: string;
   // Anexo do Comprovante de Pagamento / Quitação
   receiptFileUrl?: string;
   receiptFileName?: string;
   receiptFileType?: string;
   receiptFileSize?: number;
   paymentAuthCode?: string;
-  reconciledAt?: string;
-  ofxCheckNum?: string;
+  interestAmount?: number;
+  discountAmount?: number;
+  paidAmount?: number;
+  bankAccount?: string;
   
   createdAt: string;
   createdById?: string;
@@ -1050,6 +1066,10 @@ export interface OfxTransaction {
   memo?: string;
   reconciled: boolean;
   matchedTransactionId?: string;
+  matchedKind?: 'transaction' | 'invoice';
+  reconciledAt?: string;
+  reconciledByUserName?: string;
+  unreconciledReason?: string;
 }
 
 export interface OfxImportLog {
@@ -1147,6 +1167,23 @@ export interface FinancialInvoice {
   receiptFileType?: string;
   receiptFileSize?: number;
   paymentAuthCode?: string;
+
+  // Ajustes Financeiros e Baixa Real (OBZ / Sicredi Parser)
+  interestAmount?: number; // Juros / Multa / Mora (+ R$)
+  discountAmount?: number; // Abatimento / Desconto (- R$)
+  paidAmount?: number;     // Valor Real Pago (= Original + Juros - Abatimento)
+  bankAccount?: string;    // Banco / Conta utilizada (ex: Sicredi)
+  
+  // Conciliação Bancária & Trava Contábil
+  isReconciled?: boolean;
+  reconciledAt?: string;
+  ofxCheckNum?: string;
+  ofxTransactionId?: string;
+  reconciledByUserId?: string;
+  reconciledByUserName?: string;
+  unreconciledReason?: string;
+  unreconciledAt?: string;
+  unreconciledByUserName?: string;
   
   createdAt: string;
   updatedAt?: string;

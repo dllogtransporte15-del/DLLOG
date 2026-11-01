@@ -647,6 +647,7 @@ export function subscribeToFinancialInvoices(onUpdate: () => void) {
 }
 
 export const financialInvoiceService = {
+  subscribeInvoicesChange: subscribeToFinancialInvoices,
   // ----------------------------------------------------
   // CENTROS DE CUSTO
   // ----------------------------------------------------
@@ -1082,6 +1083,10 @@ export const financialInvoiceService = {
       receiptFileSize?: number | null;
       paymentMethod?: FinancialInvoice['paymentMethod'];
       paymentAuthCode?: string | null;
+      interestAmount?: number;
+      discountAmount?: number;
+      paidAmount?: number;
+      bankAccount?: string;
       notes?: string;
     }
   ): Promise<FinancialInvoice | null> => {
@@ -1118,6 +1123,13 @@ export const financialInvoiceService = {
         if (params.receiptFileSize !== undefined) updated.receiptFileSize = params.receiptFileSize || undefined;
         if (params.paymentMethod !== undefined) updated.paymentMethod = params.paymentMethod;
         if (params.paymentAuthCode !== undefined) updated.paymentAuthCode = params.paymentAuthCode || undefined;
+        if (params.interestAmount !== undefined) updated.interestAmount = params.interestAmount;
+        if (params.discountAmount !== undefined) updated.discountAmount = params.discountAmount;
+        if (params.paidAmount !== undefined) {
+          updated.paidAmount = params.paidAmount;
+          updated.payableAmount = params.paidAmount;
+        }
+        if (params.bankAccount !== undefined) updated.bankAccount = params.bankAccount;
         if (params.notes !== undefined) updated.notes = params.notes;
 
         targetInvoice = updated;
@@ -1233,6 +1245,98 @@ export const financialInvoiceService = {
     // Notifica abas e outros usuários
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, status } }));
+    }
+    broadcastInvoicesChange('update', id);
+  },
+
+  reconcileInvoice: async (
+    id: string,
+    params: { ofxTransactionId?: string; checkNum?: string; userId?: string; userName?: string }
+  ): Promise<void> => {
+    const nowIso = new Date().toISOString();
+    const remoteList = await fetchRemoteInvoices();
+    let localList: FinancialInvoice[] = [];
+    try {
+      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
+      if (local) localList = JSON.parse(local);
+    } catch {}
+
+    const currentList = mergeInvoicesList(remoteList, localList);
+    const updatedList = currentList.map(inv => {
+      if (inv.id === id) {
+        return {
+          ...inv,
+          isReconciled: true,
+          reconciledAt: nowIso,
+          ofxTransactionId: params.ofxTransactionId || inv.ofxTransactionId,
+          ofxCheckNum: params.checkNum || inv.ofxCheckNum,
+          reconciledByUserId: params.userId,
+          reconciledByUserName: params.userName,
+          updatedAt: nowIso
+        };
+      }
+      return inv;
+    });
+
+    try {
+      if (updatedList.length > 0) {
+        await supabase.from('profile_permissions').upsert({
+          id: SUPABASE_INVOICES_RECORD_ID,
+          permissions: { invoices: updatedList, updatedAt: nowIso }
+        });
+      }
+    } catch (err) {
+      console.warn('[Supabase] Erro ao conciliar NF na nuvem:', err);
+    }
+
+    safeSetInvoicesLocalStorage(updatedList);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, isReconciled: true } }));
+    }
+    broadcastInvoicesChange('update', id);
+  },
+
+  unreconcileInvoice: async (
+    id: string,
+    params: { reason: string; userId?: string; userName?: string }
+  ): Promise<void> => {
+    const nowIso = new Date().toISOString();
+    const remoteList = await fetchRemoteInvoices();
+    let localList: FinancialInvoice[] = [];
+    try {
+      const local = localStorage.getItem(STORAGE_INVOICES_KEY);
+      if (local) localList = JSON.parse(local);
+    } catch {}
+
+    const currentList = mergeInvoicesList(remoteList, localList);
+    const updatedList = currentList.map(inv => {
+      if (inv.id === id) {
+        return {
+          ...inv,
+          isReconciled: false,
+          unreconciledReason: params.reason,
+          unreconciledAt: nowIso,
+          unreconciledByUserName: params.userName,
+          updatedAt: nowIso
+        };
+      }
+      return inv;
+    });
+
+    try {
+      if (updatedList.length > 0) {
+        await supabase.from('profile_permissions').upsert({
+          id: SUPABASE_INVOICES_RECORD_ID,
+          permissions: { invoices: updatedList, updatedAt: nowIso }
+        });
+      }
+    } catch (err) {
+      console.warn('[Supabase] Erro ao desconciliar NF na nuvem:', err);
+    }
+
+    safeSetInvoicesLocalStorage(updatedList);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial_invoices_updated', { detail: { id, isReconciled: false } }));
     }
     broadcastInvoicesChange('update', id);
   },

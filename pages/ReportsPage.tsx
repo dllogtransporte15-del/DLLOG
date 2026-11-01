@@ -45,7 +45,8 @@ interface ReportsPageProps {
 type ActiveReport = 'comercial' | 'embarcadores' | 'clientes' | 'vendedores' | 'tempo-operacao' | 'filiais' | 'estadias' | 'previsao-demandas' | 'lucro-real' | 'outros';
 
 const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, cargos, users, currentUser, clients, branches, stays = [], drivers = [], vehicles = [], products = [], companyLogo, onSaveUser, onUpdateAttachment, onBatchUpdateShipments, onUpdateShipmentData }) => {
-  const [activeReport, setActiveReport] = useState<ActiveReport>('comercial');
+  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador || (currentUser?.profile as string) === 'Embarcador';
+  const [activeReport, setActiveReport] = useState<ActiveReport>(() => isEmbarcador ? 'embarcadores' : 'comercial');
   const [loadingStays, setLoadingStays] = useState(false);
   
   // Date range defaults to current month
@@ -364,12 +365,23 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     ].includes(currentUser.profile);
   }, [currentUser]);
 
-  const isEmbarcador = currentUser?.profile === UserProfile.Embarcador;
   const isCliente = currentUser?.profile === UserProfile.Cliente;
   const isAgenciador = currentUser?.profile === UserProfile.Agenciador;
   const isAgenciadorEmbarque = isAgenciador && currentUser?.agencyRole === 'embarque';
 
   const renderReport = () => {
+    if (isEmbarcador) {
+      return (
+        <ShipperReport 
+          shipments={filteredShipments} 
+          cargos={cargos} 
+          clients={clients} 
+          users={users} 
+          currentUser={currentUser} 
+          companyLogo={companyLogo} 
+        />
+      );
+    }
     if (isAgenciadorEmbarque && activeReport !== 'comercial') {
       return (
         <SupervisorReport 
@@ -468,34 +480,42 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     }
   };
 
-  const navItems = [
-      ...(canViewCommercialReport ? [{ 
-        id: 'comercial', 
-        label: isAgenciadorEmbarque 
-          ? 'Meu Relatório de Agenciamento' 
-          : (isAgenciador ? 'Relatório da Agência' : 'Relatório Comercial'), 
-        icon: BriefcaseIcon 
-      }] : []),
-      ...(!isCliente && !isAgenciadorEmbarque ? [
-        { id: 'lucro-real', label: 'Lucro Real da Operação', icon: Receipt },
+  const navItems = isEmbarcador 
+    ? [
         { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }
-      ] : []),
-      ...(!isEmbarcador && !isAgenciadorEmbarque ? [
-        { id: 'clientes', label: isCliente ? 'Histórico & Desempenho por CNPJ' : 'Clientes', icon: UsersIcon },
-        ...(!isCliente ? [{ id: 'vendedores', label: 'Vendedores', icon: UsersIcon }] : []),
-      ] : []),
-      ...(!isAgenciadorEmbarque ? [{ id: 'tempo-operacao', label: 'Tempo de Operação', icon: ClockIcon }] : []),
-      ...(!isCliente && !isAgenciadorEmbarque ? [
-        { id: 'filiais', label: 'Filiais', icon: Building2 },
-        { id: 'estadias', label: 'Financeiro Estadias', icon: DollarSign },
-        { id: 'previsao-demandas', label: 'Previsão de Demandas', icon: TrendingUp },
-        { id: 'outros', label: 'Outros', icon: Layers },
-      ] : []),
-  ];
+      ]
+    : [
+        ...(canViewCommercialReport ? [{ 
+          id: 'comercial', 
+          label: isAgenciadorEmbarque 
+            ? 'Meu Relatório de Agenciamento' 
+            : (isAgenciador ? 'Relatório da Agência' : 'Relatório Comercial'), 
+          icon: BriefcaseIcon 
+        }] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [
+          { id: 'lucro-real', label: 'Lucro Real da Operação', icon: Receipt },
+          { id: 'embarcadores', label: 'Embarcadores', icon: ShipIcon }
+        ] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [
+          { id: 'clientes', label: isCliente ? 'Histórico & Desempenho por CNPJ' : 'Clientes', icon: UsersIcon },
+          ...(!isCliente ? [{ id: 'vendedores', label: 'Vendedores', icon: UsersIcon }] : []),
+        ] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [{ id: 'tempo-operacao', label: 'Tempo de Operação', icon: ClockIcon }] : []),
+        ...(!isCliente && !isAgenciadorEmbarque ? [
+          { id: 'filiais', label: 'Filiais', icon: Building2 },
+          { id: 'estadias', label: 'Financeiro Estadias', icon: DollarSign },
+          { id: 'previsao-demandas', label: 'Previsão de Demandas', icon: TrendingUp },
+          { id: 'outros', label: 'Outros', icon: Layers },
+        ] : []),
+    ];
 
   /* Ensure initial and active tab is permissible */
   React.useEffect(() => {
-    if (isCliente) {
+    if (isEmbarcador) {
+      if (activeReport !== 'embarcadores') {
+        setActiveReport('embarcadores');
+      }
+    } else if (isCliente) {
       if (activeReport !== 'clientes' && activeReport !== 'tempo-operacao') {
         setActiveReport('clientes');
       }
@@ -506,7 +526,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ shipments, embarcadores, carg
     } else if (!canViewCommercialReport && activeReport === 'comercial') {
       setActiveReport('embarcadores');
     }
-  }, [isCliente, isAgenciadorEmbarque, canViewCommercialReport, activeReport]);
+  }, [isEmbarcador, isCliente, isAgenciadorEmbarque, canViewCommercialReport, activeReport]);
 
   const activeFiltersCount = (filterStatus.length > 0 ? 1 : 0) + 
     (filterExport.length > 0 ? 1 : 0) + 

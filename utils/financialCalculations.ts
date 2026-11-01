@@ -362,3 +362,32 @@ export function formatBrl(val: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 }
 
+
+
+/**
+ * Status que comprovam que o veículo já descarregou e o frete está apto
+ * para apuração e contabilização de comissão na Folha e no Financeiro.
+ */
+export const COMMISSION_ELIGIBLE_STATUSES: ShipmentStatus[] = [
+  ShipmentStatus.ValidacaoTicket,          // "Valid. de Ticket" (Marco inicial de descarga)
+  ShipmentStatus.AguardandoPagamentoSaldo, // "Ag. Saldo"
+  ShipmentStatus.Finalizado                // "Finalizado"
+];
+
+/**
+ * Retorna true se o embarque já concluiu a descarga e está apto para ter
+ * sua comissão somada na folha / financeiro.
+ */
+export const isShipmentEligibleForCommission = (status: ShipmentStatus | string | undefined): boolean => {
+  if (!status) return false;
+  return (
+    status === ShipmentStatus.ValidacaoTicket ||
+    status === ShipmentStatus.AguardandoPagamentoSaldo ||
+    status === ShipmentStatus.Finalizado ||
+    status === 'Valid. de Ticket' ||
+    status === 'ValidacaoTicket' ||
+    status === 'Ag. Saldo' ||
+    status === 'AguardandoPagamentoSaldo' ||
+    status === 'Finalizado'
+  );
+};

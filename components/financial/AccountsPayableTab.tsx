@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import type { 
-  FinancialTransaction, 
-  Shipment, 
-  Cargo, 
-  Client, 
-  User, 
+import type {
+  FinancialTransaction,
+  Shipment,
+  Cargo,
+  Client,
+  User,
   Branch,
   FinancialInvoice,
   InvoicePaymentStatus,
@@ -15,19 +15,21 @@ import type {
 } from '../../types';
 import { FinancialTransactionStatus, UserProfile, ShipmentStatus, INTERNAL_PROFILES } from '../../types';
 import { isDeveloperUser, isDemoUser } from '../../auth';
-import { 
-  Plus, 
-  Search, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock, 
-  DollarSign, 
-  Tag, 
-  FileText, 
-  ExternalLink, 
-  ArrowDownCircle, 
-  Eye, 
-  Download, 
+import {
+  Landmark,
+  Truck,
+  Plus,
+  Search,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  DollarSign,
+  Tag,
+  FileText,
+  ExternalLink,
+  ArrowDownCircle,
+  Eye,
+  Download,
   X,
   Receipt,
   Award,
@@ -63,16 +65,17 @@ import {
   AlertTriangle,
   UserX,
   RotateCcw,
-  Loader2
+  Loader2,
+  Lock
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
-import { 
+import {
   financialInvoiceService,
   subscribeToFinancialInvoices,
   uploadInvoiceAttachmentToStorage
 } from '../../services/financialInvoiceService';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, parseDateToYmd } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, parseDateToYmd, isShipmentEligibleForCommission, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { useToast } from '../../hooks/useToast';
 import { PayrollDocsModal } from './PayrollDocsModal';
@@ -184,6 +187,8 @@ export interface PayrollSettlementItem {
   advanceReceiptFileName?: string;
   activeValesCount?: number;
 
+  expectedCommission?: number;
+  expectedShipmentsCount?: number;
   shipments: Array<{
     id: string;
     cte: string;
@@ -199,6 +204,7 @@ export interface PayrollSettlementItem {
     commissionPct: number;
     commissionVal: number;
     status: string;
+    isEligible?: boolean;
   }>;
 }
 
@@ -231,16 +237,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   currentUser,
   onNavigateToInvoices,
 }) => {
-  // Sub-abas do Contas a Pagar
-  const [activeSection, setActiveSection] = useState<'all' | 'invoices' | 'manual' | 'leaders'>('all');
+  // Sub-abas do Contas a Pagar (Empresa, Motoristas/Fretes, Avulsos e Folha)
+  const [activeSection, setActiveSection] = useState<'all' | 'invoices' | 'cte' | 'manual' | 'leaders'>('all');
 
   // Filtros Gerais
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedLeaderFilter, setSelectedLeaderFilter] = useState<string>('all');
-  
-  // Filtro de Período
-  const [periodPreset, setPeriodPreset] = useState<'all' | 'current_month' | 'last_month' | 'custom'>('all');
+
+  // Filtro de Período (Presets OPZ rápidos)
+  const [periodPreset, setPeriodPreset] = useState<'all' | 'today_onwards' | 'today' | 'next_7_days' | 'current_month' | 'last_month' | 'custom'>('all');
+  const [showBankingSummary, setShowBankingSummary] = useState(false);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -313,7 +320,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         updatedAt: new Date().toISOString()
       };
       const next = { ...prev, [key]: nextDoc };
-      try { localStorage.setItem('transcunha_payroll_docs_v2', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_docs_v2', JSON.stringify(next)); } catch { }
       return next;
     });
   };
@@ -365,7 +372,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       // Se houver resíduo do cálculo incorreto antigo (1272.96 para Maurício), descartar e limpar
       if (parsed['USR-294'] === 1272.96 || parsed['USR-294'] === 1272.95) {
         delete parsed['USR-294'];
-        try { localStorage.setItem('transcunha_payroll_commissions', JSON.stringify(parsed)); } catch {}
+        try { localStorage.setItem('transcunha_payroll_commissions', JSON.stringify(parsed)); } catch { }
       }
       return parsed;
     } catch {
@@ -533,7 +540,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     savePayrollAdvanceItems(prev => [newValeItem, ...prev]);
 
     showToast(
-      count > 1 
+      count > 1
         ? `Vale de ${formatBrl(parsedAmount)} gravado em ${count}x (primeira parcela em ${formatMonthKeyToLabel(startMonth)})!`
         : `Vale de ${formatBrl(parsedAmount)} gravado com sucesso!`,
       'success'
@@ -601,7 +608,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const handleUpdateUserRegime = (userId: string, regime: 'CLT' | 'PJ' | 'Gestor AG') => {
     setUserRegimes(prev => {
       const next = { ...prev, [userId]: regime };
-      try { localStorage.setItem('transcunha_payroll_regimes', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_regimes', JSON.stringify(next)); } catch { }
       return next;
     });
   };
@@ -630,7 +637,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       const next = [...prev, targetUser.id];
       try {
         localStorage.setItem('transcunha_payroll_excluded_users', JSON.stringify(next));
-      } catch {}
+      } catch { }
       return next;
     });
 
@@ -643,7 +650,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       const next = prev.filter(id => id !== userId);
       try {
         localStorage.setItem('transcunha_payroll_excluded_users', JSON.stringify(next));
-      } catch {}
+      } catch { }
       return next;
     });
 
@@ -656,7 +663,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     setExcludedPayrollUserIds([]);
     try {
       localStorage.removeItem('transcunha_payroll_excluded_users');
-    } catch {}
+    } catch { }
     showToast('Todos os colaboradores foram restaurados para a Folha de Pagamento.', 'success');
     setIsExcludedUsersModalOpen(false);
   };
@@ -727,7 +734,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       if (u.agencyRole === 'embarque') return;
 
       // Considerar todos os perfis internos do sistema Transcunha
-      const isInternal = INTERNAL_PROFILES.includes(u.profile as UserProfile) || 
+      const isInternal = INTERNAL_PROFILES.includes(u.profile as UserProfile) ||
         ['Admin', 'Administrador do Sistema', 'Diretor', 'Supervisor', 'Gerente Comercial', 'Comercial', 'Financeiro', 'Fiscal', 'Gerenciadora de Risco', 'Embarcador', 'Agenciador', 'Demonstração'].includes(prof);
 
       if (isInternal) {
@@ -751,10 +758,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     const isAgenciador = u.profile === UserProfile.Agenciador || (u.profile as string) === 'Agenciador';
     const isExplicitLeader = u.agencyRole === 'lider' || (isAgenciador && u.agencyRole !== 'embarque');
     const isReferencedAsLeader = (users || []).some(other => other.agencyLeaderId === u.id);
-    const isKnownAgencyLeader = 
-      u.name?.toLowerCase().includes('maurício') || 
-      u.name?.toLowerCase().includes('mauricio') || 
-      u.name?.toLowerCase().includes('rafael pinheiro') || 
+    const isKnownAgencyLeader =
+      u.name?.toLowerCase().includes('maurício') ||
+      u.name?.toLowerCase().includes('mauricio') ||
+      u.name?.toLowerCase().includes('rafael pinheiro') ||
       u.name?.toLowerCase().includes('rafael tarantelli') ||
       Boolean(u.commercialIsAgencyMode);
 
@@ -790,9 +797,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     const advRecord = payrollAdvances[docKey];
     const adv = userVales.length > 0
       ? valesSum
-      : (advRecord !== undefined 
-          ? advRecord.amount 
-          : (userCustomAdvances[u.id] !== undefined ? userCustomAdvances[u.id] : 0));
+      : (advRecord !== undefined
+        ? advRecord.amount
+        : (userCustomAdvances[u.id] !== undefined ? userCustomAdvances[u.id] : 0));
     setEditAdvance(adv > 0 ? adv.toFixed(2).replace('.', ',') : '');
     setEditAdvanceDate(advRecord?.date || new Date().toISOString().split('T')[0]);
     setEditAdvanceReceiptUrl(advRecord?.receiptFileUrl || '');
@@ -823,13 +830,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
     setUserRegimes(prev => {
       const next = { ...prev, [uid]: editRegime };
-      try { localStorage.setItem('transcunha_payroll_regimes', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_regimes', JSON.stringify(next)); } catch { }
       return next;
     });
 
     setUserSalaries(prev => {
       const next = { ...prev, [uid]: parsedSal };
-      try { localStorage.setItem('transcunha_payroll_salaries', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_salaries', JSON.stringify(next)); } catch { }
       return next;
     });
 
@@ -840,13 +847,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       } else {
         next[uid] = parsedComm;
       }
-      try { localStorage.setItem('transcunha_payroll_commissions', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_commissions', JSON.stringify(next)); } catch { }
       return next;
     });
 
     setUserTaxes(prev => {
       const next = { ...prev, [uid]: parsedTax };
-      try { localStorage.setItem('transcunha_payroll_taxes', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_taxes', JSON.stringify(next)); } catch { }
       return next;
     });
 
@@ -869,13 +876,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           updatedAt: new Date().toISOString(),
         }
       };
-      try { localStorage.setItem('transcunha_payroll_advances_v2', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_advances_v2', JSON.stringify(next)); } catch { }
       return next;
     });
 
     setUserCustomAdvances(prev => {
       const next = { ...prev, [uid]: parsedAdv };
-      try { localStorage.setItem('transcunha_payroll_advances', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('transcunha_payroll_advances', JSON.stringify(next)); } catch { }
       return next;
     });
 
@@ -929,45 +936,49 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     return (invoices || [])
       .filter(inv => inv.status !== 'Cancelado' && inv.status !== 'Somente Volume')
       .map(inv => {
-      const isOverdue = inv.status === 'Atrasado' || (inv.status === 'Pendente' && inv.dueDate < todayStr);
-      const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = inv.status === 'Pago' ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente';
+        const isOverdue = inv.status === 'Atrasado' || (inv.status === 'Pendente' && inv.dueDate < todayStr);
+        const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = inv.status === 'Pago' ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente';
 
-      return {
-        id: inv.id,
-        documentType: inv.documentType || 'Nota Fiscal',
-        invoiceNumber: inv.invoiceNumber,
-        series: inv.series,
-        supplierName: inv.supplierName,
-        supplierCnpjCpf: inv.supplierCnpjCpf,
-        totalAmount: inv.totalAmount,
-        payableAmount: inv.payableAmount !== undefined && inv.payableAmount > 0 ? inv.payableAmount : inv.totalAmount,
-        issueDate: inv.issueDate,
-        dueDate: inv.dueDate,
-        paymentDate: inv.paymentDate,
-        status: displayStatus,
-        rawStatus: inv.status,
-        costCenterName: inv.costCenterName,
-        costTypeName: inv.costTypeName,
-        costNature: inv.costNature,
-        responsibleUserName: inv.responsibleUserName,
-        fileUrl: inv.fileUrl,
-        fileName: inv.fileName,
-        fileType: inv.fileType,
-        boletoFileUrl: inv.boletoFileUrl,
-        boletoFileName: inv.boletoFileName,
-        boletoFileType: inv.boletoFileType,
-        paymentMethod: inv.paymentMethod,
-        paymentDetails: inv.paymentDetails,
-        description: inv.description,
-        receiptFileUrl: inv.receiptFileUrl,
-        receiptFileName: inv.receiptFileName,
-        receiptFileType: inv.receiptFileType,
-        receiptFileSize: inv.receiptFileSize,
-        paymentAuthCode: inv.paymentAuthCode,
-        notes: inv.notes,
-        originalItem: inv,
-      };
-    }).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+        return {
+          id: inv.id,
+          documentType: inv.documentType || 'Nota Fiscal',
+          invoiceNumber: inv.invoiceNumber,
+          series: inv.series,
+          supplierName: inv.supplierName,
+          supplierCnpjCpf: inv.supplierCnpjCpf,
+          totalAmount: inv.totalAmount,
+          payableAmount: inv.payableAmount !== undefined && inv.payableAmount > 0 ? inv.payableAmount : inv.totalAmount,
+          issueDate: inv.issueDate,
+          dueDate: inv.dueDate,
+          paymentDate: inv.paymentDate,
+          status: displayStatus,
+          rawStatus: inv.status,
+          costCenterName: inv.costCenterName,
+          costTypeName: inv.costTypeName,
+          costNature: inv.costNature,
+          responsibleUserName: inv.responsibleUserName,
+          fileUrl: inv.fileUrl,
+          fileName: inv.fileName,
+          fileType: inv.fileType,
+          boletoFileUrl: inv.boletoFileUrl,
+          boletoFileName: inv.boletoFileName,
+          boletoFileType: inv.boletoFileType,
+          paymentMethod: inv.paymentMethod,
+          paymentDetails: inv.paymentDetails,
+          description: inv.description,
+          receiptFileUrl: inv.receiptFileUrl,
+          receiptFileName: inv.receiptFileName,
+          receiptFileType: inv.receiptFileType,
+          receiptFileSize: inv.receiptFileSize,
+          paymentAuthCode: inv.paymentAuthCode,
+          notes: inv.notes,
+          bankAccount: inv.bankAccount,
+          isReconciled: inv.isReconciled,
+          reconciledAt: inv.reconciledAt,
+          createdAt: inv.createdAt,
+          originalItem: inv,
+        };
+      }).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }, [invoices, todayStr]);
 
   // 3. Processar Lançamentos de Agenciadores Líder
@@ -1006,16 +1017,93 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           receiptFileType: t.receiptFileType,
           receiptFileSize: t.receiptFileSize,
           paymentAuthCode: t.paymentAuthCode,
+          bankAccount: t.bankAccount,
+          isReconciled: t.isReconciled,
+          reconciledAt: t.reconciledAt,
+          createdAt: t.createdAt,
           originalItem: t,
         };
       })
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }, [transactions, todayStr, leaderUsers]);
 
-  // 4. Processar Lançamentos Manuais Avulsos Gerais (não-líderes)
+  // Helper para verificar se uma transação pertence a Fretes / Doc CT-e
+  const isCteTx = (t: FinancialTransaction): boolean => {
+    if (t.type !== 'payable') return false;
+    if (isLeaderTx(t)) return false;
+    const doc = (t.documentNumber || '').toUpperCase();
+    const desc = (t.description || '').toUpperCase();
+    const cat = (t.category || '').toUpperCase();
+    return (
+      doc.includes('CTE') ||
+      doc.includes('CT-E') ||
+      desc.includes('CTE') ||
+      desc.includes('CT-E') ||
+      Boolean(t.shipmentId) ||
+      cat.includes('MOTORISTA') ||
+      cat.includes('FRETE')
+    );
+  };
+
+  // 3. Processar Fretes / Doc CT-e (contas a pagar referentes a CT-e e motoristas)
+  const ctePayables = useMemo(() => {
+    return (transactions || [])
+      .filter(t => isCteTx(t))
+      .map(t => {
+        const isOverdue = t.status === FinancialTransactionStatus.Atrasado || (t.status === FinancialTransactionStatus.Pendente && t.dueDate < todayStr);
+        const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = t.status === FinancialTransactionStatus.Pago ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente';
+
+        const linkedShipment = t.shipmentId ? shipments?.find(s => s.id === t.shipmentId) : null;
+        const docs: any = linkedShipment?.documents || {};
+        const cteDocUrl = docs['CT-e']?.[0] || docs['CTE']?.[0] || docs['Conhecimento de Transporte']?.[0] || null;
+        const contractDocUrl = docs['Contrato de Transporte']?.[0] || docs['Carta Frete']?.[0] || docs['Contrato']?.[0] || null;
+
+        const driverName = t.supplierOrClientName || linkedShipment?.driverName || 'Motorista Terceiro';
+        const horsePlate = linkedShipment?.horsePlate ? ` • Placa ${linkedShipment.horsePlate}` : '';
+        const shipInfo = t.shipmentId ? ` • Embarque ${t.shipmentId}` : '';
+
+        return {
+          id: t.id,
+          description: t.description || `Frete Motorista ${driverName}${horsePlate}`,
+          supplierName: driverName,
+          category: t.category || 'Custos com Motoristas / Terceiros',
+          costCenter: t.costCenter || 'Operacional',
+          totalAmount: t.amount,
+          payableAmount: (t as any).paidAmount !== undefined && displayStatus === 'Pago'
+            ? (t as any).paidAmount
+            : (t as any).payableAmount !== undefined
+              ? (t as any).payableAmount
+              : t.amount,
+          dueDate: t.dueDate,
+          paymentDate: t.paymentDate,
+          status: displayStatus,
+          rawStatus: t.status,
+          shipmentId: t.shipmentId,
+          documentNumber: t.documentNumber || (linkedShipment?.cteNumber ? `CTE-${linkedShipment.cteNumber}` : 'Doc CT-e'),
+          documentUrl: cteDocUrl,
+          contractUrl: contractDocUrl,
+          receiptFileUrl: t.receiptFileUrl,
+          receiptFileName: t.receiptFileName,
+          receiptFileType: t.receiptFileType,
+          receiptFileSize: t.receiptFileSize,
+          paymentAuthCode: t.paymentAuthCode,
+          bankAccount: t.bankAccount || 'Sicredi',
+          isReconciled: t.isReconciled,
+          reconciledAt: t.reconciledAt,
+          createdAt: t.createdAt,
+          pixKey: linkedShipment?.pixKey,
+          details: `${t.description || 'Frete'}${horsePlate}${shipInfo}`,
+          originalItem: t,
+          linkedShipment,
+        };
+      })
+      .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+  }, [transactions, todayStr, shipments]);
+
+  // 4. Processar Lançamentos Manuais Avulsos Gerais (não-líderes e NÃO-CTE)
   const manualPayables = useMemo(() => {
     return (transactions || [])
-      .filter(t => t.type === 'payable' && !isLeaderTx(t))
+      .filter(t => t.type === 'payable' && !isLeaderTx(t) && !isCteTx(t))
       .map(t => {
         const isOverdue = t.status === FinancialTransactionStatus.Atrasado || (t.status === FinancialTransactionStatus.Pendente && t.dueDate < todayStr);
         const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = t.status === FinancialTransactionStatus.Pago ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente';
@@ -1039,6 +1127,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           receiptFileType: t.receiptFileType,
           receiptFileSize: t.receiptFileSize,
           paymentAuthCode: t.paymentAuthCode,
+          bankAccount: t.bankAccount,
+          isReconciled: t.isReconciled,
+          reconciledAt: t.reconciledAt,
+          createdAt: t.createdAt,
           originalItem: t,
         };
       })
@@ -1067,11 +1159,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return;
     }
 
+    if (targetInvoice && currentStatus === 'Pago' && targetInvoice.isReconciled) {
+      alert('🔒 Título Conciliado e Fechado: Este lançamento já foi conciliado com o extrato bancário. Não é possível reabrir diretamente. Para alterar o status, desconcilie no módulo de Conciliação Bancária (requer autorização de Administrador ou Diretoria).');
+      return;
+    }
+
     const newStatus: InvoicePaymentStatus = currentStatus === 'Pago' ? 'Pendente' : 'Pago';
     try {
       await financialInvoiceService.updateInvoiceStatus(
-        invoiceId, 
-        newStatus, 
+        invoiceId,
+        newStatus,
         newStatus === 'Pago' ? todayStr : undefined
       );
       setInvoices(prev => prev.map(inv => inv.id === invoiceId ? {
@@ -1086,7 +1183,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   // Abertura da Modal de Baixa / Anexação de Comprovante
   const handleOpenSettlementModal = (item: {
     id: string;
-    kind: 'invoice' | 'manual' | 'leader';
+    kind: SettlingAccountItem['kind'] | 'driver' | 'invoice' | 'cte' | 'manual' | 'leader';
     docNumber: string;
     title: string;
     entityName: string;
@@ -1116,13 +1213,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       payableAmount: item.payableAmount,
       currentStatus: item.status,
       paymentDate: orig.paymentDate || (item.status === 'Pago' ? todayStr : undefined),
-      paymentMethod: orig.paymentMethod || 'Pix',
+      paymentMethod: orig.paymentMethod || 'Boleto',
       paymentDetails: orig.paymentDetails || orig.pixKey,
       receiptFileUrl: item.receiptUrl || orig.receiptFileUrl,
       receiptFileName: item.receiptName || orig.receiptFileName,
       receiptFileType: orig.receiptFileType,
       receiptFileSize: orig.receiptFileSize,
       paymentAuthCode: orig.paymentAuthCode,
+      interestAmount: orig.interestAmount,
+      discountAmount: orig.discountAmount,
+      paidAmount: orig.paidAmount || (orig.payableAmount || orig.amount || orig.totalAmount),
+      bankAccount: orig.bankAccount || 'Sicredi',
       notes: orig.notes,
       originalItem: orig,
     });
@@ -1157,12 +1258,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     setIsSettlementModalOpen(true);
   };
 
-  // Confirmação da Baixa e Salvamento do Comprovante
+  // Confirmação da Baixa e Salvamento do Comprovante (com Juros, Abatimento e Valor Real)
   const handleConfirmSettlement = async (data: {
     status: 'Pago';
     paymentDate: string;
     paymentMethod?: FinancialInvoice['paymentMethod'];
     paymentAuthCode?: string;
+    interestAmount?: number;
+    discountAmount?: number;
+    paidAmount?: number;
+    bankAccount?: string;
     notes?: string;
     receiptFile?: File | null;
     receiptFileUrl?: string | null;
@@ -1179,6 +1284,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           paymentDate: data.paymentDate,
           paymentMethod: data.paymentMethod,
           paymentAuthCode: data.paymentAuthCode,
+          interestAmount: data.interestAmount,
+          discountAmount: data.discountAmount,
+          paidAmount: data.paidAmount,
+          bankAccount: data.bankAccount,
           receiptFileUrl: data.receiptFileUrl,
           receiptFileName: data.receiptFileName,
           receiptFileType: data.receiptFileType,
@@ -1192,6 +1301,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           paymentDate: data.paymentDate,
           paymentMethod: data.paymentMethod || inv.paymentMethod,
           paymentAuthCode: data.paymentAuthCode || inv.paymentAuthCode,
+          interestAmount: data.interestAmount !== undefined ? data.interestAmount : inv.interestAmount,
+          discountAmount: data.discountAmount !== undefined ? data.discountAmount : inv.discountAmount,
+          paidAmount: data.paidAmount !== undefined ? data.paidAmount : inv.paidAmount,
+          payableAmount: data.paidAmount !== undefined ? data.paidAmount : inv.payableAmount,
+          bankAccount: data.bankAccount || inv.bankAccount,
           receiptFileUrl: data.receiptFileUrl || undefined,
           receiptFileName: data.receiptFileName || undefined,
           receiptFileType: data.receiptFileType || undefined,
@@ -1201,7 +1315,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
         showToast('Baixa confirmada com sucesso! Status atualizado para Pago.', 'success');
       } else {
-        // Lançamentos Manuais e Líderes
+        // Lançamentos Manuais, Líderes e Motoristas
         if (onUpdateTransaction) {
           onUpdateTransaction(settlingItem.id, {
             status: FinancialTransactionStatus.Pago,
@@ -1211,6 +1325,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             receiptFileType: data.receiptFileType || undefined,
             receiptFileSize: data.receiptFileSize || undefined,
             paymentAuthCode: data.paymentAuthCode || undefined,
+            interestAmount: data.interestAmount,
+            discountAmount: data.discountAmount,
+            paidAmount: data.paidAmount,
+            bankAccount: data.bankAccount,
             notes: data.notes || undefined
           });
         } else {
@@ -1230,6 +1348,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   // Reabrir conta para Pendente
   const handleReopenItem = async (target: SettlingAccountItem | any) => {
     const origId = target.id || target.originalItem?.id;
+    const isReconciled = Boolean(target.isReconciled || target.originalItem?.isReconciled);
+    if (isReconciled) {
+      alert('🔒 Título Conciliado e Fechado: Este lançamento já foi auditado e conciliado com o extrato bancário. Não é possível reabrir diretamente. Desconcilie primeiro no módulo de Conciliação Bancária (requer Administrador ou Diretoria).');
+      return;
+    }
     const kind = target.kind;
     try {
       if (kind === 'invoice') {
@@ -1263,10 +1386,22 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   };
 
 
-  // Filtro de Período
+  // Filtro de Período (Presets OPZ)
   const matchesPeriod = (dateStr: string) => {
     if (!dateStr) return true;
     if (periodPreset === 'all') return true;
+    if (periodPreset === 'today_onwards') {
+      return dateStr >= todayStr;
+    }
+    if (periodPreset === 'today') {
+      return dateStr === todayStr;
+    }
+    if (periodPreset === 'next_7_days') {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      const in7Days = d.toISOString().split('T')[0];
+      return dateStr >= todayStr && dateStr <= in7Days;
+    }
     if (periodPreset === 'current_month') {
       return dateStr.startsWith(currentMonthPrefix);
     }
@@ -1286,7 +1421,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     return invoicePayables.filter(item => {
       if (searchTerm) {
         const s = searchTerm.toLowerCase();
-        const match = 
+        const match =
           item.invoiceNumber.toLowerCase().includes(s) ||
           item.supplierName.toLowerCase().includes(s) ||
           (item.supplierCnpjCpf && item.supplierCnpjCpf.toLowerCase().includes(s)) ||
@@ -1307,12 +1442,40 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     });
   }, [invoicePayables, searchTerm, statusFilter, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix]);
 
+  // Filtragem: Fretes / Doc CT-e
+  const filteredCtePayables = useMemo(() => {
+    return ctePayables.filter(item => {
+      if (searchTerm) {
+        const s = searchTerm.toLowerCase();
+        const match =
+          item.description.toLowerCase().includes(s) ||
+          item.supplierName.toLowerCase().includes(s) ||
+          item.category.toLowerCase().includes(s) ||
+          (item.documentNumber && item.documentNumber.toLowerCase().includes(s)) ||
+          (item.shipmentId && item.shipmentId.toLowerCase().includes(s)) ||
+          (item.linkedShipment?.horsePlate && item.linkedShipment.horsePlate.toLowerCase().includes(s)) ||
+          (item.linkedShipment?.driverName && item.linkedShipment.driverName.toLowerCase().includes(s));
+        if (!match) return false;
+      }
+
+      if (statusFilter !== 'all' && item.status !== statusFilter) {
+        return false;
+      }
+
+      if (!matchesPeriod(item.dueDate)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [ctePayables, searchTerm, statusFilter, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix]);
+
   // Filtragem: Manuais Avulsos
   const filteredManuals = useMemo(() => {
     return manualPayables.filter(item => {
       if (searchTerm) {
         const s = searchTerm.toLowerCase();
-        const match = 
+        const match =
           item.description.toLowerCase().includes(s) ||
           item.supplierName.toLowerCase().includes(s) ||
           item.category.toLowerCase().includes(s) ||
@@ -1344,7 +1507,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
       if (searchTerm) {
         const s = searchTerm.toLowerCase();
-        const match = 
+        const match =
           item.description.toLowerCase().includes(s) ||
           item.supplierName.toLowerCase().includes(s) ||
           item.category.toLowerCase().includes(s) ||
@@ -1389,8 +1552,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     if (!userId) return undefined;
     const user = userMap.get(userId);
     if (!user) {
-      const userByName = (users || []).find(u => 
-        u.name.toLowerCase() === userId.toLowerCase() || 
+      const userByName = (users || []).find(u =>
+        u.name.toLowerCase() === userId.toLowerCase() ||
         u.email?.toLowerCase() === userId.toLowerCase()
       );
       if (userByName) {
@@ -1418,8 +1581,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const { allPayrollSettlements, pendingPayrollItems, completedPayrollItems } = useMemo(() => {
     const buildSettlementForMonth = (user: User, monthKey: string, isPrevious: boolean): PayrollSettlementItem => {
       const regime = getUserRegime(user);
-      const branch = (user.branchId && branchMap.get(user.branchId)) || 
-                     (user.filialId && branchMap.get(user.filialId));
+      const branch = (user.branchId && branchMap.get(user.branchId)) ||
+        (user.filialId && branchMap.get(user.filialId));
       const branchName = branch ? branch.name : (user.branchId || 'Matriz');
       const profileLabel = user.profile === UserProfile.Agenciador && regime === 'Gestor AG' ? 'Gestor AG' : String(user.profile);
 
@@ -1462,8 +1625,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       const customAdvance = userVales.length > 0
         ? valesInstallmentsTotal
         : (advRecord !== undefined
-            ? advRecord.amount
-            : (userCustomAdvances[user.id] !== undefined ? userCustomAdvances[user.id] : 0));
+          ? advRecord.amount
+          : (userCustomAdvances[user.id] !== undefined ? userCustomAdvances[user.id] : 0));
 
       let shipmentsCount = 0;
       let totalFreightRevenue = 0;
@@ -1484,17 +1647,18 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         commissionPct: number;
         commissionVal: number;
         status: string;
+        isEligible?: boolean;
       }> = [];
 
       // Perfil de Agenciamento (Gestor AG / Agenciador Líder)
-      const isAgencyProfile = 
-        regime === 'Gestor AG' || 
-        user.profile === UserProfile.Agenciador || 
+      const isAgencyProfile =
+        regime === 'Gestor AG' ||
+        user.profile === UserProfile.Agenciador ||
         user.agencyRole === 'lider';
 
       // Perfil Comercial (Representante / Gerente Comercial) - exclusivo para quem NÃO é Gestor AG
       const isCommercialProfile = !isAgencyProfile && (
-        user.profile === UserProfile.Comercial || 
+        user.profile === UserProfile.Comercial ||
         user.profile === UserProfile.GerenteComercial ||
         String(user.profile).toLowerCase().includes('comercial') ||
         user.hasCommercialCommission === true
@@ -1505,6 +1669,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       const commFiliaisRate = user.commercialFiliaisRate !== undefined ? Number(user.commercialFiliaisRate) : 0.10; // 0,10%
 
       // Apuração dos fretes do mês para usuários com comissão (Comercial ou Gestores AG Líderes)
+      let expectedCommissionEarned = 0;
+      let expectedShipmentsCount = 0;
+
       if (isAgencyProfile || isCommercialProfile) {
         (shipments || []).forEach(s => {
           if (s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
@@ -1524,13 +1691,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
           if (isAgencyProfile) {
             // 1. Identificar o Agenciador Líder / Agência responsável por este frete (direto ou via operador vinculado)
-            let targetLeaderId = getLeaderIdForUser(s.embarcadorId) || 
-                                 getLeaderIdForUser(s.createdById) || 
-                                 (cargo?.createdById ? getLeaderIdForUser(cargo.createdById) : undefined);
+            let targetLeaderId = getLeaderIdForUser(s.embarcadorId) ||
+              getLeaderIdForUser(s.createdById) ||
+              (cargo?.createdById ? getLeaderIdForUser(cargo.createdById) : undefined);
 
             // 2. Identificação por nome de agência gravado no embarque
             if (!targetLeaderId && s.agencyCommissionAgencyName) {
-              const matchedUser = (users || []).find(u => 
+              const matchedUser = (users || []).find(u =>
                 u.name.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase() ||
                 s.agencyCommissionAgencyName?.toLowerCase().includes(u.name.toLowerCase()) ||
                 u.email?.toLowerCase() === s.agencyCommissionAgencyName?.toLowerCase()
@@ -1542,9 +1709,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
             // 3. Fallback por filial exclusiva de agência (apenas se for líder daquela filial)
             if (!targetLeaderId && s.branchId) {
-              const matchedLeaderByBranch = (users || []).find(u => 
-                u.profile === UserProfile.Agenciador && 
-                u.agencyRole !== 'embarque' && 
+              const matchedLeaderByBranch = (users || []).find(u =>
+                u.profile === UserProfile.Agenciador &&
+                u.agencyRole !== 'embarque' &&
                 u.branchId === s.branchId
               );
               if (matchedLeaderByBranch) {
@@ -1556,8 +1723,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             if (targetLeaderId === user.id) {
               isMatch = true;
               const isAgencyEnabled = s.agencyCommissionEnabled !== false && (s.agencyCommissionEnabled === true || Boolean(user.profile === UserProfile.Agenciador));
-              pct = s.agencyCommissionPercentage !== undefined 
-                ? Number(s.agencyCommissionPercentage) 
+              pct = s.agencyCommissionPercentage !== undefined
+                ? Number(s.agencyCommissionPercentage)
                 : commissionPct;
               matchCommVal = (isAgencyEnabled && opProfit > 0) ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
             }
@@ -1565,8 +1732,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             // Vínculo Comercial: usuário comercial com fretes da Matriz / Filiais
             const effectiveBranchId = s.branchId || (s.createdById ? userMap.get(s.createdById)?.branchId : undefined) || cargo?.branchId;
             const branchObj = effectiveBranchId ? branchMap.get(effectiveBranchId) : null;
-            const isMatriz = branchObj 
-              ? branchObj.name.toLowerCase().includes('matriz') 
+            const isMatriz = branchObj
+              ? branchObj.name.toLowerCase().includes('matriz')
               : (!effectiveBranchId || effectiveBranchId === 'matriz' || effectiveBranchId === user.branchId);
 
             if (isMatriz) {
@@ -1594,10 +1761,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           const client = clients.find(c => c.id === (cargo?.clientId || s.embarcadorId));
           const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente';
 
-          shipmentsCount += 1;
-          totalFreightRevenue += exp.companyFreight;
-          totalNetProfit += opProfit;
-          commissionEarned += matchCommVal;
+          const isEligible = isShipmentEligibleForCommission(s.status);
+
+          if (isEligible) {
+            shipmentsCount += 1;
+            totalFreightRevenue += exp.companyFreight;
+            totalNetProfit += opProfit;
+            commissionEarned += matchCommVal;
+          } else {
+            expectedShipmentsCount += 1;
+            expectedCommissionEarned += matchCommVal;
+          }
 
           shipmentDetails.push({
             id: s.id,
@@ -1614,6 +1788,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             commissionPct: pct,
             commissionVal: matchCommVal,
             status: s.status,
+            isEligible
           });
         });
       }
@@ -1624,7 +1799,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       }
 
       // Transações pagas ou pendentes vinculadas a este colaborador no mês
-      const relatedTxs = leaderPayables.filter(t => 
+      const relatedTxs = leaderPayables.filter(t =>
         (t.ownerId && t.ownerId === user.id) ||
         (t.supplierName && t.supplierName.toLowerCase().includes(user.name.toLowerCase()))
       ).filter(t => (t.dueDate && t.dueDate.startsWith(monthKey)) || (t.paymentDate && t.paymentDate.startsWith(monthKey)));
@@ -1769,6 +1944,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         advanceReceiptUrl: activeValesInMonth.find(it => it.vale.receiptFileUrl)?.vale.receiptFileUrl || advRecord?.receiptFileUrl,
         advanceReceiptFileName: activeValesInMonth.find(it => it.vale.receiptFileName)?.vale.receiptFileName || advRecord?.receiptFileName,
         activeValesCount: activeValesInMonth.length,
+        expectedCommission: expectedCommissionEarned,
+        expectedShipmentsCount,
 
         shipments: shipmentDetails,
       };
@@ -1924,24 +2101,30 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const consolidatedList = useMemo(() => {
     const list: Array<{
       id: string;
-      kind: 'invoice' | 'manual' | 'leader';
+      kind: 'invoice' | 'manual' | 'leader' | 'driver' | 'cte';
       docNumber: string;
       title: string;
       entityName: string;
       categoryOrCenter: string;
       dueDate: string;
+      entryDate?: string;
       totalAmount: number;
       payableAmount: number;
       status: 'Pendente' | 'Pago' | 'Atrasado' | InvoicePaymentStatus;
       documentUrl?: string | null;
       boletoUrl?: string | null;
+      contractUrl?: string | null;
       receiptUrl?: string | null;
       receiptName?: string | null;
       details?: string;
       pixKey?: string;
+      bankAccount?: string;
+      isReconciled?: boolean;
+      reconciledAt?: string;
       originalItem: any;
     }> = [];
 
+    // 1. Notas Fiscais e Faturas
     if (activeSection === 'all' || activeSection === 'invoices') {
       filteredInvoices.forEach(inv => {
         const isFatura = inv.documentType === 'Fatura';
@@ -1953,19 +2136,54 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           entityName: inv.supplierName,
           categoryOrCenter: `${inv.costCenterName} • ${inv.costTypeName}`,
           dueDate: inv.dueDate,
+          entryDate: inv.createdAt ? inv.createdAt.split('T')[0] : inv.issueDate,
           totalAmount: inv.totalAmount,
-          payableAmount: inv.payableAmount,
+          payableAmount: inv.payableAmount !== undefined ? inv.payableAmount : inv.totalAmount,
           status: inv.status,
           documentUrl: inv.fileUrl,
           boletoUrl: inv.boletoFileUrl,
           receiptUrl: inv.receiptFileUrl,
           receiptName: inv.receiptFileName,
           details: inv.description,
+          bankAccount: inv.bankAccount,
+          isReconciled: Boolean(inv.isReconciled),
+          reconciledAt: inv.reconciledAt,
           originalItem: inv,
         });
       });
     }
 
+    // 2. Fretes / Doc CT-e
+    if (activeSection === 'all' || activeSection === 'cte') {
+      filteredCtePayables.forEach(c => {
+        list.push({
+          id: `cte_${c.id}`,
+          kind: 'cte',
+          docNumber: c.documentNumber ? (c.documentNumber.toUpperCase().startsWith('CTE') ? c.documentNumber : `Doc ${c.documentNumber}`) : 'Doc CT-e',
+          title: c.description,
+          entityName: c.supplierName,
+          categoryOrCenter: `${c.category} • ${c.costCenter}`,
+          dueDate: c.dueDate,
+          entryDate: (c.originalItem?.createdAt ? c.originalItem.createdAt.split('T')[0] : c.dueDate),
+          totalAmount: c.totalAmount,
+          payableAmount: c.payableAmount,
+          status: c.status,
+          documentUrl: c.documentUrl || null,
+          boletoUrl: null,
+          contractUrl: c.contractUrl || null,
+          receiptUrl: c.receiptFileUrl,
+          receiptName: c.receiptFileName,
+          details: c.details,
+          pixKey: c.pixKey,
+          bankAccount: c.bankAccount,
+          isReconciled: Boolean(c.originalItem?.isReconciled),
+          reconciledAt: c.originalItem?.reconciledAt,
+          originalItem: c.originalItem || c,
+        });
+      });
+    }
+
+    // 3. Lançamentos Manuais Avulsos
     if (activeSection === 'all' || activeSection === 'manual') {
       filteredManuals.forEach(man => {
         list.push({
@@ -1976,6 +2194,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           entityName: man.supplierName,
           categoryOrCenter: `${man.category} • ${man.costCenter}`,
           dueDate: man.dueDate,
+          entryDate: man.createdAt ? man.createdAt.split('T')[0] : man.dueDate,
           totalAmount: man.totalAmount,
           payableAmount: man.payableAmount,
           status: man.status,
@@ -1984,11 +2203,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           receiptUrl: man.receiptFileUrl,
           receiptName: man.receiptFileName,
           details: man.shipmentId ? `Embarque ${man.shipmentId}` : undefined,
+          bankAccount: man.bankAccount,
+          isReconciled: Boolean(man.originalItem?.isReconciled || (man as any).isReconciled),
+          reconciledAt: man.originalItem?.reconciledAt,
           originalItem: man.originalItem || man,
         });
       });
     }
 
+    // 4. Folha de Pagamento e Agenciadores Líderes
     if (activeSection === 'all' || activeSection === 'leaders') {
       filteredLeaderPayables.forEach(lead => {
         list.push({
@@ -1999,6 +2222,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           entityName: lead.supplierName,
           categoryOrCenter: `${lead.category} • ${lead.costCenter}`,
           dueDate: lead.dueDate,
+          entryDate: lead.createdAt ? lead.createdAt.split('T')[0] : lead.dueDate,
           totalAmount: lead.totalAmount,
           payableAmount: lead.payableAmount,
           status: lead.status,
@@ -2008,13 +2232,49 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           receiptName: lead.receiptFileName,
           details: lead.notes,
           pixKey: lead.pixKey,
+          bankAccount: lead.bankAccount,
+          isReconciled: Boolean(lead.originalItem?.isReconciled || (lead as any).isReconciled),
+          reconciledAt: lead.originalItem?.reconciledAt,
           originalItem: lead.originalItem || lead,
         });
       });
     }
 
     return list.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-  }, [activeSection, filteredInvoices, filteredManuals, filteredLeaderPayables]);
+  }, [activeSection, filteredInvoices, filteredCtePayables, filteredManuals, filteredLeaderPayables, todayStr, periodPreset, customStartDate, customEndDate]);
+
+  // Resumo Bancário (OB): Totalizadores por Banco (Sicredi, Itaú, etc.)
+  const bankingSummary = useMemo(() => {
+    let sicrediPlanned = 0;
+    let sicrediPaid = 0;
+    let itauPlanned = 0;
+    let itauPaid = 0;
+    let otherPlanned = 0;
+    let otherPaid = 0;
+
+    consolidatedList.forEach(item => {
+      const bank = (item.bankAccount || item.originalItem?.bankAccount || (item.originalItem?.paymentMethod === 'Boleto' ? 'Sicredi' : 'Outro')).toLowerCase();
+      const isPaid = item.status === 'Pago';
+      const val = item.payableAmount;
+
+      if (bank.includes('sicredi')) {
+        if (isPaid) sicrediPaid += val;
+        else sicrediPlanned += val;
+      } else if (bank.includes('itau') || bank.includes('itaú')) {
+        if (isPaid) itauPaid += val;
+        else itauPlanned += val;
+      } else {
+        if (isPaid) otherPaid += val;
+        else otherPlanned += val;
+      }
+    });
+
+    return {
+      sicredi: { planned: sicrediPlanned, paid: sicrediPaid, total: sicrediPlanned + sicrediPaid },
+      itau: { planned: itauPlanned, paid: itauPaid, total: itauPlanned + itauPaid },
+      other: { planned: otherPlanned, paid: otherPaid, total: otherPlanned + otherPaid },
+    };
+  }, [consolidatedList]);
 
   // KPIs Gerais
   const kpiPending = useMemo(() => {
@@ -2034,6 +2294,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   }, [consolidatedList]);
 
   const subtotalInvoices = useMemo(() => filteredInvoices.reduce((acc, i) => acc + i.payableAmount, 0), [filteredInvoices]);
+  const subtotalCte = useMemo(() => filteredCtePayables.reduce((acc, i) => acc + i.payableAmount, 0), [filteredCtePayables]);
   const subtotalManuals = useMemo(() => filteredManuals.reduce((acc, i) => acc + i.payableAmount, 0), [filteredManuals]);
   const subtotalLeaders = useMemo(() => filteredLeaderPayables.reduce((acc, i) => acc + i.payableAmount, 0), [filteredLeaderPayables]);
 
@@ -2056,12 +2317,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
     const userObj = payrollUsers.find(l => l.id === userToSelect);
     const summary = leadersSummary.find(s => s.user.id === userToSelect);
-    
+
     // Sugerir valor
-    const amountVal = suggestedAmount !== undefined 
-      ? suggestedAmount 
+    const amountVal = suggestedAmount !== undefined
+      ? suggestedAmount
       : (summary?.balancePending && summary.balancePending > 0 ? summary.balancePending : 0);
-    
+
     setPlanAmount(amountVal > 0 ? amountVal.toFixed(2).replace('.', ',') : '');
     setPlanDueDate(new Date().toISOString().split('T')[0]);
 
@@ -2200,7 +2461,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
     const headers = ['Tipo', 'Documento', 'Fornecedor / Favorecido', 'Categoria / Centro de Custo', 'Vencimento', 'Valor Total', 'Valor a Pagar', 'Status'];
     const rows = consolidatedList.map(item => [
-      item.kind === 'invoice' ? 'Nota Fiscal' : (item.kind === 'leader' ? 'Agenciador Líder' : 'Despesa Avulsa'),
+      item.kind === 'invoice' ? 'Nota Fiscal' : item.kind === 'cte' ? 'Doc CT-e' : item.kind === 'leader' ? 'Folha de Pagamento' : 'Despesa Avulsa',
       item.docNumber,
       `"${item.entityName.replace(/"/g, '""')}"`,
       `"${item.categoryOrCenter.replace(/"/g, '""')}"`,
@@ -2232,7 +2493,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const currentAuditingSummary = useMemo(() => {
     if (!auditingLeaderId) return null;
     return leadersSummary.find(s => (s.user?.id === auditingLeaderId || s.leader?.id === auditingLeaderId || s.userId === auditingLeaderId)) ||
-           allPayrollSettlements.find(s => (s.user?.id === auditingLeaderId || s.leader?.id === auditingLeaderId || s.userId === auditingLeaderId)) || null;
+      allPayrollSettlements.find(s => (s.user?.id === auditingLeaderId || s.leader?.id === auditingLeaderId || s.userId === auditingLeaderId)) || null;
   }, [auditingLeaderId, leadersSummary, allPayrollSettlements]);
 
   return (
@@ -2243,27 +2504,25 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           {/* Aba 1: Todas as Contas a Pagar */}
           <button
             onClick={() => setActiveSection('all')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeSection === 'all'
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeSection === 'all'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
-            }`}
+              }`}
           >
             <ArrowDownCircle className="w-4 h-4" />
             <span>Todas as Contas a Pagar</span>
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/20 text-white font-mono">
-              {invoicePayables.length + manualPayables.length + leaderPayables.length}
+              {invoicePayables.length + ctePayables.length + manualPayables.length + leaderPayables.length}
             </span>
           </button>
 
           {/* Aba 2: Notas Fiscais / Faturas a Pagar */}
           <button
             onClick={() => setActiveSection('invoices')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeSection === 'invoices'
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeSection === 'invoices'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
-            }`}
+              }`}
           >
             <FileText className="w-4 h-4 text-emerald-400" />
             <span>Notas Fiscais / Faturas a Pagar</span>
@@ -2272,14 +2531,32 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             </span>
           </button>
 
-          {/* Aba 3: Lançamentos Avulsos */}
+          {/* Aba 3: Fretes / Doc CT-e */}
+          <button
+            onClick={() => setActiveSection('cte')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeSection === 'cte'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-2 ring-indigo-400/30'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:text-indigo-700 dark:hover:text-indigo-300'
+              }`}
+            title="Contas a Pagar de Fretes vinculados a Conhecimentos de Transporte (Doc CT-e)"
+          >
+            <FileText className="w-4 h-4 text-indigo-400" />
+            <span>Fretes / Doc CT-e</span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${activeSection === 'cte'
+                ? 'bg-white/20 text-white'
+                : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300'
+              }`}>
+              {ctePayables.length}
+            </span>
+          </button>
+
+          {/* Aba 4: Lançamentos Avulsos */}
           <button
             onClick={() => setActiveSection('manual')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeSection === 'manual'
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeSection === 'manual'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
-            }`}
+              }`}
           >
             <Tag className="w-4 h-4" />
             <span>Lançamentos Avulsos</span>
@@ -2291,20 +2568,18 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           {/* Aba 4: Folha de Pagamento */}
           <button
             onClick={() => setActiveSection('leaders')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeSection === 'leaders'
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeSection === 'leaders'
                 ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30 ring-2 ring-amber-400/30'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:text-amber-700 dark:hover:text-amber-300'
-            }`}
+              }`}
             title="Folha de Pagamento: Acompanhar salários, comissões, tributos e planejar pagamentos de usuários internos (CLT, PJ e Gestor AG)"
           >
             <Wallet className="w-4 h-4 text-amber-400" />
             <span>Folha de Pagamento</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
-              activeSection === 'leaders'
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${activeSection === 'leaders'
                 ? 'bg-white/20 text-white'
                 : 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
-            }`}>
+              }`}>
               {payrollUsers.length}
             </span>
           </button>
@@ -2330,6 +2605,23 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           >
             <Plus className="w-3.5 h-3.5" />
             <span>+ Lançamento Avulso</span>
+          </button>
+
+          {/* Botão de Alternar Resumo Bancário */}
+          <button
+            type="button"
+            onClick={() => setShowBankingSummary(prev => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${showBankingSummary
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/80'
+              }`}
+            title="Alternar painel de Resumo Bancário (Sicredi, Itaú, etc.)"
+          >
+            <Landmark className="w-3.5 h-3.5" />
+            <span>Resumo Bancário</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20 font-mono">
+              Sicredi
+            </span>
           </button>
 
           {/* Botão de Planejar Pagamento de Folha */}
@@ -2536,6 +2828,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               </div>
               <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
                 <span className="flex items-center gap-1">
+                  <FileText className="w-3 h-3 text-indigo-500" />
+                  Fretes / Doc CT-e:
+                </span>
+                <span className="font-bold">{formatBrl(subtotalCte)}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                <span className="flex items-center gap-1">
                   <Tag className="w-3 h-3 text-blue-500" />
                   Lançamentos Avulsos:
                 </span>
@@ -2553,15 +2852,183 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         </div>
       )}
 
-      {/* 3. BARRA DE FILTROS AVANÇADOS */}
+      {/* CARD DE RESUMO BANCÁRIO (OB) */}
+      {showBankingSummary && (
+        <div className="bg-gradient-to-r from-emerald-900/10 via-slate-50 to-blue-900/10 dark:from-emerald-950/40 dark:via-slate-800 dark:to-blue-950/40 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-sm space-y-3 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-xs">
+                <Landmark className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                  Resumo Bancário de Saídas & Quitações
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Totalizadores de saídas pagas e programadas por instituição bancária
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowBankingSummary(false)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg"
+              title="Fechar Resumo"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Banco Sicredi */}
+            <div className="bg-white dark:bg-slate-800/90 p-3 rounded-xl border border-emerald-300 dark:border-emerald-700/80 shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+                  🟢 Sicredi (Conta Matriz)
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">Total: {formatBrl(bankingSummary.sicredi.total)}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                <div>
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold">A Pagar</span>
+                  <strong className="text-xs font-black text-amber-600 dark:text-amber-400">{formatBrl(bankingSummary.sicredi.planned)}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-bold">Pago (Liquidado)</span>
+                  <strong className="text-xs font-black text-emerald-600 dark:text-emerald-400">{formatBrl(bankingSummary.sicredi.paid)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Banco Itaú */}
+            <div className="bg-white dark:bg-slate-800/90 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-orange-700 dark:text-orange-300">
+                  Itaú Unibanco
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">Total: {formatBrl(bankingSummary.itau.total)}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                <div>
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold">A Pagar</span>
+                  <strong className="text-xs font-black text-amber-600 dark:text-amber-400">{formatBrl(bankingSummary.itau.planned)}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-bold">Pago (Liquidado)</span>
+                  <strong className="text-xs font-black text-emerald-600 dark:text-emerald-400">{formatBrl(bankingSummary.itau.paid)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Outros Bancos */}
+            <div className="bg-white dark:bg-slate-800/90 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  Outras Contas / Caixas
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">Total: {formatBrl(bankingSummary.other.total)}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                <div>
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold">A Pagar</span>
+                  <strong className="text-xs font-black text-amber-600 dark:text-amber-400">{formatBrl(bankingSummary.other.planned)}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-bold">Pago (Liquidado)</span>
+                  <strong className="text-xs font-black text-emerald-600 dark:text-emerald-400">{formatBrl(bankingSummary.other.paid)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. BARRA DE FILTROS AVANÇADOS COM PRESETS RÁPIDOS OPZ */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+        {/* Presets Rápidos de Período OPZ em 1 clique */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0 mr-1 flex items-center gap-1">
+            <Calendar className="w-3 h-3" />
+            <span>Período OPZ:</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('all')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'all'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+          >
+            Todo o Período
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('today_onwards')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'today_onwards'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            title="Filtrar todas as contas com vencimento de hoje em diante"
+          >
+            ⏩ De Hoje em Diante
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('today')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'today'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+          >
+            Hoje
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('next_7_days')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'next_7_days'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+          >
+            Próximos 7 Dias
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('current_month')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'current_month'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+          >
+            Mês Atual
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('last_month')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'last_month'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+          >
+            Mês Anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodPreset('custom')}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${periodPreset === 'custom'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+          >
+            Personalizado...
+          </button>
+        </div>
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           {/* Busca por texto */}
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder={activeSection === 'leaders' ? "Buscar por líder, agência, observação, forma de pagamento..." : "Buscar por descrição, fornecedor, centro de custo, número da NF..."}
+              placeholder={activeSection === 'leaders' ? "Buscar por líder, agência, observação, forma de pagamento..." : activeSection === 'cte' ? "Buscar por Doc CT-e, motorista, placa, embarque..." : "Buscar por descrição, fornecedor, centro de custo, número da NF..."}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
@@ -2685,15 +3152,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             {/* SOMA DOS MESES SEPARADAMENTE: COMPARAÇÃO LADO A LADO (OUTUBRO EM ABERTO vs SETEMBRO QUITADO) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
               {/* Card 1: Mês Atual (Outubro / 2026) */}
-              <div 
+              <div
                 onClick={() => {
                   setPayrollSelectedMonth('current');
                 }}
-                className={`relative overflow-hidden rounded-2xl p-4 transition-all cursor-pointer border ${
-                  payrollSelectedMonth === 'current'
+                className={`relative overflow-hidden rounded-2xl p-4 transition-all cursor-pointer border ${payrollSelectedMonth === 'current'
                     ? 'bg-amber-500/10 dark:bg-amber-950/30 border-amber-500 ring-2 ring-amber-500/30 shadow-md'
                     : 'bg-white dark:bg-slate-800/90 border-slate-200 dark:border-slate-700/80 hover:border-amber-400/60'
-                }`}
+                  }`}
               >
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2.5">
@@ -2715,11 +3181,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     </div>
                   </div>
 
-                  <span className={`text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${
-                    payrollSelectedMonth === 'current'
+                  <span className={`text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${payrollSelectedMonth === 'current'
                       ? 'bg-amber-600 text-white shadow-xs'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}>
+                    }`}>
                     {payrollSelectedMonth === 'current' ? 'Filtro Ativo' : 'Clique p/ Filtrar'}
                   </span>
                 </div>
@@ -2753,15 +3218,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               </div>
 
               {/* Card 2: Mês Anterior (Setembro / 2026 - Quitado) */}
-              <div 
+              <div
                 onClick={() => {
                   setPayrollSelectedMonth('last');
                 }}
-                className={`relative overflow-hidden rounded-2xl p-4 transition-all cursor-pointer border ${
-                  payrollSelectedMonth === 'last'
+                className={`relative overflow-hidden rounded-2xl p-4 transition-all cursor-pointer border ${payrollSelectedMonth === 'last'
                     ? 'bg-emerald-500/10 dark:bg-emerald-950/30 border-emerald-500 ring-2 ring-emerald-500/30 shadow-md'
                     : 'bg-white dark:bg-slate-800/90 border-slate-200 dark:border-slate-700/80 hover:border-emerald-400/60'
-                }`}
+                  }`}
               >
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2.5">
@@ -2783,11 +3247,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     </div>
                   </div>
 
-                  <span className={`text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${
-                    payrollSelectedMonth === 'last'
+                  <span className={`text-[11px] font-bold px-2 py-1 rounded-lg shrink-0 ${payrollSelectedMonth === 'last'
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}>
+                    }`}>
                     {payrollSelectedMonth === 'last' ? 'Filtro Ativo' : 'Clique p/ Filtrar'}
                   </span>
                 </div>
@@ -2827,17 +3290,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setPayrollSubTab('pending')}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    payrollSubTab === 'pending'
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${payrollSubTab === 'pending'
                       ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
                       : 'text-slate-600 dark:text-slate-400 hover:bg-white/60 dark:hover:bg-slate-800'
-                  }`}
+                    }`}
                 >
                   <Clock className="w-4 h-4 text-amber-200" />
                   <span>Contas em Aberto & Pendências (Tela Inicial)</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    payrollSubTab === 'pending' ? 'bg-amber-800 text-amber-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${payrollSubTab === 'pending' ? 'bg-amber-800 text-amber-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}>
                     {pendingPayrollItems.length}
                   </span>
                 </button>
@@ -2845,17 +3306,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setPayrollSubTab('completed')}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    payrollSubTab === 'completed'
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${payrollSubTab === 'completed'
                       ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                       : 'text-slate-600 dark:text-slate-400 hover:bg-white/60 dark:hover:bg-slate-800'
-                  }`}
+                    }`}
                 >
                   <CheckCircle2 className="w-4 h-4 text-emerald-200" />
                   <span>Pagamento Feito (Histórico)</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    payrollSubTab === 'completed' ? 'bg-emerald-800 text-emerald-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${payrollSubTab === 'completed' ? 'bg-emerald-800 text-emerald-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}>
                     {completedPayrollItems.length}
                   </span>
                 </button>
@@ -2889,11 +3348,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     key={m.id}
                     type="button"
                     onClick={() => setPayrollSelectedMonth(m.id)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      payrollSelectedMonth === m.id
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${payrollSelectedMonth === m.id
                         ? 'bg-amber-600 text-white shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
-                    }`}
+                      }`}
                   >
                     {m.label}
                   </button>
@@ -2912,11 +3370,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => setSelectedRegimeFilter(tab.id as any)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      selectedRegimeFilter === tab.id
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${selectedRegimeFilter === tab.id
                         ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900 shadow-xs'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
-                    }`}
+                      }`}
                   >
                     {tab.label} ({tab.count})
                   </button>
@@ -3009,19 +3466,18 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     const avatarGradient = item.regime === 'Gestor AG'
                       ? 'from-amber-500 to-amber-700'
                       : item.regime === 'PJ'
-                      ? 'from-purple-600 to-violet-800'
-                      : 'from-blue-600 to-indigo-700';
+                        ? 'from-purple-600 to-violet-800'
+                        : 'from-blue-600 to-indigo-700';
 
                     return (
                       <div
                         key={item.id}
-                        className={`rounded-2xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
-                          item.isPreviousMonth && !item.isCompleted
+                        className={`rounded-2xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${item.isPreviousMonth && !item.isCompleted
                             ? 'bg-rose-50/20 dark:bg-rose-950/10 border-rose-200/90 dark:border-rose-900/60'
                             : item.isCompleted
-                            ? 'bg-white dark:bg-slate-800 border-emerald-200/80 dark:border-emerald-800/60'
-                            : 'bg-white dark:bg-slate-800 border-slate-200/90 dark:border-slate-700'
-                        }`}
+                              ? 'bg-white dark:bg-slate-800 border-emerald-200/80 dark:border-emerald-800/60'
+                              : 'bg-white dark:bg-slate-800 border-slate-200/90 dark:border-slate-700'
+                          }`}
                       >
                         {/* Topo do Card */}
                         <div>
@@ -3049,15 +3505,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                             </div>
 
                             {/* Status da Quitação */}
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
-                              item.isCompleted
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${item.isCompleted
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                                 : isFullyPaid
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-800'
-                                : hasPendingBalance
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800'
-                                : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'
-                            }`}>
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-800'
+                                  : hasPendingBalance
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                                    : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+                              }`}>
                               {item.isCompleted ? '✓ Pagamento Feito' : isFullyPaid ? 'Saldo Pago (Falta Docs)' : hasPendingBalance ? 'Pendente' : 'Sem Movimento'}
                             </span>
                           </div>
@@ -3100,15 +3555,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   type="button"
                                   onClick={() => handleUpdateUserRegime(item.user.id, reg)}
                                   title={`Alterar regime de ${item.user.name} para ${reg}`}
-                                  className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
-                                    item.regime === reg
+                                  className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${item.regime === reg
                                       ? reg === 'Gestor AG'
                                         ? 'bg-amber-600 text-white shadow-xs'
                                         : reg === 'PJ'
-                                        ? 'bg-purple-600 text-white shadow-xs'
-                                        : 'bg-blue-600 text-white shadow-xs'
+                                          ? 'bg-purple-600 text-white shadow-xs'
+                                          : 'bg-blue-600 text-white shadow-xs'
                                       : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                                  }`}
+                                    }`}
                                 >
                                   {reg}
                                 </button>
@@ -3429,11 +3883,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                               {/* Nota Fiscal (Obrigatória para PJ e Gestor AG) */}
                               {(item.regime === 'PJ' || item.regime === 'Gestor AG') && (
-                                <div className={`flex items-center justify-between p-1.5 rounded-lg text-[11px] font-medium border ${
-                                  item.hasInvoice
+                                <div className={`flex items-center justify-between p-1.5 rounded-lg text-[11px] font-medium border ${item.hasInvoice
                                     ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300'
                                     : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                                }`}>
+                                  }`}>
                                   <span className="flex items-center gap-1 truncate">
                                     <FileText className="w-3 h-3 shrink-0" />
                                     <span className="truncate">NF: {item.invoiceNumber || (item.hasInvoice ? 'Anexada ✓' : 'Falta NF ⚠️')}</span>
@@ -3455,11 +3908,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                               )}
 
                               {/* Comprovante de Pagamento (Obrigatório para CLT, PJ e Gestor AG) */}
-                              <div className={`flex items-center justify-between p-1.5 rounded-lg text-[11px] font-medium border ${
-                                item.hasReceipt
+                              <div className={`flex items-center justify-between p-1.5 rounded-lg text-[11px] font-medium border ${item.hasReceipt
                                   ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-300'
                                   : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                              } ${item.regime === 'CLT' ? 'sm:col-span-2' : ''}`}>
+                                } ${item.regime === 'CLT' ? 'sm:col-span-2' : ''}`}>
                                 <span className="flex items-center gap-1 truncate">
                                   <Receipt className="w-3 h-3 shrink-0" />
                                   <span className="truncate">Comprovante: {item.hasReceipt ? (item.paymentAuthCode ? `Aut ${item.paymentAuthCode.slice(0, 8)}...` : 'Anexado ✓') : 'Falta Comprovante ⚠️'}</span>
@@ -3482,11 +3934,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           </div>
 
                           {/* Saldo Restante / A Pagar em Destaque */}
-                          <div className={`p-3.5 rounded-xl border mb-3 flex items-center justify-between ${
-                            hasPendingBalance
+                          <div className={`p-3.5 rounded-xl border mb-3 flex items-center justify-between ${hasPendingBalance
                               ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-200'
                               : 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200'
-                          }`}>
+                            }`}>
                             <div>
                               <span className="text-[10px] font-bold uppercase tracking-wider opacity-80 block">
                                 {hasPendingBalance ? 'Saldo Pendente de Pagamento' : 'Situação Contábil'}
@@ -3526,22 +3977,21 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           <button
                             type="button"
                             onClick={() => setSelectedSettlementForDocs(item)}
-                            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs flex-1 ${
-                              item.isCompleted
+                            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs flex-1 ${item.isCompleted
                                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                 : item.isDocumentPending
-                                ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                            }`}
+                                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                              }`}
                             title="Lançar Nota Fiscal e Comprovante de Pagamento"
                           >
                             <Paperclip className="w-3.5 h-3.5" />
                             <span>
-                              {item.isCompleted 
-                                ? 'Ver Documentos' 
-                                : item.regime === 'CLT' 
-                                ? 'Lançar Comprovante' 
-                                : 'Lançar NF / Recibo'}
+                              {item.isCompleted
+                                ? 'Ver Documentos'
+                                : item.regime === 'CLT'
+                                  ? 'Lançar Comprovante'
+                                  : 'Lançar NF / Recibo'}
                             </span>
                           </button>
 
@@ -3632,8 +4082,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       const isOverdue = item.status === 'Atrasado';
 
                       return (
-                        <tr 
-                          key={item.id} 
+                        <tr
+                          key={item.id}
                           className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors"
                         >
                           {/* 1. Líder Favorecido */}
@@ -3708,13 +4158,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
                           {/* 6. Status */}
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                              isPaid 
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${isPaid
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                                 : isOverdue
-                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-800'
-                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800'
-                            }`}>
+                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                              }`}>
                               {isPaid && <CheckCircle2 className="w-3 h-3" />}
                               {isOverdue && <AlertCircle className="w-3 h-3" />}
                               {!isPaid && !isOverdue && <Clock className="w-3 h-3" />}
@@ -3808,11 +4257,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                   <th className="py-3.5 px-4">Tipo / Documento</th>
                   <th className="py-3.5 px-4">Fornecedor / Favorecido</th>
                   <th className="py-3.5 px-4">Classificação / Centro de Custo</th>
-                  <th className="py-3.5 px-4">Vencimento</th>
-                  <th className="py-3.5 px-4 text-right">Valor Total</th>
-                  <th className="py-3.5 px-4 text-right">Valor a Pagar</th>
+                  <th className="py-3.5 px-4">Vencimento & Entrada</th>
+                  <th className="py-3.5 px-4 text-right">Valor Original</th>
+                  <th className="py-3.5 px-4 text-right">Valor a Pagar (Real)</th>
                   <th className="py-3.5 px-4 text-center">Status</th>
-                  <th className="py-3.5 px-4 text-center">Documento</th>
+                  <th className="py-3.5 px-4 text-center">Tríade Documental (NF • Boleto • Comprovante)</th>
                   <th className="py-3.5 px-4 text-right">Ação</th>
                 </tr>
               </thead>
@@ -3831,8 +4280,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     const isOverdue = item.status === 'Atrasado';
 
                     return (
-                      <tr 
-                        key={item.id} 
+                      <tr
+                        key={item.id}
                         className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors"
                       >
                         {/* 1. Tipo / Documento */}
@@ -3848,6 +4297,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <FileText className="w-4 h-4" />
                                 </div>
                               )
+                            ) : item.kind === 'cte' ? (
+                              <div className="p-2 bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-xl shrink-0 border border-indigo-200 dark:border-indigo-800" title="Conhecimento de Transporte (Doc CT-e)">
+                                <Truck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                              </div>
                             ) : item.kind === 'leader' ? (
                               <div className="p-2 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 rounded-xl shrink-0 border border-amber-200 dark:border-amber-800" title="Pagamento / Planejamento de Agenciador Líder">
                                 <Award className="w-4 h-4" />
@@ -3865,12 +4318,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   </span>
                                 )}
                                 {item.kind === 'invoice' && (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border shrink-0 ${
-                                    item.originalItem?.documentType === 'Fatura'
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border shrink-0 ${item.originalItem?.documentType === 'Fatura'
                                       ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 border-purple-200 dark:border-purple-800'
                                       : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                                  }`}>
+                                    }`}>
                                     {item.originalItem?.documentType === 'Fatura' ? 'Fatura' : 'NF'}
+                                  </span>
+                                )}
+                                {item.kind === 'cte' && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 shrink-0">
+                                    Doc CT-e
                                   </span>
                                 )}
                                 {item.kind === 'leader' && (
@@ -3909,6 +4366,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                               PIX: {item.pixKey}
                             </span>
                           )}
+                          {item.kind === 'cte' && item.pixKey && (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono block">
+                              PIX: {item.pixKey}
+                            </span>
+                          )}
+                          {item.kind === 'cte' && item.details && (
+                            <span className="text-[10px] text-slate-400 block line-clamp-1" title={item.details}>
+                              {item.details}
+                            </span>
+                          )}
                         </td>
 
                         {/* 3. Classificação & Linha Digitável */}
@@ -3940,14 +4407,32 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           ) : null}
                         </td>
 
-                        {/* 4. Vencimento */}
+                        {/* 4. Vencimento com visto verde & Data de Digitação / Entrada */}
                         <td className="py-3 px-4 whitespace-nowrap">
-                          <span className={`font-semibold ${isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
-                            {new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR')}
-                          </span>
-                          {item.kind === 'invoice' && item.originalItem.issueDate && (
-                            <span className="text-[10px] text-slate-400 block">
-                              Emissão: {new Date(item.originalItem.issueDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          <div className="flex items-center gap-1.5">
+                            {isPaid ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold" title="Conta liquidada no prazo">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                                <span>{new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                              </span>
+                            ) : isOverdue ? (
+                              <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400 font-black" title="Conta em atraso de vencimento">
+                                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 animate-pulse" />
+                                <span>{new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200">
+                                  Atrasado
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-200 font-semibold">
+                                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                <span>{new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                              </span>
+                            )}
+                          </div>
+                          {item.entryDate && (
+                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                              ✍️ Digitado: {new Date(item.entryDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                             </span>
                           )}
                         </td>
@@ -3957,86 +4442,135 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           {formatBrl(item.totalAmount)}
                         </td>
 
-                        {/* 6. Valor a Pagar */}
+                        {/* 6. Valor a Pagar (Real com Juros / Abatimento) */}
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           <span className="font-black text-sm text-emerald-600 dark:text-emerald-400 tracking-tight">
                             {formatBrl(item.payableAmount)}
                           </span>
-                          {item.payableAmount !== item.totalAmount && (
+                          {item.originalItem?.interestAmount > 0 && (
+                            <span className="text-[9px] text-rose-500 font-bold block">
+                              +{formatBrl(item.originalItem.interestAmount)} juros
+                            </span>
+                          )}
+                          {item.originalItem?.discountAmount > 0 && (
+                            <span className="text-[9px] text-emerald-600 font-bold block">
+                              -{formatBrl(item.originalItem.discountAmount)} abat.
+                            </span>
+                          )}
+                          {item.payableAmount !== item.totalAmount && !item.originalItem?.interestAmount && !item.originalItem?.discountAmount && (
                             <span className="text-[9px] text-slate-400 block line-through">
-                              Cheio: {formatBrl(item.totalAmount)}
+                              Original: {formatBrl(item.totalAmount)}
                             </span>
                           )}
                         </td>
 
                         {/* 7. Status */}
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            isPaid 
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${isPaid
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                               : isOverdue
-                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-800'
-                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800'
-                          }`}>
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                            }`}>
                             {isPaid && <CheckCircle2 className="w-3 h-3" />}
                             {isOverdue && <AlertCircle className="w-3 h-3" />}
                             {!isPaid && !isOverdue && <Clock className="w-3 h-3" />}
                             <span>{item.status}</span>
                           </span>
+                          {item.isReconciled && (
+                            <div className="mt-1 flex items-center justify-center">
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-2xs"
+                                title="🔒 Auditado e Fechado com Extrato Bancário"
+                              >
+                                <Lock className="w-2.5 h-2.5 text-blue-600 dark:text-blue-400" />
+                                <span>Auditado OFX</span>
+                              </span>
+                            </div>
+                          )}
                         </td>
 
-                        {/* 8. Documento Anexado */}
+                        {/* 8. Tríade de Conformidade Documental: NF = [OK] Boleto = [OK] Comprovad pag */}
                         <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {item.boletoUrl && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (item.boletoUrl) {
-                                    openDocumentInNewTab(item.boletoUrl, `Boleto_${item.docNumber}`);
-                                  }
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 rounded-lg text-[11px] font-bold border border-emerald-200 dark:border-emerald-800/60 transition-colors cursor-pointer"
-                                title="Abrir Boleto para Pagamento em nova aba"
-                              >
-                                <Receipt className="w-3 h-3" />
-                                <span>Boleto</span>
-                                <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                              </button>
-                            )}
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap max-w-[260px] mx-auto">
+                            {/* Chip 1: NF ou CT-e */}
                             {item.documentUrl ? (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (item.documentUrl) {
-                                    openDocumentInNewTab(item.documentUrl, item.docNumber);
-                                  }
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg text-[11px] font-bold border border-blue-200 dark:border-blue-800/60 transition-colors cursor-pointer"
-                                title="Abrir visualização do documento em nova aba"
+                                onClick={() => openDocumentInNewTab(item.documentUrl!, item.docNumber)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-colors cursor-pointer"
+                                title={item.kind === 'cte' ? "Visualizar Conhecimento de Transporte (CT-e)" : "Visualizar Nota Fiscal"}
                               >
-                                <Eye className="w-3 h-3" />
-                                <span>{item.boletoUrl ? 'NF' : 'Ver Doc'}</span>
-                                <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                                <FileText className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                <span>{item.kind === 'cte' ? 'CT-e: OK' : 'NF: OK'}</span>
+                                <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                               </button>
-                            ) : null}
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 border border-slate-200 dark:border-slate-700" title={item.kind === 'cte' ? "CT-e não anexado" : "Nota Fiscal não anexada"}>
+                                <FileText className="w-3 h-3 opacity-40" />
+                                <span>{item.kind === 'cte' ? 'CT-e: -' : 'NF: -'}</span>
+                              </span>
+                            )}
 
-                            {/* COMPROVANTE DE PAGAMENTO ANEXADO */}
-                            {item.receiptUrl && (
+                            {/* Chip 2: Boleto ou Contrato de Frete */}
+                            {item.kind === 'cte' ? (
+                              item.contractUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openDocumentInNewTab(item.contractUrl!, `Contrato_${item.docNumber}`)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 hover:bg-indigo-200 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 transition-colors cursor-pointer"
+                                  title="Visualizar Contrato / Carta Frete"
+                                >
+                                  <FileText className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                  <span>Contrato: OK</span>
+                                  <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 border border-slate-200 dark:border-slate-700" title="Contrato / Carta Frete não anexado">
+                                  <FileText className="w-3 h-3 opacity-40" />
+                                  <span>Contrato: -</span>
+                                </span>
+                              )
+                            ) : item.boletoUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => openDocumentInNewTab(item.boletoUrl!, `Boleto_${item.docNumber}`)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 transition-colors cursor-pointer"
+                                title="Visualizar Boleto Bancário"
+                              >
+                                <Receipt className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                <span>Boleto: OK</span>
+                                <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 border border-slate-200 dark:border-slate-700" title="Boleto não anexado">
+                                <Receipt className="w-3 h-3 opacity-40" />
+                                <span>Boleto: -</span>
+                              </span>
+                            )}
+
+                            {/* Chip 3: Comprovante de Pagamento */}
+                            {item.receiptUrl ? (
                               <button
                                 type="button"
                                 onClick={() => openDocumentInNewTab(item.receiptUrl!, `Comprovante_${item.docNumber}`)}
-                                className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:hover:bg-purple-900/60 dark:text-purple-300 rounded-lg text-[11px] font-bold border border-purple-200 dark:border-purple-800/60 transition-colors cursor-pointer shadow-xs"
-                                title="Visualizar Comprovante de Pagamento em nova aba"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 dark:border-purple-800 transition-colors cursor-pointer shadow-xs"
+                                title="Visualizar Comprovante de Quitação"
                               >
                                 <FileCheck className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                                <span>Comprovante</span>
-                                <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                                <span>Comprov: OK</span>
+                                <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                               </button>
-                            )}
-
-                            {!item.documentUrl && !item.boletoUrl && !item.receiptUrl && (
-                              <span className="text-slate-400 text-[10px] italic">Sem anexo</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSettlementModal(item)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/80 transition-colors cursor-pointer"
+                                title="Clique para anexar comprovante Sicredi e registrar baixa"
+                              >
+                                <Clock className="w-3 h-3 text-amber-500" />
+                                <span>Comprov: Pendente</span>
+                              </button>
                             )}
                           </div>
                         </td>
@@ -4069,15 +4603,25 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <span>Editar Baixa</span>
                                 </button>
 
-                                {/* Reabrir lançamento para Pendente */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleReopenItem(item)}
-                                  className="px-2 py-1 rounded-lg text-[11px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
-                                  title="Reabrir lançamento para Pendente"
-                                >
-                                  Reabrir
-                                </button>
+                                {/* Reabrir lançamento para Pendente ou Bloqueio por Conciliação */}
+                                {item.isReconciled ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700 select-none"
+                                    title="🔒 Título Conciliado e Fechado: Este lançamento já foi auditado e conciliado com o extrato bancário. Desconcilie primeiro no módulo de Conciliação Bancária para liberar a reabertura."
+                                  >
+                                    <Lock className="w-3 h-3 text-amber-500" />
+                                    <span>Conciliado</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReopenItem(item)}
+                                    className="px-2 py-1 rounded-lg text-[11px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
+                                    title="Reabrir lançamento para Pendente"
+                                  >
+                                    Reabrir
+                                  </button>
+                                )}
                               </>
                             ) : (
                               /* Botão principal de Dar Baixa com opção de anexar comprovante */
@@ -4532,15 +5076,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       key={reg}
                       type="button"
                       onClick={() => setEditRegime(reg)}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${
-                        editRegime === reg
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${editRegime === reg
                           ? reg === 'Gestor AG'
                             ? 'bg-amber-600 border-amber-600 text-white shadow-xs'
                             : reg === 'PJ'
-                            ? 'bg-purple-600 border-purple-600 text-white shadow-xs'
-                            : 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                              ? 'bg-purple-600 border-purple-600 text-white shadow-xs'
+                              : 'bg-blue-600 border-blue-600 text-white shadow-xs'
                           : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                      }`}
+                        }`}
                     >
                       {reg}
                     </button>
@@ -4922,7 +5465,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                             const hasReceipt = Boolean(vale.receiptFileUrl);
 
                             return (
-                              <div 
+                              <div
                                 key={vale.id}
                                 className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-orange-200/70 dark:border-orange-800/70 space-y-1.5 shadow-2xs"
                               >
@@ -4976,13 +5519,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                     {vale.installments.map((inst, iIdx) => {
                                       const isCurrent = inst.monthKey === currentMonthPrefix;
                                       return (
-                                        <span 
+                                        <span
                                           key={iIdx}
-                                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium border ${
-                                            isCurrent
+                                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium border ${isCurrent
                                               ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold ring-1 ring-amber-400/40'
                                               : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                                          }`}
+                                            }`}
                                           title={isCurrent ? 'Descontando na folha deste mês atual' : `Programado para ${formatMonthKeyToLabel(inst.monthKey)}`}
                                         >
                                           {inst.installmentNumber}/{inst.totalInstallments}: {formatBrl(inst.amount)} ({formatMonthKeyToLabel(inst.monthKey)})
@@ -5135,10 +5677,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             </div>
 
             {/* Banner com Totais Consolidados */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4 bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 my-4 bg-slate-50 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
               <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Embarques Auditados</span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Embarques Descarregados</span>
                 <span className="text-sm font-bold text-slate-900 dark:text-white">{currentAuditingSummary.shipmentsCount} fretes</span>
+                {Boolean(currentAuditingSummary.expectedShipmentsCount && currentAuditingSummary.expectedShipmentsCount > 0) && (
+                  <span className="text-[10px] text-amber-500 font-bold block">+{currentAuditingSummary.expectedShipmentsCount} em trânsito</span>
+                )}
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Faturamento Empresa</span>
@@ -5149,10 +5694,18 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatBrl(currentAuditingSummary.totalNetProfit)}</span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
-                  {currentAuditingSummary.regime === 'Gestor AG' ? 'Comissão da Agência' : 'Comissão Apurada'}
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold block">
+                  Comissão Liberada (Pós-Descarga)
                 </span>
-                <span className="text-sm font-black text-amber-600 dark:text-amber-400">{formatBrl(currentAuditingSummary.commissionEarned)}</span>
+                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{formatBrl(currentAuditingSummary.commissionEarned)}</span>
+                <span className="text-[9px] text-slate-400 block">≥ Valid. de Ticket</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wider font-bold block">
+                  Comissão Prevista (Em Trânsito)
+                </span>
+                <span className="text-sm font-black text-amber-600 dark:text-amber-400">{formatBrl(currentAuditingSummary.expectedCommission || 0)}</span>
+                <span className="text-[9px] text-slate-400 block">Aguardando descarga</span>
               </div>
             </div>
 
@@ -5167,8 +5720,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     <th className="py-2.5 px-3">Motorista / Placa</th>
                     <th className="py-2.5 px-3 text-right">Frete Bruto</th>
                     <th className="py-2.5 px-3 text-right">Lucro Real</th>
-                    <th className="py-2.5 px-3 text-right">
-                      {currentAuditingSummary.regime === 'Gestor AG' ? `Comissão (${currentAuditingSummary.commissionPct}%)` : 'Comissão (R$)'}
+                    <th className="py-2.5 px-3 text-right cursor-help" title="As comissões são contabilizadas na folha de pagamento exclusivamente após a confirmação da descarga do veículo (a partir do status Valid. de Ticket).">
+                      {currentAuditingSummary.regime === 'Gestor AG' ? `Comissão (${currentAuditingSummary.commissionPct}%)` : 'Comissão (R$)'} ℹ️
                     </th>
                   </tr>
                 </thead>
@@ -5184,7 +5737,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
                         <td className="py-2 px-3 whitespace-nowrap">
                           <span className="font-bold text-slate-900 dark:text-white block">{s.cte}</span>
-                          <span className="text-[10px] text-slate-400">{s.date}</span>
+                          <span className="text-[10px] text-slate-400 block">{s.date}</span>
+                          {s.isEligible ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                              🟢 Liberada ({s.status})
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Aguardando confirmação de descarga">
+                              🟡 Prevista ({s.status})
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 px-3 max-w-[150px] truncate" title={s.clientName}>
                           {s.clientName}

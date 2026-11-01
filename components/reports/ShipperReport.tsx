@@ -28,7 +28,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import MultiSelectDropdown from '../MultiSelectDropdown';
-import { hasCteAttached, isCteApplicableForStatus, getShipmentCte } from '../../utils';
+import { hasCteAttached, isCteApplicableForStatus, getShipmentCte, isShipmentEligibleForCommission } from '../../utils';
 
 interface ShipperReportProps {
   shipments: Shipment[];
@@ -116,7 +116,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             const creatorShipments = shipments.filter(s => 
                 (s.embarcadorId === creatorId || s.createdById === creatorId) &&
                 s.status !== ShipmentStatus.Cancelado &&
-                isCteApplicableForStatus(s.status) &&
+                isShipmentEligibleForCommission(s.status) &&
                 hasCteAttached(s)
             );
           

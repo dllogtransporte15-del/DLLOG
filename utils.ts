@@ -866,3 +866,9 @@ export function getFinancialPeriodRange(filter: FinancialPeriodFilter, refDate: 
     }
   }
 }
+
+
+export { 
+  COMMISSION_ELIGIBLE_STATUSES, 
+  isShipmentEligibleForCommission 
+} from './utils/financialCalculations';

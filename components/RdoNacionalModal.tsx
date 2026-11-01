@@ -5,7 +5,7 @@ import {
   Calendar, X, Eye, Check, Loader2, Sparkles, Filter, RefreshCw
 } from 'lucide-react';
 import type { 
-  Driver, Shipment, Vehicle, Owner, User, RdoRequestRecord, RdoConfig, RdoExtensaoArquivo 
+  Driver, Shipment, Vehicle, Owner, User, RdoRequestRecord, RdoConfig, RdoExtensaoArquivo, SigaRequestRecord 
 } from '../types';
 import { useToast } from '../hooks/useToast';
 import { 
@@ -18,9 +18,114 @@ import {
 import { 
   fetchRdoRequests, 
   fetchRdoConfig, 
-  saveRdoConfig 
+  saveRdoConfig,
+  fetchShipments,
+  fetchDrivers,
+  fetchVehicles,
+  fetchOwners,
+  fetchSigaRequests,
+  upsertShipment
 } from '../lib/db';
 import { autoFormatInput } from '../utils/formatters';
+
+
+// Utilitário: Normaliza qualquer formato de data para o padrão HTML YYYY-MM-DD
+function normalizeDateToYyyyMmDd(val?: string | null): string {
+  if (!val) return '';
+  const clean = String(val).trim();
+  // Se for DD/MM/AAAA ou DD-MM-AAAA
+  const matchBr = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (matchBr) {
+    const [, d, m, y] = matchBr;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  // Se for ISO string AAAA-MM-DDTHH:mm:ss
+  if (clean.includes('T')) {
+    return clean.split('T')[0];
+  }
+  // Se já for AAAA-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+    return clean;
+  }
+  return clean;
+}
+
+// Utilitário: Extrai URL de CNH em anexo no embarque ou motorista
+function extractCnhUrlFromShipment(s?: Shipment | null, matchedDriver?: Driver | null): string | undefined {
+  if (!s) return undefined;
+  if (s.documents && typeof s.documents === 'object') {
+    const docs = s.documents as Record<string, any>;
+    const cnhKeyCandidates = [
+      'cnh', 'cnh_url', 'cnhurl', 'cnhfile', 'cnh_file',
+      'cnh do motorista', 'cnh motorista', 'documento motorista',
+      'documentos motorista', 'comprovante de cadastro', 'cadastro', 'habilitacao'
+    ];
+    for (const [key, val] of Object.entries(docs)) {
+      const kLower = key.toLowerCase().trim();
+      const isCandidate = cnhKeyCandidates.some(c => kLower === c || kLower.includes('cnh') || kLower.includes('habilitacao'));
+      if (isCandidate) {
+        if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('data:') || val.startsWith('blob:'))) {
+          return val;
+        }
+        if (Array.isArray(val) && val.length > 0) {
+          const first = val[0];
+          if (typeof first === 'string' && (first.startsWith('http') || first.startsWith('data:') || first.startsWith('blob:'))) {
+            return first;
+          }
+        }
+      }
+    }
+    // Procura em arrays gerais por nomes de arquivo que contenham 'cnh'
+    for (const [, val] of Object.entries(docs)) {
+      const list = Array.isArray(val) ? val : [val];
+      for (const item of list) {
+        if (typeof item === 'string' && (item.startsWith('http') || item.startsWith('data:')) && /cnh|habilitacao|carteira/i.test(item)) {
+          return item;
+        }
+      }
+    }
+  }
+
+  if (matchedDriver) {
+    const dCnh = matchedDriver.cnhAttachmentUrl || (matchedDriver as any)?.cnh_url || (matchedDriver as any)?.cnhFile;
+    if (typeof dCnh === 'string' && (dCnh.startsWith('http') || dCnh.startsWith('data:') || dCnh.startsWith('blob:'))) {
+      return dCnh;
+    }
+  }
+
+  return undefined;
+}
+
+// Utilitário: Cache persistente local de perfil complementar de motoristas (Mãe, Nascimento, CNH)
+function getCachedDriverProfile(cpf?: string): { nomeDaMae?: string; dataDeNascimento?: string; cnhUrl?: string } | null {
+  const clean = cleanDocumentNumber(cpf);
+  if (!clean) return null;
+  try {
+    const raw = localStorage.getItem('transcunha_driver_profiles_cache');
+    if (!raw) return null;
+    const cache = JSON.parse(raw);
+    return cache[clean] || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDriverProfileCache(cpf?: string, data?: { nomeDaMae?: string; dataDeNascimento?: string; cnhUrl?: string }) {
+  const clean = cleanDocumentNumber(cpf);
+  if (!clean || !data) return;
+  try {
+    const raw = localStorage.getItem('transcunha_driver_profiles_cache') || '{}';
+    const cache = JSON.parse(raw);
+    cache[clean] = {
+      ...(cache[clean] || {}),
+      ...(data.nomeDaMae ? { nomeDaMae: data.nomeDaMae.trim().toUpperCase() } : {}),
+      ...(data.dataDeNascimento ? { dataDeNascimento: normalizeDateToYyyyMmDd(data.dataDeNascimento) } : {}),
+      ...(data.cnhUrl ? { cnhUrl: data.cnhUrl } : {}),
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem('transcunha_driver_profiles_cache', JSON.stringify(cache));
+  } catch {}
+}
 
 interface RdoNacionalModalProps {
   isOpen: boolean;
@@ -70,6 +175,14 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'pendente' | 'aprovado' | 'consta_informacao'>('todos');
 
+  // Estados de Entidades Locais com Fallback automático
+  const [availableShipments, setAvailableShipments] = useState<Shipment[]>(shipments || []);
+  const [availableDrivers, setAvailableDrivers] = useState<Driver[]>(drivers || []);
+  const [availableVehicles, setAvailableVehicles] = useState<Vehicle[]>(vehicles || []);
+  const [availableOwners, setAvailableOwners] = useState<Owner[]>(owners || []);
+  const [sigaRequests, setSigaRequests] = useState<SigaRequestRecord[]>([]);
+  const [isLoadingCnh, setIsLoadingCnh] = useState(false);
+
   // Formulário de Nova Solicitação
   const [selectedShipmentId, setSelectedShipmentId] = useState<string>(initialShipmentId || '');
   const [selectedDriverId, setSelectedDriverId] = useState<string>(initialDriverId || '');
@@ -91,7 +204,274 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
-  // Carrega configurações e histórico ao abrir
+  // Embarque selecionado computado
+  const selectedShipment = useMemo(() => {
+    return availableShipments.find(s => s.id === selectedShipmentId);
+  }, [availableShipments, selectedShipmentId]);
+
+  // Função Central de Preenchimento Automático Rigoroso a partir do Embarque
+  const autoFillFromShipment = async (
+    targetShipment: Shipment,
+    driverPool = availableDrivers,
+    ownerPool = availableOwners,
+    vehiclePool = availableVehicles,
+    rdoPool = rdoRequests,
+    sigaPool = sigaRequests
+  ) => {
+    if (!targetShipment) return;
+
+    const cleanCpf = cleanDocumentNumber(targetShipment.driverCpf);
+
+    // Identificar Motorista
+    const matchedDriver = driverPool.find(d => 
+      (cleanCpf && cleanDocumentNumber(d.cpf) === cleanCpf) ||
+      (d.name && targetShipment.driverName && d.name.toLowerCase().trim() === targetShipment.driverName.toLowerCase().trim())
+    );
+
+    // Identificar Veículo
+    const cleanHorsePlate = cleanPlate(targetShipment.horsePlate);
+    const matchedVehicle = vehiclePool.find(v => cleanPlate(v.plate) === cleanHorsePlate);
+
+    // Identificar Proprietário
+    const cleanOwnerDoc = cleanDocumentNumber(targetShipment.anttOwnerIdentifier);
+    const matchedOwner = ownerPool.find(o => 
+      (cleanOwnerDoc && cleanDocumentNumber(o.cpfCnpj) === cleanOwnerDoc) ||
+      (targetShipment.ownerName && o.name && o.name.toLowerCase().trim() === targetShipment.ownerName.toLowerCase().trim()) ||
+      (matchedVehicle?.ownerId && o.id === matchedVehicle.ownerId) ||
+      (matchedDriver?.ownerId && o.id === matchedDriver.ownerId)
+    );
+
+    // Histórico de análises anteriores e cache local
+    const prevRdo = rdoPool.find(r => cleanDocumentNumber(r.cpf) === cleanCpf && (r.nomeDaMae || r.dataDeNascimento || r.cnhUrl));
+    const prevSiga = sigaPool.find(r => cleanDocumentNumber(r.driverCpf) === cleanCpf && (r.driverMother || (r as any).mother || r.driverBirthdate || (r as any).birthdate));
+    const cachedProfile = getCachedDriverProfile(cleanCpf);
+
+    // Outros embarques do mesmo motorista como fallback
+    const otherShipmentWithData = availableShipments.find(s => 
+      cleanDocumentNumber(s.driverCpf) === cleanCpf && 
+      (s.driverMotherName || (s.documents as any)?.nome_da_mae || s.driverBirthDate || (s.documents as any)?.data_nascimento)
+    );
+
+    // 1. Resolução do Nome Completo da Mãe (Cascata de Fontes)
+    const resolvedNomeDaMae = (
+      targetShipment.driverMotherName ||
+      (targetShipment as any).motherName ||
+      (targetShipment as any).nomeDaMae ||
+      (targetShipment.documents as any)?.driver_mother_name ||
+      (targetShipment.documents as any)?.nome_da_mae ||
+      (targetShipment.documents as any)?.driver_mother ||
+      (targetShipment.documents as any)?.mother_name ||
+      (targetShipment.documents as any)?.mae ||
+      (targetShipment.documents as any)?.mother ||
+      (targetShipment.documents as any)?.cadastro?.mother_name ||
+      (targetShipment.documents as any)?.cadastro?.nome_da_mae ||
+      matchedDriver?.motherName ||
+      (matchedDriver as any)?.mother_name ||
+      (matchedDriver as any)?.nome_da_mae ||
+      prevRdo?.nomeDaMae ||
+      prevSiga?.driverMother ||
+      (prevSiga as any)?.mother ||
+      otherShipmentWithData?.driverMotherName ||
+      (otherShipmentWithData?.documents as any)?.nome_da_mae ||
+      cachedProfile?.nomeDaMae ||
+      ''
+    ).trim().toUpperCase();
+
+    // 2. Resolução da Data de Nascimento (Normalizada para YYYY-MM-DD)
+    const rawBirthDate = (
+      targetShipment.driverBirthDate ||
+      (targetShipment as any).birthDate ||
+      (targetShipment as any).dataDeNascimento ||
+      (targetShipment.documents as any)?.driver_birth_date ||
+      (targetShipment.documents as any)?.data_nascimento ||
+      (targetShipment.documents as any)?.dataDeNascimento ||
+      (targetShipment.documents as any)?.birthdate ||
+      (targetShipment.documents as any)?.birth_date ||
+      (targetShipment.documents as any)?.cadastro?.birth_date ||
+      (targetShipment.documents as any)?.cadastro?.data_nascimento ||
+      matchedDriver?.birthDate ||
+      (matchedDriver as any)?.birth_date ||
+      (matchedDriver as any)?.data_nascimento ||
+      prevRdo?.dataDeNascimento ||
+      prevSiga?.driverBirthdate ||
+      (prevSiga as any)?.birthdate ||
+      otherShipmentWithData?.driverBirthDate ||
+      (otherShipmentWithData?.documents as any)?.data_nascimento ||
+      cachedProfile?.dataDeNascimento ||
+      ''
+    );
+    const resolvedDataNascimento = normalizeDateToYyyyMmDd(rawBirthDate);
+
+    // 3. Documento do Proprietário
+    const rawPropDoc = targetShipment.anttOwnerIdentifier || matchedOwner?.cpfCnpj || (targetShipment.documents as any)?.antt_owner_identifier || '';
+    const cleanPropDoc = cleanDocumentNumber(rawPropDoc);
+    const formattedPropDoc = cleanPropDoc.length > 11 ? autoFormatInput('cnpj', rawPropDoc) : autoFormatInput('cpf', rawPropDoc);
+
+    // 4. Nome / Razão Social do Proprietário
+    const resolvedNomeProp = (targetShipment.ownerName || matchedOwner?.name || (targetShipment.documents as any)?.owner_name || '').trim().toUpperCase();
+
+    // 5. CPF e Nome do Motorista
+    const resolvedCpf = autoFormatInput('cpf', cleanCpf || matchedDriver?.cpf || '');
+    const resolvedNome = (targetShipment.driverName || matchedDriver?.name || '').trim().toUpperCase();
+
+    // 6. Atualizar os Dados do Formulário
+    setFormData(prev => ({
+      ...prev,
+      nomeDoCliente: config.clientName || 'TRANSCUNHA TRANSPORTES',
+      cpf: resolvedCpf,
+      nome: resolvedNome,
+      nomeDaMae: resolvedNomeDaMae,
+      dataDeNascimento: resolvedDataNascimento,
+      documentoDoProprietario: formattedPropDoc,
+      nomeDoProprietario: resolvedNomeProp,
+      placaDoCavalo: cleanHorsePlate,
+    }));
+
+    if (matchedDriver) {
+      setSelectedDriverId(matchedDriver.id);
+    }
+
+    // 7. Auto-recuperação e conversão Base64 da CNH do Embarque
+    const foundCnhUrl = extractCnhUrlFromShipment(targetShipment, matchedDriver) || prevRdo?.cnhUrl || cachedProfile?.cnhUrl;
+    if (foundCnhUrl) {
+      if (foundCnhUrl.startsWith('data:')) {
+        try {
+          const parts = foundCnhUrl.split(',');
+          const pureBase64 = parts[1] || parts[0];
+          let extension: RdoExtensaoArquivo = 'pdf';
+          if (foundCnhUrl.includes('image/png')) extension = 'png';
+          else if (foundCnhUrl.includes('image/jpeg') || foundCnhUrl.includes('image/jpg')) extension = 'jpg';
+          setCnhBase64(pureBase64);
+          setCnhExtensao(extension);
+          const safeName = `CNH_${(resolvedNome || 'Motorista').replace(/\s+/g, '_')}.${extension}`;
+          setCnhFile(new File([''], safeName, { type: extension === 'pdf' ? 'application/pdf' : `image/${extension}` }));
+        } catch (err) {
+          console.warn('Erro ao processar CNH Base64:', err);
+        }
+      } else {
+        setIsLoadingCnh(true);
+        urlToBase64(foundCnhUrl)
+          .then(({ base64, extension }) => {
+            setCnhBase64(base64);
+            setCnhExtensao(extension);
+            const safeName = `CNH_${(resolvedNome || 'Motorista').replace(/\s+/g, '_')}.${extension}`;
+            setCnhFile(new File([''], safeName, { type: extension === 'pdf' ? 'application/pdf' : `image/${extension}` }));
+            showToast(`CNH do motorista (${safeName}) vinculada automaticamente do embarque.`, 'info');
+          })
+          .catch(err => {
+            console.warn('Erro ao carregar URL da CNH para RDO:', err);
+          })
+          .finally(() => {
+            setIsLoadingCnh(false);
+          });
+      }
+    }
+  };
+
+  // Preenchimento Automático ao Selecionar Motorista da Base
+  const autoFillFromDriver = async (
+    d: Driver,
+    ownerPool = availableOwners,
+    vehiclePool = availableVehicles,
+    rdoPool = rdoRequests,
+    sigaPool = sigaRequests
+  ) => {
+    if (!d) return;
+
+    const cleanCpf = cleanDocumentNumber(d.cpf);
+    const matchedOwner = ownerPool.find(o => o.id === d.ownerId);
+
+    // Tentar encontrar embarque ou veículo deste motorista
+    const activeShipment = availableShipments.find(s => cleanDocumentNumber(s.driverCpf) === cleanCpf);
+    const cleanHorsePlate = cleanPlate(activeShipment?.horsePlate || '');
+
+    const prevRdo = rdoPool.find(r => cleanDocumentNumber(r.cpf) === cleanCpf && (r.nomeDaMae || r.dataDeNascimento || r.cnhUrl));
+    const prevSiga = sigaPool.find(r => cleanDocumentNumber(r.driverCpf) === cleanCpf && (r.driverMother || (r as any).mother || r.driverBirthdate || (r as any).birthdate));
+    const cachedProfile = getCachedDriverProfile(cleanCpf);
+
+    const resolvedNomeDaMae = (
+      d.motherName ||
+      (d as any)?.mother_name ||
+      (d as any)?.nome_da_mae ||
+      activeShipment?.driverMotherName ||
+      (activeShipment?.documents as any)?.nome_da_mae ||
+      prevRdo?.nomeDaMae ||
+      prevSiga?.driverMother ||
+      (prevSiga as any)?.mother ||
+      cachedProfile?.nomeDaMae ||
+      ''
+    ).trim().toUpperCase();
+
+    const rawBirthDate = (
+      d.birthDate ||
+      (d as any)?.birth_date ||
+      (d as any)?.data_nascimento ||
+      activeShipment?.driverBirthDate ||
+      (activeShipment?.documents as any)?.data_nascimento ||
+      prevRdo?.dataDeNascimento ||
+      prevSiga?.driverBirthdate ||
+      (prevSiga as any)?.birthdate ||
+      cachedProfile?.dataDeNascimento ||
+      ''
+    );
+    const resolvedDataNascimento = normalizeDateToYyyyMmDd(rawBirthDate);
+
+    const rawPropDoc = matchedOwner?.cpfCnpj || activeShipment?.anttOwnerIdentifier || '';
+    const cleanPropDoc = cleanDocumentNumber(rawPropDoc);
+    const formattedPropDoc = cleanPropDoc.length > 11 ? autoFormatInput('cnpj', rawPropDoc) : autoFormatInput('cpf', rawPropDoc);
+    const resolvedNomeProp = (matchedOwner?.name || activeShipment?.ownerName || '').trim().toUpperCase();
+
+    setFormData(prev => ({
+      ...prev,
+      nomeDoCliente: config.clientName || 'TRANSCUNHA TRANSPORTES',
+      cpf: autoFormatInput('cpf', cleanCpf),
+      nome: (d.name || '').trim().toUpperCase(),
+      nomeDaMae: resolvedNomeDaMae,
+      dataDeNascimento: resolvedDataNascimento,
+      documentoDoProprietario: formattedPropDoc,
+      nomeDoProprietario: resolvedNomeProp,
+      placaDoCavalo: cleanHorsePlate || prev.placaDoCavalo,
+    }));
+
+    if (activeShipment) {
+      setSelectedShipmentId(activeShipment.id);
+    }
+
+    const foundCnhUrl = d.cnhAttachmentUrl || (d as any)?.cnh_url || (activeShipment ? extractCnhUrlFromShipment(activeShipment, d) : undefined) || prevRdo?.cnhUrl || cachedProfile?.cnhUrl;
+    if (foundCnhUrl) {
+      if (foundCnhUrl.startsWith('data:')) {
+        try {
+          const parts = foundCnhUrl.split(',');
+          const pureBase64 = parts[1] || parts[0];
+          let extension: RdoExtensaoArquivo = 'pdf';
+          if (foundCnhUrl.includes('image/png')) extension = 'png';
+          else if (foundCnhUrl.includes('image/jpeg') || foundCnhUrl.includes('image/jpg')) extension = 'jpg';
+          setCnhBase64(pureBase64);
+          setCnhExtensao(extension);
+          const safeName = `CNH_${(d.name || 'Motorista').replace(/\s+/g, '_')}.${extension}`;
+          setCnhFile(new File([''], safeName, { type: extension === 'pdf' ? 'application/pdf' : `image/${extension}` }));
+        } catch {}
+      } else {
+        setIsLoadingCnh(true);
+        urlToBase64(foundCnhUrl)
+          .then(({ base64, extension }) => {
+            setCnhBase64(base64);
+            setCnhExtensao(extension);
+            const safeName = `CNH_${(d.name || 'Motorista').replace(/\s+/g, '_')}.${extension}`;
+            setCnhFile(new File([''], safeName, { type: extension === 'pdf' ? 'application/pdf' : `image/${extension}` }));
+            showToast(`CNH do motorista (${safeName}) vinculada automaticamente.`, 'info');
+          })
+          .catch(err => {
+            console.warn('Erro ao carregar URL da CNH:', err);
+          })
+          .finally(() => {
+            setIsLoadingCnh(false);
+          });
+      }
+    }
+  };
+
+  // Carrega configurações, histórico e entidades ausentes ao abrir
   useEffect(() => {
     if (!isOpen) return;
 
@@ -107,6 +487,57 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
 
         const list = await fetchRdoRequests();
         setRdoRequests(list);
+
+        // Carregar entidades auxiliares caso não venham passadas nas props
+        let curShipments = shipments;
+        if (!curShipments || curShipments.length === 0) {
+          curShipments = await fetchShipments();
+          if (curShipments && curShipments.length > 0) setAvailableShipments(curShipments);
+        } else {
+          setAvailableShipments(shipments);
+        }
+
+        let curDrivers = drivers;
+        if (!curDrivers || curDrivers.length === 0) {
+          curDrivers = await fetchDrivers();
+          if (curDrivers && curDrivers.length > 0) setAvailableDrivers(curDrivers);
+        } else {
+          setAvailableDrivers(drivers);
+        }
+
+        let curVehicles = vehicles;
+        if (!curVehicles || curVehicles.length === 0) {
+          curVehicles = await fetchVehicles();
+          if (curVehicles && curVehicles.length > 0) setAvailableVehicles(curVehicles);
+        } else {
+          setAvailableVehicles(vehicles);
+        }
+
+        let curOwners = owners;
+        if (!curOwners || curOwners.length === 0) {
+          curOwners = await fetchOwners();
+          if (curOwners && curOwners.length > 0) setAvailableOwners(curOwners);
+        } else {
+          setAvailableOwners(owners);
+        }
+
+        const loadedSiga = await fetchSigaRequests();
+        setSigaRequests(loadedSiga || []);
+
+        // Executar auto-preenchimento inicial se houver initialShipmentId ou initialDriverId
+        if (initialShipmentId) {
+          setSelectedShipmentId(initialShipmentId);
+          const s = (curShipments || []).find(item => item.id === initialShipmentId);
+          if (s) {
+            autoFillFromShipment(s, curDrivers, curOwners, curVehicles, list, loadedSiga);
+          }
+        } else if (initialDriverId) {
+          setSelectedDriverId(initialDriverId);
+          const d = (curDrivers || []).find(item => item.id === initialDriverId);
+          if (d) {
+            autoFillFromDriver(d, curOwners, curVehicles, list, loadedSiga);
+          }
+        }
       } catch (err) {
         console.warn('Erro ao carregar dados do RDO:', err);
       } finally {
@@ -127,67 +558,29 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
     };
   }, [isOpen]);
 
-  // Se houver initialShipmentId ou initialDriverId, auto-preenche
-  useEffect(() => {
-    if (!isOpen) return;
-
-    if (initialShipmentId) {
-      setSelectedShipmentId(initialShipmentId);
-      const s = shipments.find(item => item.id === initialShipmentId);
-      if (s) {
-        const matchedDriver = drivers.find(d => 
-          (s.driverCpf && cleanDocumentNumber(d.cpf) === cleanDocumentNumber(s.driverCpf)) ||
-          d.name.toLowerCase().trim() === s.driverName.toLowerCase().trim()
-        );
-
-        setFormData({
-          nomeDoCliente: config.clientName || 'TRANSCUNHA TRANSPORTES',
-          cpf: s.driverCpf || matchedDriver?.cpf || '',
-          nome: s.driverName || matchedDriver?.name || '',
-          nomeDaMae: '',
-          dataDeNascimento: '',
-          documentoDoProprietario: s.anttOwnerIdentifier || '',
-          nomeDoProprietario: s.ownerName || '',
-          placaDoCavalo: s.horsePlate || '',
-        });
-      }
-    } else if (initialDriverId) {
-      setSelectedDriverId(initialDriverId);
-      const d = drivers.find(item => item.id === initialDriverId);
-      if (d) {
-        const owner = owners.find(o => o.id === d.ownerId);
-        setFormData(prev => ({
-          ...prev,
-          cpf: d.cpf || '',
-          nome: d.name || '',
-          documentoDoProprietario: owner?.cpfCnpj || '',
-          nomeDoProprietario: owner?.name || '',
-        }));
-      }
-    }
-  }, [isOpen, initialShipmentId, initialDriverId, shipments, drivers, owners, config.clientName]);
-
   // Ao trocar o embarque selecionado
   const handleShipmentSelect = (shipmentId: string) => {
     setSelectedShipmentId(shipmentId);
-    if (!shipmentId) return;
+    if (!shipmentId) {
+      setFormData(prev => ({
+        ...prev,
+        cpf: '',
+        nome: '',
+        nomeDaMae: '',
+        dataDeNascimento: '',
+        documentoDoProprietario: '',
+        nomeDoProprietario: '',
+        placaDoCavalo: '',
+      }));
+      setCnhFile(null);
+      setCnhBase64('');
+      return;
+    }
 
-    const s = shipments.find(item => item.id === shipmentId);
-    if (!s) return;
-
-    const matchedDriver = drivers.find(d => 
-      (s.driverCpf && cleanDocumentNumber(d.cpf) === cleanDocumentNumber(s.driverCpf)) ||
-      d.name.toLowerCase().trim() === s.driverName.toLowerCase().trim()
-    );
-
-    setFormData(prev => ({
-      ...prev,
-      cpf: s.driverCpf || matchedDriver?.cpf || prev.cpf,
-      nome: s.driverName || matchedDriver?.name || prev.nome,
-      documentoDoProprietario: s.anttOwnerIdentifier || prev.documentoDoProprietario,
-      nomeDoProprietario: s.ownerName || prev.nomeDoProprietario,
-      placaDoCavalo: s.horsePlate || prev.placaDoCavalo,
-    }));
+    const s = availableShipments.find(item => item.id === shipmentId);
+    if (s) {
+      autoFillFromShipment(s);
+    }
   };
 
   // Ao trocar o motorista selecionado
@@ -195,17 +588,10 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
     setSelectedDriverId(driverId);
     if (!driverId) return;
 
-    const d = drivers.find(item => item.id === driverId);
-    if (!d) return;
-
-    const owner = owners.find(o => o.id === d.ownerId);
-    setFormData(prev => ({
-      ...prev,
-      cpf: d.cpf || '',
-      nome: d.name || '',
-      documentoDoProprietario: owner?.cpfCnpj || prev.documentoDoProprietario,
-      nomeDoProprietario: owner?.name || prev.nomeDoProprietario,
-    }));
+    const d = availableDrivers.find(item => item.id === driverId);
+    if (d) {
+      autoFillFromDriver(d);
+    }
   };
 
   // Upload e conversão de arquivo CNH para Base64
@@ -283,6 +669,34 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
       );
 
       if (res.success && res.data) {
+        // Salvar perfil do motorista em cache para consultas futuras
+        saveDriverProfileCache(cleanCpfVal, {
+          nomeDaMae: formData.nomeDaMae,
+          dataDeNascimento: formData.dataDeNascimento,
+        });
+
+        // Atualizar o embarque com os dados de mãe e nascimento caso vinculados
+        if (selectedShipmentId) {
+          const targetS = availableShipments.find(item => item.id === selectedShipmentId);
+          if (targetS) {
+            const patchDocs: any = { ...(targetS.documents || {}) };
+            if (formData.nomeDaMae) {
+              patchDocs.nome_da_mae = formData.nomeDaMae.trim().toUpperCase();
+              patchDocs.driver_mother_name = formData.nomeDaMae.trim().toUpperCase();
+            }
+            if (formData.dataDeNascimento) {
+              patchDocs.data_nascimento = formData.dataDeNascimento;
+              patchDocs.driver_birth_date = formData.dataDeNascimento;
+            }
+            upsertShipment({
+              ...targetS,
+              driverMotherName: formData.nomeDaMae ? formData.nomeDaMae.trim().toUpperCase() : targetS.driverMotherName,
+              driverBirthDate: formData.dataDeNascimento ? formData.dataDeNascimento : targetS.driverBirthDate,
+              documents: patchDocs
+            }).catch(err => console.warn('Erro ao atualizar dados complementares do embarque:', err));
+          }
+        }
+
         showToast(`✅ Solicitação enviada com sucesso! Código: ${res.data.codigo} | ID: ${res.data.id.slice(0, 8)}...`, 'success', 8000);
         // Atualiza a lista e vai para o histórico
         const updated = await fetchRdoRequests();
@@ -426,10 +840,10 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
                   <select
                     value={selectedShipmentId}
                     onChange={(e) => handleShipmentSelect(e.target.value)}
-                    className="w-full p-2.5 text-xs rounded-xl bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full p-2.5 text-xs rounded-xl bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                   >
                     <option value="">Nenhum (Preenchimento Avulso)</option>
-                    {shipments.map(s => (
+                    {availableShipments.map(s => (
                       <option key={s.id} value={s.id}>
                         Embarque #{s.id} — {s.driverName || 'Sem motorista'} ({s.horsePlate || 'Sem placa'}) [{s.status}]
                       </option>
@@ -445,16 +859,37 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
                   <select
                     value={selectedDriverId}
                     onChange={(e) => handleDriverSelect(e.target.value)}
-                    className="w-full p-2.5 text-xs rounded-xl bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full p-2.5 text-xs rounded-xl bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                   >
                     <option value="">Selecione um motorista da base...</option>
-                    {drivers.map(d => (
+                    {availableDrivers.map(d => (
                       <option key={d.id} value={d.id}>
                         {d.name} — CPF: {d.cpf} ({d.classification})
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* Banner de Confirmação do Preenchimento Automático */}
+                {selectedShipment && (
+                  <div className="md:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-blue-100/70 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 text-xs text-blue-900 dark:text-blue-200 gap-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span>
+                        Embarque <strong>#{selectedShipment.id}</strong> vinculado: Dados do motorista ({formData.nome || 'Identificado'}), veículo ({formData.placaDoCavalo || 'N/A'}) e proprietário preenchidos automaticamente.
+                      </span>
+                    </div>
+                    {isLoadingCnh ? (
+                      <span className="flex items-center gap-1.5 text-[11px] text-blue-600 dark:text-blue-300 font-semibold shrink-0">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando CNH...
+                      </span>
+                    ) : cnhFile ? (
+                      <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> CNH vinculada
+                      </span>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               {/* Dados Principais do Motorista */}
@@ -619,10 +1054,20 @@ export const RdoNacionalModal: React.FC<RdoNacionalModalProps> = ({
                   </div>
                 </div>
 
-                {cnhFile && (
+                {isLoadingCnh && (
+                  <div className="mt-3 flex items-center gap-2 p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300 animate-pulse">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                    <span>Recuperando e preparando CNH do embarque em Base64...</span>
+                  </div>
+                )}
+
+                {cnhFile && !isLoadingCnh && (
                   <div className="mt-3 flex items-center gap-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span className="font-semibold truncate">{cnhFile.name}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 ml-2">
+                      Auto do Embarque
+                    </span>
                     <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 font-bold ml-auto">
                       {cnhExtensao}
                     </span>

@@ -286,6 +286,8 @@ export interface SigaRequestRecord {
   driverId?: string;
   driverName: string;
   driverCpf: string;
+  driverMother?: string;
+  driverBirthdate?: string;
   truckPlate: string;
   vehicleType: SigaVehicleType;
   origin?: string;

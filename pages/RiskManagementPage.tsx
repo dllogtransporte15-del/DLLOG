@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions, Product } from '../types';
+import type { Shipment, Cargo, Client, Driver, Vehicle, User, RiskQueryOption, ProfilePermissions, Product, Owner } from '../types';
 import { ShipmentStatus, RiskQueryType, RISK_QUERY_COST_MAP, DEFAULT_RISK_QUERY_OPTIONS } from '../types';
 import { 
   ShieldCheck, 
@@ -47,6 +47,7 @@ interface RiskManagementPageProps {
   clients: Client[];
   drivers: Driver[];
   vehicles: Vehicle[];
+  owners?: Owner[];
   users: User[];
   currentUser: User | null;
   companyLogo?: string | null;
@@ -131,6 +132,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
   clients = [],
   drivers = [],
   vehicles = [],
+  owners = [],
   users = [],
   currentUser,
   companyLogo,
@@ -1944,6 +1946,7 @@ const RiskManagementPage: React.FC<RiskManagementPageProps> = ({
         shipments={shipments}
         drivers={drivers}
         vehicles={vehicles}
+        owners={owners}
         currentUser={currentUser}
       />
 

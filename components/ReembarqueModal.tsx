@@ -26,6 +26,7 @@ import { CargoStatus, ShipmentStatus } from '../types';
 import { formatBrl } from '../utils/financialCalculations';
 import { calculateCargoBalance } from '../utils/cargoBalance';
 import { calculateAdvanceAndBalance } from '../utils/freightCalculation';
+import { findCargoById } from '../utils';
 
 interface ReembarqueModalProps {
   isOpen: boolean;
@@ -68,14 +69,30 @@ export const ReembarqueModal: React.FC<ReembarqueModalProps> = ({
     return d.toISOString().split('T')[0];
   }, []);
 
+  // Identificar com precisão a carga do embarque anterior (por UUID, sequenceId ou CRG-XX)
+  const currentCargoResolved = useMemo(() => {
+    return findCargoById(cargos, shipment?.cargoId);
+  }, [cargos, shipment?.cargoId]);
+
   // Estados da nova programação
-  const [selectedCargoId, setSelectedCargoId] = useState<string>(shipment.cargoId || '');
+  const [selectedCargoId, setSelectedCargoId] = useState<string>(() => {
+    return currentCargoResolved?.id || shipment.cargoId || '';
+  });
   const [scheduledDate, setScheduledDate] = useState<string>(tomorrowStr);
   const [scheduledTime, setScheduledTime] = useState<string>('08:00');
   const [shipmentTonnage, setShipmentTonnage] = useState<number>(Number(shipment.shipmentTonnage) || 45);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Sincroniza a seleção e dados quando o modal abre ou o embarque muda
+  React.useEffect(() => {
+    if (shipment) {
+      const resolved = findCargoById(cargos, shipment.cargoId);
+      setSelectedCargoId(resolved?.id || shipment.cargoId || '');
+      setShipmentTonnage(Number(shipment.shipmentTonnage) || 45);
+    }
+  }, [shipment, cargos]);
 
   // Mapeamentos rápidos de clientes e produtos
   const clientMap = useMemo(() => {
@@ -90,23 +107,30 @@ export const ReembarqueModal: React.FC<ReembarqueModalProps> = ({
     return map;
   }, [products]);
 
-  // Filtrar cargas ativas em andamento (permitindo a carga atual e outras cargas em andamento)
+  // Filtrar cargas ativas em andamento (GARANTINDO SEMPRE a presença da carga atual, mesmo que Fechada ou Suspensa)
   const availableCargos = useMemo(() => {
-    return (cargos || []).filter(c => {
+    const targetId = currentCargoResolved?.id || shipment.cargoId;
+    const list = (cargos || []).filter(c => {
       const isStatusOk = c.status === CargoStatus.EmAndamento || (c.status as string) === 'Em andamento';
-      // Permitir a carga atual mesmo que porventura esteja em outro status temporário
-      const isCurrentCargo = c.id === shipment.cargoId;
+      const isCurrentCargo = c.id === targetId || (currentCargoResolved && c.id === currentCargoResolved.id);
       return isStatusOk || isCurrentCargo;
     });
-  }, [cargos, shipment.cargoId]);
+
+    // Se porventura a carga do embarque anterior não estiver na lista de ativas (ex: fechada/arquivada), inclui no início
+    if (currentCargoResolved && !list.some(c => c.id === currentCargoResolved.id)) {
+      list.unshift(currentCargoResolved);
+    }
+    return list;
+  }, [cargos, currentCargoResolved, shipment.cargoId]);
 
   // Cargas filtradas pela busca
   const filteredCargos = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
+    const currentCargoId = currentCargoResolved?.id || shipment.cargoId;
     
     // Separar a carga atual para exibir sempre em destaque no topo
-    const currentCargo = availableCargos.find(c => c.id === shipment.cargoId);
-    const otherCargos = availableCargos.filter(c => c.id !== shipment.cargoId);
+    const currentCargo = availableCargos.find(c => c.id === currentCargoId || (currentCargoResolved && c.id === currentCargoResolved.id));
+    const otherCargos = availableCargos.filter(c => c.id !== (currentCargo?.id || currentCargoId));
 
     const matchSearch = (c: Cargo) => {
       if (!term) return true;
@@ -133,12 +157,15 @@ export const ReembarqueModal: React.FC<ReembarqueModalProps> = ({
       return [currentCargo, ...matchedOthers];
     }
     return matchedOthers;
-  }, [availableCargos, shipment.cargoId, searchTerm, clientMap, productMap]);
+  }, [availableCargos, currentCargoResolved, shipment.cargoId, searchTerm, clientMap, productMap]);
 
   // Carga selecionada atualmente
   const selectedCargo = useMemo(() => {
-    return availableCargos.find(c => c.id === selectedCargoId) || null;
-  }, [availableCargos, selectedCargoId]);
+    return findCargoById(availableCargos, selectedCargoId) || 
+           (currentCargoResolved && (currentCargoResolved.id === selectedCargoId || String(currentCargoResolved.sequenceId) === String(selectedCargoId)) ? currentCargoResolved : null) ||
+           findCargoById(cargos, selectedCargoId) ||
+           currentCargoResolved;
+  }, [availableCargos, selectedCargoId, currentCargoResolved, cargos]);
 
   // Cálculos financeiros em tempo real
   const financialSummary = useMemo(() => {
@@ -394,7 +421,7 @@ export const ReembarqueModal: React.FC<ReembarqueModalProps> = ({
               ) : (
                 filteredCargos.map((cargo) => {
                   const isSelected = selectedCargoId === cargo.id;
-                  const isCurrentCargo = cargo.id === shipment.cargoId;
+                  const isCurrentCargo = cargo.id === (currentCargoResolved?.id || shipment.cargoId);
                   const clientName = clientMap.get(cargo.clientId) || (cargo as any).clientName || 'Cliente';
                   const productName = productMap.get(cargo.productId) || (cargo as any).productName || 'Produto';
                   const cargoCode = cargo.sequenceId ? `CRG-${cargo.sequenceId}` : cargo.id;
@@ -429,6 +456,11 @@ export const ReembarqueModal: React.FC<ReembarqueModalProps> = ({
                               {isCurrentCargo && (
                                 <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                                   Carga Atual • Novo Ciclo
+                                </span>
+                              )}
+                              {cargo.status !== CargoStatus.EmAndamento && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                  {cargo.status} (Reativar)
                                 </span>
                               )}
                               <span className="font-bold text-slate-900 dark:text-white truncate">
@@ -504,6 +536,23 @@ export const ReembarqueModal: React.FC<ReembarqueModalProps> = ({
                   </strong>
                 </div>
               </div>
+
+              {/* Aviso amigável quando o saldo restante da carga for inferior à tonelagem informada */}
+              {financialSummary.availableVolume < shipmentTonnage && (
+                <div className="mt-2.5 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold">
+                      Saldo restante na carga: {financialSummary.availableVolume.toLocaleString('pt-BR')} ton
+                    </p>
+                    <p className="text-[10.5px] text-amber-800 dark:text-amber-300 leading-tight">
+                      {selectedCargo.status !== CargoStatus.EmAndamento
+                        ? `A carga selecionada está "${selectedCargo.status}". Ao confirmar o reembarque, o lote será reativado para "Em andamento" e o saldo total será expandido em +${(shipmentTonnage - Math.max(0, financialSummary.availableVolume)).toLocaleString('pt-BR')} ton para cobrir este novo ciclo.`
+                        : `Para comportar este novo ciclo de carregamento (${shipmentTonnage.toLocaleString('pt-BR')} ton), o volume total do lote será expandido automaticamente em +${(shipmentTonnage - Math.max(0, financialSummary.availableVolume)).toLocaleString('pt-BR')} ton.`}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

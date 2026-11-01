@@ -93,6 +93,22 @@ export const isAdminUser = (user: User | null | undefined): boolean => {
   );
 };
 
+/**
+ * Permissão de Desconciliação Bancária
+ * Restrito rigorosamente a Administradores, Diretoria e Master
+ */
+export const canUnreconcileTransaction = (user: User | null | undefined): boolean => {
+  if (!user) return false;
+  return (
+    isDeveloperUser(user) ||
+    isAdminUser(user) ||
+    user.profile === UserProfile.Diretor ||
+    (user.profile as string) === 'Diretor' ||
+    (user as any).role === 'admin' ||
+    Boolean((user as any).is_master)
+  );
+};
+
 export const filterVisibleUsers = (users: User[], viewer: User | null | undefined): User[] => {
   if (isDeveloperUser(viewer)) return users;
   return users.filter(u => !isDeveloperUser(u) && !isDemoUser(u));

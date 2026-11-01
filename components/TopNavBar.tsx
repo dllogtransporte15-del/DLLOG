@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { can, isDemoUser } from '../auth';
+import { can, isDemoUser, isDeveloperUser } from '../auth';
+import { ShipperCourseModal } from './ShipperCourseModal';
 import NotificationBell from './NotificationBell';
 import { DashboardIcon } from './icons/DashboardIcon';
 import { ClientsIcon } from './icons/ClientsIcon';
@@ -22,7 +23,7 @@ import { ToolIcon } from './icons/ToolIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { InfoIcon } from './icons/InfoIcon';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe, Headphones, Scale } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, Activity, ShieldCheck, Sun, Moon, Sparkles, MessageSquare, ArrowDownCircle, ArrowUpCircle, FileSpreadsheet, PieChart, Layers, TrendingUp, Building2, Landmark, Send, FileText, MapPin, Presentation, Globe, Headphones, Scale, Plus, GraduationCap, ExternalLink } from 'lucide-react';
 import DriverLocationTracker from './DriverLocationTracker';
 
 import type { User, Page, ProfilePermissions, Ticket, Shipment, FreightOffer, Cargo, Driver, Client, Product, Vehicle } from '../types';
@@ -165,6 +166,7 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
   onOpenUpdates
 }) => {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -452,26 +454,52 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                  <ChevronDownIcon className={`hidden lg:block w-3.5 h-3.5 xl:w-4 xl:h-4 text-slate-500 shrink-0 transition-transform ${openDropdown === 'user' ? 'rotate-180' : ''}`} />
               </button>
               {openDropdown === 'user' && (
-                <div className="absolute mt-2 w-56 right-0 origin-top-right bg-white/95 dark:bg-[#0b1328]/95 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl py-1.5 z-50">
+                <div className="absolute mt-2.5 w-72 sm:w-80 right-0 origin-top-right bg-white/95 dark:bg-[#0c1427]/95 border border-slate-200/90 dark:border-slate-700/80 rounded-2xl shadow-2xl shadow-slate-950/25 backdrop-blur-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    {/* Header do Perfil no Dropdown */}
+                    <div className="p-3 mb-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/50 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-400 text-white flex items-center justify-center font-black shadow-md text-sm shrink-0">
+                        {user.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">
+                          {user.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0">
+                            {user.profile}
+                          </span>
+                          {user.username && (
+                            <span className="text-[10px] text-slate-400 truncate font-mono">
+                              @{user.username}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Seção de Chamados & Suporte */}
                     {user.profile !== UserProfile.Cliente && (
-                      <>
+                      <div className="space-y-1 mb-1">
                         <button 
                           onClick={() => {
                             handleDropdownToggle('user');
                             onOpenTickets(false);
                           }} 
-                          className="w-full text-left flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                          className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
                         >
-                            <div className="flex items-center gap-3">
-                              <Headphones className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" />
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40 group-hover:scale-105 transition-transform">
+                                <Headphones className="w-4 h-4" />
+                              </div>
                               <span>Painel de Chamados</span>
                             </div>
                             {myOpenTicketsCount > 0 ? (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500 text-white shadow-sm">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 whitespace-nowrap shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
                                 {myOpenTicketsCount} pendente{myOpenTicketsCount > 1 ? 's' : ''}
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">Suporte</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20">Suporte</span>
                             )}
                         </button>
                         {!isDemoUser(user) && (
@@ -480,54 +508,105 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                               handleDropdownToggle('user');
                               onOpenTickets(true);
                             }} 
-                            className="w-full text-left flex items-center justify-between px-4 py-2 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all cursor-pointer pl-11 font-medium"
+                            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50/70 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/50 transition-all cursor-pointer shadow-2xs"
                           >
-                              <span>+ Abrir Novo Chamado</span>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Abrir Novo Chamado</span>
                           </button>
                         )}
-                      </>
+                      </div>
                     )}
-                    <button 
-                      onClick={() => {
-                        handleDropdownToggle('user');
-                        setCurrentPage('apresentacao-comercial' as Page);
-                      }} 
-                      className="w-full text-left flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
-                    >
-                        <div className="flex items-center gap-3">
-                          <Presentation className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" />
-                          <span>Apresentação Comercial</span>
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">PDF</span>
-                    </button>
-                    <button 
-                      onClick={() => {
-                        handleDropdownToggle('user');
-                        setCurrentPage('website' as Page);
-                      }} 
-                      className="w-full text-left flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
-                    >
-                        <div className="flex items-center gap-3">
-                          <Globe className="w-4 h-4 text-emerald-500 group-hover:scale-110 transition-transform" />
-                          <span>Website Institucional</span>
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
-                    </button>
-                    {user.profile !== UserProfile.Cliente && (
+
+                    {/* Links e Ações Rápidas */}
+                    <div className="space-y-0.5">
                       <button 
                         onClick={() => {
                           handleDropdownToggle('user');
-                          onOpenUpdates && onOpenUpdates();
+                          setCurrentPage('apresentacao-comercial' as Page);
                         }} 
-                        className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer"
+                        className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
                       >
-                          <Sparkles className="w-4 h-4 text-amber-500" />
-                          <span>Novidades da Versão</span>
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/40 group-hover:scale-105 transition-transform">
+                              <Presentation className="w-4 h-4" />
+                            </div>
+                            <span>Apresentação Comercial</span>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">PDF</span>
                       </button>
-                    )}
-                    <div className="h-px bg-slate-200 dark:bg-slate-700/60 my-1"></div>
-                    <button onClick={onLogout} className="w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer">
-                        <LogOutIcon className="w-4 h-4 text-red-400" />
+
+                      <button 
+                        onClick={() => {
+                          handleDropdownToggle('user');
+                          setCurrentPage('website' as Page);
+                        }} 
+                        className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                      >
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40 group-hover:scale-105 transition-transform">
+                              <Globe className="w-4 h-4" />
+                            </div>
+                            <span>Website Institucional</span>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Site</span>
+                      </button>
+
+                      {user.profile !== UserProfile.Cliente && (
+                        <button 
+                          onClick={() => {
+                            handleDropdownToggle('user');
+                            onOpenUpdates && onOpenUpdates();
+                          }} 
+                          className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                        >
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/40 group-hover:scale-105 transition-transform">
+                                <Sparkles className="w-4 h-4" />
+                              </div>
+                              <span>Novidades da Versão</span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                              v2.91
+                            </span>
+                        </button>
+                      )}
+
+                      {/* Curso para Embarcador (Exclusivo Desenvolvedor) - Abre em Nova Guia */}
+                      {(isDeveloperUser(user) || user.profile === UserProfile.Desenvolvedor) && (
+                        <a 
+                          href="/curso-embarcador"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => {
+                            handleDropdownToggle('user');
+                          }} 
+                          className="w-full text-left flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all cursor-pointer group"
+                          title="Abrir Curso para Embarcador em Nova Guia"
+                        >
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 border border-violet-200/50 dark:border-violet-800/40 group-hover:scale-105 transition-transform">
+                                <GraduationCap className="w-4 h-4" />
+                              </div>
+                              <span>Curso para Embarcador</span>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 flex items-center gap-1">
+                              NOVA GUIA
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </span>
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-slate-200/80 dark:bg-slate-700/60 my-1.5 mx-1"></div>
+
+                    {/* Sair do Sistema */}
+                    <button 
+                      onClick={onLogout} 
+                      className="w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer group"
+                    >
+                        <div className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-800/40 group-hover:scale-105 transition-transform">
+                          <LogOutIcon className="w-4 h-4" />
+                        </div>
                         <span>Sair do Sistema</span>
                     </button>
                 </div>
@@ -702,6 +781,11 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
           </div>
         </div>
       )}
+      <ShipperCourseModal 
+        isOpen={isCourseModalOpen} 
+        onClose={() => setIsCourseModalOpen(false)} 
+        currentUser={user} 
+      />
     </header>
   );
 };

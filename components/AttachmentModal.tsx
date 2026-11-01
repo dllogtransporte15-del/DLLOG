@@ -5679,6 +5679,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
             onClose={() => setIsRdoModalOpen(false)}
             currentUser={currentUser}
             initialShipmentId={shipment.id}
+            shipments={[shipment]}
             onSelectApprovedCode={(code) => {
               setRiskReleaseCode(code);
               setRiskQueryType('RDO Nacional');

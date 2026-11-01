@@ -5,7 +5,7 @@ import { ShipmentStatus } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { UsersIcon } from '../icons/UsersIcon';
-import { hasCteAttached } from '../../utils';
+import { hasCteAttached, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
 
 interface ExternalSalespersonReportProps {
   shipments: Shipment[];
@@ -44,15 +44,7 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
   const statsList = useMemo<ExternalSalespersonStats[]>(() => {
     const cargoMap: Map<string, Cargo> = new Map(cargos.map(c => [c.id, c]));
     const clientMap: Map<string, Client> = new Map(clients.map(cl => [cl.id, cl]));
-    const loadedStatuses = [
-        ShipmentStatus.AguardandoNota,
-        ShipmentStatus.AguardandoAdiantamento,
-        ShipmentStatus.AguardandoAgendamento,
-        ShipmentStatus.AguardandoDescarga,
-        ShipmentStatus.ValidacaoTicket,
-        ShipmentStatus.AguardandoPagamentoSaldo,
-        ShipmentStatus.Finalizado
-    ];
+    const loadedStatuses = COMMISSION_ELIGIBLE_STATUSES;
 
     const statsMap = new Map<string, ExternalSalespersonStats>();
 

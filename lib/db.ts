@@ -257,6 +257,9 @@ export const toDriver = (row: any): Driver => ({
   restrictionReason: row.restriction_reason,
   has_app: row.has_app ?? false,
   codigoAtua: row.codigo_atua || row.codg_atua || row.codigoAtua || undefined,
+  motherName: row.mother_name || row.nome_da_mae || row.mother || undefined,
+  birthDate: row.birth_date || row.data_nascimento || row.birthdate || undefined,
+  cnhAttachmentUrl: row.cnh_attachment_url || row.cnh_url || row.cnh_file || undefined,
 });
 
 export const fromDriver = (d: Driver | Omit<Driver, 'id'>) => ({
@@ -874,6 +877,10 @@ export const toShipment = (row: any): Shipment => {
           ? Number(docs.financial_cost_monthly_rate) 
           : undefined),
     statusPendingObservation: row.status_pending_observation || docs.status_pending_observation || docs.statusPendingObservation || undefined,
+    driverCnh: row.driver_cnh || docs.driver_cnh || docs.cnh || undefined,
+    driverRg: row.driver_rg || docs.driver_rg || docs.rg || undefined,
+    driverMotherName: row.driver_mother_name || row.mother_name || docs.driver_mother_name || docs.nome_da_mae || docs.mother_name || undefined,
+    driverBirthDate: row.driver_birth_date || row.birth_date || docs.driver_birth_date || docs.data_de_nascimento || docs.data_nascimento || undefined,
   };
 };
 
@@ -958,6 +965,12 @@ const fromShipment = (s: Shipment) => {
     ciot_number: s.ciotNumber !== undefined ? s.ciotNumber : (s.ciot !== undefined ? s.ciot : (s.documents?.ciot_number ?? s.documents?.ciot ?? null)),
     ciot: s.ciot !== undefined ? s.ciot : (s.ciotNumber !== undefined ? s.ciotNumber : (s.documents?.ciot ?? s.documents?.ciot_number ?? null)),
     nfe_number: s.nfeNumber !== undefined ? s.nfeNumber : (s.documents?.nfe_number ?? null),
+    driver_cnh: s.driverCnh !== undefined ? s.driverCnh : (s.documents?.driver_cnh ?? null),
+    driver_rg: s.driverRg !== undefined ? s.driverRg : (s.documents?.driver_rg ?? null),
+    driver_mother_name: s.driverMotherName !== undefined ? s.driverMotherName : (s.documents?.driver_mother_name ?? s.documents?.nome_da_mae ?? null),
+    nome_da_mae: s.driverMotherName !== undefined ? s.driverMotherName : (s.documents?.nome_da_mae ?? s.documents?.driver_mother_name ?? null),
+    driver_birth_date: s.driverBirthDate !== undefined ? s.driverBirthDate : (s.documents?.driver_birth_date ?? s.documents?.data_nascimento ?? null),
+    data_nascimento: s.driverBirthDate !== undefined ? s.driverBirthDate : (s.documents?.data_nascimento ?? s.documents?.driver_birth_date ?? null),
     nfe_value: s.nfeValue !== undefined ? s.nfeValue : (s.documents?.nfe_value ?? s.documents?.valor_mercadoria ?? s.realProfitData?.invoiceValue ?? null),
     valor_mercadoria: s.nfeValue !== undefined ? s.nfeValue : (s.documents?.valor_mercadoria ?? s.documents?.nfe_value ?? s.realProfitData?.invoiceValue ?? null),
     mdfe_number: s.mdfeNumber !== undefined ? s.mdfeNumber : (s.documents?.mdfe_number ?? null),

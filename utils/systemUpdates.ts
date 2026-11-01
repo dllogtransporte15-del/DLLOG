@@ -27,6 +27,287 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_01_v2_97_0',
+    version: 'v2.97.0',
+    date: '01/11/2026',
+    title: 'Acesso em Nova Guia ao Curso para Embarcador (Transcunha Academy)',
+    summary: 'O Manual Profissional do Embarcador agora abre diretamente em uma Nova Guia dedicada no navegador, permitindo estudo em tela cheia sem sobrepor as operações do sistema. Criada a rota oficial /curso-embarcador com os 7 módulos formativos, simulador de frota e margem comercial, tabela rápida de PBT e carretas, e teste de fixação com persistência de progresso de leitura.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Abertura em Nova Guia Independente',
+        description: 'Ao clicar em "Curso para Embarcador" no menu de usuário do desenvolvedor, o sistema abre uma nova aba no navegador (target="_blank"), garantindo visualização ampla sem corte de janela ou limitações de modal.'
+      },
+      {
+        category: 'feature',
+        title: 'Página Dedicada e Rota /curso-embarcador',
+        description: 'Plataforma oficial da Transcunha Academy em tela cheia com índice lateral de módulos, resumo executivo, dicas práticas de ouro, avisos de gerenciamento de risco e tabelas de implementos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Persistência de Progresso do Aluno',
+        description: 'O sistema memoriza os módulos já lidos e concluídos no navegador, exibindo barra percentual de capacitação e botões de avanço e retorno contínuo entre os capítulos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Simulador de Margem & Teste de Fixação Integrados',
+        description: 'Permite simular o número de carretas necessárias (LS, Bitrem, Rodotrem), calcular o spread de frete (R$/tonelada e percentual) e testar conhecimentos operacionais com laudo de fixação imediato.'
+      },
+      {
+        category: 'fix',
+        title: 'Correção de Importação do Componente Lock no Contas a Pagar',
+        description: 'Corrigida a importação do ícone Lock do pacote lucide-react no modal de liquidação e tabela de pagamentos (AccountsPayableSettlementModal), sanando o conflito com a interface nativa da Web Locks API do TypeScript.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_01_v2_96_0',
+    version: 'v2.96.0',
+    date: '01/11/2026',
+    title: 'Contabilização de Comissões Exclusivamente Pós-Descarga (Valid. de Ticket)',
+    summary: 'Implementação da regra contábil e operacional de apuração de comissões da Transcunha. Nenhuma comissão é somada na Folha de Pagamento de Líderes ou no Módulo Comercial enquanto o veículo estiver em trânsito (Ag. Fiscal, Ag. Adiantamento, Ag. Descarga). A liberação financeira ocorre estritamente a partir do marco de descarga comprovada ("Valid. de Ticket", "Ag. Saldo" ou "Finalizado"), com segregação visual entre Comissão Liberada e Comissão Prevista.',
+    items: [
+      {
+        category: 'security',
+        title: 'Trava Contábil Pós-Descarga (Valid. de Ticket)',
+        description: 'Impedida a contabilização prematura de comissões em viagens que ainda não descarregaram. Fretes em Ag. Descarga não somam valores a pagar na Folha de Pagamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Segregação entre Comissão Liberada e Comissão Prevista',
+        description: 'O modal de auditoria de fretes da agência/líder e os relatórios passam a exibir lado a lado o total de Comissão Liberada (efetivamente descarregada) e o total de Comissão Prevista (em trânsito).'
+      },
+      {
+        category: 'improvement',
+        title: 'Padronização Universal em Relatórios Comerciais e de Agência',
+        description: 'Alinhamento dos relatórios do Supervisor, Embarcadores e Vendedores Externos à nova regra centralizada de elegibilidade de comissão.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_01_v2_95_0',
+    version: 'v2.95.0',
+    date: '01/11/2026',
+    title: 'Isolamento Exclusivo da Janela "Embarcadores" para o Perfil Embarcador',
+    summary: 'Restrição de acesso no módulo de Relatórios para usuários com perfil de Embarcador. Ao acessar a área de Relatórios, o operador visualiza exclusivamente a aba "Embarcadores", mantendo todas as abas estratégicas e confidenciais da empresa (Lucro Real da Operação, Tempo de Operação, Filiais, Financeiro Estadias, Previsão de Demandas e Outros) totalmente ocultas e blindadas.',
+    items: [
+      {
+        category: 'security',
+        title: 'Ocultação de Relatórios Estratégicos e Financeiros',
+        description: 'Bloqueada a exibição de dados de Lucro Real, Estadias, Filiais e Demandas para o perfil Embarcador na navegação de relatórios.'
+      },
+      {
+        category: 'improvement',
+        title: 'Foco Operacional e Inicialização Direta',
+        description: 'Inicialização direta e trava automática da aba "Embarcadores", exibindo apenas as métricas de frete e carregamentos vinculados ao respectivo operador.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_01_v2_94_0',
+    version: 'v2.94.0',
+    date: '01/11/2026',
+    title: 'Nova Conciliação Bancária Comparativa & Trava de Imutabilidade Contábil',
+    summary: 'Implementação completa do módulo de Conciliação Bancária Comparativa e governança contábil. Agora o sistema conta com Auto-Match inteligente com tolerância de até 3 dias úteis para compensações bancárias, visão Espelho Lado a Lado (Extrato Real vs ERP), lançamento de despesas/tarifas com 1 clique, e blindagem dos títulos conciliados com trava de imutabilidade (bloqueio de reabertura/edição e fluxo auditado de desconciliação restrito a Administradores, Diretoria e Master com justificativa obrigatória).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Auto-Match Inteligente com Tolerância de 3 Dias Úteis',
+        description: 'Algoritmo que cruza débitos e créditos do extrato OFX com lançamentos e NFs do ERP respeitando a janela de compensação bancária (D+1, D+2 e fins de semana), com botão para conciliar todos os matches em lote.'
+      },
+      {
+        category: 'security',
+        title: 'Trava de Imutabilidade 🔒 no Contas a Pagar e Baixas',
+        description: 'Títulos auditados pelo extrato bancário recebem a flag isReconciled, bloqueando os botões de Reabrir e Excluir com ícone de cadeado e tooltip explicativo, impedindo quebras no fechamento financeiro.'
+      },
+      {
+        category: 'feature',
+        title: 'Lançamento Rápido no Sistema com 1 Clique',
+        description: 'Ação direta para transformar tarifas de cobrança, IOF, juros e taxas de CIOT do extrato bancário em despesas do sistema já pagas e conciliadas instantaneamente.'
+      },
+      {
+        category: 'security',
+        title: 'Fluxo Seguro de Desconciliação com Justificativa e Permissões',
+        description: 'Desconciliação restrita a Administradores, Diretoria e Master, exigindo justificativa obrigatória registrada permanentemente no histórico de auditoria para reabertura de títulos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Visão Espelho Duplo (Split View) e Auditoria de Saldos',
+        description: 'Comparativo sincronizado entre o saldo do extrato bancário e o saldo conciliado do ERP com cálculo automático de divergências contábeis.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_01_v2_93_0',
+    version: 'v2.93.0',
+    date: '01/11/2026',
+    title: 'Ajuste de Visualização e Enquadramento: Manual Profissional do Embarcador',
+    summary: 'Aprimoramento na renderização do modal "Manual Profissional do Embarcador". Agora o componente utiliza Portal React para renderização direta no nível raiz (document.body), evitando confinamento pelo contexto de stacking CSS da barra superior (backdrop-filter e zoom), garantindo centralização perfeita na tela, rolagem interna fluida e suporte a fechamento por clique externo e tecla Esc.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Renderização via Portal React (document.body)',
+        description: 'Eliminado o recorte visual do modal causado pela barra de navegação superior, garantindo renderização desvinculada com z-index de máxima prioridade (z-[99999]).'
+      },
+      {
+        category: 'improvement',
+        title: 'Enquadramento e Dimensionamento Responsivo',
+        description: 'Ajuste da altura para até 90vh (máx. 900px) com cabeçalho e rodapé fixos e áreas internas de capítulos, simulador de fretes e quiz com rolagem suave e independente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fechamento com Atalho Esc e Clique Externo',
+        description: 'Adicionado ouvinte de tecla Escape e fechamento prático ao clicar no fundo escurecido da tela.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_01_v2_92_0',
+    version: 'v2.92.0',
+    date: '01/11/2026',
+    title: 'Preenchimento Automático Rigoroso no RDO Nacional (MRB Soluções)',
+    summary: 'Aprimoramento completo do fluxo de triagem e análise cadastral do RDO Nacional. Ao selecionar qualquer embarque na aba "Nova Solicitação", todos os campos solicitados (Motorista, CPF, Nome da Mãe, Data de Nascimento, Placa do Cavalo, Documento e Nome do Proprietário) e o anexo da CNH em Base64 são automaticamente preenchidos e vinculados a partir dos dados do embarque e históricos cadastrais.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Auto-Preenchimento Completo por Embarque',
+        description: 'Ao vincular um embarque, o sistema recupera instantaneamente Nome, CPF formatado, Placa do Veículo, Documento ANTT/Proprietário e Razão Social do Proprietário.'
+      },
+      {
+        category: 'improvement',
+        title: 'Resolução Inteligente em Cascata: Nome da Mãe e Data de Nascimento',
+        description: 'Localização automática do Nome Completo da Mãe e Data de Nascimento pesquisando no embarque, ficha do motorista, consultas anteriores do RDO/SIGA e outros carregamentos do mesmo condutor com normalização de data para YYYY-MM-DD.'
+      },
+      {
+        category: 'feature',
+        title: 'Auto-Detecção e Vinculação da CNH em Base64',
+        description: 'Varredura automática dos anexos do embarque para localizar o arquivo da CNH do motorista, convertendo-o de forma transparente em Base64 puro com indicador visual e substituição opcional.'
+      },
+      {
+        category: 'improvement',
+        title: 'Banner de Confirmação e Cache de Perfil de Motorista',
+        description: 'Exibição de card informativo com badge de vinculação ao selecionar o embarque e persistência em cache para que dados complementares permaneçam sempre memorizados.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_01_v2_91_0',
+    version: 'v2.91.0',
+    date: '01/11/2026',
+    title: 'Separação de Contas a Pagar por "Doc CT-e" em Aba Exclusiva',
+    summary: 'Criação de uma janela/sub-aba dedicada para os lançamentos financeiros referentes a "Doc CT-e" (fretes e custos de motoristas vinculados a Conhecimentos de Transporte), isolando-os dos lançamentos manuais avulsos para maior organização, controle e liquidação ágil com comprovante.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Nova Janela / Aba Exclusiva "Fretes / Doc CT-e"',
+        description: 'Sub-aba independente no cabeçalho do Contas a Pagar com contador de registros em tempo real e visualização dedicada de todas as contas referentes a Doc CT-e.'
+      },
+      {
+        category: 'improvement',
+        title: 'Isolamento Rigoroso dos Lançamentos Avulsos',
+        description: 'Os lançamentos manuais avulsos agora contêm exclusivamente despesas corporativas não vinculadas a fretes/CT-e, eliminando misturas no fluxo de caixa.'
+      },
+      {
+        category: 'feature',
+        title: 'Visualização Integrada de Documentos Fiscais de Frete',
+        description: 'Acesso em 1 clique ao arquivo do CT-e e Contrato/Carta Frete gerados a partir do embarque na coluna de Tríade Documental.'
+      },
+      {
+        category: 'improvement',
+        title: 'Liquidação e Composição Financeira Atualizada',
+        description: 'Totalizadores de KPI e resumo bancário com linha própria para Fretes / Doc CT-e, com fluxo completo de dar baixa, anexar comprovante Sicredi e editar quitação.'
+      },
+      {
+        category: 'improvement',
+        title: 'Refinamento e Ampliação do Modal de Baixa (+30%)',
+        description: 'Modal de liquidação e edição de comprovantes ampliado em 30% (max-w-3xl) com cabeçalho e rodapé fixos, rolagem inteligente interna, campos amplos e tipografia refinada.'
+      },
+      {
+        category: 'improvement',
+        title: 'Design Moderno do Menu de Usuário',
+        description: 'Menu suspenso do perfil no topo do sistema redesenhado com card de usuário, largura expandida (w-80), badges em pílula sem quebras, botão dedicado para abertura de chamados e ícones temáticos.'
+      },
+      {
+        category: 'feature',
+        title: 'Curso & Manual Profissional do Embarcador (Transcunha Academy)',
+        description: 'Módulo interativo de capacitação profissional baseado no Manual Oficial do Embarcador (PDF), contendo 11 capítulos detalhados, simulador de frota e margem comercial, tabela técnica de pesos e conjuntos e teste de fixação com feedback imediato (disponível exclusivamente para Desenvolvedor).'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_31_v2_90_0',
+    version: 'v2.90.0',
+    date: '31/10/2026',
+    title: 'Evolução do Contas a Pagar: Tríade Documental, Leitor Sicredi, Motor de Juros/Abatimento e Resumo Bancário',
+    summary: 'Implementação completa das demandas operacionais do Contas a Pagar baseadas nas rotinas da Transcunha: Tríade de Conformidade Documental (NF [OK] • Boleto [OK] • Comprovante [OK]), leitor inteligente de comprovantes do Banco Sicredi com extração e recálculo automático de juros e valor real, destaques de vencimento no prazo com visto verde e data de digitação, novos presets rápidos OPZ e visão consolidada de saídas por instituição bancária.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Tríade de Conformidade Documental (NF • Boleto • Comprovante)',
+        description: 'Badges interativos em cada conta a pagar permitindo visualização em 1 clique da Nota Fiscal, Boleto Bancário e Comprovante de Quitação com indicação imediata de conformidade documental.'
+      },
+      {
+        category: 'feature',
+        title: 'Leitor Inteligente de Comprovante Sicredi & Outros Bancos',
+        description: 'Parser automático que lê arquivos PDF e imagens de comprovantes Sicredi, extraindo data de pagamento, juros/mora, abatimento, valor pago e código de autenticação bancária.'
+      },
+      {
+        category: 'improvement',
+        title: 'Motor de Ajuste Financeiro (Juros, Abatimento & Valor Real)',
+        description: 'Recálculo instantâneo no modal de baixa: Valor Real = Valor Original + Juros/Mora - Abatimento/Desconto, persistindo a auditoria completa da liquidação.'
+      },
+      {
+        category: 'improvement',
+        title: 'Destaques de Vencimento com Visto Verde e Data de Entrada/Digitação',
+        description: 'Visto verde e destaque visual para contas no prazo ou quitadas, alerta pulsante para atrasadas e exibição da data de digitação do lançamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Painel de Resumo Bancário de Saídas',
+        description: 'Gaveta retrátil com totalizadores consolidados de saídas previstas e pagas segmentadas por instituição bancária (com destaque para Sicredi e Itaú).'
+      },
+      {
+        category: 'feature',
+        title: 'Sub-aba Especializada: Motoristas & Fretes (Adiantamentos & Saldos)',
+        description: 'Segmentação operacional separando as contas da empresa das pendências de frete de motoristas (Contrato Adiantamento 70% e Saldo 30%).'
+      },
+      {
+        category: 'improvement',
+        title: 'Atalhos Rápidos de Período OPZ',
+        description: 'Botões em 1 clique para Todo o Período, De Hoje em Diante, Hoje, Próximos 7 Dias, Mês Atual e Mês Anterior.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_10_31_v2_89_0',
+    version: 'v2.89.0',
+    date: '31/10/2026',
+    title: 'Correção e Aprimoramento do Reembarque de Veículos no Histórico de Embarques',
+    summary: 'Habilitação completa do reembarque de veículos a partir da página de Histórico de Embarques, permitindo que motoristas e conjuntos veiculares sejam reprogramados para novos ciclos na mesma carga histórica com expansão automática de saldo e reativação do lote.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Habilitação do Reembarque no Histórico de Embarques',
+        description: 'Integração do callback de criação de embarques à página de histórico de viagens (status Finalizado), eliminando o bloqueio de ação indisponível ao confirmar um novo ciclo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Seleção Garantida da Carga do Embarque Anterior',
+        description: 'Resolução inteligente do lote original no modal de reembarque, assegurando que a carga anterior seja exibida e pré-selecionada mesmo se já estiver finalizada ou fechada.'
+      },
+      {
+        category: 'feature',
+        title: 'Expansão Automática de Saldo do Lote',
+        description: 'Ao reembarcar um motorista na mesma carga com saldo esgotado, o sistema expande automaticamente o volume total necessário e reativa o lote para Em Andamento sem bloquear a operação.'
+      },
+      {
+        category: 'improvement',
+        title: 'Rastreabilidade e Registro no Histórico do Lote',
+        description: 'Inclusão de histórico detalhado na carga registrando a reativação e a tonelagem expandida para comportar o novo ciclo do veículo.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_10_29_v2_88_9',
     version: 'v2.88.9',
     date: '29/10/2026',

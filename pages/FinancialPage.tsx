@@ -464,6 +464,11 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
 
         {activeTab === 'ofx' && (
           <OfxReconciliationTab
+            transactions={transactions}
+            bankAccounts={bankAccounts}
+            currentUser={_currentUser}
+            onUpdateTransaction={handleUpdateTransaction}
+            onAddTransaction={handleAddTransaction}
             onReconcileTransaction={(ofxId) => {
               console.log('Reconciled OFX trn:', ofxId);
             }}

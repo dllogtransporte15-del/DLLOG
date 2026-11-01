@@ -30,9 +30,10 @@ interface ShipmentHistoryPageProps {
   onUpdateAttachment?: (shipmentId: string, data: any) => Promise<void>;
   stays?: StayRecord[];
   riskQueryOptions?: RiskQueryOption[];
+  onCreateShipment?: (data: any) => Promise<void> | void;
 }
 
-const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, onUpdateAttachment, stays = [], riskQueryOptions }) => {
+const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, cargos, drivers, users, currentUser, clients, products, vehicles, onDeleteShipment, onRevertStatus, onDeleteAttachment, onUpdatePrice, onUpdateShipmentData, onUpdateAttachment, stays = [], riskQueryOptions, onCreateShipment }) => {
   const [activeStatus, setActiveStatus] = useState<ShipmentStatus>(ShipmentStatus.Finalizado);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAttachmentModalOpen, setAttachmentModalOpen] = useState(false);
@@ -233,6 +234,7 @@ const ShipmentHistoryPage: React.FC<ShipmentHistoryPageProps> = ({ shipments, ca
         onDeleteAttachment={onDeleteAttachment}
         onUpdatePrice={onUpdatePrice}
         onUpdateShipmentData={onUpdateShipmentData}
+        onCreateShipment={onCreateShipment}
       />
       {selectedShipment && (
         <HistoryModal

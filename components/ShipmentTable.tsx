@@ -128,6 +128,7 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     }
 
     const payload: any = {
+      isReembarque: true,
       cargoId: data.selectedCargo.id,
       driverName: reembarqueShipment.driverName,
       driverContact: reembarqueShipment.driverContact,
@@ -144,7 +145,6 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
       companyFreightRateSnapshot: data.selectedCargo.companyFreightValuePerTon || 0,
       driverFreightType: reembarqueShipment.driverFreightType || 'PJ',
       embarcadorId: reembarqueShipment.embarcadorId,
-      status: ShipmentStatus.AguardandoCarregamento,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
       paymentMethod: reembarqueShipment.paymentMethod,
