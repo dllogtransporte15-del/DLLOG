@@ -94,6 +94,23 @@ export const isAdminUser = (user: User | null | undefined): boolean => {
 };
 
 /**
+ * Retorna true se o usuário for um colaborador/usuário interno da Transcunha
+ * (qualquer perfil da equipe exceto clientes externos e motoristas).
+ */
+export const isInternalUser = (user: User | null | undefined): boolean => {
+  if (!user) return false;
+  return (
+    isDeveloperUser(user) ||
+    (
+      user.profile !== UserProfile.Cliente &&
+      (user.profile as string) !== 'Cliente' &&
+      user.profile !== UserProfile.Motorista &&
+      (user.profile as string) !== 'Motorista'
+    )
+  );
+};
+
+/**
  * Permissão de Desconciliação Bancária
  * Restrito rigorosamente a Administradores, Diretoria e Master
  */

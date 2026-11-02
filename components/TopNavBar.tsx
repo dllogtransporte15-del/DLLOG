@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { can, isDemoUser, isDeveloperUser } from '../auth';
+import { can, isDemoUser, isDeveloperUser, isInternalUser } from '../auth';
 import { ShipperCourseModal } from './ShipperCourseModal';
 import NotificationBell from './NotificationBell';
 import { DashboardIcon } from './icons/DashboardIcon';
@@ -571,8 +571,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                         </button>
                       )}
 
-                      {/* Curso para Embarcador (Exclusivo Desenvolvedor) - Abre em Nova Guia */}
-                      {(isDeveloperUser(user) || user.profile === UserProfile.Desenvolvedor) && (
+                      {/* Curso para Embarcador (Liberado para Todos os Usuários Internos) - Abre em Nova Guia */}
+                      {isInternalUser(user) && (
                         <a 
                           href="/curso-embarcador"
                           target="_blank"
@@ -738,6 +738,24 @@ const TopNavBar: React.FC<TopNavBarProps> = ({
                    </div>
                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Site</span>
                 </button>
+                {isInternalUser(user) && (
+                  <a
+                    href="/curso-embarcador"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-md text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <div className="flex items-center">
+                      <GraduationCap className="w-5 h-5 mr-3 text-violet-500" />
+                      Curso para Embarcador
+                    </div>
+                    <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-violet-500/10 text-violet-500 border border-violet-500/20 flex items-center gap-1">
+                      Nova Guia
+                      <ExternalLink className="w-3 h-3" />
+                    </span>
+                  </a>
+                )}
                 {user.profile !== UserProfile.Cliente && (
                   <>
                     <button

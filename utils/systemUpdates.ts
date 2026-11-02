@@ -27,6 +27,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_02_v2_99_0',
+    version: 'v2.99.0',
+    date: '02/11/2026',
+    title: 'Liberação do Curso para Embarcador para Todos os Usuários Internos',
+    summary: 'O acesso ao Manual Profissional do Embarcador (Transcunha Academy) foi liberado para todos os colaboradores e equipes internas da Transcunha (Diretoria, Administradores, Supervisores, Agenciadores, Operacional, Comercial, Financeiro e RH). A opção de acesso direto em Nova Guia agora está visível no menu de perfil do usuário e no menu mobile.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Acesso Geral para Colaboradores Internos',
+        description: 'A restrição exclusiva para Desenvolvedor foi removida, disponibilizando o botão "Curso para Embarcador" (em Nova Guia) para todos os perfis internos da empresa através da verificação canônica isInternalUser.'
+      },
+      {
+        category: 'improvement',
+        title: 'Suporte Completo no Menu Mobile',
+        description: 'Usuários acessando o sistema por smartphones ou tablets agora também contam com o botão de acesso rápido ao curso no menu lateral responsivo.'
+      },
+      {
+        category: 'improvement',
+        title: 'Selo Oficial de Capacitação Interna',
+        description: 'O cabeçalho do manual foi atualizado de "Exclusivo Desenvolvedor" para "Usuários Internos", alinhando a identidade visual da Transcunha Academy.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_02_v2_98_0',
     version: 'v2.98.0',
     date: '02/11/2026',
