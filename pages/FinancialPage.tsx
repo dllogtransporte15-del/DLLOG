@@ -18,7 +18,6 @@ import {
 
 import { AccountsPayableTab } from '../components/financial/AccountsPayableTab';
 import { AccountsReceivableTab } from '../components/financial/AccountsReceivableTab';
-import { InvoicesManagementTab } from '../components/financial/InvoicesManagementTab';
 import { OfxReconciliationTab } from '../components/financial/OfxReconciliationTab';
 import { FirstResultTab } from '../components/financial/FirstResultTab';
 import { SecondResultTab } from '../components/financial/SecondResultTab';
@@ -33,6 +32,7 @@ import {
   calculateThirdResult, 
   buildShipmentControlSheet 
 } from '../utils/financialCalculations';
+import { isShipmentFaturado } from '../utils';
 
 interface FinancialPageProps {
   shipments: Shipment[];
@@ -109,17 +109,41 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   const [transactions, setTransactions] = useState<FinancialTransaction[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_TRANSACTIONS_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Filtra o Contas a Pagar para manter estritamente embarques já faturados
+          return parsed.filter((t: FinancialTransaction) => {
+            if (t.type === 'payable' && shipments && shipments.length > 0) {
+              let shipId = t.shipmentId;
+              if (!shipId && t.description) {
+                const match = t.description.match(/Embarque\s+([A-Za-z0-9\-]+)/i);
+                if (match && match[1]) {
+                  shipId = match[1].trim();
+                }
+              }
+              if (shipId) {
+                const ship = shipments.find(s => s.id === shipId || String((s as any).sequenceId) === String(shipId));
+                if (ship) {
+                  return isShipmentFaturado(ship);
+                }
+              }
+            }
+            return true;
+          });
+        }
+      }
     } catch (e) {
       console.error('Erro ao ler transações financeiras do localStorage', e);
     }
 
-    // Seed initial financial transactions from existing shipments
+    // Seed initial financial transactions from existing shipments (apenas embarques já faturados com CT-e)
     const initialT: FinancialTransaction[] = [];
     const now = new Date();
     
-    // Add real shipment-derived receivables & payables
-    shipments.slice(0, 15).forEach((s, idx) => {
+    // Add real shipment-derived receivables & payables (apenas embarques faturados)
+    const faturadoShipments = shipments.filter(s => isShipmentFaturado(s));
+    faturadoShipments.slice(0, 15).forEach((s, idx) => {
       const cargo = cargos.find(c => c.id === s.cargoId);
       const client = clients.find(c => c.id === (cargo?.clientId || s.embarcadorId));
       const clientName = client?.razaoSocial || client?.nomeFantasia || 'Cliente Operacional';
@@ -326,7 +350,6 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
   const tabsConfig: { id: FinancialTab; label: string; icon: React.ElementType; badge?: string; group?: string }[] = [
     { id: 'payables', label: 'Contas a Pagar', icon: ArrowDownCircle },
     { id: 'receivables', label: 'Contas a Receber', icon: ArrowUpCircle },
-    { id: 'invoices', label: 'Notas Fiscais / Faturas', icon: FileText, badge: 'NFs / Faturas' },
     { id: 'ofx', label: 'Conciliação Bancária OFX', icon: FileSpreadsheet, badge: 'OFX' },
     { id: 'result-1', label: '1º Resultado', icon: PieChart },
     { id: 'result-2', label: '2º Resultado', icon: Layers },
@@ -424,7 +447,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
 
       {/* Tab Content Display */}
       <div className="transition-all duration-200">
-        {activeTab === 'payables' && (
+        {(activeTab === 'payables' || activeTab === 'invoices') && (
           <AccountsPayableTab
             transactions={transactions}
             onAddTransaction={handleAddTransaction}
@@ -437,7 +460,7 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             users={users}
             branches={branches}
             currentUser={_currentUser}
-            onNavigateToInvoices={() => handleTabChange('invoices')}
+            initialSection={urlTab === 'invoices' ? 'invoices' : 'all'}
           />
         )}
 
@@ -451,14 +474,6 @@ export const FinancialPage: React.FC<FinancialPageProps> = ({
             clients={clients}
             users={users}
             currentUser={_currentUser}
-          />
-        )}
-
-        {activeTab === 'invoices' && (
-          <InvoicesManagementTab
-            users={users}
-            currentUser={_currentUser}
-            onNavigateToPayables={() => handleTabChange('payables')}
           />
         )}
 

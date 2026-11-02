@@ -75,11 +75,12 @@ import {
   uploadInvoiceAttachmentToStorage
 } from '../../services/financialInvoiceService';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, parseDateToYmd, isShipmentEligibleForCommission, isShipmentEligibleByEndOfMonthException, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, parseDateToYmd, isShipmentEligibleForCommission, isShipmentEligibleByEndOfMonthException, COMMISSION_ELIGIBLE_STATUSES, isShipmentFaturado } from '../../utils';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { useToast } from '../../hooks/useToast';
 import { PayrollDocsModal } from './PayrollDocsModal';
 import { AccountsPayableSettlementModal, type SettlingAccountItem } from './AccountsPayableSettlementModal';
+import { InvoicesManagementTab } from './InvoicesManagementTab';
 
 export const formatMonthKeyToLabel = (monthKey: string): string => {
   if (!monthKey) return '-';
@@ -222,6 +223,7 @@ interface AccountsPayableTabProps {
   branches?: Branch[];
   currentUser?: User | null;
   onNavigateToInvoices?: () => void;
+  initialSection?: 'all' | 'invoices' | 'cte' | 'manual' | 'leaders';
 }
 
 export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
@@ -236,10 +238,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   users = [],
   branches = [],
   currentUser,
-  onNavigateToInvoices,
+  onNavigateToInvoices: _onNavigateToInvoices,
+  initialSection = 'all',
 }) => {
   // Sub-abas do Contas a Pagar (Empresa, Motoristas/Fretes, Avulsos e Folha)
-  const [activeSection, setActiveSection] = useState<'all' | 'invoices' | 'cte' | 'manual' | 'leaders'>('all');
+  const [activeSection, setActiveSection] = useState<'all' | 'invoices' | 'cte' | 'manual' | 'leaders'>(initialSection);
+
+  useEffect(() => {
+    if (initialSection) {
+      setActiveSection(initialSection);
+    }
+  }, [initialSection]);
 
   // Filtros Gerais
   const [searchTerm, setSearchTerm] = useState('');
@@ -1046,24 +1055,48 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     );
   };
 
-  // 3. Processar Fretes / Doc CT-e (contas a pagar referentes a CT-e e motoristas)
+  // 3. Processar Fretes / Doc CT-e (contas a pagar de fretes vinculados ESTRITAMENTE a embarques já faturados)
   const ctePayables = useMemo(() => {
-    return (transactions || [])
+    const list: any[] = [];
+    const processedShipmentIds = new Set<string>();
+
+    // 1. Processar transações existentes que pertençam a CT-e e verificar se o embarque está faturado
+    (transactions || [])
       .filter(t => isCteTx(t))
-      .map(t => {
+      .forEach(t => {
+        let linkedShipment = t.shipmentId 
+          ? shipments?.find(s => s.id === t.shipmentId || String((s as any).sequenceId) === String(t.shipmentId)) 
+          : null;
+
+        if (!linkedShipment && t.description) {
+          const match = t.description.match(/Embarque\s+([A-Za-z0-9\-]+)/i);
+          if (match && match[1]) {
+            const shipCode = match[1].trim();
+            linkedShipment = shipments?.find(s => s.id === shipCode || String((s as any).sequenceId) === shipCode) || null;
+          }
+        }
+
+        // Regra Estrita: Se houver embarque vinculado, deve estar OBRIGATORIAMENTE já faturado com CT-e emitido
+        if (linkedShipment && !isShipmentFaturado(linkedShipment)) {
+          return; // Embarque ainda não faturado (ex: Ag. Cadastro, Ag. Carregamento, Ag. Nota ou Cancelado) não entra no Contas a Pagar
+        }
+
+        if (linkedShipment) {
+          processedShipmentIds.add(linkedShipment.id);
+        }
+
         const isOverdue = t.status === FinancialTransactionStatus.Atrasado || (t.status === FinancialTransactionStatus.Pendente && t.dueDate < todayStr);
         const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = t.status === FinancialTransactionStatus.Pago ? 'Pago' : isOverdue ? 'Atrasado' : 'Pendente';
 
-        const linkedShipment = t.shipmentId ? shipments?.find(s => s.id === t.shipmentId) : null;
         const docs: any = linkedShipment?.documents || {};
         const cteDocUrl = docs['CT-e']?.[0] || docs['CTE']?.[0] || docs['Conhecimento de Transporte']?.[0] || null;
         const contractDocUrl = docs['Contrato de Transporte']?.[0] || docs['Carta Frete']?.[0] || docs['Contrato']?.[0] || null;
 
         const driverName = t.supplierOrClientName || linkedShipment?.driverName || 'Motorista Terceiro';
         const horsePlate = linkedShipment?.horsePlate ? ` • Placa ${linkedShipment.horsePlate}` : '';
-        const shipInfo = t.shipmentId ? ` • Embarque ${t.shipmentId}` : '';
+        const shipInfo = t.shipmentId ? ` • Embarque ${t.shipmentId}` : (linkedShipment ? ` • Embarque ${linkedShipment.id}` : '');
 
-        return {
+        list.push({
           id: t.id,
           description: t.description || `Frete Motorista ${driverName}${horsePlate}`,
           supplierName: driverName,
@@ -1079,8 +1112,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           paymentDate: t.paymentDate,
           status: displayStatus,
           rawStatus: t.status,
-          shipmentId: t.shipmentId,
-          documentNumber: t.documentNumber || (linkedShipment?.cteNumber ? `CTE-${linkedShipment.cteNumber}` : 'Doc CT-e'),
+          shipmentId: t.shipmentId || linkedShipment?.id,
+          documentNumber: t.documentNumber || (linkedShipment ? `CTE-${getShipmentCte(linkedShipment)}` : 'Doc CT-e'),
           documentUrl: cteDocUrl,
           contractUrl: contractDocUrl,
           receiptFileUrl: t.receiptFileUrl,
@@ -1096,9 +1129,70 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           details: `${t.description || 'Frete'}${horsePlate}${shipInfo}`,
           originalItem: t,
           linkedShipment,
-        };
-      })
-      .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+        });
+      });
+
+    // 2. Além disso, garante que QUALQUER embarque já faturado da base que tenha frete a pagar conste na aba Fretes / Doc CT-e
+    (shipments || []).forEach(s => {
+      if (!isShipmentFaturado(s)) return;
+      if (processedShipmentIds.has(s.id)) return;
+
+      const driverVal = s.driverFreightValue || 0;
+      if (driverVal <= 0) return;
+
+      const docs: any = s.documents || {};
+      const cteDocUrl = docs['CT-e']?.[0] || docs['CTE']?.[0] || docs['Conhecimento de Transporte']?.[0] || null;
+      const contractDocUrl = docs['Contrato de Transporte']?.[0] || docs['Carta Frete']?.[0] || docs['Contrato']?.[0] || null;
+
+      const driverName = s.driverName || 'Motorista Terceiro';
+      const horsePlate = s.horsePlate ? ` • Placa ${s.horsePlate}` : '';
+      const shipInfo = ` • Embarque ${s.id}`;
+      const cteNum = getShipmentCte(s);
+      const effectiveDate = getShipmentEffectiveDate(s) || s.scheduledDate || todayStr;
+
+      const isPaid = s.status === ShipmentStatus.Finalizado || Boolean((s as any).balancePaymentReceiptUrl);
+      const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = isPaid ? 'Pago' : (effectiveDate < todayStr ? 'Atrasado' : 'Pendente');
+
+      list.push({
+        id: `ship_pay_${s.id}`,
+        description: `Frete Motorista Embarque ${s.id} - ${driverName}${horsePlate}`,
+        supplierName: driverName,
+        category: 'Custos com Motoristas / Terceiros',
+        costCenter: 'Operacional',
+        totalAmount: driverVal,
+        payableAmount: driverVal,
+        dueDate: effectiveDate,
+        paymentDate: isPaid ? effectiveDate : undefined,
+        status: displayStatus,
+        rawStatus: isPaid ? FinancialTransactionStatus.Pago : FinancialTransactionStatus.Pendente,
+        shipmentId: s.id,
+        documentNumber: cteNum && cteNum !== '-' ? (cteNum.startsWith('CTE') ? cteNum : `CTE-${cteNum}`) : 'Doc CT-e',
+        documentUrl: cteDocUrl,
+        contractUrl: contractDocUrl,
+        receiptFileUrl: (s as any).balancePaymentReceiptUrl || null,
+        receiptFileName: (s as any).balancePaymentReceiptUrl ? 'Comprovante_Saldo.pdf' : undefined,
+        bankAccount: 'Sicredi',
+        isReconciled: false,
+        createdAt: s.createdAt,
+        pixKey: s.pixKey,
+        details: `Frete Motorista${horsePlate}${shipInfo}`,
+        originalItem: {
+          id: `ship_pay_${s.id}`,
+          type: 'payable',
+          amount: driverVal,
+          dueDate: effectiveDate,
+          supplierOrClientName: driverName,
+          documentNumber: cteNum && cteNum !== '-' ? `CTE-${cteNum}` : 'Doc CT-e',
+          shipmentId: s.id,
+          category: 'Custos com Motoristas / Terceiros',
+          costCenter: 'Operacional',
+          status: isPaid ? FinancialTransactionStatus.Pago : FinancialTransactionStatus.Pendente
+        },
+        linkedShipment: s,
+      });
+    });
+
+    return list.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }, [transactions, todayStr, shipments]);
 
   // 4. Processar Lançamentos Manuais Avulsos Gerais (não-líderes e NÃO-CTE)
@@ -1317,7 +1411,36 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         showToast('Baixa confirmada com sucesso! Status atualizado para Pago.', 'success');
       } else {
         // Lançamentos Manuais, Líderes e Motoristas
-        if (onUpdateTransaction) {
+        if (settlingItem.id.startsWith('ship_pay_')) {
+          const s = settlingItem.originalItem?.linkedShipment || settlingItem.originalItem;
+          const targetShipId = (settlingItem as any).shipmentId || settlingItem.originalItem?.shipmentId || s?.id;
+          if (onAddTransaction) {
+            onAddTransaction({
+              type: 'payable',
+              description: settlingItem.title || (settlingItem as any).description || `Frete Motorista Embarque ${targetShipId || ''}`,
+              amount: data.paidAmount !== undefined ? data.paidAmount : (settlingItem.payableAmount || settlingItem.totalAmount),
+              dueDate: settlingItem.dueDate || todayStr,
+              paymentDate: data.paymentDate,
+              status: FinancialTransactionStatus.Pago,
+              category: 'Custos com Motoristas / Terceiros',
+              costCenter: 'Operacional',
+              supplierOrClientName: settlingItem.entityName,
+              supplierOrClientCpfCnpj: settlingItem.entityCpfCnpj,
+              shipmentId: targetShipId,
+              documentNumber: settlingItem.docNumber,
+              receiptFileUrl: data.receiptFileUrl || undefined,
+              receiptFileName: data.receiptFileName || undefined,
+              receiptFileType: data.receiptFileType || undefined,
+              receiptFileSize: data.receiptFileSize || undefined,
+              paymentAuthCode: data.paymentAuthCode || undefined,
+              interestAmount: data.interestAmount,
+              discountAmount: data.discountAmount,
+              paidAmount: data.paidAmount,
+              bankAccount: data.bankAccount,
+              notes: data.notes || undefined
+            });
+          }
+        } else if (onUpdateTransaction) {
           onUpdateTransaction(settlingItem.id, {
             status: FinancialTransactionStatus.Pago,
             paymentDate: data.paymentDate,
@@ -2157,8 +2280,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       });
     }
 
-    // 2. Fretes / Doc CT-e
-    if (activeSection === 'all' || activeSection === 'cte') {
+    // 2. Fretes / Doc CT-e (Exibidos EXCLUSIVAMENTE na aba dedicada "Fretes / Doc CT-e")
+    if (activeSection === 'cte') {
       filteredCtePayables.forEach(c => {
         list.push({
           id: `cte_${c.id}`,
@@ -2512,11 +2635,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
               }`}
+            title="Visão geral de despesas corporativas a pagar: Notas Fiscais, Faturas, Lançamentos Avulsos e Folha (Fretes CT-e gerenciados na aba própria)"
           >
             <ArrowDownCircle className="w-4 h-4" />
             <span>Todas as Contas a Pagar</span>
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/20 text-white font-mono">
-              {invoicePayables.length + ctePayables.length + manualPayables.length + leaderPayables.length}
+              {invoicePayables.length + manualPayables.length + leaderPayables.length}
             </span>
           </button>
 
@@ -2589,28 +2713,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           </button>
         </div>
 
-        {/* Botões de Ação Rápida no Cabeçalho */}
+        {/* Botões de Ação no Cabeçalho */}
         <div className="flex items-center gap-2 px-2 pb-1 sm:pb-0 flex-wrap">
-          {onNavigateToInvoices && (
-            <button
-              onClick={onNavigateToInvoices}
-              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-              title="Acessar o módulo completo de Notas Fiscais e OCR com IA"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>+ Lançar NF</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
-            title="Cadastrar nova despesa avulsa"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Lançamento Avulso</span>
-          </button>
-
           {/* Botão de Alternar Resumo Bancário */}
           <button
             type="button"
@@ -2628,19 +2732,49 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             </span>
           </button>
 
-          {/* Botão de Planejar Pagamento de Folha */}
-          <button
-            onClick={() => handleOpenPlanModal()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-linear-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/25 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
-            title="Planejar ou cadastrar pagamento para colaborador da folha"
-          >
-            <CalendarClock className="w-3.5 h-3.5 text-amber-200" />
-            <span>+ Planejar Pagamento</span>
-          </button>
+          {/* Botão de Planejar Pagamento de Folha (apenas na aba de Folha de Pagamento) */}
+          {activeSection === 'leaders' && (
+            <button
+              onClick={() => handleOpenPlanModal()}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-linear-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/25 transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+              title="Planejar ou cadastrar pagamento para colaborador da folha"
+            >
+              <CalendarClock className="w-3.5 h-3.5 text-amber-200" />
+              <span>+ Planejar Pagamento</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 2. CARDS DE KPIS */}
+      {/* CONTEÚDO PRINCIPAL: GESTÃO DE NOTAS FISCAIS / FATURAS OU VISÃO PADRÃO / FOLHA */}
+      {activeSection === 'invoices' ? (
+        <InvoicesManagementTab
+          users={users}
+          currentUser={currentUser}
+          onOpenSettlement={(inv) => {
+            handleOpenSettlementModal({
+              id: inv.id,
+              kind: 'invoice',
+              docNumber: inv.invoiceNumber || inv.id,
+              title: `${inv.documentType} nº ${inv.invoiceNumber || 'S/N'} - ${inv.supplierName}`,
+              entityName: inv.supplierName,
+              categoryOrCenter: inv.costCenterName || 'Despesas Gerais',
+              dueDate: inv.dueDate,
+              totalAmount: inv.totalAmount,
+              payableAmount: inv.payableAmount || inv.totalAmount,
+              status: inv.status,
+              paymentDate: inv.paymentDate,
+              paymentMethod: inv.paymentMethod,
+              paymentDetails: inv.paymentDetails,
+              receiptUrl: inv.receiptFileUrl,
+              receiptName: inv.receiptFileName,
+              originalItem: inv,
+            });
+          }}
+        />
+      ) : (
+        <>
+          {/* 2. CARDS DE KPIS */}
       {activeSection === 'leaders' ? (
         /* KPIs Especializados para Folha de Pagamento */
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -2819,32 +2953,48 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 Composição Atual
               </span>
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                {formatBrl(kpiTotal)}
+                {formatBrl(subtotalInvoices + subtotalCte + subtotalManuals + subtotalLeaders)}
               </span>
             </div>
             <div className="mt-2 space-y-1.5 text-[11px]">
-              <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <div
+                onClick={() => setActiveSection('invoices')}
+                className="flex items-center justify-between text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100/60 dark:hover:bg-slate-700/40 px-1 py-0.5 rounded cursor-pointer transition-colors"
+                title="Filtrar por Notas Fiscais / Faturas a Pagar"
+              >
                 <span className="flex items-center gap-1">
                   <FileText className="w-3 h-3 text-emerald-500" />
                   Notas Fiscais:
                 </span>
                 <span className="font-bold">{formatBrl(subtotalInvoices)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <div
+                onClick={() => setActiveSection('cte')}
+                className="flex items-center justify-between text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 px-1 py-0.5 rounded cursor-pointer transition-colors"
+                title="Abrir janela Fretes / Doc CT-e (Embarques com CT-e)"
+              >
                 <span className="flex items-center gap-1">
                   <FileText className="w-3 h-3 text-indigo-500" />
                   Fretes / Doc CT-e:
                 </span>
-                <span className="font-bold">{formatBrl(subtotalCte)}</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">{formatBrl(subtotalCte)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <div
+                onClick={() => setActiveSection('manual')}
+                className="flex items-center justify-between text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100/60 dark:hover:bg-slate-700/40 px-1 py-0.5 rounded cursor-pointer transition-colors"
+                title="Filtrar por Lançamentos Avulsos"
+              >
                 <span className="flex items-center gap-1">
                   <Tag className="w-3 h-3 text-blue-500" />
                   Lançamentos Avulsos:
                 </span>
                 <span className="font-bold">{formatBrl(subtotalManuals)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+              <div
+                onClick={() => setActiveSection('leaders')}
+                className="flex items-center justify-between text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100/60 dark:hover:bg-slate-700/40 px-1 py-0.5 rounded cursor-pointer transition-colors"
+                title="Abrir Folha de Pagamento"
+              >
                 <span className="flex items-center gap-1">
                   <Wallet className="w-3 h-3 text-amber-500" />
                   Folha de Pagamento:
@@ -3095,6 +3245,19 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>Exportar</span>
             </button>
+
+            {/* Botão de Lançamento Avulso (exclusivo para a aba de Lançamentos Avulsos) */}
+            {activeSection === 'manual' && (
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
+                title="Cadastrar nova despesa avulsa"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Lançamento Avulso</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -4649,6 +4812,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             </table>
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* 6. MODAL DE NOVO LANÇAMENTO MANUAL AVULSO GERAL */}

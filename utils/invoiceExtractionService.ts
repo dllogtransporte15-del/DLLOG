@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { GoogleGenAI } from '@google/genai';
 import { parseAccessKey44, parseCurrencyPtBr } from './fiscalDocParser';
+import type { InvoiceCostNature } from '../types';
 
 // Configura worker do PDF.js se necessário
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -11,6 +12,7 @@ export interface ExtractedInvoiceData {
   invoiceNumber?: string;
   series?: string;
   totalAmount?: number;
+  payableAmount?: number;
   supplierName?: string;
   supplierCnpjCpf?: string;
   issueDate?: string; // YYYY-MM-DD
@@ -19,6 +21,7 @@ export interface ExtractedInvoiceData {
   paymentMethod?: 'Boleto' | 'Pix' | 'Transferência' | 'Cartão' | 'Dinheiro' | 'Outro';
   paymentDetails?: string;
   description?: string;
+  natureSuggestion?: InvoiceCostNature;
 }
 
 /**
@@ -211,13 +214,86 @@ function parseXmlInvoice(xmlText: string): ExtractedInvoiceData | null {
 }
 
 /**
+ * Sanitiza e valida o nome / Razão Social do Fornecedor / Prestador de Serviço
+ * Remove rótulos técnicos de cabeçalho de NFS-e e NF-e (ex: "DA NFS-e Prestador", "PRESTADOR DE SERVIÇOS")
+ * e rejeita a própria Transcunha (que é a tomadora/compradora).
+ */
+export function sanitizeSupplierName(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  let clean = raw.trim();
+
+  // Remove quebras de linha e múltiplos espaços
+  clean = clean.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ');
+
+  // Remove prefixos comuns de cabeçalhos fiscais no início
+  clean = clean.replace(/^(?:IDENTIFICA[ÇC][ÃA]O\s+(?:DO\s+EMITENTE|DA\s+NFS-?E)?|DADOS\s+DO\s+PRESTADOR(?:\s+DE\s+SERVI[ÇC]OS?)?|PRESTADOR\s+(?:DE\s+SERVI[ÇC]OS?)?|EMITENTE|RAZ[ÃA]O\s+SOCIAL\s*\/?\s*NOME|NOME\s*\/?\s*RAZ[ÃA]O\s+SOCIAL|NOME\s+EMPRESARIAL|NOME\s+FANTASIA|DA\s+NFS-?E\s+PRESTADOR|DA\s+NFS-?E|DADOS\s+DA\s+NFS-?E)[:\s-]+/i, '');
+
+  // Remove sufixos que foram engolidos por regex de captura (CNPJ, Inscrição, Endereço, Situação, Tomador)
+  clean = clean.replace(/(?:CNPJ|CPF|INSCRI[ÇC][ÃA]O|ENDERE[ÇC]O|FONE|TELEFONE|BAIRRO|CEP|MUNIC[ÍI]PIO|UF|SITUA[ÇC][ÃA]O|TOMADOR)[\s\S]*/i, '');
+
+  // Remove artefatos residuais no início ou no fim
+  clean = clean.replace(/^(?:DA\s+NFS-?E|PRESTADOR|SITUA|SITUAÇÃO|EMITENTE)[:\s-]+/i, '');
+  clean = clean.replace(/[:\s-]+(?:DA\s+NFS-?E|PRESTADOR|SITUA|SITUAÇÃO|EMITENTE)$/i, '');
+
+  clean = clean.trim();
+
+  const lower = clean.toLowerCase();
+  const invalidExact = [
+    'da nfs-e', 'nfs-e', 'nf-e', 'danfe', 'prestador', 'prestador de servicos',
+    'prestador de serviços', 'tomador', 'tomador de servicos', 'tomador de serviços',
+    'emitente', 'destinatario', 'destinatário', 'situacao', 'situação', 'situa',
+    'da nfs-e prestador', 'da nfs-e prestador situa', 'razao social', 'razão social',
+    'nome fantasia', 'nome empresarial', 'dados do prestador', 'identificacao do emitente',
+    'prefeitura', 'secretaria', 'secretaria municipal', 'prefeitura municipal',
+    'documento auxiliar', 'chave de acesso', 'nota fiscal', 'nota fiscal de servicos',
+    'nota fiscal eletronica', 'tributacao', 'dados da nfs-e'
+  ];
+
+  if (clean.length < 3 || invalidExact.includes(lower)) {
+    return undefined;
+  }
+
+  // Se o nome capturado for a própria Transcunha, descarta pois Transcunha é o Tomador (comprador)
+  if (lower.includes('transcunha')) {
+    return undefined;
+  }
+
+  return clean;
+}
+
+/**
+ * Detecta e sugere a categoria/natureza de custo a partir de termos da nota fiscal
+ */
+export function detectInvoiceNature(
+  description?: string,
+  supplierName?: string,
+  fullText?: string
+): InvoiceCostNature {
+  const combined = `${description || ''} ${supplierName || ''} ${fullText || ''}`.toLowerCase();
+
+  // 1. Bens e Ativos Permanentes
+  if (/(?:caminh[ãa]o|carreta|cavalo\s+mec[âa]nico|ve[íi]culo|maquin[áa]rio|equipamento|computador|servidor|notebook|implemento)/i.test(combined)) {
+    return 'bem';
+  }
+  // 2. Produtos, Combustíveis e Insumos Físicos
+  if (/(?:diesel|combust[ií]vel|gasolina|etanol|arla|lubrificante|posto\b|auto\s+posto|abastecimento|shell|ipiranga|vibra|petrobras|pe[çc]a|pneu|filtro|material|suprimento|epi\b|ferramenta|almoxarifado)/i.test(combined)) {
+    return 'produto';
+  }
+  // 3. Prestação de Serviços (inclui oficinas, mão de obra, pedágios, TI, etc.)
+  if (/(?:servi[çc]o|oficina|mec[âa]nica|tornearia|auto\s+el[ée]trica|revis[ãa]o|borracharia|alinhamento|ped[áa]gio|consultoria|software|licen[çc]a|hospedagem|sistema|ti\b|assessoria|despachante|monitoramento|rastreamento|gerenciamento\s+de\s+risco|seguran[çc]a|cont[áa]bil|advocacia|honor[áa]rios|loca[çc][ãa]o)/i.test(combined)) {
+    return 'servico';
+  }
+  return 'outros';
+}
+
+/**
  * Extração de dados via expressões regulares sobre o texto extraído de PDF/Documento
  */
 function parseTextInvoice(text: string): ExtractedInvoiceData {
   const res: ExtractedInvoiceData = {};
   if (!text) return res;
 
-  // 1. Chave de acesso de 44 dígitos
+  // 1. Chave de acesso de 44 dígitos (padrão NF-e / DANFE)
   const textNoSpaces = text.replace(/[\s.-]/g, '');
   const match44 = textNoSpaces.match(/\b\d{44}\b/);
   if (match44) {
@@ -230,13 +306,16 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
     }
   }
 
-  // 2. Número da NF
+  // 2. Número da NF (DANFE ou NFS-e)
   if (!res.invoiceNumber) {
     const numPatterns = [
+      /(?:N[úu]mero\s+(?:da\s+)?NFS-?e|N[úu]mero\s+(?:da\s+)?Nota|N[º°]\s*(?:da\s+)?NFS-?e|NFS-?e\s+N[º°]?)\s*[:.\s]*(\d+)/i,
+      /(?:NOTA\s+FISCAL\s+(?:DE\s+SERVI[ÇC]OS\s+)?ELETR[ÔO]NICA[^\d\n]*?N[º°ú]?)\s*(\d+)/i,
       /(?:N[º°ú]|N[úu]mero|NF-?e|DANFE)[^\d\n]{0,20}?N[º°ú]?[^\d\n]{0,10}?(\d{1,9})\b/i,
       /\bN[º°]\s*(\d{1,9})\b/i,
       /(?:NOTA\s+FISCAL.*?N[º°ú]|DANFE.*?N[º°ú])\s*(\d{1,9})/is,
       /\bNF\s*(\d{1,9})\b/i,
+      /\bNFS-e\s*(\d{1,9})\b/i,
       /DOCUMENTO\s+AUXILIAR[^\d\n]*?N[º°ú]?[^\d\n]*?(\d{1,9})/i
     ];
     for (const p of numPatterns) {
@@ -250,15 +329,17 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
 
   // 3. Série
   if (!res.series) {
-    const mSerie = text.match(/\bS[ée]rie[^\d\n]{0,10}?(\d{1,4})\b/i);
+    const mSerie = text.match(/\bS[ée]rie[^\d\n\r]{0,10}?([A-Z0-9]{1,4})\b/i);
     if (mSerie && mSerie[1]) {
       res.series = String(parseInt(mSerie[1], 10) || mSerie[1]);
+    } else {
+      res.series = '1';
     }
   }
 
-  // 4. Valor Total
+  // 4. Valor Total Bruto e Valor a Pagar Líquido
   const amountPatterns = [
-    /(?:VALOR\s+TOTAL\s+DA\s+NOTA|V\.?\s*TOTAL\s+DA\s+NOTA|VALOR\s+TOTAL\s+DOS\s+PRODUTOS|VALOR\s+TOTAL|TOTAL\s+DA\s+NOTA|TOTAL\s+GERAL|TOTAL\s+L[ÍI]QUIDO|VALOR\s+L[ÍI]QUIDO|TOTAL\s+A\s+PAGAR|TOTAL\s+R\$)[^\d\n,.]*?(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
+    /(?:VALOR\s+TOTAL\s+DA\s+NOTA|V\.?\s*TOTAL\s+DA\s+NOTA|VALOR\s+DOS\s+SERVI[ÇC]OS|VALOR\s+TOTAL\s+DOS\s+SERVI[ÇC]OS|VALOR\s+TOTAL\s+DOS\s+PRODUTOS|VALOR\s+TOTAL|TOTAL\s+DA\s+NOTA|TOTAL\s+GERAL|TOTAL\s+R\$)[^\d\n,.]*?(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
     /(?:VALOR\s+DO\s+DOCUMENTO|VALOR\s+A\s+RECEBER|VALOR\s+COBRADO)[^\d\n,.]*?(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
     /R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i
   ];
@@ -273,36 +354,116 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
     }
   }
 
-  // 5. CNPJ ou CPF do Emitente / Fornecedor
-  if (!res.supplierCnpjCpf) {
-    const cnpjMatch = text.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/);
-    if (cnpjMatch) {
+  const payablePatterns = [
+    /(?:VALOR\s+L[ÍI]QUIDO(?:\s+DA\s+NFS-?E)?|TOTAL\s+L[ÍI]QUIDO|VALOR\s+L[ÍI]QUIDO|TOTAL\s+A\s+PAGAR|VALOR\s+A\s+PAGAR|VALOR\s+L[ÍI]QUIDO\s+A\s+RECEBER)[^\d\n,.]*?(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i
+  ];
+  for (const p of payablePatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const val = parseCurrencyPtBr(m[1]);
+      if (val !== undefined && val > 0) {
+        res.payableAmount = val;
+        break;
+      }
+    }
+  }
+  if (!res.payableAmount && res.totalAmount) {
+    res.payableAmount = res.totalAmount;
+  }
+
+  // 5. Bloco Especializado de Prestador / Emitente (evita confundir com Tomador/Transcunha)
+  const prestadorMatch = text.match(/(?:PRESTADOR\s+(?:DE\s+SERVI[ÇC]OS?)?|DADOS\s+DO\s+PRESTADOR|IDENTIFICA[ÇC][ÃA]O\s+DO\s+EMITENTE)[\s\S]*?(?=(?:TOMADOR|DESTINAT[ÁA]RIO|DISCRIMINA[ÇC][ÃA]O|DADOS\s+DO\s+TOMADOR|DADOS\s+DOS\s+PRODUTOS|$))/i);
+  const prestadorBlock = prestadorMatch ? prestadorMatch[0] : '';
+
+  // 5.1 CNPJ ou CPF do Prestador / Emitente
+  if (!res.supplierCnpjCpf && prestadorBlock) {
+    const cnpjMatch = prestadorBlock.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/);
+    if (cnpjMatch && !cnpjMatch[0].includes('14.279.236')) {
       res.supplierCnpjCpf = cnpjMatch[0];
     } else {
-      const cpfMatch = text.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/);
+      const cpfMatch = prestadorBlock.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/);
       if (cpfMatch) {
         res.supplierCnpjCpf = cpfMatch[0];
       }
     }
   }
 
-  // 6. Fornecedor / Razão Social / Nome Fantasia
-  const supplierPatterns = [
-    /(?:RAZ[ÃA]O\s+SOCIAL|NOME\s+EMPRESARIAL|NOME\s*\/\s*RAZ[ÃA]O\s+SOCIAL|EMITENTE|PRESTADOR(?:\s+DE\s+SERVI[ÇC]OS)?)\s*[:.\s]+([A-Z0-9\s.,&'-]{3,80})/i,
-    /(?:IDENTIFICA[ÇC][ÃA]O\s+DO\s+EMITENTE)\s*[:.\s\n]+([A-Z0-9\s.,&'-]{3,80})/i
-  ];
-  for (const p of supplierPatterns) {
-    const m = text.match(p);
-    if (m && m[1]) {
-      const clean = m[1].replace(/(?:CNPJ|CPF|INSCRI|ENDERE|FONE|BAIRRO|CEP)[\s\S]*/i, '').trim();
-      if (clean.length >= 3) {
-        res.supplierName = clean;
+  // Se não achou no bloco do prestador, busca no texto geral ignorando CNPJ da Transcunha
+  if (!res.supplierCnpjCpf) {
+    const allCnpjs = text.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g) || [];
+    for (const cnpj of allCnpjs) {
+      if (!cnpj.includes('14.279.236')) {
+        res.supplierCnpjCpf = cnpj;
         break;
+      }
+    }
+    if (!res.supplierCnpjCpf) {
+      const cpfMatch = text.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/);
+      if (cpfMatch) res.supplierCnpjCpf = cpfMatch[0];
+    }
+  }
+
+  // 5.2 Fornecedor / Razão Social / Nome Fantasia
+  if (prestadorBlock) {
+    const labelPatterns = [
+      /(?:RAZ[ÃA]O\s+SOCIAL(?:\s*\/\s*NOME)?|NOME\s*\/\s*RAZ[ÃA]O\s+SOCIAL|NOME\s+EMPRESARIAL|NOME\s+FANTASIA)\s*[:.\s]+([^\n\r]+)/i
+    ];
+    for (const p of labelPatterns) {
+      const m = prestadorBlock.match(p);
+      if (m && m[1]) {
+        const sanitized = sanitizeSupplierName(m[1]);
+        if (sanitized) {
+          res.supplierName = sanitized;
+          break;
+        }
+      }
+    }
+
+    // Se não achou com rótulo no bloco do prestador, verifica as linhas do bloco
+    if (!res.supplierName) {
+      const lines = prestadorBlock.split('\n').map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (
+          line.length >= 4 &&
+          !line.includes('PRESTADOR') &&
+          !line.includes('CNPJ') &&
+          !line.includes('CPF') &&
+          !line.includes('INSCRI') &&
+          !line.includes('ENDERE') &&
+          !line.includes('TELEFONE') &&
+          !line.includes('CEP') &&
+          !line.includes('MUNIC') &&
+          !line.includes('PREFEITURA')
+        ) {
+          const sanitized = sanitizeSupplierName(line);
+          if (sanitized) {
+            res.supplierName = sanitized;
+            break;
+          }
+        }
       }
     }
   }
 
-  // Se não achou por rótulo, verifica as primeiras linhas do documento (comum em DANFE)
+  // Se ainda não encontrou, busca no texto completo com padrões refinados
+  if (!res.supplierName) {
+    const supplierPatterns = [
+      /(?:RAZ[ÃA]O\s+SOCIAL(?:\s*\/\s*NOME)?|NOME\s*\/\s*RAZ[ÃA]O\s+SOCIAL|NOME\s+EMPRESARIAL)\s*[:.\s]+([A-Z0-9\s.,&'-]{3,80})/i,
+      /(?:IDENTIFICA[ÇC][ÃA]O\s+DO\s+EMITENTE)\s*[:.\s\n]+([A-Z0-9\s.,&'-]{3,80})/i
+    ];
+    for (const p of supplierPatterns) {
+      const m = text.match(p);
+      if (m && m[1]) {
+        const sanitized = sanitizeSupplierName(m[1]);
+        if (sanitized) {
+          res.supplierName = sanitized;
+          break;
+        }
+      }
+    }
+  }
+
+  // Fallback para linhas do cabeçalho de DANFE
   if (!res.supplierName) {
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     for (const line of lines.slice(0, 10)) {
@@ -313,22 +474,26 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
         !line.includes('NOTA FISCAL') &&
         !line.includes('CHAVE DE ACESSO') &&
         !line.includes('MINISTÉRIO') &&
-        !line.includes('RECEITA FEDERAL')
+        !line.includes('RECEITA FEDERAL') &&
+        !line.includes('PREFEITURA') &&
+        !line.includes('SECRETARIA')
       ) {
-        res.supplierName = line.slice(0, 80);
-        break;
+        const sanitized = sanitizeSupplierName(line);
+        if (sanitized) {
+          res.supplierName = sanitized;
+          break;
+        }
       }
     }
   }
 
-  // 7. Data de Emissão / Data do Documento / Fatura
+  // 6. Data de Emissão
   const emissionPatterns = [
-    /(?:DATA\s+(?:DA\s+|DE\s+)?EMISS[ÃA]O|DATA\s+EMISS[ÃA]O|DT\.?\s*EMISS[ÃA]O|EMISS[ÃA]O|EMITID[AO]\s+EM)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
+    /(?:DATA\s+(?:DA\s+|DE\s+)?EMISS[ÃA]O|DATA\s+EMISS[ÃA]O|DT\.?\s*EMISS[ÃA]O|EMISS[ÃA]O|EMITID[AO]\s+EM|DATA\s+E\s+HORA\s+DA\s+EMISS[ÃA]O)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
     /(?:DATA\s+(?:DO\s+)?DOCUMENTO|DATA\s+DOCUMENTO|DT\.?\s*DOC\.?|DATA\s+DOC)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
     /(?:DATA\s+(?:DE\s+)?PROCESSAMENTO|DATA\s+PROCESSAMENTO|PROCESSAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
     /(?:DATA\s+(?:DA\s+)?FATURA|DATA\s+FATURA|FATURA\s+EMITIDA\s+EM)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
-    /(?:PER[ÍI]ODO\s+DE\s+FATURAMENTO|M[ÊE]S\s+DE\s+REFER[ÊE]NCIA)[^\n\d]*?(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
-    /(?:DATA\s+(?:DA\s+|DE\s+)?EMISS[ÃA]O|DATA\s+EMISS[ÃA]O|DATA\s+DO\s+DOCUMENTO)[\s\r\n]+(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
+    /(?:PER[ÍI]ODO\s+DE\s+FATURAMENTO|M[ÊE]S\s+DE\s+REFER[ÊE]NCIA)[^\n\d]*?(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
   ];
   for (const p of emissionPatterns) {
     const m = text.match(p);
@@ -341,12 +506,11 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
     }
   }
 
-  // 8. Data de Vencimento
+  // 7. Data de Vencimento
   const duePatterns = [
     /(?:DATA\s+(?:DO\s+|DE\s+)?VENCIMENTO|DATA\s+VENCIMENTO|VENCIMENTO|VENC\.?|DT\.?\s*VENC\.?)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
     /(?:VENCER\s+EM|PAGAR\s+AT[ÉE]|PAG[ÁA]VEL\s+AT[ÉE]|DATA\s+LIMITE\s+(?:PARA\s+|DE\s+)?PAGAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
-    /(?:VENCIMENTO\s+DA\s+FATURA|VENCIMENTO\s+DO\s+BOLETO|VENCIMENTO\s+PAGAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i,
-    /(?:DATA\s+(?:DO\s+)?VENCIMENTO|VENCIMENTO|DATA\s+VENCIMENTO)[\s\r\n]+(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
+    /(?:VENCIMENTO\s+DA\s+FATURA|VENCIMENTO\s+DO\s+BOLETO|VENCIMENTO\s+PAGAMENTO)\s*[:.\s]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/i
   ];
   for (const p of duePatterns) {
     const m = text.match(p);
@@ -354,6 +518,22 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
       const iso = convertBrDateToIso(m[1]);
       if (iso) {
         res.dueDate = iso;
+        break;
+      }
+    }
+  }
+
+  // 8. Descrição dos Serviços / Produtos
+  const descPatterns = [
+    /(?:DISCRIMINA[ÇC][ÃA]O\s+DOS\s+SERVI[ÇC]OS|DESCRI[ÇC][ÃA]O\s+DOS\s+SERVI[ÇC]OS)\s*[:.\s\n]+([\s\S]{10,400}?)(?=(?:VALOR|RETEN|TRIBUT|INFORMA|DADOS|$))/i,
+    /(?:DADOS\s+DOS\s+PRODUTOS\s*\/\s*SERVI[ÇC]OS|INFORMA[ÇC][ÕO]ES\s+COMPLEMENTARES)\s*[:.\s\n]+([\s\S]{10,400}?)(?=(?:DADOS\s+ADICIONAIS|C[ÁA]LCULO|TRANSPORTE|$))/i
+  ];
+  for (const p of descPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const cleanDesc = m[1].replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      if (cleanDesc.length >= 5) {
+        res.description = cleanDesc.slice(0, 250);
         break;
       }
     }
@@ -371,8 +551,8 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
     if (!res.dueDate && decoded.dueDate) {
       res.dueDate = decoded.dueDate;
     }
-    if ((!res.totalAmount || res.totalAmount <= 0) && decoded.payableAmount) {
-      res.totalAmount = decoded.payableAmount;
+    if ((!res.payableAmount || res.payableAmount <= 0) && decoded.payableAmount) {
+      res.payableAmount = decoded.payableAmount;
     }
   } else {
     const pixMatch = text.match(/(?:Chave\s+PIX|PIX)\s*[:.\s]+([a-zA-Z0-9_\-\.\@\+]{8,60})/i);
@@ -382,15 +562,20 @@ function parseTextInvoice(text: string): ExtractedInvoiceData {
     }
   }
 
+  // 10. Sugestão da Natureza de Custo
+  res.natureSuggestion = detectInvoiceNature(res.description, res.supplierName, text);
+
   return res;
 }
 
 /**
- * Chamada à API Gemini Multimodal para documentos digitalizados, imagens ou scans
+ * Chamada à API Gemini Multimodal para documentos digitalizados, imagens ou PDFs fiscais
+ * Utiliza visão computacional e OCR estruturado especializado no fisco brasileiro.
  */
 async function parseWithGemini(
   base64Data: string,
-  mimeType: string
+  mimeType: string,
+  extractedText?: string
 ): Promise<ExtractedInvoiceData | null> {
   const apiKey =
     (import.meta as any).env?.VITE_GEMINI_API_KEY ||
@@ -405,33 +590,47 @@ async function parseWithGemini(
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `Você é um auditor fiscal especializado em documentos fiscais brasileiros (DANFE, NF-e, NFS-e, NFC-e, Recibos e Contratos).
-Analise com atenção a imagem/PDF da Nota Fiscal anexada e extraia os seguintes dados:
-1. "numeroNf": Número da Nota Fiscal (somente números, ex: "89240")
-2. "serie": Série da Nota Fiscal (ex: "1")
-3. "valorTotal": Valor total em decimal (ex: 14850.00, sem R$)
-4. "fornecedor": Razão Social ou Nome Fantasia completo do Fornecedor / Prestador de Serviço emitente
-5. "cnpjCpfFornecedor": CNPJ ou CPF do Fornecedor / Prestador formatado (ex: "12.345.678/0001-99")
-6. "dataEmissao": Data de Emissão no formato "AAAA-MM-DD" (ex: "2026-10-02")
-7. "dataVencimento": Data de Vencimento no formato "AAAA-MM-DD"
-8. "formaPagamento": Sugestão entre "Boleto", "Pix", "Transferência", "Cartão", "Dinheiro" ou "Outro"
-9. "dadosPagamento": Linha digitável do boleto, Chave Pix ou dados bancários se informados
-10. "chaveAcesso": Chave de acesso oficial de 44 dígitos se presente na nota
-11. "descricao": Breve resumo do que foi adquirido ou contratado
+    const prompt = `Você é um auditor contábil e fiscal de alta precisão especializado em documentos fiscais brasileiros (DANFE, NF-e Modelo 55, NFS-e Municipal e Padrão Nacional, NFC-e Modelo 65, Faturas e Contratos de Serviço).
+Analise o documento fiscal anexado e extraia os dados com total rigor:
 
-Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de código \`\`\`json):
+REGRAS ESSENCIAIS PARA O FORNECEDOR / EMITENTE:
+1. O Fornecedor é QUEM EMITIU a nota (o Prestador de Serviços na NFS-e ou Emitente no DANFE).
+2. NUNCA use o Tomador/Destinatário (como Transcunha Logística e Transportes) como fornecedor!
+3. NUNCA extraia rótulos de colunas ou cabeçalhos fiscais como "DA NFS-e Prestador", "PRESTADOR DE SERVIÇOS", "PREFEITURA", "SITUAÇÃO DA NOTA". Extraia a RAZÃO SOCIAL REAL ou NOME FANTASIA REAL da empresa prestadora/emitente (ex: "SITUA TECNOLOGIA LTDA", "AUTO POSTO GRAAL LTDA").
+4. Extraia o CNPJ ou CPF do Emitente/Prestador formatado (XX.XXX.XXX/XXXX-XX).
+
+CAMPOS OBRIGATÓRIOS:
+1. "numeroNf": Número oficial da Nota Fiscal ou NFS-e (somente dígitos, sem zeros à esquerda, ex: "16", "89240").
+2. "serie": Série da nota (ex: "1", "U").
+3. "valorTotal": Valor total bruto da nota em formato decimal (ex: 1114.85).
+4. "valorAPagar": Valor líquido a pagar após deduções/retenções de impostos (PIS, COFINS, INSS, IR, ISS) ou igual ao valor total se não houver retenções.
+5. "fornecedor": Razão Social ou Nome Fantasia completo e limpo do Fornecedor / Prestador emitente.
+6. "cnpjCpfFornecedor": CNPJ ou CPF do Fornecedor / Prestador formatado.
+7. "dataEmissao": Data de Emissão em "AAAA-MM-DD" (ex: "2026-09-07").
+8. "dataVencimento": Data de Vencimento em "AAAA-MM-DD" (se presente em fatura, duplicata ou boleto).
+9. "formaPagamento": Sugestão entre "Boleto", "Pix", "Transferência", "Cartão", "Dinheiro" ou "Outro".
+10. "dadosPagamento": Linha digitável de boleto, chave Pix ou dados bancários se informados.
+11. "chaveAcesso": Chave de acesso oficial de 44 dígitos se for NF-e/DANFE.
+12. "descricao": Resumo conciso e claro do que foi adquirido ou dos serviços prestados (ex: "Prestação de serviços de tecnologia e rastreamento", "Abastecimento diesel S10").
+13. "natureza": Uma entre "servico", "produto", "bem", "outros".
+
+${extractedText ? `Texto das camadas digitais do documento para auditoria cruzada:\n${extractedText.slice(0, 12000)}\n` : ''}
+
+Retorne ESTRITAMENTE um JSON válido no formato cru (sem blocos markdown \`\`\`json):
 {
-  "numeroNf": "89240",
+  "numeroNf": "16",
   "serie": "1",
-  "valorTotal": 14850.00,
-  "fornecedor": "Posto e Restaurante Graal Parada Real",
+  "valorTotal": 1114.85,
+  "valorAPagar": 1114.85,
+  "fornecedor": "Situa Tecnologia e Soluções Ltda",
   "cnpjCpfFornecedor": "12.345.678/0001-99",
-  "dataEmissao": "2026-10-02",
-  "dataVencimento": "2026-10-16",
+  "dataEmissao": "2026-09-07",
+  "dataVencimento": "2026-09-20",
   "formaPagamento": "Boleto",
-  "dadosPagamento": "23793.38128 60000.123456 12345.678901 1 98760001485000",
-  "chaveAcesso": "35261012345678000199550010000892401827364519",
-  "descricao": "Abastecimento quinzenal da frota"
+  "dadosPagamento": "",
+  "chaveAcesso": "",
+  "descricao": "Prestação de serviços de tecnologia",
+  "natureza": "servico"
 }`;
 
     const modelsToTry = [
@@ -471,18 +670,24 @@ Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de c
         const cleanJson = textOutput.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleanJson);
 
+        const sanitizedSupplier = sanitizeSupplierName(parsed.fornecedor);
+
         return {
           invoiceNumber: parsed.numeroNf ? String(parsed.numeroNf).trim() : undefined,
           series: parsed.serie ? String(parsed.serie).trim() : undefined,
           totalAmount: typeof parsed.valorTotal === 'number' ? parsed.valorTotal : parseFloat(String(parsed.valorTotal || '').replace(',', '.')) || undefined,
-          supplierName: parsed.fornecedor ? String(parsed.fornecedor).trim() : undefined,
+          payableAmount: typeof parsed.valorAPagar === 'number' ? parsed.valorAPagar : parseFloat(String(parsed.valorAPagar || '').replace(',', '.')) || undefined,
+          supplierName: sanitizedSupplier,
           supplierCnpjCpf: parsed.cnpjCpfFornecedor ? formatCnpjCpf(String(parsed.cnpjCpfFornecedor)) : undefined,
           issueDate: convertBrDateToIso(parsed.dataEmissao),
           dueDate: convertBrDateToIso(parsed.dataVencimento),
           paymentMethod: parsed.formaPagamento as any,
           paymentDetails: parsed.dadosPagamento ? String(parsed.dadosPagamento).trim() : undefined,
           accessKey: parsed.chaveAcesso ? String(parsed.chaveAcesso).replace(/\D/g, '') : undefined,
-          description: parsed.descricao ? String(parsed.descricao).trim() : undefined
+          description: parsed.descricao ? String(parsed.descricao).trim() : undefined,
+          natureSuggestion: (['servico', 'produto', 'bem', 'outros'] as InvoiceCostNature[]).includes(parsed.natureza)
+            ? (parsed.natureza as InvoiceCostNature)
+            : undefined
         };
       } catch (e) {
         console.warn(`[invoiceExtractionService] Modelo ${model} falhou:`, e);
@@ -495,7 +700,7 @@ Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de c
 }
 
 /**
- * Função pública principal para extração automática de dados de Nota Fiscal
+ * Função pública principal para extração automática e inteligente de dados de Nota Fiscal
  */
 export async function extractDataFromInvoiceFile(
   fileOrBase64: File | string,
@@ -541,8 +746,9 @@ export async function extractDataFromInvoiceFile(
     }
   }
 
-  // 2. Tenta extrair texto local de PDF via PDF.js
+  // 2. Extrai texto das camadas de PDF via PDF.js
   let localPdfResult: ExtractedInvoiceData | null = null;
+  let fullPdfText = '';
   const isPdf = lowerName.endsWith('.pdf') || mimeType.includes('pdf') || base64String.startsWith('data:application/pdf');
 
   if (isPdf) {
@@ -550,28 +756,39 @@ export async function extractDataFromInvoiceFile(
       const buffer = isFile ? await fileOrBase64.arrayBuffer() : dataUrlToArrayBuffer(base64String);
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
       const pdf = await loadingTask.promise;
-      let fullText = '';
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        fullText += textContent.items.map((it: any) => it.str || '').join(' ') + '\n';
+        fullPdfText += textContent.items.map((it: any) => it.str || '').join(' ') + '\n';
       }
 
-      if (fullText.trim().length > 10) {
-        localPdfResult = parseTextInvoice(fullText);
-        // Enriquecimento cruzado inteligente com parseTextBoleto para faturas com boleto em anexo
-        const boletoInfo = parseTextBoleto(fullText);
+      if (fullPdfText.trim().length > 10) {
+        localPdfResult = parseTextInvoice(fullPdfText);
+
+        // Enriquecimento cruzado com parseTextBoleto para faturas com boleto em anexo
+        const boletoInfo = parseTextBoleto(fullPdfText);
         if (boletoInfo) {
           if (!localPdfResult.dueDate && boletoInfo.dueDate) localPdfResult.dueDate = boletoInfo.dueDate;
           if (!localPdfResult.issueDate && boletoInfo.issueDate) localPdfResult.issueDate = boletoInfo.issueDate;
-          if ((!localPdfResult.totalAmount || localPdfResult.totalAmount <= 0) && boletoInfo.payableAmount) localPdfResult.totalAmount = boletoInfo.payableAmount;
+          if ((!localPdfResult.totalAmount || localPdfResult.totalAmount <= 0) && boletoInfo.payableAmount) {
+            localPdfResult.totalAmount = boletoInfo.payableAmount;
+          }
+          if ((!localPdfResult.payableAmount || localPdfResult.payableAmount <= 0) && boletoInfo.payableAmount) {
+            localPdfResult.payableAmount = boletoInfo.payableAmount;
+          }
           if (!localPdfResult.paymentDetails && boletoInfo.digitableLine) {
             localPdfResult.paymentDetails = boletoInfo.digitableLine;
             localPdfResult.paymentMethod = 'Boleto';
           }
-          if (!localPdfResult.supplierName && boletoInfo.beneficiaryName) localPdfResult.supplierName = boletoInfo.beneficiaryName;
-          if (!localPdfResult.supplierCnpjCpf && boletoInfo.beneficiaryCnpjCpf) localPdfResult.supplierCnpjCpf = boletoInfo.beneficiaryCnpjCpf;
-          if (!localPdfResult.invoiceNumber && boletoInfo.documentNumber) localPdfResult.invoiceNumber = boletoInfo.documentNumber;
+          if (!localPdfResult.supplierName && boletoInfo.beneficiaryName) {
+            localPdfResult.supplierName = sanitizeSupplierName(boletoInfo.beneficiaryName);
+          }
+          if (!localPdfResult.supplierCnpjCpf && boletoInfo.beneficiaryCnpjCpf) {
+            localPdfResult.supplierCnpjCpf = boletoInfo.beneficiaryCnpjCpf;
+          }
+          if (!localPdfResult.invoiceNumber && boletoInfo.documentNumber) {
+            localPdfResult.invoiceNumber = boletoInfo.documentNumber;
+          }
         }
       }
     } catch (e) {
@@ -579,44 +796,51 @@ export async function extractDataFromInvoiceFile(
     }
   }
 
-  // Se o parser local já obteve com sucesso dados fundamentais (número/pagamento e vencimento/emissão/valor), retorna imediatamente
-  if (
-    localPdfResult &&
-    (localPdfResult.invoiceNumber || localPdfResult.paymentDetails || localPdfResult.supplierName) &&
-    (localPdfResult.totalAmount !== undefined || localPdfResult.dueDate || localPdfResult.issueDate)
-  ) {
-    console.log('[invoiceExtractionService] Dados extraídos com sucesso do PDF local:', localPdfResult);
-    return localPdfResult;
-  }
-
-  // 3. Fallback inteligente com IA Gemini Multimodal (para imagens, scans ou PDFs escaneados)
+  // 3. IA Gemini Multimodal com Visão Computacional Direta (para máxima exatidão)
   try {
-    const geminiResult = await parseWithGemini(base64String, mimeType || (isPdf ? 'application/pdf' : 'image/jpeg'));
+    const geminiResult = await parseWithGemini(
+      base64String,
+      mimeType || (isPdf ? 'application/pdf' : 'image/jpeg'),
+      fullPdfText || undefined
+    );
+
     if (geminiResult) {
-      // Mescla os dados priorizando as informações mais completas
+      // Mescla priorizando o Gemini para fornecedor (evita pegar cabeçalhos como "DA NFS-e Prestador")
+      const mergedSupplier = sanitizeSupplierName(geminiResult.supplierName) || sanitizeSupplierName(localPdfResult?.supplierName);
+      const mergedTotal = geminiResult.totalAmount !== undefined && geminiResult.totalAmount > 0
+        ? geminiResult.totalAmount
+        : localPdfResult?.totalAmount;
+      const mergedPayable = geminiResult.payableAmount !== undefined && geminiResult.payableAmount > 0
+        ? geminiResult.payableAmount
+        : localPdfResult?.payableAmount || mergedTotal;
+
       const merged: ExtractedInvoiceData = {
         invoiceNumber: geminiResult.invoiceNumber || localPdfResult?.invoiceNumber,
         series: geminiResult.series || localPdfResult?.series,
-        totalAmount: geminiResult.totalAmount !== undefined ? geminiResult.totalAmount : localPdfResult?.totalAmount,
-        supplierName: geminiResult.supplierName || localPdfResult?.supplierName,
+        totalAmount: mergedTotal,
+        payableAmount: mergedPayable,
+        supplierName: mergedSupplier,
         supplierCnpjCpf: geminiResult.supplierCnpjCpf || localPdfResult?.supplierCnpjCpf,
         issueDate: geminiResult.issueDate || localPdfResult?.issueDate,
         dueDate: geminiResult.dueDate || localPdfResult?.dueDate,
         paymentMethod: geminiResult.paymentMethod || localPdfResult?.paymentMethod,
         paymentDetails: geminiResult.paymentDetails || localPdfResult?.paymentDetails,
         accessKey: geminiResult.accessKey || localPdfResult?.accessKey,
-        description: geminiResult.description || localPdfResult?.description
+        description: geminiResult.description || localPdfResult?.description,
+        natureSuggestion: geminiResult.natureSuggestion || localPdfResult?.natureSuggestion
       };
 
-      console.log('[invoiceExtractionService] Dados extraídos com sucesso via Gemini Multimodal:', merged);
+      console.log('[invoiceExtractionService] Dados fiscais extraídos com sucesso via Gemini Multimodal:', merged);
       return merged;
     }
   } catch (e) {
     console.warn('[invoiceExtractionService] Falha no Gemini Multimodal:', e);
   }
 
-  // Se o Gemini falhou mas tínhamos algum dado local, retorna o local
+  // 4. Se o Gemini falhou ou não estava configurado, sanitiza e retorna o resultado local
   if (localPdfResult) {
+    localPdfResult.supplierName = sanitizeSupplierName(localPdfResult.supplierName);
+    console.log('[invoiceExtractionService] Dados extraídos via parser local estruturado:', localPdfResult);
     return localPdfResult;
   }
 
@@ -627,6 +851,137 @@ export async function extractDataFromInvoiceFile(
 // EXTRAÇÃO E LEITURA INTELIGENTE DE BOLETOS BANCÁRIOS PARA PAGAMENTO
 // ====================================================================
 
+export const BRAZILIAN_BANKS: Record<string, string> = {
+  '001': 'Banco do Brasil',
+  '003': 'Banco da Amazônia',
+  '004': 'Banco do Nordeste',
+  '021': 'Banestes',
+  '029': 'Banco Itaú Consignado / BMG',
+  '033': 'Santander',
+  '041': 'Banrisul',
+  '070': 'BRB - Banco de Brasília',
+  '077': 'Banco Inter',
+  '104': 'Caixa Econômica Federal',
+  '197': 'Stone Pagamentos',
+  '208': 'BTG Pactual',
+  '212': 'Banco Original',
+  '237': 'Bradesco',
+  '260': 'Nu Pagamentos (Nubank)',
+  '336': 'C6 Bank',
+  '341': 'Itaú Unibanco',
+  '389': 'Banco Mercantil do Brasil',
+  '422': 'Banco Safra',
+  '655': 'Banco Votorantim (BV)',
+  '748': 'Sicredi',
+  '756': 'Sicoob',
+};
+
+export interface BoletoLateFeesResult {
+  isOverdue: boolean;
+  overdueDays: number;
+  finePercent: number;
+  fineAmount: number;
+  monthlyInterestPercent: number;
+  dailyInterestPercent: number;
+  dailyInterestAmount: number;
+  interestAmount: number;
+  totalLateFees: number;
+  totalWithLateFees: number;
+  projected30DaysTotal: number;
+  explanation: string;
+}
+
+/**
+ * Calcula juros de mora, multas e valor total atualizado em caso de atraso
+ */
+export function calculateBoletoLateFees(params: {
+  nominalAmount: number;
+  dueDateStr?: string;
+  referenceDateStr?: string; // default: data de hoje (YYYY-MM-DD)
+  finePercent?: number;
+  fineAmount?: number;
+  monthlyInterestPercent?: number;
+  dailyInterestPercent?: number;
+  dailyInterestAmount?: number;
+}): BoletoLateFeesResult {
+  const nominal = Number(params.nominalAmount) || 0;
+  const today = params.referenceDateStr || new Date().toISOString().split('T')[0];
+  const dueDate = params.dueDateStr || today;
+
+  const dueD = new Date(dueDate + 'T00:00:00');
+  const refD = new Date(today + 'T00:00:00');
+  const diffTime = refD.getTime() - dueD.getTime();
+  const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+
+  const isOverdue = diffDays > 0;
+
+  // 1. Multa por Atraso
+  let finePercent = params.finePercent !== undefined ? params.finePercent : 2; // Padrão comercial brasileiro 2%
+  let fineAmount = 0;
+  if (params.fineAmount !== undefined && params.fineAmount > 0) {
+    fineAmount = params.fineAmount;
+    finePercent = nominal > 0 ? Number(((fineAmount / nominal) * 100).toFixed(2)) : 0;
+  } else if (nominal > 0 && finePercent > 0) {
+    fineAmount = Number(((nominal * finePercent) / 100).toFixed(2));
+  }
+
+  // 2. Juros de Mora Diários
+  const monthlyInterestPercent = params.monthlyInterestPercent !== undefined ? params.monthlyInterestPercent : 1; // Padrão 1% a.m.
+  const dailyInterestPercent = params.dailyInterestPercent !== undefined
+    ? params.dailyInterestPercent
+    : Number((monthlyInterestPercent / 30).toFixed(4)); // ~0.0333% ao dia
+
+  let dailyInterestAmount = 0;
+  if (params.dailyInterestAmount !== undefined && params.dailyInterestAmount > 0) {
+    dailyInterestAmount = params.dailyInterestAmount;
+  } else if (nominal > 0 && dailyInterestPercent > 0) {
+    dailyInterestAmount = Number(((nominal * (dailyInterestPercent / 100))).toFixed(2));
+  }
+
+  // 3. Juros acumulados pelos dias de atraso decorridos
+  let interestAmount = 0;
+  if (isOverdue && diffDays > 0) {
+    if (params.dailyInterestAmount !== undefined && params.dailyInterestAmount > 0) {
+      interestAmount = Number((params.dailyInterestAmount * diffDays).toFixed(2));
+    } else {
+      interestAmount = Number(((nominal * (dailyInterestPercent / 100)) * diffDays).toFixed(2));
+    }
+  }
+
+  // Se não estiver em atraso, para pagamento hoje não incidem multa e juros
+  const actualFineToday = isOverdue ? fineAmount : 0;
+  const actualInterestToday = isOverdue ? interestAmount : 0;
+  const totalLateFees = Number((actualFineToday + actualInterestToday).toFixed(2));
+  const totalWithLateFees = Number((nominal + totalLateFees).toFixed(2));
+
+  // Projeção simulação para 30 dias de atraso
+  const projectedInterest30 = Number((dailyInterestAmount * 30).toFixed(2));
+  const projected30DaysTotal = Number((nominal + fineAmount + projectedInterest30).toFixed(2));
+
+  let explanation = '';
+  if (isOverdue) {
+    const [y, m, d] = dueDate.split('-');
+    explanation = `Vencido há ${diffDays} dia(s) (desde ${d}/${m}/${y}). Multa: R$ ${fineAmount.toFixed(2)} (${finePercent}%) + Juros: R$ ${interestAmount.toFixed(2)} (${dailyInterestPercent}%/dia × ${diffDays}d). Total atualizado: R$ ${totalWithLateFees.toFixed(2)}.`;
+  } else {
+    explanation = `Boleto em dia. Regra para atraso: Multa de ${finePercent}% (R$ ${fineAmount.toFixed(2)}) + Juros de ${monthlyInterestPercent}% a.m. (R$ ${dailyInterestAmount.toFixed(2)}/dia).`;
+  }
+
+  return {
+    isOverdue,
+    overdueDays: diffDays,
+    finePercent,
+    fineAmount,
+    monthlyInterestPercent,
+    dailyInterestPercent,
+    dailyInterestAmount,
+    interestAmount,
+    totalLateFees,
+    totalWithLateFees,
+    projected30DaysTotal,
+    explanation
+  };
+}
+
 export interface ExtractedBoletoData {
   payableAmount?: number;
   dueDate?: string; // YYYY-MM-DD
@@ -636,22 +991,35 @@ export interface ExtractedBoletoData {
   beneficiaryName?: string;
   beneficiaryCnpjCpf?: string;
   bankName?: string;
+  bankCode?: string;
+  finePercent?: number;
+  fineAmount?: number;
+  monthlyInterestPercent?: number;
+  dailyInterestPercent?: number;
+  dailyInterestAmount?: number;
+  instructions?: string;
+  lateFeesResult?: BoletoLateFeesResult;
 }
 
 /**
- * Decodifica linha digitável de boleto bancário (47 dígitos) ou arrecadação (48 dígitos)
- * Extrai valor e data de vencimento (fator Febraban)
+ * Decodifica linha digitável de boleto bancário (47 dígitos), arrecadação (48 dígitos) ou código de barras bruto (44 dígitos)
+ * Extrai valor e data de vencimento (fator Febraban) e identifica banco emissor
  */
 export function parseBoletoDigitableLine(raw: string): {
   digitableLine?: string;
   payableAmount?: number;
   dueDate?: string;
+  bankCode?: string;
+  bankName?: string;
 } {
   const clean = raw.replace(/\D/g, '');
 
   // 1. Boleto Bancário de Cobrança Tradicional (47 dígitos)
   if (clean.length === 47) {
     const formatted = `${clean.slice(0, 5)}.${clean.slice(5, 10)} ${clean.slice(10, 15)}.${clean.slice(15, 21)} ${clean.slice(21, 26)}.${clean.slice(26, 32)} ${clean.slice(32, 33)} ${clean.slice(33, 47)}`;
+
+    const bankCode = clean.slice(0, 3);
+    const bankName = BRAZILIAN_BANKS[bankCode];
 
     // Campo 5 (14 dígitos): 4 dígitos do fator de vencimento + 10 dígitos de valor
     const factorStr = clean.slice(33, 37);
@@ -678,7 +1046,9 @@ export function parseBoletoDigitableLine(raw: string): {
     return {
       digitableLine: formatted,
       payableAmount,
-      dueDate
+      dueDate,
+      bankCode,
+      bankName
     };
   }
 
@@ -691,7 +1061,40 @@ export function parseBoletoDigitableLine(raw: string): {
 
     return {
       digitableLine: formatted,
-      payableAmount
+      payableAmount,
+      bankName: 'Concessionária / Tributos'
+    };
+  }
+
+  // 3. Código de Barras Bruto (44 dígitos numéricos)
+  if (clean.length === 44) {
+    const bankCode = clean.slice(0, 3);
+    const bankName = BRAZILIAN_BANKS[bankCode];
+    const factorStr = clean.slice(5, 9);
+    const amountStr = clean.slice(9, 19);
+
+    const factor = parseInt(factorStr, 10);
+    const rawAmount = parseInt(amountStr, 10);
+    const payableAmount = rawAmount > 0 ? Number((rawAmount / 100).toFixed(2)) : undefined;
+
+    let dueDate: string | undefined = undefined;
+    if (factor > 0) {
+      const baseCiclo2 = new Date(Date.UTC(2025, 1, 22));
+      const days = factor - 1000;
+      const targetDate = new Date(baseCiclo2.getTime() + days * 86400000);
+
+      const y = targetDate.getUTCFullYear();
+      const m = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(targetDate.getUTCDate()).padStart(2, '0');
+      dueDate = `${y}-${m}-${d}`;
+    }
+
+    return {
+      digitableLine: clean,
+      payableAmount,
+      dueDate,
+      bankCode,
+      bankName
     };
   }
 
@@ -709,13 +1112,16 @@ function parseTextBoleto(text: string): ExtractedBoletoData {
   const matchLinha = text.match(/\b\d{5}[\.\s]?\d{5}\s+\d{5}[\.\s]?\d{6}\s+\d{5}[\.\s]?\d{6}\s+\d\s+\d{14}\b/) ||
                      text.match(/\b\d{47}\b/) ||
                      text.match(/\b\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\s+\d{11,12}[-\s.]?\d\b/) ||
-                     text.match(/\b\d{48}\b/);
+                     text.match(/\b\d{48}\b/) ||
+                     text.match(/\b\d{44}\b/);
 
   if (matchLinha) {
     const decoded = parseBoletoDigitableLine(matchLinha[0]);
     if (decoded.digitableLine) res.digitableLine = decoded.digitableLine;
     if (decoded.payableAmount !== undefined && decoded.payableAmount > 0) res.payableAmount = decoded.payableAmount;
     if (decoded.dueDate) res.dueDate = decoded.dueDate;
+    if (decoded.bankCode) res.bankCode = decoded.bankCode;
+    if (decoded.bankName) res.bankName = decoded.bankName;
   }
 
   // 2. Data de Vencimento explícita no texto
@@ -767,7 +1173,7 @@ function parseTextBoleto(text: string): ExtractedBoletoData {
     }
   }
 
-  // 3. Valor a Pagar explícito no texto
+  // 5. Valor a Pagar explícito no texto
   const valPatterns = [
     /(?:(?:\(=\)\s*)?Valor\s+(?:do\s+)?Documento|Valor\s+Cobrado|Valor\s+a\s+Pagar|Valor\s+Documento|Valor\s+Nominal|Valor\s+L[íi]quido|Total\s+a\s+Pagar)\s*[:.\s]*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
     /(?:Valor\s+do\s+Boleto|Total\s+do\s+Boleto)\s*[:.\s]*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
@@ -784,7 +1190,7 @@ function parseTextBoleto(text: string): ExtractedBoletoData {
     }
   }
 
-  // 4. Beneficiário / Cedente
+  // 6. Beneficiário / Cedente
   const benPatterns = [
     /(?:Benefici[áa]rio|Cedente|Nome\s+do\s+Benefici[áa]rio|Raz[ãa]o\s+Social)\s*[:.\s]+([A-Z0-9\s.,&'-]{3,80})/i,
     /(?:Pagador\s*\/)?Benefici[áa]rio\s*[:.\s\n]+([A-Z0-9\s.,&'-]{3,80})/i
@@ -800,10 +1206,115 @@ function parseTextBoleto(text: string): ExtractedBoletoData {
     }
   }
 
-  // 5. CNPJ / CPF do Beneficiário
+  // 7. CNPJ / CPF do Beneficiário
   const cnpjCpfMatch = text.match(/(?:CNPJ|CPF)(?:\s+(?:do\s+)?Benefici[áa]rio)?\s*[:.\s]*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})/i);
   if (cnpjCpfMatch && cnpjCpfMatch[1]) {
     res.beneficiaryCnpjCpf = formatCnpjCpf(cnpjCpfMatch[1]);
+  }
+
+  // 8. MULTAS E JUROS POR ATRASO (Instruções e Regras Financeiras)
+  // A. Multa por Atraso (%)
+  const finePercentPatterns = [
+    /(?:cobrar\s+)?multa\s+(?:de\s+)?(?:ap[óo]s\s+(?:o\s+)?vencimento\s+(?:de\s+)?)?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i,
+    /(?:ap[óo]s\s+(?:o\s+)?vencimento\s+(?:cobrar\s+)?multa\s+(?:de\s+)?)(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i,
+    /(?:multa\s+ap[óo]s\s+vencimento|multa\s+por\s+atraso|multa\s+rescis[óo]ria)\s*[:.\s]*(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i,
+    /(?:multa)\s*[:.\s]*(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i
+  ];
+  for (const p of finePercentPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const val = parseFloat(m[1].replace(',', '.'));
+      if (!isNaN(val) && val > 0 && val <= 30) {
+        res.finePercent = val;
+        break;
+      }
+    }
+  }
+
+  // B. Multa por Atraso em valor fixo R$
+  const fineAmountPatterns = [
+    /(?:cobrar\s+)?multa\s+(?:de\s+)?(?:ap[óo]s\s+(?:o\s+)?vencimento\s+(?:de\s+)?)?(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
+    /(?:ap[óo]s\s+(?:o\s+)?vencimento\s+(?:cobrar\s+)?multa\s+(?:de\s+)?)(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
+    /(?:multa\s+ap[óo]s\s+vencimento|multa\s+por\s+atraso)\s*[:.\s]*(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i
+  ];
+  for (const p of fineAmountPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const val = parseCurrencyPtBr(m[1]);
+      if (val !== undefined && val > 0) {
+        res.fineAmount = val;
+        break;
+      }
+    }
+  }
+
+  // C. Juros em R$ por dia de atraso
+  const dailyAmountPatterns = [
+    /(?:juros\s+(?:de\s+mora\s+)?(?:de\s+)?|mora\s+di[áa]ria\s+(?:de\s+)?|cobrar\s+)(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})\s*(?:por\s+dia|ao\s+dia|di[áa]rios?|p\/\s*dia)/i,
+    /(?:cobrar\s+juros\s+de\s+)(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})\s+por\s+dia\s+de\s+atraso/i,
+    /(?:mora\s+di[áa]ria\s*[:.\s]+)(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/i,
+    /(?:ap[óo]s\s+(?:o\s+)?vencimento\s+cobrar\s+)(?:R\$\s*)(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})\s*(?:por\s+dia|ao\s+dia)/i
+  ];
+  for (const p of dailyAmountPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const val = parseCurrencyPtBr(m[1]);
+      if (val !== undefined && val > 0) {
+        res.dailyInterestAmount = val;
+        break;
+      }
+    }
+  }
+
+  // D. Juros em % ao dia
+  const dailyPercentPatterns = [
+    /(?:juros\s+(?:de\s+mora\s+)?(?:de\s+)?|mora\s+(?:de\s+)?)(\d{1,2}(?:[.,]\d{1,3})?)\s*%\s*(?:ao\s+dia|a\.?d\.?|por\s+dia|di[áa]rios?)/i,
+    /(?:mora\s+di[áa]ria\s*[:.\s]*)(\d{1,2}(?:[.,]\d{1,3})?)\s*%/i
+  ];
+  for (const p of dailyPercentPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const val = parseFloat(m[1].replace(',', '.'));
+      if (!isNaN(val) && val > 0 && val <= 5) {
+        res.dailyInterestPercent = val;
+        break;
+      }
+    }
+  }
+
+  // E. Juros em % ao mês
+  const monthlyPercentPatterns = [
+    /(?:juros\s+(?:de\s+mora\s+)?(?:de\s+)?|mora\s+(?:de\s+)?)(\d{1,2}(?:[.,]\d{1,2})?)\s*%\s*(?:ao\s+m[êe]s|a\.?m\.?|mensais?)/i,
+    /(?:juros\s+mensais\s*[:.\s]*)(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i
+  ];
+  for (const p of monthlyPercentPatterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const val = parseFloat(m[1].replace(',', '.'));
+      if (!isNaN(val) && val > 0 && val <= 20) {
+        res.monthlyInterestPercent = val;
+        break;
+      }
+    }
+  }
+
+  // F. Instruções literais do boleto
+  const instMatch = text.match(/(?:instru[çc][õo]es(?:\s+de\s+cobran[çc]a)?|texto\s+de\s+responsabilidade\s+do\s+benefici[áa]rio|informa[çc][õo]es\s+de\s+responsabilidade\s+do\s+cedente)\s*[:.\s\n]+([\s\S]{10,400}?)(?=(?:autentica|recibo|dados\s+do\s+pagador|c[óo]digo\s+de\s+barras|ficha\s+de\s+compensa|linha\s+digit|sac\s+|ouvidoria|$))/i);
+  if (instMatch && instMatch[1]) {
+    res.instructions = instMatch[1].replace(/\s+/g, ' ').trim();
+  }
+
+  // 9. Cálculo Imediato dos Encargos por Atraso
+  if (res.payableAmount && res.dueDate) {
+    res.lateFeesResult = calculateBoletoLateFees({
+      nominalAmount: res.payableAmount,
+      dueDateStr: res.dueDate,
+      finePercent: res.finePercent,
+      fineAmount: res.fineAmount,
+      monthlyInterestPercent: res.monthlyInterestPercent,
+      dailyInterestPercent: res.dailyInterestPercent,
+      dailyInterestAmount: res.dailyInterestAmount
+    });
   }
 
   return res;
@@ -830,7 +1341,7 @@ async function parseBoletoWithGemini(
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `Você é um auditor financeiro especialista em conferência de Boletos Bancários e Títulos de Cobrança brasileiros (Febraban / Concessionárias).
-Analise com extrema atenção a imagem/PDF do boleto bancário anexado e extraia:
+Analise com extrema atenção a imagem/PDF do boleto bancário anexado e extraia com precisão máxima:
 1. "valorAPagar": Valor nominal/cobrado do boleto em decimal (ex: 1250.00, sem R$)
 2. "dataVencimento": Data de vencimento no formato "AAAA-MM-DD" (ex: "2026-10-25")
 3. "dataEmissao": Data do documento, data de emissão ou data de processamento no formato "AAAA-MM-DD" (ex: "2026-10-10")
@@ -838,7 +1349,12 @@ Analise com extrema atenção a imagem/PDF do boleto bancário anexado e extraia
 5. "linhaDigitavel": Linha digitável completa com pontuações (ex: "34191.09008 00000.282119 00818.989004 5 98760000150000")
 6. "beneficiario": Razão Social ou Nome do Beneficiário / Cedente
 7. "cnpjCpfBeneficiario": CNPJ ou CPF do Beneficiário formatado
-8. "banco": Nome do banco emissor se visível (ex: Itaú, Bradesco, Santander, Banco do Brasil, Caixa, etc.)
+8. "banco": Nome do banco emissor se visível (ex: Itaú, Bradesco, Santander, Banco do Brasil, Caixa, Sicredi, etc.)
+9. "multaPercentual": Percentual de multa por atraso após o vencimento em decimal (ex: 2.0 se disser "multa de 2%")
+10. "multaValor": Valor em R$ fixo de multa se especificado
+11. "jurosPercentualMes": Percentual de juros ao mês em decimal (ex: 1.0 se disser "1% ao mês")
+12. "jurosValorDia": Valor de juros de mora diário em R$ por dia de atraso se informado (ex: 0.83)
+13. "instrucoesCobranca": Texto literal das instruções de cobrança de multas e juros por atraso
 
 Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de código \`\`\`json):
 {
@@ -849,7 +1365,12 @@ Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de c
   "linhaDigitavel": "34191.09008 00000.282119 00818.989004 5 98760000150000",
   "beneficiario": "Posto Graal Parada Real",
   "cnpjCpfBeneficiario": "12.345.678/0001-99",
-  "banco": "Itaú"
+  "banco": "Itaú",
+  "multaPercentual": 2.0,
+  "multaValor": 25.00,
+  "jurosPercentualMes": 1.0,
+  "jurosValorDia": 0.83,
+  "instrucoesCobranca": "Após o vencimento cobrar multa de 2% e juros de 1% ao mês."
 }`;
 
     const modelsToTry = [
@@ -889,15 +1410,40 @@ Retorne ESTRITAMENTE um JSON válido no formato cru (sem markdown ou blocos de c
         const cleanJson = textOutput.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleanJson);
 
+        const valNominal = typeof parsed.valorAPagar === 'number' ? parsed.valorAPagar : parseFloat(String(parsed.valorAPagar || '').replace(',', '.')) || undefined;
+        const due = convertBrDateToIso(parsed.dataVencimento);
+        const fPercent = typeof parsed.multaPercentual === 'number' ? parsed.multaPercentual : parseFloat(String(parsed.multaPercentual || '').replace(',', '.')) || undefined;
+        const fAmount = typeof parsed.multaValor === 'number' ? parsed.multaValor : parseFloat(String(parsed.multaValor || '').replace(',', '.')) || undefined;
+        const mInterest = typeof parsed.jurosPercentualMes === 'number' ? parsed.jurosPercentualMes : parseFloat(String(parsed.jurosPercentualMes || '').replace(',', '.')) || undefined;
+        const dInterest = typeof parsed.jurosValorDia === 'number' ? parsed.jurosValorDia : parseFloat(String(parsed.jurosValorDia || '').replace(',', '.')) || undefined;
+
+        let lateFeesResult: BoletoLateFeesResult | undefined = undefined;
+        if (valNominal && due) {
+          lateFeesResult = calculateBoletoLateFees({
+            nominalAmount: valNominal,
+            dueDateStr: due,
+            finePercent: fPercent,
+            fineAmount: fAmount,
+            monthlyInterestPercent: mInterest,
+            dailyInterestAmount: dInterest
+          });
+        }
+
         return {
-          payableAmount: typeof parsed.valorAPagar === 'number' ? parsed.valorAPagar : parseFloat(String(parsed.valorAPagar || '').replace(',', '.')) || undefined,
-          dueDate: convertBrDateToIso(parsed.dataVencimento),
+          payableAmount: valNominal,
+          dueDate: due,
           issueDate: convertBrDateToIso(parsed.dataEmissao),
           documentNumber: parsed.numeroDocumento ? String(parsed.numeroDocumento).trim() : undefined,
           digitableLine: parsed.linhaDigitavel ? String(parsed.linhaDigitavel).trim() : undefined,
           beneficiaryName: parsed.beneficiario ? String(parsed.beneficiario).trim() : undefined,
           beneficiaryCnpjCpf: parsed.cnpjCpfBeneficiario ? formatCnpjCpf(String(parsed.cnpjCpfBeneficiario)) : undefined,
-          bankName: parsed.banco ? String(parsed.banco).trim() : undefined
+          bankName: parsed.banco ? String(parsed.banco).trim() : undefined,
+          finePercent: fPercent,
+          fineAmount: fAmount,
+          monthlyInterestPercent: mInterest,
+          dailyInterestAmount: dInterest,
+          instructions: parsed.instrucoesCobranca ? String(parsed.instrucoesCobranca).trim() : undefined,
+          lateFeesResult
         };
       } catch (e) {
         console.warn(`[invoiceExtractionService] Modelo ${model} para boleto falhou:`, e);
@@ -973,6 +1519,19 @@ export async function extractDataFromBoletoFile(
             localPdfResult.beneficiaryCnpjCpf = invoiceComplement.supplierCnpjCpf;
           }
         }
+
+        // Recalcula lateFeesResult com dados enriquecidos se necessário
+        if (localPdfResult.payableAmount && localPdfResult.dueDate) {
+          localPdfResult.lateFeesResult = calculateBoletoLateFees({
+            nominalAmount: localPdfResult.payableAmount,
+            dueDateStr: localPdfResult.dueDate,
+            finePercent: localPdfResult.finePercent,
+            fineAmount: localPdfResult.fineAmount,
+            monthlyInterestPercent: localPdfResult.monthlyInterestPercent,
+            dailyInterestPercent: localPdfResult.dailyInterestPercent,
+            dailyInterestAmount: localPdfResult.dailyInterestAmount
+          });
+        }
       }
     } catch (e) {
       console.warn('[invoiceExtractionService] Falha ao extrair texto do PDF do boleto:', e);
@@ -993,15 +1552,41 @@ export async function extractDataFromBoletoFile(
   try {
     const geminiResult = await parseBoletoWithGemini(base64String, mimeType || (isPdf ? 'application/pdf' : 'image/jpeg'));
     if (geminiResult) {
+      const mergedPayable = geminiResult.payableAmount !== undefined ? geminiResult.payableAmount : localPdfResult?.payableAmount;
+      const mergedDue = geminiResult.dueDate || localPdfResult?.dueDate;
+      const mergedFinePercent = geminiResult.finePercent !== undefined ? geminiResult.finePercent : localPdfResult?.finePercent;
+      const mergedFineAmount = geminiResult.fineAmount !== undefined ? geminiResult.fineAmount : localPdfResult?.fineAmount;
+      const mergedMonthlyInterest = geminiResult.monthlyInterestPercent !== undefined ? geminiResult.monthlyInterestPercent : localPdfResult?.monthlyInterestPercent;
+      const mergedDailyInterest = geminiResult.dailyInterestAmount !== undefined ? geminiResult.dailyInterestAmount : localPdfResult?.dailyInterestAmount;
+
+      let mergedLateFees: BoletoLateFeesResult | undefined = undefined;
+      if (mergedPayable && mergedDue) {
+        mergedLateFees = calculateBoletoLateFees({
+          nominalAmount: mergedPayable,
+          dueDateStr: mergedDue,
+          finePercent: mergedFinePercent,
+          fineAmount: mergedFineAmount,
+          monthlyInterestPercent: mergedMonthlyInterest,
+          dailyInterestAmount: mergedDailyInterest
+        });
+      }
+
       const merged: ExtractedBoletoData = {
-        payableAmount: geminiResult.payableAmount !== undefined ? geminiResult.payableAmount : localPdfResult?.payableAmount,
-        dueDate: geminiResult.dueDate || localPdfResult?.dueDate,
+        payableAmount: mergedPayable,
+        dueDate: mergedDue,
         issueDate: geminiResult.issueDate || localPdfResult?.issueDate,
         documentNumber: geminiResult.documentNumber || localPdfResult?.documentNumber,
         digitableLine: geminiResult.digitableLine || localPdfResult?.digitableLine,
         beneficiaryName: geminiResult.beneficiaryName || localPdfResult?.beneficiaryName,
         beneficiaryCnpjCpf: geminiResult.beneficiaryCnpjCpf || localPdfResult?.beneficiaryCnpjCpf,
-        bankName: geminiResult.bankName || localPdfResult?.bankName
+        bankName: geminiResult.bankName || localPdfResult?.bankName,
+        bankCode: geminiResult.bankCode || localPdfResult?.bankCode,
+        finePercent: mergedFinePercent,
+        fineAmount: mergedFineAmount,
+        monthlyInterestPercent: mergedMonthlyInterest,
+        dailyInterestAmount: mergedDailyInterest,
+        instructions: geminiResult.instructions || localPdfResult?.instructions,
+        lateFeesResult: mergedLateFees || geminiResult.lateFeesResult || localPdfResult?.lateFeesResult
       };
 
       console.log('[invoiceExtractionService] Dados do boleto extraídos com sucesso via Gemini Multimodal:', merged);

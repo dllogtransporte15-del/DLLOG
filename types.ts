@@ -1173,6 +1173,13 @@ export interface FinancialInvoice {
   discountAmount?: number; // Abatimento / Desconto (- R$)
   paidAmount?: number;     // Valor Real Pago (= Original + Juros - Abatimento)
   bankAccount?: string;    // Banco / Conta utilizada (ex: Sicredi)
+
+  // Encargos de Boleto Bancário por Atraso (Multa e Juros)
+  fineAmount?: number;     // Valor da multa por atraso identificada/calculada
+  dailyInterestAmount?: number; // Valor dos juros de mora diário
+  overdueTotalAmount?: number;  // Valor total com encargos em caso de atraso
+  overdueDays?: number;         // Quantidade de dias de atraso calculados
+  overdueCalculationExplanation?: string; // Detalhamento da regra de juros e multa
   
   // Conciliação Bancária & Trava Contábil
   isReconciled?: boolean;

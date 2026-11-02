@@ -85,7 +85,7 @@ export const formatWeightPtBr = (num: number): string => {
 };
 
 import type { FreightOffer, Cargo, Product } from './types';
-import { FreightOfferStatus } from './types';
+import { FreightOfferStatus, ShipmentStatus } from './types';
 
 /**
  * Busca uma carga por id ou sequenceId com total tolerância a formatos ('CRG-123', '123', 123, etc.)
@@ -284,6 +284,20 @@ export function hasCteAttached(shipment?: { cteNumber?: string; documents?: any;
   if (cteNum && cteNum !== '-') return true;
 
   return false;
+}
+
+/**
+ * Retorna true se o embarque já está faturado com CT-e emitido.
+ * Embarques em cadastro, seguradora, carregamento, aguardando nota ou cancelados
+ * NÃO são considerados faturados.
+ */
+export function isShipmentFaturado(shipment?: { status?: any; cteNumber?: string; documents?: any } | null): boolean {
+  if (!shipment) return false;
+  const statusStr = String(shipment.status || '');
+  if (shipment.status === ShipmentStatus.Cancelado || statusStr === 'Cancelado') return false;
+  if (!isCteApplicableForStatus(shipment.status)) return false;
+  const cteNum = getShipmentCte(shipment);
+  return (cteNum !== '-' && cteNum.trim() !== '') || hasCteAttached(shipment);
 }
 
 export const getShipmentCteNumber = getShipmentCte;

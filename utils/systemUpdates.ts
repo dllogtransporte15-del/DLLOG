@@ -27,6 +27,102 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_02_v2_103_0',
+    version: 'v2.103.0',
+    date: '02/11/2026',
+    title: 'Super Leitor Inteligente de Notas Fiscais e NFS-e com Visão por IA Multimodal',
+    summary: 'Aprimoramento abrangente do motor de leitura automática e OCR de Notas Fiscais (NF-e, NFS-e, DANFE, Recibos e Faturas). Eliminação de ruídos de cabeçalhos técnicos de prefeituras (como "DA NFS-e Prestador"), distinção rigorosa entre Emitente/Prestador e Tomador (Transcunha), extração automática do valor bruto, valor líquido após retenções, datas, linha digitável/Pix e sugestão inteligente da natureza do custo.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Extração Precisa de Fornecedor e NFS-e',
+        description: 'Sanitizador especializado que isola a Razão Social e Nome Fantasia real do Prestador de Serviços, bloqueando captura de rótulos como "DA NFS-e Prestador", "Prefeitura" e evitando confundir o Tomador (Transcunha) com o fornecedor.'
+      },
+      {
+        category: 'improvement',
+        title: 'OCR Multimodal Gemini com Auditoria Cruzada',
+        description: 'O leitor agora combina a camada de texto do PDF com a visão multimodal direta do modelo Gemini, preenchendo número, série, CNPJ/CPF, valor bruto, valor líquido com retenções, vencimento e descrição do serviço.'
+      },
+      {
+        category: 'improvement',
+        title: 'Autoclassificação de Natureza de Custo',
+        description: 'Identificação automática do ramo da despesa (Combustível, Manutenção, Pedágio, Serviços, Bens, Produtos) a partir das informações e descrição dos itens na nota.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_02_v2_102_0',
+    version: 'v2.102.0',
+    date: '02/11/2026',
+    title: 'Integração da Gestão de Notas Fiscais e Faturas dentro de Contas a Pagar',
+    summary: 'Centralização do módulo de Notas Fiscais e Faturas dentro da tela Contas a Pagar, simplificando o fluxo financeiro corporativo. Remoção dos botões dispersos no cabeçalho geral e incorporação completa da interface de lançamentos, OCR por IA e auditoria de boletos diretamente na sub-aba "Notas Fiscais / Faturas a Pagar".',
+    items: [
+      {
+        category: 'feature',
+        title: 'Janela de NFs / Faturas Integrada em Contas a Pagar',
+        description: 'A tela completa de gestão e novos lançamentos de Notas Fiscais e Faturas agora abre diretamente dentro da sub-aba "Notas Fiscais / Faturas a Pagar" no Contas a Pagar, mantendo OCR de XML/PDF por IA, leitor de boletos com cálculo de multas/juros e liquidação com comprovante.'
+      },
+      {
+        category: 'improvement',
+        title: 'Cabeçalho Limpo e Foco por Seção',
+        description: 'Remoção dos botões "+ Lançar NF" e "+ Lançamento Avulso" do topo do cabeçalho geral. O botão "+ Lançamento Avulso" agora fica posicionado exclusivamente na aba "Lançamentos Avulsos", e o cadastro de NFs na aba própria de Notas Fiscais.'
+      },
+      {
+        category: 'improvement',
+        title: 'Menu Superior Reorganizado',
+        description: 'O menu de abas principais do Financeiro foi despoluído, unificando todas as saídas e obrigações a pagar em um fluxo único e coeso.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_02_v2_101_0',
+    version: 'v2.101.0',
+    date: '02/11/2026',
+    title: 'Leitor Inteligente de Boletos com Cálculo Automático de Vencimento, Multas e Juros por Atraso',
+    summary: 'Aprimoramento completo do motor de leitura e OCR de boletos bancários (PDF e imagens) nas Faturas e Notas Fiscais a Pagar. O sistema decodifica com precisão máxima a linha digitável, código de barras e regras de cobrança Febraban, preenchendo automaticamente o valor nominal, a data de vencimento, a emissão, e calculando em tempo real as multas, juros de mora diários e o valor total atualizado em caso de atraso.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Apuração Automática de Multas e Juros por Atraso',
+        description: 'Ao anexar qualquer boleto bancário (em PDF ou imagem), o sistema identifica a regra de multa (ex: 2%) e juros de mora diários (ex: 1% a.m.), calculando os dias de atraso e o valor total a pagar atualizado com encargos.'
+      },
+      {
+        category: 'feature',
+        title: 'Painel Interativo de Encargos com 1 Clique',
+        description: 'Exibição de card dinâmico no lançamento de faturas detalhando Valor Nominal, Multa por Atraso, Juros Diários e Total com Encargos, permitindo aplicar o valor com encargos diretamente no Valor a Pagar com um único clique.'
+      },
+      {
+        category: 'improvement',
+        title: 'Decodificação Febraban e Suporte a Concessionárias',
+        description: 'Suporte ampliado para linhas digitáveis de 47 dígitos (bancos), 48 dígitos (água, luz, telefone, tributos) e códigos de barras brutos de 44 dígitos, com identificação imediata do banco emissor.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_02_v2_100_0',
+    version: 'v2.100.0',
+    date: '02/11/2026',
+    title: 'Contas a Pagar: Isolamento de Fretes CT-e em Aba Própria e Filtro Estrito de Embarques Faturados',
+    summary: 'O Contas a Pagar foi aprimorado para garantir maior organização: a visão geral "Todas as Contas a Pagar" agora lista exclusivamente obrigações corporativas (Notas Fiscais, Faturas, Despesas Avulsas e Folha), deixando todos os fretes de motoristas e Conhecimentos de Transporte isolados na janela "Fretes / Doc CT-e". Além disso, apenas embarques com faturamento efetivado e CT-e emitido figuram no Contas a Pagar.',
+    items: [
+      {
+        category: 'improvement',
+        title: 'Exclusividade da Janela "Fretes / Doc CT-e"',
+        description: 'Tudo o que for relacionado a frete de motoristas, embarques e conhecimentos de transporte (Doc CT-e) agora é exibido unicamente na janela especializada "Fretes / Doc CT-e", despoluindo a tela geral de Contas a Pagar.'
+      },
+      {
+        category: 'improvement',
+        title: 'Apenas Embarques Já Faturados no Contas a Pagar',
+        description: 'Implementado filtro canônico isShipmentFaturado: cargas em etapas anteriores ao faturamento (Ag. Cadastro, Ag. Seguradora, Ag. Carregamento, Ag. Nota) ou canceladas sem CT-e não entram mais no Contas a Pagar.'
+      },
+      {
+        category: 'feature',
+        title: 'Navegação Rápida no Card de Composição Atual',
+        description: 'O card de composição de despesas agora possui links interativos clicáveis para alternar instantaneamente entre Notas Fiscais, Fretes / Doc CT-e, Lançamentos Avulsos e Folha de Pagamento.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_02_v2_99_0',
     version: 'v2.99.0',
     date: '02/11/2026',

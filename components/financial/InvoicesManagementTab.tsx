@@ -54,16 +54,23 @@ import {
   RefreshCw,
   ShieldAlert,
   AlertTriangle,
-  Copy
+  Copy,
+  RotateCcw
 } from 'lucide-react';
-import { extractDataFromInvoiceFile, extractDataFromBoletoFile } from '../../utils/invoiceExtractionService';
+import {
+  extractDataFromInvoiceFile,
+  extractDataFromBoletoFile,
+  calculateBoletoLateFees,
+  BoletoLateFeesResult
+} from '../../utils/invoiceExtractionService';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
 
-interface InvoicesManagementTabProps {
-  users: User[];
+export interface InvoicesManagementTabProps {
+  users?: User[];
   currentUser?: User | null;
   onNavigateToPayables?: () => void;
+  onOpenSettlement?: (invoice: FinancialInvoice) => void;
 }
 
 const NATURE_CONFIG: Record<InvoiceCostNature, { label: string; icon: React.ElementType; badgeClass: string }> = {
@@ -118,9 +125,10 @@ const STATUS_CONFIG: Record<InvoicePaymentStatus, { label: string; icon: React.E
 };
 
 export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
-  users,
+  users = [],
   currentUser,
-  onNavigateToPayables
+  onNavigateToPayables,
+  onOpenSettlement
 }) => {
   // State: Dados principais
   const [invoices, setInvoices] = useState<FinancialInvoice[]>([]);
@@ -202,6 +210,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
   const [formBoletoFileSize, setFormBoletoFileSize] = useState<number | undefined>(undefined);
   const [isExtractingBoleto, setIsExtractingBoleto] = useState(false);
   const [boletoExtractionSuccess, setBoletoExtractionSuccess] = useState<string | null>(null);
+  const [boletoLateFeesInfo, setBoletoLateFeesInfo] = useState<BoletoLateFeesResult | null>(null);
+  const [appliedLateFees, setAppliedLateFees] = useState<boolean>(false);
+  const [nominalBoletoAmount, setNominalBoletoAmount] = useState<number | null>(null);
   const boletoFileInputRef = useRef<HTMLInputElement>(null);
 
   // State: Blob URL seguro para visualização em iframe sem bloqueio do navegador
@@ -407,8 +418,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         if (extracted.totalAmount !== undefined && extracted.totalAmount > 0) {
           const formatted = extracted.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           setFormAmount(formatted);
-          setFormPayableAmount(formatted);
           count++;
+        }
+        if (extracted.payableAmount !== undefined && extracted.payableAmount > 0) {
+          const formattedPayable = extracted.payableAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          setFormPayableAmount(formattedPayable);
+        } else if (extracted.totalAmount !== undefined && extracted.totalAmount > 0) {
+          const formatted = extracted.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          setFormPayableAmount(formatted);
         }
         if (extracted.supplierName) {
           setFormSupplier(extracted.supplierName);
@@ -428,29 +445,35 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         }
         if (extracted.accessKey) {
           setFormAccessKey(extracted.accessKey);
+          count++;
         }
         if (extracted.paymentMethod) {
           setFormPaymentMethod(extracted.paymentMethod);
+          count++;
         }
         if (extracted.paymentDetails) {
           setFormPaymentDetails(extracted.paymentDetails);
+          count++;
         }
         if (extracted.description && !formDescription) {
           setFormDescription(extracted.description);
+          count++;
+        }
+        if (extracted.natureSuggestion) {
+          setFormNature(extracted.natureSuggestion);
         }
 
         if (count > 0) {
-          const dateHighlights: string[] = [];
+          const highlights: string[] = [];
+          if (extracted.invoiceNumber) highlights.push(`Nº ${extracted.invoiceNumber}`);
+          if (extracted.supplierName) highlights.push(`Fornecedor: ${extracted.supplierName}`);
+          if (extracted.totalAmount) highlights.push(`R$ ${extracted.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
           if (extracted.dueDate) {
             const [ano, mes, dia] = extracted.dueDate.split('-');
-            dateHighlights.push(`Vencimento: ${dia}/${mes}/${ano}`);
+            highlights.push(`Venc: ${dia}/${mes}/${ano}`);
           }
-          if (extracted.issueDate) {
-            const [ano, mes, dia] = extracted.issueDate.split('-');
-            dateHighlights.push(`Emissão: ${dia}/${mes}/${ano}`);
-          }
-          const datesText = dateHighlights.length > 0 ? ` [${dateHighlights.join(' • ')}]` : '';
-          setExtractionSuccess(`✨ ${count} campos extraídos automaticamente d${formDocumentType === 'Fatura' ? 'a Fatura' : 'a Nota Fiscal'}${datesText}!`);
+          const detailsText = highlights.length > 0 ? ` [${highlights.join(' • ')}]` : '';
+          setExtractionSuccess(`✨ Leitura inteligente: ${count} campos extraídos com precisão d${formDocumentType === 'Fatura' ? 'a Fatura' : 'a Nota Fiscal'}${detailsText}!`);
         }
       } catch (err) {
         console.warn('Erro ao extrair dados fiscais:', err);
@@ -499,14 +522,32 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
         const extracted = await extractDataFromBoletoFile(file);
         const updatedFields: string[] = [];
 
-        // 1. Atualização automática do "Valor a Pagar (R$)"
+        // 1. Atualização automática do "Valor a Pagar (R$)" e Encargos por Atraso
         if (extracted.payableAmount !== undefined && extracted.payableAmount > 0) {
-          const formatted = extracted.payableAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          setFormPayableAmount(formatted);
+          const nominalVal = extracted.payableAmount;
+          const nominalFormatted = nominalVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          setNominalBoletoAmount(nominalVal);
+
           if (!formAmount || formAmount === '0,00') {
-            setFormAmount(formatted);
+            setFormAmount(nominalFormatted);
           }
-          updatedFields.push(`Valor a Pagar (R$ ${formatted})`);
+
+          if (extracted.lateFeesResult && extracted.lateFeesResult.isOverdue && extracted.lateFeesResult.totalWithLateFees > 0) {
+            setBoletoLateFeesInfo(extracted.lateFeesResult);
+            const totalWithFeesFormatted = extracted.lateFeesResult.totalWithLateFees.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            setFormPayableAmount(totalWithFeesFormatted);
+            setAppliedLateFees(true);
+            setFormStatus('Atrasado');
+            updatedFields.push(`Valor Nominal (R$ ${nominalFormatted})`);
+            updatedFields.push(`Total Atualizado com Multa e Juros (R$ ${totalWithFeesFormatted})`);
+          } else {
+            setFormPayableAmount(nominalFormatted);
+            setAppliedLateFees(false);
+            if (extracted.lateFeesResult) {
+              setBoletoLateFeesInfo(extracted.lateFeesResult);
+            }
+            updatedFields.push(`Valor a Pagar (R$ ${nominalFormatted})`);
+          }
         }
 
         // 2. Atualização automática da "Data de Emissão / Data do Documento"
@@ -561,6 +602,28 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     reader.readAsDataURL(file);
   };
 
+  // Recalcular encargos dinamicamente quando a data de vencimento for alterada
+  const handleDueDateChange = (newDueDate: string) => {
+    setFormDueDate(newDueDate);
+    const nominal = nominalBoletoAmount || parseBrazilianCurrency(formAmount) || parseBrazilianCurrency(formPayableAmount);
+    if (nominal > 0) {
+      const recalculated = calculateBoletoLateFees({
+        nominalAmount: nominal,
+        dueDateStr: newDueDate,
+        finePercent: boletoLateFeesInfo?.finePercent,
+        fineAmount: boletoLateFeesInfo?.fineAmount,
+        monthlyInterestPercent: boletoLateFeesInfo?.monthlyInterestPercent,
+        dailyInterestPercent: boletoLateFeesInfo?.dailyInterestPercent,
+        dailyInterestAmount: boletoLateFeesInfo?.dailyInterestAmount
+      });
+      setBoletoLateFeesInfo(recalculated);
+
+      if (recalculated.isOverdue && appliedLateFees) {
+        setFormPayableAmount(recalculated.totalWithLateFees.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
+    }
+  };
+
   const handleRemoveBoletoFile = () => {
     setFormBoletoFileUrl(undefined);
     setFormBoletoFileName(undefined);
@@ -568,6 +631,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormBoletoFileSize(undefined);
     setIsExtractingBoleto(false);
     setBoletoExtractionSuccess(null);
+    setBoletoLateFeesInfo(null);
+    setAppliedLateFees(false);
+    setNominalBoletoAmount(null);
     if (boletoFileInputRef.current) {
       boletoFileInputRef.current.value = '';
     }
@@ -605,6 +671,9 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setFormBoletoFileSize(undefined);
     setIsExtractingBoleto(false);
     setBoletoExtractionSuccess(null);
+    setBoletoLateFeesInfo(null);
+    setAppliedLateFees(false);
+    setNominalBoletoAmount(null);
     if (boletoFileInputRef.current) {
       boletoFileInputRef.current.value = '';
     }
@@ -673,6 +742,22 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
     setExtractionSuccess(null);
     setIsExtractingBoleto(false);
     setBoletoExtractionSuccess(null);
+    if (inv.overdueTotalAmount || inv.interestAmount || inv.fineAmount) {
+      const nominal = inv.totalAmount || (inv.payableAmount || 0);
+      setNominalBoletoAmount(nominal);
+      const recalculated = calculateBoletoLateFees({
+        nominalAmount: nominal,
+        dueDateStr: inv.dueDate,
+        fineAmount: inv.fineAmount,
+        dailyInterestAmount: inv.dailyInterestAmount
+      });
+      setBoletoLateFeesInfo(recalculated);
+      setAppliedLateFees(Boolean(inv.payableAmount && inv.payableAmount > nominal));
+    } else {
+      setBoletoLateFeesInfo(null);
+      setAppliedLateFees(false);
+      setNominalBoletoAmount(null);
+    }
 
     setIsFormModalOpen(true);
   };
@@ -732,7 +817,14 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
       boletoFileUrl: formBoletoFileUrl,
       boletoFileName: formBoletoFileName,
       boletoFileType: formBoletoFileType,
-      boletoFileSize: formBoletoFileSize
+      boletoFileSize: formBoletoFileSize,
+      // Encargos de Boleto por Atraso
+      interestAmount: boletoLateFeesInfo?.isOverdue && boletoLateFeesInfo.totalLateFees > 0 ? boletoLateFeesInfo.totalLateFees : undefined,
+      fineAmount: boletoLateFeesInfo?.fineAmount,
+      dailyInterestAmount: boletoLateFeesInfo?.dailyInterestAmount,
+      overdueTotalAmount: boletoLateFeesInfo?.totalWithLateFees,
+      overdueDays: boletoLateFeesInfo?.overdueDays,
+      overdueCalculationExplanation: boletoLateFeesInfo?.explanation
     };
 
     // REGRA DE SEGURANÇA: Bloqueia lançamento duplicado
@@ -1812,6 +1904,21 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
+                            {onOpenSettlement && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenSettlement(inv)}
+                                title={inv.status === 'Pago' ? 'Editar Baixa / Comprovante' : 'Dar Baixa / Liquidar'}
+                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                  inv.status === 'Pago'
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                }`}
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>{inv.status === 'Pago' ? 'Baixa' : 'Dar Baixa'}</span>
+                              </button>
+                            )}
                             {inv.boletoFileUrl && onNavigateToPayables && (
                               <button
                                 onClick={onNavigateToPayables}
@@ -2591,7 +2698,7 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                     type="date"
                     required
                     value={formDueDate}
-                    onChange={(e) => setFormDueDate(e.target.value)}
+                    onChange={(e) => handleDueDateChange(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
                   {formBoletoFileUrl && (
@@ -2690,6 +2797,120 @@ export const InvoicesManagementTab: React.FC<InvoicesManagementTabProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* CARD DE ENCARGOS DO BOLETO (VALOR NOMINAL, MULTAS, JUROS E VALOR TOTAL POR ATRASO) */}
+              {formBoletoFileUrl && boletoLateFeesInfo && (
+                <div className={`p-4 rounded-2xl border transition-all animate-fadeIn space-y-3 ${
+                  boletoLateFeesInfo.isOverdue
+                    ? 'bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-rose-950/40 dark:to-amber-950/40 border-amber-300 dark:border-amber-700/80'
+                    : 'bg-gradient-to-r from-slate-50 to-emerald-50/30 dark:from-slate-900/80 dark:to-emerald-950/20 border-emerald-200 dark:border-emerald-800/60'
+                } shadow-xs`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/60 dark:border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`p-2.5 rounded-xl text-white shrink-0 ${boletoLateFeesInfo.isOverdue ? 'bg-amber-600 shadow-md shadow-amber-600/30' : 'bg-emerald-600 shadow-md shadow-emerald-600/30'}`}>
+                        <Receipt className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+                          <span>Apuração Financeira do Boleto</span>
+                          {boletoLateFeesInfo.isOverdue ? (
+                            <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-black px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              Vencido há {boletoLateFeesInfo.overdueDays} dia(s)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Boleto em Dia
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                          {boletoLateFeesInfo.explanation}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Botões de Ação Rápida no Card */}
+                    {boletoLateFeesInfo.isOverdue && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        {appliedLateFees ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (nominalBoletoAmount) {
+                                const nominalStr = nominalBoletoAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                setFormPayableAmount(nominalStr);
+                                setAppliedLateFees(false);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors cursor-pointer flex items-center gap-1.5"
+                            title="Voltar para o valor nominal do boleto sem juros/multa"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Usar Nominal ({formatBrl(nominalBoletoAmount || 0)})</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const totalFeesStr = boletoLateFeesInfo.totalWithLateFees.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                              setFormPayableAmount(totalFeesStr);
+                              setAppliedLateFees(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/30 transition-all cursor-pointer flex items-center gap-1.5"
+                            title="Preencher o Valor a Pagar com o total atualizado incluindo multa e juros"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Aplicar Total com Encargos ({formatBrl(boletoLateFeesInfo.totalWithLateFees)})</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Métricas dos Encargos */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Valor Nominal</span>
+                      <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-100 mt-0.5 block">
+                        {formatBrl(nominalBoletoAmount || parseBrazilianCurrency(formAmount) || 0)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                        Multa ({boletoLateFeesInfo.finePercent}%)
+                      </span>
+                      <span className={`text-xs sm:text-sm font-black mt-0.5 block ${boletoLateFeesInfo.isOverdue ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                        {boletoLateFeesInfo.isOverdue ? `+ ${formatBrl(boletoLateFeesInfo.fineAmount)}` : formatBrl(boletoLateFeesInfo.fineAmount)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                        Juros ({boletoLateFeesInfo.dailyInterestPercent}%/dia)
+                      </span>
+                      <span className={`text-xs sm:text-sm font-black mt-0.5 block ${boletoLateFeesInfo.isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                        {boletoLateFeesInfo.isOverdue ? `+ ${formatBrl(boletoLateFeesInfo.interestAmount)}` : `${formatBrl(boletoLateFeesInfo.dailyInterestAmount)}/dia`}
+                      </span>
+                    </div>
+
+                    <div className={`p-2.5 rounded-xl border shadow-2xs ${
+                      boletoLateFeesInfo.isOverdue 
+                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100' 
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
+                    }`}>
+                      <span className="text-[10px] font-bold opacity-80 block uppercase tracking-wider">
+                        {boletoLateFeesInfo.isOverdue ? 'Total Atualizado (Atraso)' : 'Total se atrasar 30d'}
+                      </span>
+                      <span className={`text-xs sm:text-sm font-black mt-0.5 block ${boletoLateFeesInfo.isOverdue ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                        {formatBrl(boletoLateFeesInfo.isOverdue ? boletoLateFeesInfo.totalWithLateFees : boletoLateFeesInfo.projected30DaysTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 3. CLASSIFICAÇÃO DE CUSTOS & CADASTRO RÁPIDO */}
               <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">

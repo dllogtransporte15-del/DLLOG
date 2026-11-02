@@ -432,6 +432,7 @@ export function normalizeSupplierText(name?: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/\b(da\s+nfs-?e|nfs-?e|nf-?e|danfe|prestador(?:\s+de\s+servicos?)?|tomador(?:\s+de\s+servicos?)?|emitente|destinatario|dados\s+do\s+prestador)\b/gi, '')
     .replace(/\b(ltda|s\/a|sa|eireli|me|epp)\b/gi, '')
     .replace(/[^a-z0-9]/g, '')
     .trim();
