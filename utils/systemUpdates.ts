@@ -27,6 +27,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_02_v2_98_0',
+    version: 'v2.98.0',
+    date: '02/11/2026',
+    title: 'Exceção de Virada de Mês para Comissões Operacionais e Comerciais',
+    summary: 'Implementada regra especial de exceção nas comissões para embarques efetivados no final do mês (dia ≥ 20) que concluem a descarga após a virada da competência. O sistema credita a comissão diretamente no mês em que o carregamento foi efetivado, assegurando que o colaborador não perca sua remuneração e prevenindo duplicidades no mês seguinte.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Regra de Exceção de Virada de Mês (isShipmentEligibleByEndOfMonthException)',
+        description: 'Embarques carregados e com CT-e emitido a partir do dia 20 do mês que estejam em trânsito (Ag. Fiscal, Ag. Adiantamento, Ag. Agendamento, Ag. Descarga) têm suas comissões liberadas e somadas automaticamente na competência do mês em que foram efetivados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Trava Contábil Anti-Duplicação',
+        description: 'Ao virar o mês, quando o veículo descarrega na nova competência, o sistema mantém o frete vinculado exclusivamente à competência de carregamento original, impedindo qualquer contagem dupla no mês subsequente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Auditoria Visual na Folha de Pagamento',
+        description: 'O modal de auditoria de embarques do colaborador exibe agora o selo roxo informativo "🟣 Liberada (Virada de Mês • Status)" com tooltip detalhado para cargas em trânsito com carregamento no final do mês, diferenciando-as das liberações pós-descarga comuns.'
+      },
+      {
+        category: 'fix',
+        title: 'Sincronização Total em Relatórios de Comissões',
+        description: 'Os relatórios de Supervisão, Embarcadores e Vendedores Externos passam a incluir uniformemente os embarques efetivados no final do mês na apuração do período correspondente.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_01_v2_97_0',
     version: 'v2.97.0',
     date: '01/11/2026',

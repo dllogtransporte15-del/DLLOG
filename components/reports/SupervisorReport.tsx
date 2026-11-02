@@ -159,7 +159,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     const countableStatuses = COMMISSION_ELIGIBLE_STATUSES;
 
     shipments.forEach(s => {
-      if (!countableStatuses.includes(s.status) || s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
+      if (!isShipmentEligibleForCommission(s) || s.status === ShipmentStatus.Cancelado || !isCteApplicableForStatus(s.status)) return;
 
       const cteVal = getShipmentCte(s);
       const hasCte = cteVal !== '-' && cteVal.trim() !== '';
@@ -332,7 +332,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     const memCount = new Map<string, number>();
     
     shipments.forEach(s => {
-      if (s.status === ShipmentStatus.Cancelado || !isShipmentEligibleForCommission(s.status)) return;
+      if (s.status === ShipmentStatus.Cancelado || !isShipmentEligibleForCommission(s)) return;
       
       const cteVal = getShipmentCte(s);
       const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');
@@ -454,7 +454,7 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     }> = [];
 
     shipments.forEach(s => {
-      if (s.status === ShipmentStatus.Cancelado || !isShipmentEligibleForCommission(s.status)) return;
+      if (s.status === ShipmentStatus.Cancelado || !isShipmentEligibleForCommission(s)) return;
 
       const cteVal = getShipmentCte(s);
       const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');

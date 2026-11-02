@@ -75,7 +75,7 @@ import {
   uploadInvoiceAttachmentToStorage
 } from '../../services/financialInvoiceService';
 import { parseBrazilianCurrency, formatBrl } from '../../utils/financialCalculations';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, parseDateToYmd, isShipmentEligibleForCommission, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, parseDateToYmd, isShipmentEligibleForCommission, isShipmentEligibleByEndOfMonthException, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
 import { useToast } from '../../hooks/useToast';
 import { PayrollDocsModal } from './PayrollDocsModal';
@@ -205,6 +205,7 @@ export interface PayrollSettlementItem {
     commissionVal: number;
     status: string;
     isEligible?: boolean;
+    isEndOfMonthException?: boolean;
   }>;
 }
 
@@ -1648,6 +1649,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         commissionVal: number;
         status: string;
         isEligible?: boolean;
+        isEndOfMonthException?: boolean;
       }> = [];
 
       // Perfil de Agenciamento (Gestor AG / Agenciador Líder)
@@ -1761,7 +1763,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           const client = clients.find(c => c.id === (cargo?.clientId || s.embarcadorId));
           const clientName = client?.nomeFantasia || client?.razaoSocial || 'Cliente';
 
-          const isEligible = isShipmentEligibleForCommission(s.status);
+          const isEligible = isShipmentEligibleForCommission(s, monthKey);
+          const isEndOfMonthException = isShipmentEligibleByEndOfMonthException(s);
 
           if (isEligible) {
             shipmentsCount += 1;
@@ -1788,7 +1791,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             commissionPct: pct,
             commissionVal: matchCommVal,
             status: s.status,
-            isEligible
+            isEligible,
+            isEndOfMonthException
           });
         });
       }
@@ -5695,10 +5699,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               </div>
               <div>
                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold block">
-                  Comissão Liberada (Pós-Descarga)
+                  Comissão Liberada (Pós-Descarga / Virada Mês)
                 </span>
                 <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">{formatBrl(currentAuditingSummary.commissionEarned)}</span>
-                <span className="text-[9px] text-slate-400 block">≥ Valid. de Ticket</span>
+                <span className="text-[9px] text-slate-400 block">≥ Valid. Ticket ou Virada Mês</span>
               </div>
               <div>
                 <span className="text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wider font-bold block">
@@ -5720,7 +5724,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     <th className="py-2.5 px-3">Motorista / Placa</th>
                     <th className="py-2.5 px-3 text-right">Frete Bruto</th>
                     <th className="py-2.5 px-3 text-right">Lucro Real</th>
-                    <th className="py-2.5 px-3 text-right cursor-help" title="As comissões são contabilizadas na folha de pagamento exclusivamente após a confirmação da descarga do veículo (a partir do status Valid. de Ticket).">
+                    <th className="py-2.5 px-3 text-right cursor-help" title="As comissões são contabilizadas na folha de pagamento após a confirmação da descarga do veículo (a partir de Valid. de Ticket) ou na virada de mês para embarques efetivados no final do mês.">
                       {currentAuditingSummary.regime === 'Gestor AG' ? `Comissão (${currentAuditingSummary.commissionPct}%)` : 'Comissão (R$)'} ℹ️
                     </th>
                   </tr>
@@ -5739,11 +5743,20 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           <span className="font-bold text-slate-900 dark:text-white block">{s.cte}</span>
                           <span className="text-[10px] text-slate-400 block">{s.date}</span>
                           {s.isEligible ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                              🟢 Liberada ({s.status})
-                            </span>
+                            s.isEndOfMonthException ? (
+                              <span 
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-300 dark:border-purple-800"
+                                title="Exceção de Virada de Mês: Carregamento efetivado no final do mês (dia ≥ 20). Comissão liberada na competência de carregamento."
+                              >
+                                🟣 Liberada (Virada de Mês • {s.status})
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                🟢 Liberada ({s.status})
+                              </span>
+                            )
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Aguardando confirmação de descarga">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-800" title="Aguardando confirmação de descarga">
                               🟡 Prevista ({s.status})
                             </span>
                           )}

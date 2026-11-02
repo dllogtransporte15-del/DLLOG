@@ -116,7 +116,7 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             const creatorShipments = shipments.filter(s => 
                 (s.embarcadorId === creatorId || s.createdById === creatorId) &&
                 s.status !== ShipmentStatus.Cancelado &&
-                isShipmentEligibleForCommission(s.status) &&
+                isShipmentEligibleForCommission(s) &&
                 hasCteAttached(s)
             );
           

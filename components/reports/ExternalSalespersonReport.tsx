@@ -5,7 +5,7 @@ import { ShipmentStatus } from '../../types';
 import { DollarSignIcon } from '../icons/DollarSignIcon';
 import { PackageIcon } from '../icons/PackageIcon';
 import { UsersIcon } from '../icons/UsersIcon';
-import { hasCteAttached, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
+import { hasCteAttached, COMMISSION_ELIGIBLE_STATUSES, isShipmentEligibleForCommission } from '../../utils';
 
 interface ExternalSalespersonReportProps {
   shipments: Shipment[];
@@ -49,7 +49,7 @@ const ExternalSalespersonReport: React.FC<ExternalSalespersonReportProps> = ({ s
     const statsMap = new Map<string, ExternalSalespersonStats>();
 
     shipments.forEach(shipment => {
-        if (!loadedStatuses.includes(shipment.status) || !hasCteAttached(shipment)) return;
+        if (!isShipmentEligibleForCommission(shipment) || !hasCteAttached(shipment)) return;
         
         const cargo = cargoMap.get(shipment.cargoId);
         if (!cargo) return;

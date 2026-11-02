@@ -869,6 +869,10 @@ export function getFinancialPeriodRange(filter: FinancialPeriodFilter, refDate: 
 
 
 export { 
-  COMMISSION_ELIGIBLE_STATUSES, 
+  COMMISSION_ELIGIBLE_STATUSES,
+  END_OF_MONTH_TRANSIT_STATUSES,
+  getShipmentEffectiveYmd,
+  isShipmentLoadedAtEndOfMonth,
+  isShipmentEligibleByEndOfMonthException,
   isShipmentEligibleForCommission 
 } from './utils/financialCalculations';

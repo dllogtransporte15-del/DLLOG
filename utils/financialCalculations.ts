@@ -362,8 +362,6 @@ export function formatBrl(val: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 }
 
-
-
 /**
  * Status que comprovam que o veículo já descarregou e o frete está apto
  * para apuração e contabilização de comissão na Folha e no Financeiro.
@@ -375,19 +373,189 @@ export const COMMISSION_ELIGIBLE_STATUSES: ShipmentStatus[] = [
 ];
 
 /**
- * Retorna true se o embarque já concluiu a descarga e está apto para ter
- * sua comissão somada na folha / financeiro.
+ * Status de trânsito após carregamento efetivado (veículo carregou e está em trânsito)
  */
-export const isShipmentEligibleForCommission = (status: ShipmentStatus | string | undefined): boolean => {
+export const END_OF_MONTH_TRANSIT_STATUSES: ShipmentStatus[] = [
+  ShipmentStatus.AguardandoFiscal,       // "Ag. Fiscal"
+  ShipmentStatus.AguardandoAdiantamento, // "Ag. Adiantamento"
+  ShipmentStatus.AguardandoAgendamento,   // "Ag. Agend. ou Troca/nfe"
+  ShipmentStatus.AguardandoDescarga      // "Ag. Descarga"
+];
+
+/**
+ * Extrai a data no formato YYYY-MM-DD com tolerância a formatos brasileiros e ISO
+ */
+function extractYmd(val: any): string | null {
+  if (!val) return null;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === '-' || trimmed === '0') return null;
+    const dmy = trimmed.match(/(?:^|\b)(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (dmy) {
+      return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    }
+    const ymd = trimmed.match(/(?:^|\b)(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (ymd) {
+      return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Retorna a data efetiva de carregamento/emissão do embarque no formato YYYY-MM-DD
+ */
+export function getShipmentEffectiveYmd(shipment?: any): string | null {
+  if (!shipment) return null;
+
+  // 1. Data do CT-e
+  const cteDoc = shipment.documents?.cte || shipment.documents?.cteDocument;
+  const cteEmission = shipment.cteEmissionDate || cteDoc?.emissionDate || cteDoc?.issueDate || shipment.documents?.cteEmissionDate;
+  const cteYmd = extractYmd(cteEmission);
+  if (cteYmd) return cteYmd;
+
+  // 2. Aguardando Nota status history timestamp (efetivação do carregamento)
+  const effectiveEntry = Array.isArray(shipment.statusHistory) 
+    ? shipment.statusHistory.find((h: any) => 
+        h.status === 'AguardandoNota' || 
+        h.status === 'Ag. Nota' || 
+        h.status === 'Aguardando Nota'
+      )
+    : null;
+  if (effectiveEntry?.timestamp) {
+    const histYmd = extractYmd(effectiveEntry.timestamp);
+    if (histYmd) return histYmd;
+  }
+
+  // 3. scheduledDate
+  if (shipment.scheduledDate) {
+    const schedYmd = extractYmd(shipment.scheduledDate);
+    if (schedYmd) return schedYmd;
+  }
+
+  // 4. createdAt
+  if (shipment.createdAt) {
+    const createdYmd = extractYmd(shipment.createdAt);
+    if (createdYmd) return createdYmd;
+  }
+
+  return null;
+}
+
+/**
+ * Verifica se a data efetiva de carregamento do embarque ocorreu no final do mês (dia >= 20).
+ */
+export function isShipmentLoadedAtEndOfMonth(shipmentOrDate: any): boolean {
+  if (!shipmentOrDate) return false;
+  let ymd: string | null = null;
+  if (typeof shipmentOrDate === 'string') {
+    ymd = extractYmd(shipmentOrDate);
+  } else {
+    ymd = getShipmentEffectiveYmd(shipmentOrDate);
+  }
+  if (!ymd) return false;
+  const parts = ymd.split('-');
+  if (parts.length < 3) return false;
+  const day = parseInt(parts[2], 10);
+  return !isNaN(day) && day >= 20;
+}
+
+const DISCHARGE_STATUS_SET = new Set<string>([
+  ShipmentStatus.ValidacaoTicket,
+  ShipmentStatus.AguardandoPagamentoSaldo,
+  ShipmentStatus.Finalizado,
+  'Valid. de Ticket',
+  'ValidacaoTicket',
+  'Ag. Saldo',
+  'AguardandoPagamentoSaldo',
+  'Finalizado'
+]);
+
+const TRANSIT_STATUS_SET = new Set<string>([
+  ShipmentStatus.AguardandoFiscal,
+  ShipmentStatus.AguardandoAdiantamento,
+  ShipmentStatus.AguardandoAgendamento,
+  ShipmentStatus.AguardandoDescarga,
+  'Ag. Fiscal',
+  'AguardandoFiscal',
+  'Ag. Adiantamento',
+  'AguardandoAdiantamento',
+  'Ag. Agend. ou Troca/nfe',
+  'AguardandoAgendamento',
+  'Ag. Descarga',
+  'AguardandoDescarga'
+]);
+
+/**
+ * Retorna true se o embarque se enquadra na Exceção de Virada de Mês:
+ * Embarque efetivado no final do mês (dia >= 20) com CT-e emitido ou em trânsito
+ * (Ag. Fiscal, Ag. Adiantamento, Ag. Agendamento, Ag. Descarga),
+ * permitindo que sua comissão seja somada no mês em que foi efetivado o carregamento.
+ */
+export function isShipmentEligibleByEndOfMonthException(shipment: any): boolean {
+  if (!shipment) return false;
+  const status = typeof shipment === 'string' ? shipment : shipment.status;
   if (!status) return false;
-  return (
-    status === ShipmentStatus.ValidacaoTicket ||
-    status === ShipmentStatus.AguardandoPagamentoSaldo ||
-    status === ShipmentStatus.Finalizado ||
-    status === 'Valid. de Ticket' ||
-    status === 'ValidacaoTicket' ||
-    status === 'Ag. Saldo' ||
-    status === 'AguardandoPagamentoSaldo' ||
-    status === 'Finalizado'
-  );
+  const statusStr = String(status);
+
+  // Se já está nos status padrão pós-descarga, é elegível diretamente pela regra geral
+  if (DISCHARGE_STATUS_SET.has(statusStr)) {
+    return false;
+  }
+
+  // Verifica se o status é de trânsito pós-carregamento
+  if (!TRANSIT_STATUS_SET.has(statusStr)) return false;
+
+  // Se for o objeto do embarque, valida que o carregamento ocorreu a partir do dia 20
+  if (typeof shipment === 'object') {
+    return isShipmentLoadedAtEndOfMonth(shipment);
+  }
+
+  return true;
+}
+
+/**
+ * Retorna true se o embarque está apto para ter sua comissão somada na folha / financeiro / relatórios.
+ * 
+ * Regra Geral: Veículo descarregou e comprovante foi anexado (a partir do status "Valid. de Ticket").
+ * 
+ * Exceção de Virada de Mês: Embarques efetivados no final do mês (dia >= 20) que descarregam após a virada do mês.
+ * A comissão é somada no mês da competência em que foi efetivado o carregamento.
+ */
+export const isShipmentEligibleForCommission = (
+  shipmentOrStatus: Shipment | ShipmentStatus | string | undefined | null,
+  targetMonthKey?: string
+): boolean => {
+  if (!shipmentOrStatus) return false;
+
+  // Se passado objeto Shipment
+  if (typeof shipmentOrStatus === 'object') {
+    const s = shipmentOrStatus;
+    const status = s.status;
+    if (!status) return false;
+    const statusStr = String(status);
+    if (status === ShipmentStatus.Cancelado || statusStr === 'Cancelado') return false;
+
+    // 1. Regra Geral: Concluiu descarga e ticket validado (ou posterior)
+    if (DISCHARGE_STATUS_SET.has(statusStr)) {
+      return true;
+    }
+
+    // 2. Exceção de Virada de Mês: Efetivado no final do mês (dia >= 20) e em trânsito
+    if (isShipmentEligibleByEndOfMonthException(s)) {
+      if (targetMonthKey) {
+        const effYmd = getShipmentEffectiveYmd(s);
+        if (effYmd && !effYmd.startsWith(targetMonthKey)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  // Se passada string/enum (retrocompatibilidade)
+  const statusStr = String(shipmentOrStatus);
+  return DISCHARGE_STATUS_SET.has(statusStr);
 };
