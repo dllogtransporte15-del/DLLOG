@@ -66,7 +66,8 @@ import {
   UserX,
   RotateCcw,
   Loader2,
-  Lock
+  Lock,
+  Zap
 } from 'lucide-react';
 import { openDocumentInNewTab } from '../../utils/documentViewer';
 import {
@@ -282,6 +283,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   // Modal de Planejamento de Pagamento para Agenciador Líder
   const [isPlanLeaderModalOpen, setIsPlanLeaderModalOpen] = useState(false);
   const [planLeaderId, setPlanLeaderId] = useState('');
+  const [planMonthKey, setPlanMonthKey] = useState<string>('');
   const [planPaymentType, setPlanPaymentType] = useState('Comissão de Agenciamento');
   const [planAmount, setPlanAmount] = useState('');
   const [planDueDate, setPlanDueDate] = useState(new Date().toISOString().split('T')[0]);
@@ -457,6 +459,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
   // Modal de Configuração de Valores do Colaborador (Salário, Tributos, Comissão, Regime)
   const [editingUserForValues, setEditingUserForValues] = useState<User | null>(null);
+  const [editingMonthKey, setEditingMonthKey] = useState<string>('');
+  const [editingSettlementItem, setEditingSettlementItem] = useState<PayrollSettlementItem | null>(null);
   const [editRegime, setEditRegime] = useState<'CLT' | 'PJ' | 'Gestor AG'>('CLT');
   const [editSalary, setEditSalary] = useState('');
   const [editCommission, setEditCommission] = useState('');
@@ -527,7 +531,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return;
     }
     const issueDate = newValeDate || new Date().toISOString().split('T')[0];
-    const startMonth = newValeStartMonth || addMonthsToMonthKey(getMonthKeyFromDate(issueDate), 1);
+    const targetMonth = editingMonthKey || currentMonthPrefix;
+    const startMonth = newValeStartMonth || targetMonth || getMonthKeyFromDate(issueDate);
     const count = Math.max(1, newValeInstallmentsCount || 1);
 
     const installments = calculateInstallments(parsedAmount, count, startMonth);
@@ -552,19 +557,36 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     showToast(
       count > 1
         ? `Vale de ${formatBrl(parsedAmount)} gravado em ${count}x (primeira parcela em ${formatMonthKeyToLabel(startMonth)})!`
-        : `Vale de ${formatBrl(parsedAmount)} gravado com sucesso!`,
+        : `Vale de ${formatBrl(parsedAmount)} gravado para ${formatMonthKeyToLabel(startMonth)} com sucesso!`,
       'success'
     );
 
-    // Resetar campos para permitir criar outro vale imediatamente!
+    // Resetar campos para permitir criar outro vale imediatamente mantendo o mês de referência
     setNewValeAmount('');
     setNewValeReceiptUrl('');
     setNewValeReceiptName('');
     setNewValeDescription('');
     setNewValeInstallmentsCount(1);
+    setNewValeStartMonth(targetMonth);
     if (valeFileInputRef.current) {
       valeFileInputRef.current.value = '';
     }
+  };
+
+  // Alterar mês de início/desconto de um vale já cadastrado
+  const handleChangeValeMonth = (valeId: string, newStartMonth: string) => {
+    savePayrollAdvanceItems(prev => prev.map(v => {
+      if (v.id !== valeId) return v;
+      const count = Math.max(1, v.installmentsCount || v.installments?.length || 1);
+      const newInstallments = calculateInstallments(v.amount, count, newStartMonth);
+      return {
+        ...v,
+        startMonthKey: newStartMonth,
+        installments: newInstallments,
+        updatedAt: new Date().toISOString(),
+      };
+    }));
+    showToast(`Mês de desconto do vale atualizado para ${formatMonthKeyToLabel(newStartMonth)}!`, 'success');
   };
 
   // Excluir Vale
@@ -783,27 +805,38 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   };
 
   // Abrir Modal de Edição de Salário, Tributos, Comissão e Valores do Colaborador
-  const handleOpenEditUserValues = (u: User) => {
+  const handleOpenEditUserValues = (u: User, targetMonthKey?: string, settlementItem?: PayrollSettlementItem) => {
     setEditingUserForValues(u);
-    const regime = getUserRegime(u);
+    const activeMonthKey = targetMonthKey || settlementItem?.monthKey || currentMonthPrefix;
+    setEditingMonthKey(activeMonthKey);
+    setEditingSettlementItem(settlementItem || null);
+
+    const regime = settlementItem?.regime || getUserRegime(u);
     setEditRegime(regime);
 
-    const sal = userSalaries[u.id] !== undefined
-      ? userSalaries[u.id]
-      : (u.commercialFixedSalary ? Number(u.commercialFixedSalary) : 0);
+    const sal = settlementItem?.fixedSalary !== undefined
+      ? settlementItem.fixedSalary
+      : (userSalaries[u.id] !== undefined
+        ? userSalaries[u.id]
+        : (u.commercialFixedSalary ? Number(u.commercialFixedSalary) : 0));
     setEditSalary(sal > 0 ? sal.toFixed(2).replace('.', ',') : '');
 
     const hasManualComm = userCustomCommissions[u.id] !== undefined && userCustomCommissions[u.id] !== 1272.96;
-    setEditCommission(hasManualComm && userCustomCommissions[u.id] > 0 ? userCustomCommissions[u.id].toFixed(2).replace('.', ',') : '');
+    const comm = hasManualComm && userCustomCommissions[u.id] > 0
+      ? userCustomCommissions[u.id]
+      : (settlementItem?.commissionEarned || 0);
+    setEditCommission(comm > 0 ? comm.toFixed(2).replace('.', ',') : '');
 
-    const tax = userTaxes[u.id] !== undefined ? userTaxes[u.id] : 0;
+    const tax = settlementItem?.taxesClt !== undefined
+      ? settlementItem.taxesClt
+      : (userTaxes[u.id] !== undefined ? userTaxes[u.id] : 0);
     setEditTaxes(tax > 0 ? tax.toFixed(2).replace('.', ',') : '');
 
-    const userVales = payrollAdvanceItems.filter(v => v.userId === u.id);
-    const activeValesInMonth = userVales.flatMap(v => v.installments || []).filter(i => i.monthKey === currentMonthPrefix);
+    const userVales = (payrollAdvanceItems || []).filter(v => v.userId === u.id);
+    const activeValesInMonth = userVales.flatMap(v => v.installments || []).filter(i => i.monthKey === activeMonthKey);
     const valesSum = activeValesInMonth.reduce((s, i) => s + i.amount, 0);
 
-    const docKey = `${u.id}_${currentMonthPrefix}`;
+    const docKey = `${u.id}_${activeMonthKey}`;
     const advRecord = payrollAdvances[docKey];
     const adv = userVales.length > 0
       ? valesSum
@@ -815,11 +848,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     setEditAdvanceReceiptUrl(advRecord?.receiptFileUrl || '');
     setEditAdvanceReceiptName(advRecord?.receiptFileName || '');
 
-    // Resetar campos de novo vale
+    // Resetar campos de novo vale: DEFAULT É O MÊS DA FOLHA ATIVA!
     setNewValeAmount('');
     setNewValeDate(todayStr);
     setNewValeInstallmentsCount(1);
-    setNewValeStartMonth(addMonthsToMonthKey(currentMonthPrefix, 1));
+    setNewValeStartMonth(activeMonthKey);
     setNewValeDescription('');
     setNewValeReceiptUrl('');
     setNewValeReceiptName('');
@@ -832,11 +865,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     e.preventDefault();
     if (!editingUserForValues) return;
     const uid = editingUserForValues.id;
+    const targetMonth = editingMonthKey || currentMonthPrefix;
     const parsedSal = parseBrazilianCurrency(editSalary);
     const parsedComm = parseBrazilianCurrency(editCommission);
     const parsedTax = parseBrazilianCurrency(editTaxes);
     const parsedAdv = parseBrazilianCurrency(editAdvance);
-    const docKey = `${uid}_${currentMonthPrefix}`;
+    const docKey = `${uid}_${targetMonth}`;
 
     setUserRegimes(prev => {
       const next = { ...prev, [uid]: editRegime };
@@ -878,7 +912,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         ...prev,
         [docKey]: {
           userId: uid,
-          monthKey: currentMonthPrefix,
+          monthKey: targetMonth,
           amount: parsedAdv,
           date: editAdvanceDate || todayStr,
           receiptFileUrl: editAdvanceReceiptUrl || undefined,
@@ -898,6 +932,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
     showToast(`Configurações de "${editingUserForValues.name}" gravadas com sucesso!`, 'success');
     setEditingUserForValues(null);
+    setEditingMonthKey('');
+    setEditingSettlementItem(null);
   };
 
   // Helper para verificar se uma transação pertence à Folha de Pagamento
@@ -1732,11 +1768,25 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       }> = [];
 
       userVales.forEach(v => {
-        (v.installments || []).forEach(inst => {
-          if (inst.monthKey === monthKey) {
-            activeValesInMonth.push({ vale: v, installment: inst });
-          }
-        });
+        const insts = v.installments || [];
+        if (insts.length > 0) {
+          insts.forEach(inst => {
+            if (inst.monthKey === monthKey) {
+              activeValesInMonth.push({ vale: v, installment: inst });
+            }
+          });
+        } else if (v.startMonthKey === monthKey || (!v.startMonthKey && v.issueDate && v.issueDate.startsWith(monthKey))) {
+          // Fallback se não houver parcelas geradas
+          activeValesInMonth.push({
+            vale: v,
+            installment: {
+              installmentNumber: 1,
+              totalInstallments: 1,
+              monthKey,
+              amount: v.amount
+            }
+          });
+        }
       });
 
       const valesInstallmentsTotal = activeValesInMonth.reduce((sum, item) => sum + item.installment.amount, 0);
@@ -1950,7 +2000,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         .filter(t => t.rawStatus === FinancialTransactionStatus.Pago && !advanceTxs.includes(t))
         .reduce((sum, t) => sum + t.payableAmount, 0);
 
-      let totalPaid = advanceTxsPaid + regularPaidTxs;
+      // Total Já Quitado / Total Já Pago: soma de todos os vales e adiantamentos concedidos no mês + demais baixas realizadas
+      let totalPaid = totalAdvances + regularPaidTxs;
 
       const totalPlannedPending = relatedTxs
         .filter(t => t.rawStatus !== FinancialTransactionStatus.Pago && t.rawStatus !== FinancialTransactionStatus.Cancelado)
@@ -1970,12 +2021,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       const isSeptemberInitial = (monthKey === '2026-09');
 
       if (savedDoc?.isPaid || (isSeptemberInitial && savedDoc?.isPaid !== false)) {
-        totalPaid = Math.max(totalPaid, netDue);
+        totalPaid = Math.max(totalPaid, Math.max(0, grossTotal - taxesClt));
       }
 
+      // Saldo Pendente de Pagamento: Bruto - Tributos - Total Já Quitado (Vales + Baixas)
+      // Equivale exatamente a Líquido Devido (netDue) - regularPaidTxs
       const balancePending = (isSeptemberInitial && savedDoc?.isPaid !== false)
         ? 0
-        : Math.max(0, netDue - totalPaid);
+        : Math.max(0, Math.max(0, grossTotal - taxesClt) - totalPaid);
 
       const totalDue = grossTotal;
 
@@ -2438,12 +2491,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const leaderKpiPlannedPending = useMemo(() => filteredLeaderPayables.filter(l => l.status === 'Pendente').reduce((acc, l) => acc + l.payableAmount, 0), [filteredLeaderPayables]);
 
   // Abrir modal de planejamento de folha para um colaborador (com sugestão de saldo em aberto)
-  const handleOpenPlanModal = (targetUserId?: string, suggestedAmount?: number) => {
+  const handleOpenPlanModal = (targetUserId?: string, suggestedAmount?: number, targetMonthKey?: string) => {
     const userToSelect = targetUserId || payrollUsers[0]?.id || '';
     setPlanLeaderId(userToSelect);
+    const activeMonth = targetMonthKey || (payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix);
+    setPlanMonthKey(activeMonth);
 
     const userObj = payrollUsers.find(l => l.id === userToSelect);
-    const summary = leadersSummary.find(s => s.user.id === userToSelect);
+    const summary = allPayrollSettlements.find(s => s.user.id === userToSelect && s.monthKey === activeMonth)
+      || leadersSummary.find(s => s.user.id === userToSelect)
+      || allPayrollSettlements.find(s => s.user.id === userToSelect);
 
     // Sugerir valor
     const amountVal = suggestedAmount !== undefined
@@ -2454,13 +2511,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     setPlanDueDate(new Date().toISOString().split('T')[0]);
 
     if (userObj) {
-      const reg = getUserRegime(userObj);
+      const reg = summary?.regime || getUserRegime(userObj);
       if (reg === 'CLT') {
         setPlanPaymentType('Salário Mensal (Folha)');
       } else if (reg === 'PJ') {
         setPlanPaymentType('Pró-labore / Pagamento PJ');
       } else {
-        setPlanPaymentType('Comissão de Agenciamento');
+        setPlanPaymentType('Comissão de Gestor AG');
       }
       setPlanPixKey(userObj.phone || userObj.corporateEmail || userObj.email || '');
       setPlanNotes(summary?.commissionEarned ? `Apuração de comissões (${summary.commissionPct}% sobre lucro real) - ${summary.shipmentsCount} embarques.` : '');
@@ -3404,12 +3461,20 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         <h4 className="text-sm font-black text-slate-900 dark:text-white">
                           Mês Anterior: {payrollMonthTotals.last.label}
                         </h4>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                          100% Quitado / Feito
-                        </span>
+                        {payrollMonthTotals.last.pending <= 0 ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                            100% Quitado / Feito
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                            {formatBrl(payrollMonthTotals.last.pending)} Pendente
+                          </span>
+                        )}
                       </div>
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                        Acertos de Setembro já foram concluídos na implantação
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                        {payrollMonthTotals.last.pending <= 0
+                          ? `Acertos de ${payrollMonthTotals.last.label} já foram concluídos`
+                          : `Acertos de ${payrollMonthTotals.last.label} em acompanhamento e quitação`}
                       </span>
                     </div>
                   </div>
@@ -3442,9 +3507,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     </strong>
                   </div>
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 block">Saldo Pendente</span>
-                    <strong className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400">
-                      R$ 0,00 (Quitado)
+                    <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 block">Saldo Pendente</span>
+                    <strong className={`text-xs sm:text-sm font-black ${payrollMonthTotals.last.pending > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      {payrollMonthTotals.last.pending > 0 ? formatBrl(payrollMonthTotals.last.pending) : 'R$ 0,00 (Quitado)'}
                     </strong>
                   </div>
                 </div>
@@ -3508,7 +3573,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Mês:</span>
                 {[
                   { id: 'current', label: `Mês Atual (${payrollMonthTotals.current.label})` },
-                  { id: 'last', label: `Mês Anterior (${payrollMonthTotals.last.label} - Quitado)` },
+                  { id: 'last', label: `Mês Anterior (${payrollMonthTotals.last.label}${payrollMonthTotals.last.pending <= 0 ? ' - Quitado' : ''})` },
                   { id: 'all', label: 'Todos os Meses' },
                 ].map(m => (
                   <button
@@ -3758,7 +3823,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider">Salário Base (Fixo)</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 cursor-pointer"
                                   title="Clique para editar salário fixo"
                                 >
@@ -3783,7 +3848,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   )}
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenEditUserValues(item.user)}
+                                    onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                     className="font-bold hover:underline flex items-center gap-1 cursor-pointer"
                                     title="Clique para ajustar ou lançar comissão"
                                   >
@@ -3796,7 +3861,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <span className="text-[10px] uppercase tracking-wider">(-) Tributos / INSS (CLT)</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold hover:underline flex items-center gap-1 cursor-pointer"
                                   title="Clique para ajustar retenções e tributos CLT"
                                 >
@@ -3834,7 +3899,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold hover:underline flex items-center gap-1 cursor-pointer"
                                   title="Clique para registrar adiantamentos feitos, data e comprovante"
                                 >
@@ -3859,7 +3924,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider">Contrato / Remuneração PJ</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold text-slate-800 dark:text-slate-200 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 cursor-pointer"
                                   title="Clique para editar valor de contrato PJ"
                                 >
@@ -3884,7 +3949,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   )}
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenEditUserValues(item.user)}
+                                    onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                     className="font-bold hover:underline flex items-center gap-1 cursor-pointer"
                                     title="Clique para ajustar ou lançar comissão"
                                   >
@@ -3923,7 +3988,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold hover:underline flex items-center gap-1 cursor-pointer"
                                   title="Clique para registrar adiantamentos feitos, data e comprovante"
                                 >
@@ -3958,7 +4023,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <span className="text-[10px] text-slate-400 uppercase tracking-wider">Comissão ({item.commissionPct}%)</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
                                   title="Clique para ajustar comissão"
                                 >
@@ -3970,7 +4035,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <span className="text-[10px] text-slate-400 uppercase tracking-wider">(+) Salário Fixo Adicional</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold text-slate-700 dark:text-slate-300 hover:text-amber-600 flex items-center gap-1 cursor-pointer"
                                   title="Clique para editar salário fixo adicional"
                                 >
@@ -4008,7 +4073,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditUserValues(item.user)}
+                                  onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                                   className="font-bold hover:underline flex items-center gap-1 cursor-pointer"
                                   title="Clique para registrar adiantamentos feitos, data e comprovante"
                                 >
@@ -4017,8 +4082,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 </button>
                               </div>
                               <div className="pt-1.5 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
+                                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Líquido Devido</span>
+                                <span className="font-black text-purple-600 dark:text-purple-400">{formatBrl(item.netDue)}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Total Já Liquidado</span>
-                                <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatBrl(item.totalPaid)}</span>
+                                <span className="font-bold text-emerald-600 dark:text-emerald-400" title="Soma dos vales concedidos no período + baixas já realizadas">{formatBrl(item.totalPaid)}</span>
                               </div>
                             </div>
                           )}
@@ -4178,7 +4247,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           {/* Configurar Regime, Salário e Encargos */}
                           <button
                             type="button"
-                            onClick={() => handleOpenEditUserValues(item.user)}
+                            onClick={() => handleOpenEditUserValues(item.user, item.monthKey, item)}
                             className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
                             title="Configurar regime, salário fixo, tributos CLT e adiantamentos"
                           >
@@ -4188,7 +4257,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           {/* Botão de Planejar Pagamento */}
                           <button
                             type="button"
-                            onClick={() => handleOpenPlanModal(item.user.id, item.balancePending)}
+                            onClick={() => handleOpenPlanModal(item.user.id, item.balancePending, item.monthKey)}
                             className="py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
                             title="Planejar ou quitar pagamento para este colaborador"
                           >
@@ -4983,9 +5052,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     const newId = e.target.value;
                     setPlanLeaderId(newId);
                     const userObj = payrollUsers.find(l => l.id === newId);
-                    const sum = leadersSummary.find(s => s.user.id === newId);
+                    const targetKey = planMonthKey || (payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix);
+                    const sum = allPayrollSettlements.find(s => s.user.id === newId && s.monthKey === targetKey)
+                      || leadersSummary.find(s => s.user.id === newId)
+                      || allPayrollSettlements.find(s => s.user.id === newId);
                     if (userObj) {
-                      const reg = getUserRegime(userObj);
+                      const reg = sum?.regime || getUserRegime(userObj);
                       if (reg === 'CLT') {
                         setPlanPaymentType('Salário Mensal (Folha)');
                       } else if (reg === 'PJ') {
@@ -5003,7 +5075,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                 >
                   <option value="">Selecione o Colaborador...</option>
                   {payrollUsers.map(u => {
-                    const sum = leadersSummary.find(s => s.user.id === u.id);
+                    const targetKey = planMonthKey || (payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix);
+                    const sum = allPayrollSettlements.find(s => s.user.id === u.id && s.monthKey === targetKey)
+                      || leadersSummary.find(s => s.user.id === u.id)
+                      || allPayrollSettlements.find(s => s.user.id === u.id);
                     const reg = sum?.regime || getUserRegime(u);
                     return (
                       <option key={u.id} value={u.id}>
@@ -5016,7 +5091,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
               {/* Card Contextual do Colaborador Selecionado */}
               {planLeaderId && (() => {
-                const selSummary = leadersSummary.find(s => s.user.id === planLeaderId);
+                const targetKey = planMonthKey || (payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix);
+                const selSummary = allPayrollSettlements.find(s => s.user.id === planLeaderId && s.monthKey === targetKey)
+                  || leadersSummary.find(s => s.user.id === planLeaderId)
+                  || allPayrollSettlements.find(s => s.user.id === planLeaderId);
                 if (!selSummary) return null;
 
                 return (
@@ -5025,9 +5103,14 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       <span className="font-bold text-amber-900 dark:text-amber-200">
                         {selSummary.user.name} • {selSummary.branchName}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
-                        Regime: {selSummary.regime}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-mono">
+                          Folha: {selSummary.monthLabel}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
+                          {selSummary.regime}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 pt-1 border-t border-amber-200/60 dark:border-amber-800/60 text-[11px]">
@@ -5040,26 +5123,28 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Total Já Pago:</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block" title="Soma de todos os vales concedidos no período + baixas já realizadas">
+                          Total Já Quitado:
+                        </span>
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">
                           {formatBrl(selSummary.totalPaid)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Saldo em Aberto:</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Saldo Pendente:</span>
                         <span className="font-bold text-amber-700 dark:text-amber-300">
                           {formatBrl(selSummary.balancePending)}
                         </span>
                       </div>
                     </div>
 
-                    {selSummary.regime === 'CLT' && (
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between border-t border-amber-200/40 dark:border-amber-800/40 pt-1">
+                    <div className="text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between border-t border-amber-200/40 dark:border-amber-800/40 pt-1 flex-wrap gap-1">
+                      {selSummary.taxesClt > 0 && (
                         <span>Retenções Tributos: <strong className="text-rose-600">-{formatBrl(selSummary.taxesClt)}</strong></span>
-                        <span>Adiantamentos: <strong className="text-orange-600">-{formatBrl(selSummary.totalAdvances)}</strong></span>
-                        <span>Líquido: <strong className="text-purple-600 font-bold">{formatBrl(selSummary.netDue)}</strong></span>
-                      </div>
-                    )}
+                      )}
+                      <span>(-) Adiantamentos / Vales: <strong className="text-orange-600 font-mono">-{formatBrl(selSummary.totalAdvances)}</strong></span>
+                      <span>Líquido Devido: <strong className="text-purple-600 font-bold font-mono">{formatBrl(selSummary.netDue)}</strong></span>
+                    </div>
 
                     {selSummary.balancePending > 0 && (
                       <button
@@ -5067,7 +5152,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         onClick={() => setPlanAmount(selSummary.balancePending.toFixed(2).replace('.', ','))}
                         className="w-full mt-1 py-1 px-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
                       >
-                        ⚡ Preencher Saldo em Aberto ({formatBrl(selSummary.balancePending)})
+                        ⚡ Preencher Saldo Pendente ({formatBrl(selSummary.balancePending)})
                       </button>
                     )}
                   </div>
@@ -5332,25 +5417,56 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
               {/* Adiantamento Salarial / Vales Concedidos Múltiplos e Parcelados */}
               {(() => {
+                const activeModalMonthKey = editingMonthKey || currentMonthPrefix;
                 const userExistingVales = (payrollAdvanceItems || []).filter(v => v.userId === editingUserForValues.id);
                 const currentMonthValesDiscount = userExistingVales
                   .flatMap(v => v.installments || [])
-                  .filter(i => i.monthKey === currentMonthPrefix)
+                  .filter(i => i.monthKey === activeModalMonthKey)
                   .reduce((s, i) => s + i.amount, 0);
                 const futureValesDiscount = userExistingVales
                   .flatMap(v => v.installments || [])
-                  .filter(i => i.monthKey > currentMonthPrefix)
+                  .filter(i => i.monthKey !== activeModalMonthKey)
                   .reduce((s, i) => s + i.amount, 0);
 
                 const parsedValeAmount = parseBrazilianCurrency(newValeAmount);
                 const previewTotal = parsedValeAmount > 0 ? parsedValeAmount : 0;
                 const previewCount = Math.max(1, newValeInstallmentsCount || 1);
                 const sameMonthOfVale = getMonthKeyFromDate(newValeDate || todayStr);
-                const nextMonthOfVale = addMonthsToMonthKey(sameMonthOfVale, 1);
-                const effectiveStartMonth = newValeStartMonth || nextMonthOfVale;
+                const effectiveStartMonth = newValeStartMonth || activeModalMonthKey;
                 const previewInstallments = previewTotal > 0 ? calculateInstallments(previewTotal, previewCount, effectiveStartMonth) : [];
 
-                const futureMonthsOptions = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => addMonthsToMonthKey(sameMonthOfVale, m));
+                // Lista de opções de mês inicial de desconto
+                const availableStartMonths: Array<{ key: string; label: string }> = [
+                  {
+                    key: activeModalMonthKey,
+                    label: `Folha Desta Aba (${formatMonthKeyToLabel(activeModalMonthKey)}) - Padrão / Imediato`
+                  }
+                ];
+
+                if (sameMonthOfVale !== activeModalMonthKey) {
+                  availableStartMonths.push({
+                    key: sameMonthOfVale,
+                    label: `Mês da Concessão (${formatMonthKeyToLabel(sameMonthOfVale)})`
+                  });
+                }
+
+                const nextMonth = addMonthsToMonthKey(activeModalMonthKey, 1);
+                if (!availableStartMonths.some(m => m.key === nextMonth)) {
+                  availableStartMonths.push({
+                    key: nextMonth,
+                    label: `Mês Subsequente (${formatMonthKeyToLabel(nextMonth)})`
+                  });
+                }
+
+                [2, 3, 4, 5, 6].forEach(offset => {
+                  const futMonth = addMonthsToMonthKey(activeModalMonthKey, offset);
+                  if (!availableStartMonths.some(m => m.key === futMonth)) {
+                    availableStartMonths.push({
+                      key: futMonth,
+                      label: formatMonthKeyToLabel(futMonth)
+                    });
+                  }
+                });
 
                 return (
                   <div className="p-3.5 rounded-2xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/60 space-y-3.5">
@@ -5371,12 +5487,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       </div>
                     </div>
 
-                    {/* Resumo do Impacto da Folha Atual vs Meses Subsequentes */}
+                    {/* Resumo do Impacto da Folha Atual vs Outros Meses */}
                     {userExistingVales.length > 0 && (
                       <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-orange-200 dark:border-orange-800/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-2xs">
                         <div>
                           <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">
-                            Desconto na Folha Atual ({formatMonthKeyToLabel(currentMonthPrefix)})
+                            Desconto Nesta Folha ({formatMonthKeyToLabel(activeModalMonthKey)})
                           </span>
                           <span className="text-sm font-black text-orange-600 dark:text-orange-400 font-mono">
                             {formatBrl(currentMonthValesDiscount)}
@@ -5385,7 +5501,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         {futureValesDiscount > 0 && (
                           <div className="sm:text-right border-t sm:border-t-0 pt-1.5 sm:pt-0 border-slate-100 dark:border-slate-800">
                             <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">
-                              Parcelas em Meses Subsequentes
+                              Parcelas em Outros Meses
                             </span>
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-mono">
                               {formatBrl(futureValesDiscount)}
@@ -5428,14 +5544,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                           <input
                             type="date"
                             value={newValeDate}
-                            onChange={(e) => {
-                              const newD = e.target.value;
-                              setNewValeDate(newD);
-                              if (newD) {
-                                const subMonth = addMonthsToMonthKey(getMonthKeyFromDate(newD), 1);
-                                setNewValeStartMonth(subMonth);
-                              }
-                            }}
+                            onChange={(e) => setNewValeDate(e.target.value)}
                             className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
                           />
                         </div>
@@ -5472,15 +5581,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                             onChange={(e) => setNewValeStartMonth(e.target.value)}
                             className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs cursor-pointer"
                           >
-                            <option value={nextMonthOfVale}>
-                              Mês Subsequente ({formatMonthKeyToLabel(nextMonthOfVale)}) - Recomendado
-                            </option>
-                            <option value={sameMonthOfVale}>
-                              Mês Atual da Concessão ({formatMonthKeyToLabel(sameMonthOfVale)})
-                            </option>
-                            {futureMonthsOptions.map(mKey => (
-                              <option key={mKey} value={mKey}>
-                                {formatMonthKeyToLabel(mKey)}
+                            {availableStartMonths.map(opt => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
                               </option>
                             ))}
                           </select>
@@ -5683,26 +5786,68 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 )}
 
                                 {/* Cronograma de Parcelas deste Vale */}
-                                {vale.installments && vale.installments.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                                    {vale.installments.map((inst, iIdx) => {
-                                      const isCurrent = inst.monthKey === currentMonthPrefix;
-                                      return (
-                                        <span
-                                          key={iIdx}
-                                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium border ${isCurrent
-                                              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold ring-1 ring-amber-400/40'
-                                              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                                            }`}
-                                          title={isCurrent ? 'Descontando na folha deste mês atual' : `Programado para ${formatMonthKeyToLabel(inst.monthKey)}`}
+                                {(() => {
+                                  const valeInsts = (vale.installments && vale.installments.length > 0)
+                                    ? vale.installments
+                                    : calculateInstallments(vale.amount, vale.installmentsCount || 1, vale.startMonthKey || activeModalMonthKey);
+                                  const isDiscountingInCurrent = valeInsts.some(i => i.monthKey === activeModalMonthKey);
+
+                                  return (
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                                      <div className="flex flex-wrap gap-1">
+                                        {valeInsts.map((inst, iIdx) => {
+                                          const isCurrent = inst.monthKey === activeModalMonthKey;
+                                          return (
+                                            <span
+                                              key={iIdx}
+                                              className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-medium border ${isCurrent
+                                                ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold ring-1 ring-amber-400/40'
+                                                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                                              }`}
+                                              title={isCurrent ? 'Descontando na folha desta aba' : `Programado para ${formatMonthKeyToLabel(inst.monthKey)}`}
+                                            >
+                                              {inst.installmentNumber}/{inst.totalInstallments}: {formatBrl(inst.amount)} ({formatMonthKeyToLabel(inst.monthKey)})
+                                              {isCurrent && ' • Desconta Nesta Folha ✓'}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Troca Rápida de Mês de Início deste Vale */}
+                                      <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
+                                        {!isDiscountingInCurrent && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleChangeValeMonth(vale.id, activeModalMonthKey)}
+                                            className="px-2 py-0.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-[9px] font-bold shadow-2xs cursor-pointer active:scale-95 transition-all flex items-center gap-1"
+                                            title={`Transferir o desconto deste vale para a folha desta aba (${formatMonthKeyToLabel(activeModalMonthKey)})`}
+                                          >
+                                            <Zap className="w-2.5 h-2.5" />
+                                            <span>Descontar Nesta Folha</span>
+                                          </button>
+                                        )}
+
+                                        <span className="text-slate-400 text-[9px]">Mudar mês:</span>
+                                        <select
+                                          value={vale.startMonthKey || valeInsts[0]?.monthKey || activeModalMonthKey}
+                                          onChange={(e) => handleChangeValeMonth(vale.id, e.target.value)}
+                                          className="text-[9px] font-bold py-0.5 px-1 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer"
+                                          title="Alterar o mês em que este vale começa a ser descontado"
                                         >
-                                          {inst.installmentNumber}/{inst.totalInstallments}: {formatBrl(inst.amount)} ({formatMonthKeyToLabel(inst.monthKey)})
-                                          {isCurrent && ' • Folha Atual'}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
+                                          <option value={activeModalMonthKey}>Folha Desta Aba ({formatMonthKeyToLabel(activeModalMonthKey)})</option>
+                                          {lastMonthPrefix !== activeModalMonthKey && (
+                                            <option value={lastMonthPrefix}>Mês Anterior ({formatMonthKeyToLabel(lastMonthPrefix)})</option>
+                                          )}
+                                          {currentMonthPrefix !== activeModalMonthKey && (
+                                            <option value={currentMonthPrefix}>Mês Atual ({formatMonthKeyToLabel(currentMonthPrefix)})</option>
+                                          )}
+                                          <option value={addMonthsToMonthKey(activeModalMonthKey, 1)}>Mês Subsequente ({formatMonthKeyToLabel(addMonthsToMonthKey(activeModalMonthKey, 1))})</option>
+                                          <option value={addMonthsToMonthKey(activeModalMonthKey, 2)}>{formatMonthKeyToLabel(addMonthsToMonthKey(activeModalMonthKey, 2))}</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             );
                           })}
@@ -5734,12 +5879,20 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               {/* Memória Prévia do Líquido */}
               {(() => {
                 const s = parseBrazilianCurrency(editSalary);
-                const c = parseBrazilianCurrency(editCommission);
+                const manualC = parseBrazilianCurrency(editCommission);
+                const effectiveC = (editCommission && manualC > 0)
+                  ? manualC
+                  : (editingSettlementItem?.commissionEarned || 0);
+
                 const t = editRegime === 'CLT' ? parseBrazilianCurrency(editTaxes) : 0;
+                const activeModalMonthKey = editingMonthKey || currentMonthPrefix;
                 const uVales = (payrollAdvanceItems || []).filter(v => v.userId === editingUserForValues.id);
-                const uMonthDiscount = uVales.flatMap(v => v.installments || []).filter(i => i.monthKey === currentMonthPrefix).reduce((sum, i) => sum + i.amount, 0);
+                const uMonthDiscount = uVales
+                  .flatMap(v => v.installments || [])
+                  .filter(i => i.monthKey === activeModalMonthKey)
+                  .reduce((sum, i) => sum + i.amount, 0);
                 const a = uVales.length > 0 ? uMonthDiscount : parseBrazilianCurrency(editAdvance);
-                const gross = s + c;
+                const gross = s + effectiveC;
                 const net = Math.max(0, gross - t - a);
 
                 return (
@@ -5748,10 +5901,10 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       <span>Fixo / Base Informado:</span>
                       <span className="font-bold">{formatBrl(s)}</span>
                     </div>
-                    {c > 0 && (
+                    {effectiveC > 0 && (
                       <div className="flex items-center justify-between text-blue-600 dark:text-blue-400">
-                        <span>(+) Comissão Informada:</span>
-                        <span className="font-bold">+{formatBrl(c)}</span>
+                        <span>(+) Comissão {editCommission ? 'Informada' : 'Apurada nos Fretes'}:</span>
+                        <span className="font-bold">+{formatBrl(effectiveC)}</span>
                       </div>
                     )}
                     <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 font-semibold pt-0.5 border-t border-slate-200/50 dark:border-slate-700/50">
@@ -5766,13 +5919,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     )}
                     {a > 0 && (
                       <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
-                        <span>(-) Adiantamentos:</span>
-                        <span className="font-bold">-{formatBrl(a)}</span>
+                        <span>(-) Adiantamentos / Vales Deste Mês:</span>
+                        <span className="font-bold font-mono">-{formatBrl(a)}</span>
                       </div>
                     )}
+                    <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 pt-0.5 border-t border-slate-200/50 dark:border-slate-700/50 font-semibold">
+                      <span>Total Já Quitado (Vales):</span>
+                      <span className="font-bold font-mono">{formatBrl(a)}</span>
+                    </div>
                     <div className="pt-1 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between font-bold text-slate-900 dark:text-white">
-                      <span>Líquido Previsto:</span>
-                      <span className="text-purple-600 dark:text-purple-400 font-black">{formatBrl(net)}</span>
+                      <span>Líquido Previsto / Devido:</span>
+                      <span className="text-purple-600 dark:text-purple-400 font-black text-sm">{formatBrl(net)}</span>
                     </div>
                   </div>
                 );

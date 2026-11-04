@@ -27,6 +27,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_03_v2_104_0',
+    version: 'v2.104.0',
+    date: '03/11/2026',
+    title: 'Lançamento Inteligente de Vales e Abatimento Automático na Folha de Pagamento',
+    summary: 'Integração e sincronização completa dos lançamentos de adiantamentos salariais e vales. Ao cadastrar múltiplos vales, a soma acumulada é imediatamente exibida no card do colaborador, o valor de "Total Já Quitado / Pago" consolida todos os adiantamentos concedidos, e o saldo pendente / líquido devido é abatido com exatidão em todas as visões (cards iniciais, tela de Planejar Pagamento e modal de valores).',
+    items: [
+      {
+        category: 'feature',
+        title: 'Abatimento e Soma Automática de Múltiplos Vales',
+        description: 'Lançamentos sucessivos de vales (ex: R$ 600,00 + R$ 800,00 = R$ 1.400,00) são somados e descontados instantaneamente do líquido devido e do saldo pendente a pagar.'
+      },
+      {
+        category: 'improvement',
+        title: 'Consolidação de Vales no Total Já Quitado e Planejar Pagamento',
+        description: 'O campo "Total Já Liquidado / Pago" nos cards e na tela "Planejar Pagamento • Folha de Pagamento" agora totaliza todos os vales já liberados ao colaborador junto às baixas já pagas.'
+      },
+      {
+        category: 'fix',
+        title: 'Vínculo Preciso ao Mês da Folha Ativa e Seletor Rápido de Mês',
+        description: 'A concessão de novos vales agora tem como padrão imediato a própria folha aberta em tela, eliminando o agendamento acidental para meses futuros e disponibilizando um seletor rápido para transferir o mês de desconto de qualquer vale.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_02_v2_103_0',
     version: 'v2.103.0',
     date: '02/11/2026',
