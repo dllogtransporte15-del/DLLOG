@@ -27,6 +27,102 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_03_v2_108_0',
+    version: 'v2.108.0',
+    date: '03/11/2026',
+    title: 'Apuração e Destaque Consolidado de Juros e Multas nas Contas em Atraso',
+    summary: 'Implementação da apuração e exibição dedicada da soma de todos os Juros de Mora e Multas por atraso destacados nas contas do período selecionado. O card "Contas em Atraso" no topo do Contas a Pagar agora detalha o total de encargos acumulados, a divisão entre Multas e Juros de Mora diários e permite filtrar diretamente as contas vencidas com resumo em tempo real.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Soma de Juros e Multas no Card "Contas em Atraso"',
+        description: 'Exibição em destaque da soma consolidada de todos os juros e multas incidentes ou destacados nas contas em atraso no período selecionado, com discriminação entre Multas e Juros de Mora.'
+      },
+      {
+        category: 'improvement',
+        title: 'Filtro Interativo e Banner de Auditoria de Atrasos',
+        description: 'Clique direto nos cards de KPI para alternar filtros de status, acompanhado de banner explicativo com contagem de títulos vencidos e total de encargos destacados.'
+      },
+      {
+        category: 'improvement',
+        title: 'Discriminação de Encargos na Tabela e Exportação CSV',
+        description: 'Visualização linha a linha dos acréscimos de juros/multa na coluna "Valor a Pagar (Real)" e inclusão da coluna dedicada de Juros/Multa no relatório exportado.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_03_v2_107_0',
+    version: 'v2.107.0',
+    date: '03/11/2026',
+    title: 'Parcelamento em Lançamentos Avulsos e Cronograma de Desconto de Vales da Folha',
+    summary: 'Implementação de opção de parcelamento configurável (de 1x à vista até 12x) na emissão de Lançamentos Avulsos tanto para despesas operacionais quanto para Vales / Adiantamentos Salariais de colaboradores da Folha. Para vales parcelados, o sistema projeta o cronograma mensal de descontos na folha e gera os lançamentos pendentes com seus respectivos vencimentos e meses de competência.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Parcelamento de Vales e Adiantamentos Salariais',
+        description: 'Permite parcelar vales de colaboradores em até 12 vezes, com pré-visualização em tempo real do valor de cada parcela e dos meses de competência da folha de pagamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Parcelamento de Despesas Avulsas no Contas a Pagar',
+        description: 'Suporte a compras ou despesas avulsas parceladas em até 12 vezes com cálculo automático de centavos e geração das parcelas com vencimentos mensais consecutivos.'
+      },
+      {
+        category: 'improvement',
+        title: 'Geração Consecutiva de Lançamentos com Tags Identificadoras',
+        description: 'Cada parcela gerada recebe identificação clara de parcela (ex: Parcela 1/3) e data de vencimento programada, mantendo o controle individualizado de quitação e comprovante.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_03_v2_106_0',
+    version: 'v2.106.0',
+    date: '03/11/2026',
+    title: 'Ajuste Consolidado do Fluxo de Vales nos Lançamentos Avulsos e Baixa Integrada à Folha',
+    summary: 'Aprimoramento definitivo da segregação dos vales e adiantamentos salariais: os vales agora aparecem exclusivamente como "Lançamento Avulso" (com badge de Vale e documento identificado), não colidem mais com comissões de Agenciadores Líderes, contam com atalho direto no modal do colaborador e têm seu abatimento no Líquido Devido e Saldo estritamente condicionado à Baixa com Comprovante.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Segregação de Vales vs Comissões de Agenciador Líder',
+        description: 'Corrigido o filtro de transações para que vales lançados em "Lançamentos Avulsos" apareçam corretamente na aba de avulsos com badge próprio de "Vale / Adiantamento Salarial" e não mais como comissão de líder.'
+      },
+      {
+        category: 'fix',
+        title: 'Cálculo Consolidado dos Vales na Folha e Modal de Valores',
+        description: 'A apuração dos vales na Folha de Pagamento e no modal de configuração consulta diretamente as transações avulsas do colaborador, garantindo soma exata no campo (-) ADIANTAMENTOS e reflexo no Saldo Pendente.'
+      },
+      {
+        category: 'improvement',
+        title: 'Remoção do Formulário Duplicado e Atalho Direto',
+        description: 'Removido o formulário interno redundante do modal de valores do colaborador, substituído por um atalho que preenche automaticamente o colaborador e mês da folha no modal de Lançamentos Avulsos.'
+      }
+    ]
+  },
+  {
+    id: 'rel_2026_11_03_v2_105_0',
+    version: 'v2.105.0',
+    date: '03/11/2026',
+    title: 'Lançamento de Vales via Lançamentos Avulsos e Abatimento Condicionado à Baixa e Comprovante',
+    summary: 'Transferência e integração dos lançamentos de vales e adiantamentos salariais para a tela "Lançamentos Avulsos" em Contas a Pagar. O vale é gerado como Pendente, com indicação do colaborador e mês da folha de desconto, e passa a abater no campo "(-) ADIANTAMENTOS" e saldo na tela "Contas em Aberto & Pendências" da Folha de Pagamento estritamente após a baixa (Pago) e anexo do comprovante de pagamento.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Lançamento de Vales em "Lançamentos Avulsos"',
+        description: 'Nova opção direta no modal de Lançamentos Avulsos para emitir vales e adiantamentos salariais vinculados a um colaborador interno da folha com indicação do mês de desconto.'
+      },
+      {
+        category: 'feature',
+        title: 'Abatimento Condicionado à Baixa e Comprovante',
+        description: 'O lançamento do vale nasce como Pendente em Contas a Pagar e só abate no líquido devido e saldo do colaborador após a confirmação do pagamento e anexação do comprovante de transferência bancária/PIX.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sinalização Visual de Vales Pendentes nos Cards da Folha',
+        description: 'Os cards dos colaboradores (CLT, PJ e Gestor AG) exibem avisos contextuais informando a existência de vales em aberto aguardando baixa para orientar o setor financeiro.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_03_v2_104_0',
     version: 'v2.104.0',
     date: '03/11/2026',

@@ -82,6 +82,7 @@ import { useToast } from '../../hooks/useToast';
 import { PayrollDocsModal } from './PayrollDocsModal';
 import { AccountsPayableSettlementModal, type SettlingAccountItem } from './AccountsPayableSettlementModal';
 import { InvoicesManagementTab } from './InvoicesManagementTab';
+import { calculateBoletoLateFees } from '../../utils/invoiceExtractionService';
 
 export const formatMonthKeyToLabel = (monthKey: string): string => {
   if (!monthKey) return '-';
@@ -102,6 +103,20 @@ export const addMonthsToMonthKey = (monthKey: string, monthsToAdd: number): stri
   const newY = d.getFullYear();
   const newM = String(d.getMonth() + 1).padStart(2, '0');
   return `${newY}-${newM}`;
+};
+
+export const addMonthsToDateString = (dateStr: string, monthsToAdd: number): string => {
+  if (!dateStr || monthsToAdd === 0) return dateStr;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const d = new Date(year, month + monthsToAdd, day);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dayStr}`;
 };
 
 export const getMonthKeyFromDate = (dateStr?: string): string => {
@@ -134,6 +149,115 @@ export const calculateInstallments = (
     });
   }
   return result;
+};
+
+// ==========================================================
+// Vales / Adiantamentos Salariais lançados via "Lançamentos Avulsos"
+// O lançamento nasce como Pendente e só abate na Folha do colaborador
+// indicado após a baixa (Pago) + comprovante anexado.
+// ==========================================================
+export const VALE_FOLHA_TAG_REGEX = /\[VALE FOLHA\s*\|\s*Desconto:\s*(\d{4}-\d{2})\]/i;
+
+export const buildValeFolhaTag = (monthKey: string) => `[VALE FOLHA | Desconto: ${monthKey}]`;
+
+export const isValeTransaction = (t: { category?: string; description?: string; notes?: string }) => {
+  const cat = (t.category || '').toLowerCase();
+  const desc = (t.description || '').toLowerCase();
+  const notes = (t.notes || '').toLowerCase();
+  if (VALE_FOLHA_TAG_REGEX.test(t.notes || '')) return true;
+  if (cat.includes('adiantamento salarial') || cat.includes('adiantamento') || cat.includes('vale salarial') || cat.includes('vale folha')) return true;
+  if (notes.includes('adiantamento salarial') || notes.includes('vale folha') || notes.includes('folha de desconto:')) return true;
+  if (desc.startsWith('vale') || desc.includes('vale / adiantamento') || desc.includes('adiantamento salarial')) return true;
+  return false;
+};
+
+// Mês da folha em que o vale deve ser descontado (tag gravada no lançamento ou, na falta, mês do pagamento/vencimento)
+export const getValeDiscountMonthKey = (t: { notes?: string; paymentDate?: string; dueDate?: string }) => {
+  const match = (t.notes || '').match(VALE_FOLHA_TAG_REGEX);
+  if (match && match[1]) return match[1];
+  return (t.paymentDate || t.dueDate || '').slice(0, 7);
+};
+
+// ==========================================================
+// Apuração Inteligente de Juros e Multas Destacadas nas Contas
+// ==========================================================
+export interface ItemLateFeesBreakdown {
+  interest: number;
+  fine: number;
+  total: number;
+  overdueDays: number;
+  source: 'explicit' | 'difference' | 'boleto_engine' | 'none';
+}
+
+export const getItemLateFees = (
+  item: any,
+  todayStr: string = new Date().toISOString().split('T')[0]
+): ItemLateFeesBreakdown => {
+  const orig = item?.originalItem || item || {};
+
+  const totalAmount = Number(item?.totalAmount || orig.totalAmount || 0);
+  const payableAmount = Number(item?.payableAmount || orig.payableAmount || 0);
+  const dueDate = item?.dueDate || orig.dueDate || '';
+
+  // 1. Valores explicitamente gravados no item (interestAmount, fineAmount)
+  const explicitInterest = Number(orig.interestAmount || 0);
+  const explicitFine = Number(orig.fineAmount || 0);
+
+  if (explicitInterest > 0 || explicitFine > 0) {
+    let fine = explicitFine;
+    let interest = explicitInterest;
+    if (fine === 0 && orig.finePercent && totalAmount > 0) {
+      fine = Number(((totalAmount * orig.finePercent) / 100).toFixed(2));
+      interest = Math.max(0, Number((explicitInterest - fine).toFixed(2)));
+    }
+    const total = Number((fine + interest).toFixed(2));
+    return { interest, fine, total, overdueDays: orig.overdueDays || 0, source: 'explicit' };
+  }
+
+  // 2. Diferença explícita entre valor a pagar e valor total nominal
+  if (payableAmount > totalAmount && totalAmount > 0) {
+    const diff = Number((payableAmount - totalAmount).toFixed(2));
+    return { interest: diff, fine: 0, total: diff, overdueDays: orig.overdueDays || 0, source: 'difference' };
+  }
+
+  // 3. Se houver overdueTotalAmount gravado
+  if (orig.overdueTotalAmount && orig.overdueTotalAmount > totalAmount && totalAmount > 0) {
+    const diff = Number((orig.overdueTotalAmount - totalAmount).toFixed(2));
+    const fine = orig.fineAmount ? Number(orig.fineAmount) : 0;
+    const interest = Math.max(0, Number((diff - fine).toFixed(2)));
+    return { interest, fine, total: diff, overdueDays: orig.overdueDays || 0, source: 'explicit' };
+  }
+
+  // 4. Se a conta estiver em atraso (vencimento ultrapassado) e não paga
+  const isPaid = item?.status === 'Pago' || orig.status === 'Pago';
+  const isOverdue = !isPaid && (item?.status === 'Atrasado' || orig.status === 'Atrasado' || (dueDate && dueDate < todayStr));
+
+  if (isOverdue && (totalAmount > 0 || payableAmount > 0)) {
+    const nominal = totalAmount > 0 ? totalAmount : payableAmount;
+
+    const late = calculateBoletoLateFees({
+      nominalAmount: nominal,
+      dueDateStr: dueDate,
+      referenceDateStr: todayStr,
+      finePercent: orig.finePercent,
+      fineAmount: orig.fineAmount,
+      monthlyInterestPercent: orig.monthlyInterestPercent,
+      dailyInterestPercent: orig.dailyInterestPercent,
+      dailyInterestAmount: orig.dailyInterestAmount,
+    });
+
+    if (late.isOverdue && late.totalLateFees > 0) {
+      return {
+        interest: late.interestAmount,
+        fine: late.fineAmount,
+        total: late.totalLateFees,
+        overdueDays: late.overdueDays,
+        source: 'boleto_engine',
+      };
+    }
+  }
+
+  return { interest: 0, fine: 0, total: 0, overdueDays: 0, source: 'none' };
 };
 
 export interface PayrollSettlementItem {
@@ -188,6 +312,9 @@ export interface PayrollSettlementItem {
   advanceReceiptUrl?: string;
   advanceReceiptFileName?: string;
   activeValesCount?: number;
+  // Vales lançados em "Lançamentos Avulsos" ainda pendentes (sem baixa ou sem comprovante)
+  pendingValesAmount?: number;
+  pendingValesCount?: number;
 
   expectedCommission?: number;
   expectedShipmentsCount?: number;
@@ -279,6 +406,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const [supplierName, setSupplierName] = useState('');
   const [costCenter, setCostCenter] = useState('Operacional');
   const [notes, setNotes] = useState('');
+  // Tipo do Lançamento Avulso: despesa comum ou Vale / Adiantamento Salarial de colaborador da Folha
+  const [manualEntryType, setManualEntryType] = useState<'despesa' | 'vale'>('despesa');
+  const [manualValeUserId, setManualValeUserId] = useState('');
+  const [manualValeMonthKey, setManualValeMonthKey] = useState('');
+  const [manualInstallmentsCount, setManualInstallmentsCount] = useState<number>(1);
 
   // Modal de Planejamento de Pagamento para Agenciador Líder
   const [isPlanLeaderModalOpen, setIsPlanLeaderModalOpen] = useState(false);
@@ -901,11 +1033,6 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return next;
     });
 
-    // Se o usuário preencheu o formulário de novo vale e salvou as configurações gerais, grava o vale também
-    if (newValeAmount && parseBrazilianCurrency(newValeAmount) > 0) {
-      handleAddNewVale();
-    }
-
     // Salvar Adiantamento com Data e Comprovante de Transferência
     setPayrollAdvances(prev => {
       const next = {
@@ -939,6 +1066,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   // Helper para verificar se uma transação pertence à Folha de Pagamento
   const isLeaderTx = (t: FinancialTransaction) => {
     if (t.type !== 'payable') return false;
+    // Vales / Adiantamentos Salariais pertencem a Lançamentos Avulsos e são abatidos na Folha pelo colaborador indicado
+    if (isValeTransaction(t)) return false;
     const cat = t.category?.toLowerCase() || '';
     const notesStr = t.notes?.toLowerCase() || '';
     const desc = t.description?.toLowerCase() || '';
@@ -1253,6 +1382,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           rawStatus: t.status,
           shipmentId: t.shipmentId,
           documentNumber: t.documentNumber,
+          notes: t.notes,
+          ownerId: t.ownerId,
           receiptFileUrl: t.receiptFileUrl,
           receiptFileName: t.receiptFileName,
           receiptFileType: t.receiptFileType,
@@ -1266,7 +1397,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         };
       })
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-  }, [transactions, todayStr, leaderUsers]);
+  }, [transactions, todayStr, leaderUsers, payrollUsers]);
 
   // Alternar status de Nota Fiscal (Dar Baixa rápida ou Reabrir)
   const handleToggleInvoiceStatus = async (invoiceId: string, currentStatus: string) => {
@@ -1477,6 +1608,13 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             });
           }
         } else if (onUpdateTransaction) {
+          // Preservar a marcação do Vale da Folha (mês de desconto) mesmo que as observações sejam editadas na baixa
+          const origNotes: string = settlingItem.originalItem?.notes || '';
+          const valeTagMatch = origNotes.match(VALE_FOLHA_TAG_REGEX);
+          let finalNotes: string | undefined = data.notes || undefined;
+          if (valeTagMatch && !(finalNotes || '').match(VALE_FOLHA_TAG_REGEX)) {
+            finalNotes = finalNotes ? `${valeTagMatch[0]} | ${finalNotes}` : origNotes;
+          }
           onUpdateTransaction(settlingItem.id, {
             status: FinancialTransactionStatus.Pago,
             paymentDate: data.paymentDate,
@@ -1489,7 +1627,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             discountAmount: data.discountAmount,
             paidAmount: data.paidAmount,
             bankAccount: data.bankAccount,
-            notes: data.notes || undefined
+            notes: finalNotes
           });
         } else {
           onUpdateStatus(settlingItem.id, FinancialTransactionStatus.Pago);
@@ -1975,29 +2113,44 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         commissionEarned = userCustomCommissions[user.id];
       }
 
-      // Transações pagas ou pendentes vinculadas a este colaborador no mês
-      const relatedTxs = leaderPayables.filter(t =>
+      // Vales lançados em "Lançamentos Avulsos" vinculados a este colaborador (pesquisados diretamente em transactions)
+      const userValeTxs = (transactions || []).filter(t =>
+        t.type === 'payable' &&
+        isValeTransaction(t) &&
+        t.status !== FinancialTransactionStatus.Cancelado &&
+        (
+          (t.ownerId && t.ownerId === user.id) ||
+          (!t.ownerId && t.supplierOrClientName && t.supplierOrClientName.toLowerCase().includes(user.name.toLowerCase()))
+        )
+      );
+
+      // Identificar adiantamentos / vales vinculados (descontados no mês de referência indicado no lançamento)
+      const advanceTxs = userValeTxs.filter(t => getValeDiscountMonthKey(t) === monthKey);
+
+      // Regra estrita: o vale só soma na Folha após BAIXA (Pago) + COMPROVANTE anexado
+      const advanceTxsConfirmed = advanceTxs.filter(t =>
+        t.status === FinancialTransactionStatus.Pago && Boolean(t.receiptFileUrl)
+      );
+      const advanceTxsAwaiting = advanceTxs.filter(t => !advanceTxsConfirmed.includes(t));
+
+      const advanceTxsPaid = advanceTxsConfirmed.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const pendingValesAmount = advanceTxsAwaiting.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+      // Demais transações da Folha (salários / comissões planejadas)
+      const userLinkedLeaderTxs = leaderPayables.filter(t =>
         (t.ownerId && t.ownerId === user.id) ||
-        (t.supplierName && t.supplierName.toLowerCase().includes(user.name.toLowerCase()))
-      ).filter(t => (t.dueDate && t.dueDate.startsWith(monthKey)) || (t.paymentDate && t.paymentDate.startsWith(monthKey)));
+        (!t.ownerId && t.supplierName && t.supplierName.toLowerCase().includes(user.name.toLowerCase()))
+      );
 
-      // Identificar adiantamentos vinculados
-      const advanceTxs = relatedTxs.filter(t => {
-        const cat = (t.category || '').toLowerCase();
-        const desc = (t.description || '').toLowerCase();
-        const notes = (t.notes || '').toLowerCase();
-        return cat.includes('adiantamento') || cat.includes('vale') || desc.includes('adiantamento') || desc.includes('vale') || notes.includes('adiantamento');
-      });
-
-      const advanceTxsPaid = advanceTxs
-        .filter(t => t.rawStatus === FinancialTransactionStatus.Pago)
-        .reduce((sum, t) => sum + t.payableAmount, 0);
+      const relatedTxs = userLinkedLeaderTxs
+        .filter(t => !isValeTransaction(t))
+        .filter(t => (t.dueDate && t.dueDate.startsWith(monthKey)) || (t.paymentDate && t.paymentDate.startsWith(monthKey)));
 
       const totalAdvances = advanceTxsPaid + customAdvance;
 
       // Demais pagamentos (salários / comissões) já liquidados
       const regularPaidTxs = relatedTxs
-        .filter(t => t.rawStatus === FinancialTransactionStatus.Pago && !advanceTxs.includes(t))
+        .filter(t => t.rawStatus === FinancialTransactionStatus.Pago)
         .reduce((sum, t) => sum + t.payableAmount, 0);
 
       // Total Já Quitado / Total Já Pago: soma de todos os vales e adiantamentos concedidos no mês + demais baixas realizadas
@@ -2120,10 +2273,12 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         missingDocsText,
 
         // Detalhes do Adiantamento / Vales Concedidos
-        advanceDate: activeValesInMonth[0]?.vale.issueDate || advRecord?.date || (advanceTxs[0]?.paymentDate || advanceTxs[0]?.dueDate),
-        advanceReceiptUrl: activeValesInMonth.find(it => it.vale.receiptFileUrl)?.vale.receiptFileUrl || advRecord?.receiptFileUrl,
-        advanceReceiptFileName: activeValesInMonth.find(it => it.vale.receiptFileName)?.vale.receiptFileName || advRecord?.receiptFileName,
-        activeValesCount: activeValesInMonth.length,
+        advanceDate: activeValesInMonth[0]?.vale.issueDate || advanceTxsConfirmed[0]?.paymentDate || advRecord?.date || advanceTxsConfirmed[0]?.dueDate,
+        advanceReceiptUrl: activeValesInMonth.find(it => it.vale.receiptFileUrl)?.vale.receiptFileUrl || advanceTxsConfirmed.find(t => t.receiptFileUrl)?.receiptFileUrl || advRecord?.receiptFileUrl,
+        advanceReceiptFileName: activeValesInMonth.find(it => it.vale.receiptFileName)?.vale.receiptFileName || advanceTxsConfirmed.find(t => t.receiptFileUrl)?.receiptFileName || advRecord?.receiptFileName,
+        activeValesCount: activeValesInMonth.length + advanceTxsConfirmed.length,
+        pendingValesAmount,
+        pendingValesCount: advanceTxsAwaiting.length,
         expectedCommission: expectedCommissionEarned,
         expectedShipmentsCount,
 
@@ -2170,7 +2325,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       pendingPayrollItems: pendingItems,
       completedPayrollItems: completedItems
     };
-  }, [payrollUsers, leaderPayables, shipments, cargos, clients, users, branchMap, cargoMap, userMap, getLeaderIdForUser, currentMonthPrefix, lastMonthPrefix, userRegimes, userSalaries, userCustomCommissions, userTaxes, userCustomAdvances, payrollAdvances, payrollAdvanceItems, payrollDocs, todayStr]);
+  }, [transactions, payrollUsers, leaderPayables, shipments, cargos, clients, users, branchMap, cargoMap, userMap, getLeaderIdForUser, currentMonthPrefix, lastMonthPrefix, userRegimes, userSalaries, userCustomCommissions, userTaxes, userCustomAdvances, payrollAdvances, payrollAdvanceItems, payrollDocs, todayStr]);
 
   // Totais consolidados e separados por Mês da Folha de Pagamento
   const payrollMonthTotals = useMemo(() => {
@@ -2366,10 +2521,16 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     // 3. Lançamentos Manuais Avulsos
     if (activeSection === 'all' || activeSection === 'manual') {
       filteredManuals.forEach(man => {
+        const isVale = isValeTransaction(man.originalItem || man);
+        const valeMonth = isVale ? getValeDiscountMonthKey(man.originalItem || man) : '';
+        const docLabel = man.documentNumber
+          ? `Doc ${man.documentNumber}`
+          : (isVale ? `Vale Folha • ${valeMonth ? formatMonthKeyToLabel(valeMonth) : ''}`.trim() : 'Avulso');
+
         list.push({
           id: `man_${man.id}`,
           kind: 'manual',
-          docNumber: man.documentNumber ? `Doc ${man.documentNumber}` : 'Avulso',
+          docNumber: docLabel,
           title: man.description,
           entityName: man.supplierName,
           categoryOrCenter: `${man.category} • ${man.costCenter}`,
@@ -2382,7 +2543,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           boletoUrl: null,
           receiptUrl: man.receiptFileUrl,
           receiptName: man.receiptFileName,
-          details: man.shipmentId ? `Embarque ${man.shipmentId}` : undefined,
+          details: man.shipmentId ? `Embarque ${man.shipmentId}` : (man.originalItem?.notes || undefined),
           bankAccount: man.bankAccount,
           isReconciled: Boolean(man.originalItem?.isReconciled || (man as any).isReconciled),
           reconciledAt: man.originalItem?.reconciledAt,
@@ -2456,22 +2617,149 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     };
   }, [consolidatedList]);
 
+  // Todas as contas mapeadas no período selecionado (independente do statusFilter da tabela para alimentar com precisão os KPIs gerais do período)
+  const allPeriodPayables = useMemo(() => {
+    const list: Array<{
+      id: string;
+      kind: 'invoice' | 'cte' | 'manual' | 'leader';
+      totalAmount: number;
+      payableAmount: number;
+      status: string;
+      dueDate: string;
+      issueDate?: string;
+      originalItem: any;
+    }> = [];
+
+    invoicePayables.forEach(inv => {
+      if (matchesPeriod(inv.dueDate) || matchesPeriod(inv.issueDate)) {
+        list.push({
+          id: `inv_${inv.id}`,
+          kind: 'invoice',
+          totalAmount: inv.totalAmount,
+          payableAmount: inv.payableAmount !== undefined ? inv.payableAmount : inv.totalAmount,
+          status: inv.status,
+          dueDate: inv.dueDate,
+          issueDate: inv.issueDate,
+          originalItem: inv.originalItem || inv,
+        });
+      }
+    });
+
+    ctePayables.forEach(c => {
+      if (matchesPeriod(c.dueDate)) {
+        list.push({
+          id: `cte_${c.id}`,
+          kind: 'cte',
+          totalAmount: c.totalAmount,
+          payableAmount: c.payableAmount !== undefined ? c.payableAmount : c.totalAmount,
+          status: c.status,
+          dueDate: c.dueDate,
+          originalItem: c.originalItem || c,
+        });
+      }
+    });
+
+    manualPayables.forEach(m => {
+      if (matchesPeriod(m.dueDate)) {
+        list.push({
+          id: `man_${m.id}`,
+          kind: 'manual',
+          totalAmount: m.totalAmount,
+          payableAmount: m.payableAmount !== undefined ? m.payableAmount : m.totalAmount,
+          status: m.status,
+          dueDate: m.dueDate,
+          originalItem: m.originalItem || m,
+        });
+      }
+    });
+
+    leaderPayables.forEach(l => {
+      if (matchesPeriod(l.dueDate)) {
+        list.push({
+          id: `lead_${l.id}`,
+          kind: 'leader',
+          totalAmount: l.totalAmount,
+          payableAmount: l.payableAmount !== undefined ? l.payableAmount : l.totalAmount,
+          status: l.status,
+          dueDate: l.dueDate,
+          originalItem: l.originalItem || l,
+        });
+      }
+    });
+
+    return list;
+  }, [invoicePayables, ctePayables, manualPayables, leaderPayables, periodPreset, customStartDate, customEndDate, currentMonthPrefix, lastMonthPrefix]);
+
+  // Contas vencidas / em atraso no período selecionado
+  const overduePeriodItems = useMemo(() => {
+    return allPeriodPayables.filter(item => {
+      const isPaid = item.status === 'Pago';
+      if (isPaid) return false;
+      return item.status === 'Atrasado' || (item.dueDate && item.dueDate < todayStr);
+    });
+  }, [allPeriodPayables, todayStr]);
+
+  // Apuração de Juros e Multas nas Contas em Atraso no período selecionado
+  const overdueLateFees = useMemo(() => {
+    let interest = 0;
+    let fine = 0;
+    let total = 0;
+    let itemsWithFeesCount = 0;
+
+    overduePeriodItems.forEach(item => {
+      const fees = getItemLateFees(item, todayStr);
+      if (fees.total > 0) {
+        itemsWithFeesCount++;
+        interest += fees.interest;
+        fine += fees.fine;
+        total += fees.total;
+      }
+    });
+
+    return {
+      interest: Number(interest.toFixed(2)),
+      fine: Number(fine.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      count: overduePeriodItems.length,
+      itemsWithFeesCount,
+    };
+  }, [overduePeriodItems, todayStr]);
+
+  // Total de Juros e Multas apurados em todas as contas do período (incluindo baixadas com juros)
+  const periodAllLateFees = useMemo(() => {
+    let total = 0;
+    allPeriodPayables.forEach(item => {
+      const fees = getItemLateFees(item, todayStr);
+      total += fees.total;
+    });
+    return Number(total.toFixed(2));
+  }, [allPeriodPayables, todayStr]);
+
   // KPIs Gerais
   const kpiPending = useMemo(() => {
-    return consolidatedList.filter(i => i.status === 'Pendente').reduce((acc, i) => acc + i.payableAmount, 0);
-  }, [consolidatedList]);
+    if (statusFilter === 'Pendente') {
+      return consolidatedList.reduce((acc, i) => acc + i.payableAmount, 0);
+    }
+    return allPeriodPayables.filter(i => i.status === 'Pendente' && i.dueDate >= todayStr).reduce((acc, i) => acc + i.payableAmount, 0);
+  }, [statusFilter, consolidatedList, allPeriodPayables, todayStr]);
 
   const kpiPaid = useMemo(() => {
-    return consolidatedList.filter(i => i.status === 'Pago').reduce((acc, i) => acc + i.payableAmount, 0);
-  }, [consolidatedList]);
+    if (statusFilter === 'Pago') {
+      return consolidatedList.reduce((acc, i) => acc + i.payableAmount, 0);
+    }
+    return allPeriodPayables.filter(i => i.status === 'Pago').reduce((acc, i) => acc + i.payableAmount, 0);
+  }, [statusFilter, consolidatedList, allPeriodPayables]);
 
   const kpiOverdue = useMemo(() => {
-    return consolidatedList.filter(i => i.status === 'Atrasado').reduce((acc, i) => acc + i.payableAmount, 0);
-  }, [consolidatedList]);
+    if (statusFilter === 'Atrasado') {
+      return consolidatedList.reduce((acc, i) => acc + i.payableAmount, 0);
+    }
+    return overduePeriodItems.reduce((acc, i) => acc + i.payableAmount, 0);
+  }, [statusFilter, consolidatedList, overduePeriodItems]);
 
   const kpiTotal = useMemo(() => {
-    return consolidatedList.reduce((acc, i) => acc + i.payableAmount, 0);
-  }, [consolidatedList]);
+    return allPeriodPayables.reduce((acc, i) => acc + i.payableAmount, 0);
+  }, [allPeriodPayables]);
 
   const subtotalInvoices = useMemo(() => filteredInvoices.reduce((acc, i) => acc + i.payableAmount, 0), [filteredInvoices]);
   const subtotalCte = useMemo(() => filteredCtePayables.reduce((acc, i) => acc + i.payableAmount, 0), [filteredCtePayables]);
@@ -2532,10 +2820,31 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     setIsPlanLeaderModalOpen(true);
   };
 
-  // Submit Lançamento Manual Avulso
+  // Abrir "Lançamento Avulso" (opcionalmente já como Vale para um colaborador / mês de folha)
+  const handleOpenManualModal = (opts?: { asVale?: boolean; userId?: string; monthKey?: string; installmentsCount?: number }) => {
+    setDescription('');
+    setAmount('');
+    setSupplierName('');
+    setNotes('');
+    setDueDate(new Date().toISOString().split('T')[0]);
+    setManualInstallmentsCount(opts?.installmentsCount || 1);
+    if (opts?.asVale) {
+      setManualEntryType('vale');
+      setManualValeUserId(opts.userId || '');
+      setManualValeMonthKey(opts.monthKey || (payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix));
+    } else {
+      setManualEntryType('despesa');
+      setManualValeUserId('');
+      setManualValeMonthKey(currentMonthPrefix);
+    }
+    setIsModalOpen(true);
+  };
+
+  // Submit Lançamento Manual Avulso (com suporte a Parcelamento tanto para Vales quanto para Despesas)
   const handleSubmitManual = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description || !amount || !dueDate) return;
+    const isVale = manualEntryType === 'vale';
+    if (!amount || !dueDate || (!isVale && !description)) return;
 
     const parsedAmount = parseBrazilianCurrency(amount);
     if (parsedAmount <= 0) {
@@ -2543,22 +2852,127 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       return;
     }
 
-    onAddTransaction({
-      type: 'payable',
-      description,
-      amount: parsedAmount,
-      dueDate,
-      status: FinancialTransactionStatus.Pendente,
-      category,
-      costCenter,
-      supplierOrClientName: supplierName || undefined,
-      notes: notes || undefined,
-    });
+    const count = Math.max(1, manualInstallmentsCount || 1);
+
+    if (isVale) {
+      const valeUser = payrollUsers.find(u => u.id === manualValeUserId);
+      if (!valeUser) {
+        alert('Selecione o colaborador que receberá o vale.');
+        return;
+      }
+      const startDiscountMonth = manualValeMonthKey || currentMonthPrefix;
+      const pix = valeUser.phone || valeUser.corporateEmail || valeUser.email || '';
+      const baseDesc = description.trim() || 'Vale / Adiantamento Salarial';
+
+      if (count > 1) {
+        const installments = calculateInstallments(parsedAmount, count, startDiscountMonth);
+        installments.forEach((inst, idx) => {
+          const instDueDate = addMonthsToDateString(dueDate, idx);
+          const valeNotes = [
+            buildValeFolhaTag(inst.monthKey),
+            `Colaborador: ${valeUser.name}`,
+            `Parcela ${inst.installmentNumber}/${inst.totalInstallments}`,
+            `Folha de Desconto: ${formatMonthKeyToLabel(inst.monthKey)}`,
+            pix ? `PIX: ${pix}` : '',
+            notes ? `Obs: ${notes}` : '',
+          ].filter(Boolean).join(' | ');
+
+          onAddTransaction({
+            type: 'payable',
+            description: `${baseDesc} - Parcela ${inst.installmentNumber}/${inst.totalInstallments} (${valeUser.name})`,
+            amount: inst.amount,
+            dueDate: instDueDate,
+            status: FinancialTransactionStatus.Pendente,
+            category: 'Adiantamento Salarial',
+            costCenter: 'Administrativo',
+            supplierOrClientName: valeUser.name,
+            notes: valeNotes,
+            ownerId: valeUser.id,
+          });
+        });
+
+        showToast(
+          `Vale de ${formatBrl(parsedAmount)} para ${valeUser.name} parcelado em ${count}x gerado como Pendente! As parcelas serão abatidas nas folhas correspondentes após a baixa com comprovante.`,
+          'success'
+        );
+      } else {
+        const valeNotes = [
+          buildValeFolhaTag(startDiscountMonth),
+          `Colaborador: ${valeUser.name}`,
+          `Folha de Desconto: ${formatMonthKeyToLabel(startDiscountMonth)}`,
+          pix ? `PIX: ${pix}` : '',
+          notes ? `Obs: ${notes}` : '',
+        ].filter(Boolean).join(' | ');
+
+        onAddTransaction({
+          type: 'payable',
+          description: `${baseDesc} - ${valeUser.name}`,
+          amount: parsedAmount,
+          dueDate,
+          status: FinancialTransactionStatus.Pendente,
+          category: 'Adiantamento Salarial',
+          costCenter: 'Administrativo',
+          supplierOrClientName: valeUser.name,
+          notes: valeNotes,
+          ownerId: valeUser.id,
+        });
+
+        showToast(
+          `Vale de ${formatBrl(parsedAmount)} para ${valeUser.name} lançado como Pendente. Ele será somado na Folha de ${formatMonthKeyToLabel(startDiscountMonth)} após a baixa com comprovante.`,
+          'success'
+        );
+      }
+    } else {
+      if (count > 1) {
+        const baseAmount = Math.floor((parsedAmount / count) * 100) / 100;
+        const remainder = Math.round((parsedAmount - (baseAmount * count)) * 100) / 100;
+
+        for (let i = 0; i < count; i++) {
+          const installmentNumber = i + 1;
+          const instAmount = i === 0 ? Number((baseAmount + remainder).toFixed(2)) : baseAmount;
+          const instDueDate = addMonthsToDateString(dueDate, i);
+
+          onAddTransaction({
+            type: 'payable',
+            description: `${description.trim()} - Parcela ${installmentNumber}/${count}`,
+            amount: instAmount,
+            dueDate: instDueDate,
+            status: FinancialTransactionStatus.Pendente,
+            category,
+            costCenter,
+            supplierOrClientName: supplierName || undefined,
+            notes: notes ? `${notes} (Parcela ${installmentNumber}/${count})` : `Parcela ${installmentNumber}/${count}`,
+          });
+        }
+
+        showToast(
+          `Despesa de ${formatBrl(parsedAmount)} parcelada em ${count}x cadastrada com sucesso!`,
+          'success'
+        );
+      } else {
+        onAddTransaction({
+          type: 'payable',
+          description,
+          amount: parsedAmount,
+          dueDate,
+          status: FinancialTransactionStatus.Pendente,
+          category,
+          costCenter,
+          supplierOrClientName: supplierName || undefined,
+          notes: notes || undefined,
+        });
+
+        showToast(`Lançamento avulso de ${formatBrl(parsedAmount)} cadastrado com sucesso!`, 'success');
+      }
+    }
 
     setDescription('');
     setAmount('');
     setSupplierName('');
     setNotes('');
+    setManualEntryType('despesa');
+    setManualInstallmentsCount(1);
+    setManualValeUserId('');
     setIsModalOpen(false);
   };
 
@@ -2643,17 +3057,21 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
     if (consolidatedList.length === 0) return;
 
-    const headers = ['Tipo', 'Documento', 'Fornecedor / Favorecido', 'Categoria / Centro de Custo', 'Vencimento', 'Valor Total', 'Valor a Pagar', 'Status'];
-    const rows = consolidatedList.map(item => [
-      item.kind === 'invoice' ? 'Nota Fiscal' : item.kind === 'cte' ? 'Doc CT-e' : item.kind === 'leader' ? 'Folha de Pagamento' : 'Despesa Avulsa',
-      item.docNumber,
-      `"${item.entityName.replace(/"/g, '""')}"`,
-      `"${item.categoryOrCenter.replace(/"/g, '""')}"`,
-      new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR'),
-      item.totalAmount.toFixed(2).replace('.', ','),
-      item.payableAmount.toFixed(2).replace('.', ','),
-      item.status
-    ]);
+    const headers = ['Tipo', 'Documento', 'Fornecedor / Favorecido', 'Categoria / Centro de Custo', 'Vencimento', 'Valor Original', 'Juros / Multa', 'Valor a Pagar (Real)', 'Status'];
+    const rows = consolidatedList.map(item => {
+      const fees = getItemLateFees(item, todayStr);
+      return [
+        item.kind === 'invoice' ? 'Nota Fiscal' : item.kind === 'cte' ? 'Doc CT-e' : item.kind === 'leader' ? 'Folha de Pagamento' : 'Despesa Avulsa',
+        item.docNumber,
+        `"${item.entityName.replace(/"/g, '""')}"`,
+        `"${item.categoryOrCenter.replace(/"/g, '""')}"`,
+        new Date(item.dueDate + 'T00:00:00').toLocaleDateString('pt-BR'),
+        item.totalAmount.toFixed(2).replace('.', ','),
+        fees.total.toFixed(2).replace('.', ','),
+        item.payableAmount.toFixed(2).replace('.', ','),
+        item.status
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -2746,7 +3164,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             <Tag className="w-4 h-4" />
             <span>Lançamentos Avulsos</span>
             <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">
-              {manualPayables.length}
+              {manualPayables.length + leaderPayables.filter(l => isValeTransaction(l)).length}
             </span>
           </button>
 
@@ -2947,7 +3365,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         /* KPIs Padrão de Contas a Pagar */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total a Pagar Pendente */}
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div
+            onClick={() => setStatusFilter(prev => prev === 'Pendente' ? 'all' : 'Pendente')}
+            className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-sm flex items-center justify-between ${
+              statusFilter === 'Pendente'
+                ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 ring-2 ring-amber-500/30'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-800'
+            }`}
+            title="Clique para filtrar apenas Contas Pendentes"
+          >
             <div>
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-amber-500" />
@@ -2966,7 +3392,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           </div>
 
           {/* Total Pago */}
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          <div
+            onClick={() => setStatusFilter(prev => prev === 'Pago' ? 'all' : 'Pago')}
+            className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-sm flex items-center justify-between ${
+              statusFilter === 'Pago'
+                ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 ring-2 ring-emerald-500/30'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-800'
+            }`}
+            title="Clique para filtrar apenas Contas Pagas (Liquidadas)"
+          >
             <div>
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -2984,22 +3418,67 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             </div>
           </div>
 
-          {/* Total Vencido */}
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+          {/* Total Vencido / Contas em Atraso */}
+          <div
+            onClick={() => setStatusFilter(prev => prev === 'Atrasado' ? 'all' : 'Atrasado')}
+            className={`p-5 rounded-2xl border transition-all cursor-pointer shadow-sm flex flex-col justify-between relative group ${
+              statusFilter === 'Atrasado'
+                ? 'bg-rose-50/90 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 ring-2 ring-rose-500/30'
+                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800'
+            }`}
+            title="Clique para filtrar a tabela apenas pelas Contas em Atraso"
+          >
             <div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
-                Contas em Atraso
-              </span>
-              <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1.5 tracking-tight">
-                {formatBrl(kpiOverdue)}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                  Contas em Atraso
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {statusFilter === 'Atrasado' && (
+                    <span className="text-[10px] bg-rose-200/80 dark:bg-rose-900/70 text-rose-800 dark:text-rose-200 px-2 py-0.5 rounded-full font-bold">
+                      Filtro Ativo
+                    </span>
+                  )}
+                  <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1.5 tracking-tight flex items-baseline gap-2">
+                <span>{formatBrl(kpiOverdue)}</span>
+                {overdueLateFees.count > 0 && (
+                  <span className="text-xs font-semibold text-slate-400">
+                    ({overdueLateFees.count} {overdueLateFees.count === 1 ? 'título' : 'títulos'})
+                  </span>
+                )}
               </div>
               <span className="text-[11px] text-slate-400 mt-0.5 block">
-                Vencimento ultrapassado
+                Vencimento ultrapassado no período
               </span>
             </div>
-            <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-2xl">
-              <AlertCircle className="w-6 h-6" />
+
+            {/* DESTAQUE DE JUROS / MULTAS */}
+            <div className="mt-3.5 pt-2.5 border-t border-rose-100 dark:border-rose-900/40 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <TrendingUp className="w-3.5 h-3.5 text-rose-500" />
+                  Juros / Multas Destacados:
+                </span>
+                <span className="text-xs font-black text-rose-600 dark:text-rose-400 font-mono bg-rose-100/80 dark:bg-rose-950/80 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800 shadow-2xs">
+                  +{formatBrl(overdueLateFees.total)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 flex-wrap gap-x-2">
+                <span>
+                  Multas: <strong className="text-rose-600 dark:text-rose-400 font-bold">{formatBrl(overdueLateFees.fine)}</strong>
+                </span>
+                <span>
+                  Juros Mora: <strong className="text-rose-600 dark:text-rose-400 font-bold">{formatBrl(overdueLateFees.interest)}</strong>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -3307,9 +3786,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             {activeSection === 'manual' && (
               <button
                 type="button"
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => handleOpenManualModal()}
                 className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
-                title="Cadastrar nova despesa avulsa"
+                title="Cadastrar nova despesa avulsa ou vale / adiantamento salarial"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ Lançamento Avulso</span>
@@ -3907,6 +4386,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <Edit3 className="w-3 h-3 text-slate-400" />
                                 </button>
                               </div>
+                              {item.pendingValesCount !== undefined && item.pendingValesCount > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800/60">
+                                  <span className="flex items-center gap-1 font-medium">
+                                    <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                                    <span>{item.pendingValesCount} {item.pendingValesCount === 1 ? 'vale pendente' : 'vales pendentes'} em Lançamentos Avulsos:</span>
+                                  </span>
+                                  <span className="font-bold font-mono" title="Aguardando dar baixa (Pago) e anexar comprovante para abater nesta folha">
+                                    {formatBrl(item.pendingValesAmount || 0)} (Aguardando Baixa)
+                                  </span>
+                                </div>
+                              )}
                               <div className="pt-1.5 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Folha Líquida Devida</span>
                                 <span className="font-black text-purple-600 dark:text-purple-400">{formatBrl(item.netDue)}</span>
@@ -3996,6 +4486,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <Edit3 className="w-3 h-3 text-slate-400" />
                                 </button>
                               </div>
+                              {item.pendingValesCount !== undefined && item.pendingValesCount > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800/60">
+                                  <span className="flex items-center gap-1 font-medium">
+                                    <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                                    <span>{item.pendingValesCount} {item.pendingValesCount === 1 ? 'vale pendente' : 'vales pendentes'} em Lançamentos Avulsos:</span>
+                                  </span>
+                                  <span className="font-bold font-mono" title="Aguardando dar baixa (Pago) e anexar comprovante para abater nesta folha">
+                                    {formatBrl(item.pendingValesAmount || 0)} (Aguardando Baixa)
+                                  </span>
+                                </div>
+                              )}
                               <div className="pt-1.5 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Líquido Devido</span>
                                 <span className="font-black text-purple-600 dark:text-purple-400">{formatBrl(item.netDue)}</span>
@@ -4081,6 +4582,17 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                   <Edit3 className="w-3 h-3 text-slate-400" />
                                 </button>
                               </div>
+                              {item.pendingValesCount !== undefined && item.pendingValesCount > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800/60">
+                                  <span className="flex items-center gap-1 font-medium">
+                                    <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                                    <span>{item.pendingValesCount} {item.pendingValesCount === 1 ? 'vale pendente' : 'vales pendentes'} em Lançamentos Avulsos:</span>
+                                  </span>
+                                  <span className="font-bold font-mono" title="Aguardando dar baixa (Pago) e anexar comprovante para abater nesta folha">
+                                    {formatBrl(item.pendingValesAmount || 0)} (Aguardando Baixa)
+                                  </span>
+                                </div>
+                              )}
                               <div className="pt-1.5 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between">
                                 <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Líquido Devido</span>
                                 <span className="font-black text-purple-600 dark:text-purple-400">{formatBrl(item.netDue)}</span>
@@ -4483,6 +4995,43 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
         </div>
       )}
 
+      {/* Banner de Contas em Atraso Ativo */}
+      {statusFilter === 'Atrasado' && (
+        <div className="p-4 rounded-2xl bg-rose-50/90 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 flex items-center justify-between flex-wrap gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-300 rounded-xl">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="font-bold text-sm text-rose-900 dark:text-rose-200 block">
+                Contas em Atraso • Período Selecionado
+              </span>
+              <span className="text-xs text-rose-700 dark:text-rose-300">
+                Total de <strong>{overdueLateFees.count}</strong> {overdueLateFees.count === 1 ? 'título vencido' : 'títulos vencidos'} • Total a Pagar: <strong>{formatBrl(kpiOverdue)}</strong>
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-800/80 shadow-2xs">
+              <TrendingUp className="w-4 h-4 text-rose-500" />
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 block leading-tight font-medium">Juros & Multas Destacados</span>
+                <span className="text-xs font-black text-rose-600 dark:text-rose-400 font-mono">
+                  +{formatBrl(overdueLateFees.total)}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
+            >
+              Limpar Filtro
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 5. TABELA PADRÃO DE CONTAS A PAGAR (TODAS, NOTAS FISCAIS OU AVULSOS) */}
       {activeSection !== 'leaders' && (
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -4542,9 +5091,15 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 <Award className="w-4 h-4" />
                               </div>
                             ) : (
-                              <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl shrink-0" title="Lançamento Avulso">
-                                <Tag className="w-4 h-4" />
-                              </div>
+                              isValeTransaction(item.originalItem || item) ? (
+                                <div className="p-2 bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 rounded-xl shrink-0 border border-orange-200 dark:border-orange-800" title="Vale / Adiantamento Salarial">
+                                  <Wallet className="w-4 h-4" />
+                                </div>
+                              ) : (
+                                <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl shrink-0" title="Lançamento Avulso">
+                                  <Tag className="w-4 h-4" />
+                                </div>
+                              )
                             )}
                             <div>
                               <div className="flex items-center gap-1.5 flex-wrap">
@@ -4569,6 +5124,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                                 {item.kind === 'leader' && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-200 dark:border-amber-800 shrink-0">
                                     Agenciador Líder
+                                  </span>
+                                )}
+                                {item.kind === 'manual' && isValeTransaction(item.originalItem || item) && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold border bg-orange-100 text-orange-800 dark:bg-orange-950/80 dark:text-orange-300 border-orange-200 dark:border-orange-800 shrink-0">
+                                    Vale / Adiantamento Salarial
                                   </span>
                                 )}
                                 <span className="font-bold text-slate-900 dark:text-white block">
@@ -4680,24 +5240,34 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
 
                         {/* 6. Valor a Pagar (Real com Juros / Abatimento) */}
                         <td className="py-3 px-4 text-right whitespace-nowrap">
-                          <span className="font-black text-sm text-emerald-600 dark:text-emerald-400 tracking-tight">
-                            {formatBrl(item.payableAmount)}
-                          </span>
-                          {item.originalItem?.interestAmount > 0 && (
-                            <span className="text-[9px] text-rose-500 font-bold block">
-                              +{formatBrl(item.originalItem.interestAmount)} juros
-                            </span>
-                          )}
-                          {item.originalItem?.discountAmount > 0 && (
-                            <span className="text-[9px] text-emerald-600 font-bold block">
-                              -{formatBrl(item.originalItem.discountAmount)} abat.
-                            </span>
-                          )}
-                          {item.payableAmount !== item.totalAmount && !item.originalItem?.interestAmount && !item.originalItem?.discountAmount && (
-                            <span className="text-[9px] text-slate-400 block line-through">
-                              Original: {formatBrl(item.totalAmount)}
-                            </span>
-                          )}
+                          {(() => {
+                            const itemFees = getItemLateFees(item, todayStr);
+                            return (
+                              <>
+                                <span className="font-black text-sm text-emerald-600 dark:text-emerald-400 tracking-tight block">
+                                  {formatBrl(item.payableAmount)}
+                                </span>
+                                {itemFees.total > 0 && (
+                                  <span
+                                    className="text-[9px] text-rose-600 dark:text-rose-400 font-bold block"
+                                    title={`Multa: ${formatBrl(itemFees.fine)} | Juros Mora: ${formatBrl(itemFees.interest)} (${itemFees.overdueDays} dias em atraso)`}
+                                  >
+                                    +{formatBrl(itemFees.total)} juros/multa
+                                  </span>
+                                )}
+                                {item.originalItem?.discountAmount > 0 && (
+                                  <span className="text-[9px] text-emerald-600 font-bold block">
+                                    -{formatBrl(item.originalItem.discountAmount)} abat.
+                                  </span>
+                                )}
+                                {item.payableAmount !== item.totalAmount && itemFees.total === 0 && !item.originalItem?.discountAmount && (
+                                  <span className="text-[9px] text-slate-400 block line-through">
+                                    Original: {formatBrl(item.totalAmount)}
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                         </td>
 
                         {/* 7. Status */}
@@ -4892,7 +5462,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-blue-600" />
-                Novo Lançamento Avulso - Contas a Pagar
+                {manualEntryType === 'vale' ? 'Novo Lançamento Avulso - Vale / Adiantamento' : 'Novo Lançamento Avulso - Contas a Pagar'}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -4903,21 +5473,166 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             </div>
 
             <form onSubmit={handleSubmitManual} className="space-y-4">
+              {/* Tipo de Lançamento Avulso */}
               <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Descrição *</label>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Tipo de Lançamento *</label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setManualEntryType('despesa')}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${manualEntryType === 'despesa'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Despesa Avulsa</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualEntryType('vale');
+                      if (!manualValeMonthKey) {
+                        setManualValeMonthKey(payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix);
+                      }
+                    }}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${manualEntryType === 'vale'
+                      ? 'bg-orange-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>Vale / Adiantamento Salarial</span>
+                  </button>
+                </div>
+              </div>
+
+              {manualEntryType === 'vale' && (() => {
+                const selValeUser = payrollUsers.find(u => u.id === manualValeUserId);
+                const valePix = selValeUser ? (selValeUser.phone || selValeUser.corporateEmail || selValeUser.email || '') : '';
+                const monthOptions = Array.from(new Set([
+                  lastMonthPrefix,
+                  currentMonthPrefix,
+                  addMonthsToMonthKey(currentMonthPrefix, 1),
+                  addMonthsToMonthKey(currentMonthPrefix, 2),
+                  ...(manualValeMonthKey ? [manualValeMonthKey] : []),
+                ])).sort();
+
+                const parsedValePreview = parseBrazilianCurrency(amount);
+
+                return (
+                  <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/60 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Colaborador (Folha) *</label>
+                        <select
+                          required
+                          value={manualValeUserId}
+                          onChange={(e) => setManualValeUserId(e.target.value)}
+                          className="w-full px-2.5 py-2 rounded-xl text-xs border border-orange-300 dark:border-orange-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-orange-500 font-medium"
+                        >
+                          <option value="">Selecione...</option>
+                          {payrollUsers.map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({getUserRegime(u)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Descontar a Partir de *</label>
+                        <select
+                          required
+                          value={manualValeMonthKey || currentMonthPrefix}
+                          onChange={(e) => setManualValeMonthKey(e.target.value)}
+                          className="w-full px-2.5 py-2 rounded-xl text-xs border border-orange-300 dark:border-orange-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-orange-500 font-medium"
+                        >
+                          {monthOptions.map(mk => (
+                            <option key={mk} value={mk}>
+                              {formatMonthKeyToLabel(mk)}
+                              {mk === currentMonthPrefix ? ' (Mês Atual)' : mk === lastMonthPrefix ? ' (Mês Anterior)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Parcelamento *</label>
+                        <select
+                          value={manualInstallmentsCount}
+                          onChange={(e) => setManualInstallmentsCount(parseInt(e.target.value, 10))}
+                          className="w-full px-2.5 py-2 rounded-xl text-xs border border-orange-300 dark:border-orange-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-orange-500 font-bold"
+                        >
+                          <option value={1}>1x (À vista na folha)</option>
+                          <option value={2}>2x parcelado</option>
+                          <option value={3}>3x parcelado</option>
+                          <option value={4}>4x parcelado</option>
+                          <option value={5}>5x parcelado</option>
+                          <option value={6}>6x parcelado</option>
+                          <option value={8}>8x parcelado</option>
+                          <option value={10}>10x parcelado</option>
+                          <option value={12}>12x parcelado</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {manualInstallmentsCount > 1 && parsedValePreview > 0 && (
+                      <div className="p-2.5 rounded-xl bg-orange-100/90 dark:bg-orange-950/80 border border-orange-300 dark:border-orange-800 text-[11px] space-y-1.5">
+                        <div className="flex items-center justify-between font-bold text-orange-900 dark:text-orange-200">
+                          <span className="flex items-center gap-1">
+                            <Layers className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+                            <span>Cronograma das {manualInstallmentsCount} Parcelas nas Folhas:</span>
+                          </span>
+                          <span className="font-mono text-xs">{formatBrl(parsedValePreview)}</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                          {calculateInstallments(parsedValePreview, manualInstallmentsCount, manualValeMonthKey || currentMonthPrefix).map((inst, idx) => (
+                            <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-orange-200/80 dark:border-orange-700/80 text-[11px]">
+                              <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                Parcela {inst.installmentNumber}/{inst.totalInstallments}
+                              </span>
+                              <span className="font-bold text-orange-700 dark:text-orange-300 font-mono">
+                                {formatBrl(inst.amount)} • {formatMonthKeyToLabel(inst.monthKey)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {valePix && (
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                        Chave PIX cadastrada: <strong className="text-slate-800 dark:text-slate-200 font-mono">{valePix}</strong>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-1.5 text-[11px] text-orange-800 dark:text-orange-300 leading-snug">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        {manualInstallmentsCount > 1
+                          ? `Serão geradas ${manualInstallmentsCount} parcelas como Pendentes. Cada parcela só abaterá na folha do respectivo mês após Dar Baixa (Pago) com comprovante anexado.`
+                          : 'O vale fica Pendente em Contas a Pagar. Somente após Dar Baixa (Pago) e anexar o comprovante ele será somado em (-) Adiantamentos na Folha.'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Descrição {manualEntryType === 'vale' ? '(Opcional)' : '*'}
+                </label>
                 <input
                   type="text"
-                  required
+                  required={manualEntryType !== 'vale'}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Ex: Fornecedor de Pneus / Manutenção de Pátio"
+                  placeholder={manualEntryType === 'vale' ? 'Ex: Vale emergencial / Adiantamento quinzenal' : 'Ex: Fornecedor de Pneus / Manutenção de Pátio'}
                   className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Valor a Pagar (R$) *</label>
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    {manualInstallmentsCount > 1 ? 'Valor Total (R$) *' : 'Valor a Pagar (R$) *'}
+                  </label>
                   <input
                     type="text"
                     required
@@ -4928,7 +5643,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Data de Vencimento *</label>
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">
+                    {manualEntryType === 'vale'
+                      ? (manualInstallmentsCount > 1 ? 'Data 1º Pagamento *' : 'Data Prevista Pagamento *')
+                      : (manualInstallmentsCount > 1 ? 'Data 1º Vencimento *' : 'Data de Vencimento *')}
+                  </label>
                   <input
                     type="date"
                     required
@@ -4937,8 +5656,39 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                     className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {manualEntryType !== 'vale' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Parcelamento</label>
+                    <select
+                      value={manualInstallmentsCount}
+                      onChange={(e) => setManualInstallmentsCount(parseInt(e.target.value, 10))}
+                      className="w-full px-3 py-2 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-blue-500 font-bold"
+                    >
+                      <option value={1}>1x (À vista)</option>
+                      <option value={2}>2x parcelado</option>
+                      <option value={3}>3x parcelado</option>
+                      <option value={4}>4x parcelado</option>
+                      <option value={5}>5x parcelado</option>
+                      <option value={6}>6x parcelado</option>
+                      <option value={8}>8x parcelado</option>
+                      <option value={10}>10x parcelado</option>
+                      <option value={12}>12x parcelado</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
+              {manualEntryType !== 'vale' && manualInstallmentsCount > 1 && parseBrazilianCurrency(amount) > 0 && (
+                <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-[11px] text-blue-800 dark:text-blue-300 flex items-center justify-between">
+                  <span>Serão gerados {manualInstallmentsCount} lançamentos mensais consecutivos:</span>
+                  <span className="font-bold font-mono">
+                    {manualInstallmentsCount}x de ~{formatBrl(parseBrazilianCurrency(amount) / manualInstallmentsCount)}
+                  </span>
+                </div>
+              )}
+
+              {manualEntryType !== 'vale' && (
+              <>
               <div>
                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Fornecedor / Favorecido</label>
                 <input
@@ -4981,6 +5731,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                   </select>
                 </div>
               </div>
+              </>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Observações</label>
@@ -5419,10 +6171,28 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               {(() => {
                 const activeModalMonthKey = editingMonthKey || currentMonthPrefix;
                 const userExistingVales = (payrollAdvanceItems || []).filter(v => v.userId === editingUserForValues.id);
-                const currentMonthValesDiscount = userExistingVales
+                const userAvulsoVales = (transactions || []).filter(t =>
+                  t.type === 'payable' &&
+                  (t.ownerId === editingUserForValues.id || (!t.ownerId && t.supplierOrClientName && t.supplierOrClientName.toLowerCase().includes(editingUserForValues.name.toLowerCase()))) &&
+                  isValeTransaction(t) &&
+                  t.status !== FinancialTransactionStatus.Cancelado
+                );
+
+                const currentMonthStructuredDiscount = userExistingVales
                   .flatMap(v => v.installments || [])
                   .filter(i => i.monthKey === activeModalMonthKey)
                   .reduce((s, i) => s + i.amount, 0);
+
+                const currentMonthAvulsoConfirmed = userAvulsoVales
+                  .filter(t => t.status === FinancialTransactionStatus.Pago && Boolean(t.receiptFileUrl) && getValeDiscountMonthKey(t) === activeModalMonthKey)
+                  .reduce((s, t) => s + (t.amount || 0), 0);
+
+                const currentMonthValesDiscount = currentMonthStructuredDiscount + currentMonthAvulsoConfirmed;
+
+                const currentMonthAvulsoPending = userAvulsoVales
+                  .filter(t => (t.status !== FinancialTransactionStatus.Pago || !t.receiptFileUrl) && getValeDiscountMonthKey(t) === activeModalMonthKey)
+                  .reduce((s, t) => s + (t.amount || 0), 0);
+
                 const futureValesDiscount = userExistingVales
                   .flatMap(v => v.installments || [])
                   .filter(i => i.monthKey !== activeModalMonthKey)
@@ -5476,9 +6246,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         <span>Adiantamentos / Vales Concedidos</span>
                       </label>
                       <div className="flex items-center gap-1.5">
-                        {userExistingVales.length > 0 && (
+                        {(userExistingVales.length > 0 || userAvulsoVales.length > 0) && (
                           <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300 bg-orange-200/80 dark:bg-orange-900/80 px-2 py-0.5 rounded-md border border-orange-300 dark:border-orange-800 font-mono">
-                            {userExistingVales.length} {userExistingVales.length === 1 ? 'vale' : 'vales'}
+                            {userExistingVales.length + userAvulsoVales.length} {userExistingVales.length + userAvulsoVales.length === 1 ? 'vale' : 'vales'}
                           </span>
                         )}
                         <span className="text-[10px] font-bold text-orange-700 dark:text-orange-300 bg-orange-200/60 dark:bg-orange-900/60 px-2 py-0.5 rounded-md border border-orange-300 dark:border-orange-800">
@@ -5487,8 +6257,123 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       </div>
                     </div>
 
+                    {/* Botão de Atalho para Lançar Vale em Lançamentos Avulsos */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleOpenManualModal({
+                          asVale: true,
+                          userId: editingUserForValues.id,
+                          monthKey: activeModalMonthKey
+                        });
+                        setEditingUserForValues(null);
+                      }}
+                      className="w-full py-2.5 px-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>+ Lançar Vale em "Lançamentos Avulsos" (Fica Pendente)</span>
+                    </button>
+
+                    {/* Vales em Lançamentos Avulsos deste Colaborador */}
+                    {userAvulsoVales.length > 0 && (
+                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-orange-200/80 dark:border-orange-800/80 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Vales em Lançamentos Avulsos ({userAvulsoVales.length})</span>
+                          </span>
+                          {currentMonthAvulsoPending > 0 && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                              {formatBrl(currentMonthAvulsoPending)} aguardando baixa
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {userAvulsoVales.map(v => {
+                            const isPaid = v.status === FinancialTransactionStatus.Pago;
+                            const hasRec = Boolean(v.receiptFileUrl);
+                            const discountM = getValeDiscountMonthKey(v);
+                            const valAmount = v.amount || 0;
+
+                            return (
+                              <div
+                                key={v.id}
+                                className={`p-2 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
+                                  isPaid && hasRec
+                                    ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                                    : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <strong className="font-mono">{formatBrl(valAmount)}</strong>
+                                    <span className="text-[9px] px-1 py-0.2 rounded font-bold border border-current">
+                                      Folha: {formatMonthKeyToLabel(discountM)}
+                                    </span>
+                                    {isPaid && hasRec ? (
+                                      <span className="text-[9px] text-emerald-700 dark:text-emerald-300 font-bold">
+                                        ✓ Quitado (Somado na Folha)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] text-amber-700 dark:text-amber-300 font-bold">
+                                        🟡 Pendente (Aguardando Baixa + Comprovante)
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] opacity-75 truncate mt-0.5">
+                                    Venc: {v.dueDate ? new Date(v.dueDate + 'T00:00:00').toLocaleDateString('pt-BR') : '-'}
+                                    {v.description ? ` • ${v.description}` : ''}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {hasRec && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDocumentInNewTab(v.receiptFileUrl!, v.receiptFileName || 'Comprovante')}
+                                      className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded cursor-pointer"
+                                      title="Ver Comprovante"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  {(!isPaid || !hasRec) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingUserForValues(null);
+                                        const orig = v;
+                                        handleOpenSettlementModal({
+                                          id: orig.id,
+                                          kind: 'manual',
+                                          docNumber: orig.documentNumber ? `Doc ${orig.documentNumber}` : `Vale Folha • ${formatMonthKeyToLabel(discountM)}`,
+                                          title: orig.description,
+                                          entityName: orig.supplierOrClientName || editingUserForValues.name,
+                                          categoryOrCenter: `${orig.category || 'Adiantamento Salarial'} • ${orig.costCenter || 'Administrativo'}`,
+                                          dueDate: orig.dueDate,
+                                          totalAmount: valAmount,
+                                          payableAmount: valAmount,
+                                          status: isPaid ? 'Pago' : 'Pendente',
+                                          receiptUrl: orig.receiptFileUrl,
+                                          receiptName: orig.receiptFileName,
+                                          originalItem: orig,
+                                        });
+                                      }}
+                                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                                      title="Dar baixa e anexar comprovante para somar na folha"
+                                    >
+                                      Dar Baixa
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Resumo do Impacto da Folha Atual vs Outros Meses */}
-                    {userExistingVales.length > 0 && (
+                    {(userExistingVales.length > 0 || userAvulsoVales.length > 0) && (
                       <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-orange-200 dark:border-orange-800/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-2xs">
                         <div>
                           <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">
@@ -5511,226 +6396,19 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       </div>
                     )}
 
-                    {/* Formulário: Conceder / Adicionar Novo Vale */}
-                    <div className="p-3 rounded-xl bg-white/95 dark:bg-slate-900/95 border border-orange-200/80 dark:border-orange-800/80 space-y-2.5 shadow-2xs">
-                      <div className="flex items-center justify-between pb-1.5 border-b border-orange-100 dark:border-orange-950/60">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                          <Plus className="w-3.5 h-3.5 text-orange-600" />
-                          <span>Conceder / Registrar Novo Vale</span>
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          Gere, parcele e salve múltiplos vales
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            Valor do Vale (R$) *
-                          </label>
-                          <input
-                            type="text"
-                            value={newValeAmount}
-                            onChange={(e) => setNewValeAmount(e.target.value)}
-                            placeholder="Ex: 1.000,00"
-                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-orange-300 dark:border-orange-800 bg-orange-50/30 dark:bg-slate-900 text-orange-900 dark:text-orange-200 font-bold outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
-                          />
+                    {/* Lista de Vales Legados Cadastrados para este Colaborador (se houver) */}
+                    {userExistingVales.length > 0 && (
+                      <div className="space-y-2 pt-1 border-t border-orange-100 dark:border-orange-900/40">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                            <History className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Vales Cadastrados (Histórico - {userExistingVales.length})</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            Total: {formatBrl(userExistingVales.reduce((acc, v) => acc + v.amount, 0))}
+                          </span>
                         </div>
 
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            Data da Concessão / Transferência *
-                          </label>
-                          <input
-                            type="date"
-                            value={newValeDate}
-                            onChange={(e) => setNewValeDate(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            Parcelamento do Vale *
-                          </label>
-                          <select
-                            value={newValeInstallmentsCount}
-                            onChange={(e) => setNewValeInstallmentsCount(parseInt(e.target.value, 10))}
-                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs cursor-pointer"
-                          >
-                            <option value={1}>1x (À vista na folha)</option>
-                            <option value={2}>2x parcelado</option>
-                            <option value={3}>3x parcelado</option>
-                            <option value={4}>4x parcelado</option>
-                            <option value={5}>5x parcelado</option>
-                            <option value={6}>6x parcelado</option>
-                            <option value={8}>8x parcelado</option>
-                            <option value={10}>10x parcelado</option>
-                            <option value={12}>12x parcelado</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            Mês Inicial do Desconto na Folha *
-                          </label>
-                          <select
-                            value={effectiveStartMonth}
-                            onChange={(e) => setNewValeStartMonth(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-orange-500 shadow-2xs cursor-pointer"
-                          >
-                            {availableStartMonths.map(opt => (
-                              <option key={opt.key} value={opt.key}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Motivo / Descrição do Vale (Opcional)
-                        </label>
-                        <input
-                          type="text"
-                          value={newValeDescription}
-                          onChange={(e) => setNewValeDescription(e.target.value)}
-                          placeholder="Ex: Adiantamento emergencial, Vale combustível, etc."
-                          className="w-full px-3 py-1.5 rounded-xl text-xs border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-500"
-                        />
-                      </div>
-
-                      {/* Pré-visualização do Cronograma de Parcelas */}
-                      {previewInstallments.length > 0 && (
-                        <div className="p-2.5 rounded-xl bg-orange-100/70 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 text-[11px] space-y-1.5">
-                          <div className="flex items-center justify-between font-bold text-orange-900 dark:text-orange-200">
-                            <span className="flex items-center gap-1">
-                              <Layers className="w-3.5 h-3.5 text-orange-600 shrink-0" />
-                              <span>Cronograma de Desconto nas Folhas:</span>
-                            </span>
-                            <span className="font-mono text-xs">{formatBrl(previewTotal)}</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                            {previewInstallments.map((inst, idx) => (
-                              <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-orange-200/60 dark:border-orange-700/60 text-[11px]">
-                                <span className="text-slate-600 dark:text-slate-400 font-medium">
-                                  Parcela {inst.installmentNumber}/{inst.totalInstallments}
-                                </span>
-                                <span className="font-bold text-orange-700 dark:text-orange-300 font-mono">
-                                  {formatBrl(inst.amount)} • {formatMonthKeyToLabel(inst.monthKey)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Comprovante do Vale */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                          Comprovante de Transferência Bancária / PIX
-                        </label>
-
-                        {newValeReceiptUrl ? (
-                          <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-300 dark:border-emerald-800 shadow-2xs">
-                            <div className="flex items-center gap-2 truncate mr-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <div className="truncate">
-                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate" title={newValeReceiptName || 'Comprovante'}>
-                                  {newValeReceiptName || 'Comprovante_Transferencia'}
-                                </span>
-                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block">
-                                  Pronto para salvar com o vale
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => openDocumentInNewTab(newValeReceiptUrl, newValeReceiptName || 'Comprovante')}
-                                className="px-2 py-1 text-[11px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors flex items-center gap-1 cursor-pointer"
-                              >
-                                <Eye className="w-3 h-3" />
-                                <span>Ver</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNewValeReceiptUrl('');
-                                  setNewValeReceiptName('');
-                                }}
-                                className="p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
-                                title="Remover Comprovante"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <input
-                              type="file"
-                              ref={valeFileInputRef}
-                              onChange={handleValeFileSelected}
-                              accept="image/*,application/pdf"
-                              className="hidden"
-                            />
-                            <button
-                              type="button"
-                              disabled={isUploadingValeReceipt}
-                              onClick={() => valeFileInputRef.current?.click()}
-                              className="w-full py-2 px-3 border border-dashed border-orange-300 dark:border-orange-800 hover:border-orange-500 bg-white dark:bg-slate-900 rounded-xl text-xs font-bold text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/40 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
-                            >
-                              {isUploadingValeReceipt ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-                                  <span>Carregando Comprovante...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Paperclip className="w-4 h-4 text-orange-500" />
-                                  <span>Anexar Comprovante de Transferência (PDF ou Imagem)</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Botão de Salvar Vale */}
-                      <div className="flex justify-end pt-1">
-                        <button
-                          type="button"
-                          onClick={handleAddNewVale}
-                          disabled={!newValeAmount || parseBrazilianCurrency(newValeAmount) <= 0}
-                          className="w-full sm:w-auto px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/25 cursor-pointer active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Salvar e Gravar Este Vale</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Lista de Vales Já Concedidos para este Colaborador */}
-                    <div className="space-y-2 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                          <History className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Vales Cadastrados ({userExistingVales.length})</span>
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          Total concedido: {formatBrl(userExistingVales.reduce((acc, v) => acc + v.amount, 0))}
-                        </span>
-                      </div>
-
-                      {userExistingVales.length === 0 ? (
-                        <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800 text-center text-xs text-slate-400 italic">
-                          Nenhum vale ativo cadastrado para este colaborador. Preencha os campos acima para conceder um novo vale.
-                        </div>
-                      ) : (
                         <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                           {userExistingVales.map((vale) => {
                             const totalInst = vale.installments?.length || vale.installmentsCount || 1;
@@ -5852,8 +6530,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                             );
                           })}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     <span className="text-[10px] text-slate-400 block leading-tight">
                       Cada vale concedido tem suas parcelas descontadas automaticamente nas folhas dos meses programados.
@@ -5891,7 +6569,21 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                   .flatMap(v => v.installments || [])
                   .filter(i => i.monthKey === activeModalMonthKey)
                   .reduce((sum, i) => sum + i.amount, 0);
-                const a = uVales.length > 0 ? uMonthDiscount : parseBrazilianCurrency(editAdvance);
+
+                const uAvulsoConfirmed = (transactions || [])
+                  .filter(t =>
+                    t.type === 'payable' &&
+                    (t.ownerId === editingUserForValues.id || (!t.ownerId && t.supplierOrClientName && t.supplierOrClientName.toLowerCase().includes(editingUserForValues.name.toLowerCase()))) &&
+                    isValeTransaction(t) &&
+                    t.status === FinancialTransactionStatus.Pago &&
+                    Boolean(t.receiptFileUrl) &&
+                    getValeDiscountMonthKey(t) === activeModalMonthKey
+                  )
+                  .reduce((sum, t) => sum + (t.amount || 0), 0);
+
+                const a = (uVales.length > 0 || uAvulsoConfirmed > 0)
+                  ? (uMonthDiscount + uAvulsoConfirmed)
+                  : parseBrazilianCurrency(editAdvance);
                 const gross = s + effectiveC;
                 const net = Math.max(0, gross - t - a);
 
