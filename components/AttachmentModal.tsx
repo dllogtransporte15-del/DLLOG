@@ -7,7 +7,7 @@ import { fetchRouteGeometry, getRouteSuggestions, RouteSuggestion } from '../ser
 import { formatWeightPtBr, isCteApplicableForStatus } from '../utils';
 import { extractFiscalDocNumbers, extractFiscalDocNumbersFromUrls, extractDetailedDocData, DetailedDocumentData, parseWeightKg, isStrictNotaFiscalCategory, calculateNetCartaFreteFreight, detectDocumentTypeFromFileName, detectAttachmentMismatch, DocMismatchInfo, isCteDocType, isCartaFreteDocType } from '../utils/fiscalDocParser';
 import { useToast } from '../hooks/useToast';
-import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
+import { openDocumentInNewTab, normalizeDocumentUrl, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { X, Package, Box, DollarSign, Scale, User as UserIcon, MapPin, Building, Truck, FileText, CreditCard, Eye, RefreshCw, Sparkles, Layers, ListOrdered, FileCheck, CheckCircle2, ShieldCheck, ShieldAlert, Check, Paperclip, AlertTriangle, Trash2, Edit3, ArrowRightLeft, Lock, RotateCcw, Plus, Coins, Clock, Calendar, UploadCloud, Clipboard } from 'lucide-react';
 import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
@@ -752,9 +752,15 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       if (keysToCheck.some(k => k.toLowerCase() === key.toLowerCase()) || key.toLowerCase().includes('descarga') || key.toLowerCase().includes('ticket')) {
         const val = shipment.documents[key];
         if (Array.isArray(val)) {
-          files.push(...val);
+          val.forEach(item => {
+            const normalized = normalizeDocumentUrl(item) || (typeof item === 'string' ? item : '');
+            if (normalized) files.push(normalized);
+          });
         } else if (typeof val === 'string' && (val.startsWith('http') || val.startsWith('data:') || val.startsWith('blob:'))) {
           files.push(val);
+        } else if (val && typeof val === 'object') {
+          const normalized = normalizeDocumentUrl(val);
+          if (normalized) files.push(normalized);
         }
       }
     }
@@ -4645,8 +4651,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   {ticketFiles.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {ticketFiles.map((docUrl, idx) => {
-                        const fileName = docUrl.split('/').pop() || `Ticket ${idx + 1}`;
-                        const isPdf = docUrl.toLowerCase().includes('.pdf');
+                        const fileName = typeof docUrl === 'string' ? (docUrl.split('/').pop() || `Ticket ${idx + 1}`) : `Ticket ${idx + 1}`;
+                        const isPdf = typeof docUrl === 'string' && docUrl.toLowerCase().includes('.pdf');
                         return (
                           <div key={idx} className="p-3 bg-white dark:bg-gray-800 border rounded-xl flex items-center justify-between gap-2 shadow-xs hover:border-blue-400 transition-colors">
                             <div className="flex items-center gap-2 min-w-0">

@@ -27,6 +27,25 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_04_v2_109_0',
+    version: 'v2.109.0',
+    date: '04/11/2026',
+    title: 'Correção de Renderização de Anexos no Modal de Detalhes do Embarque',
+    summary: 'Correção de falha que disparava "TypeError: split is not a function" ao abrir os Detalhes do Embarque quando os documentos continham objetos de metadados ou formatos estruturados. Adicionada normalização defensiva universal de URLs de anexos.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Tratamento Seguro de Anexos em "Detalhes do Embarque"',
+        description: 'Corrigido parsing de anexos e URLs no modal ShipmentDetailsModal, garantindo normalização antes de extrair nome de arquivo e evitando quebras ao manipular objetos e listas de documentos.'
+      },
+      {
+        category: 'security',
+        title: 'Blindagem Universal contra Erros de Split em Documentos',
+        description: 'Adicionada validação de tipo defensiva em openDocumentInNewTab, DocumentPreviewModal, AttachmentModal e App.tsx para garantir resiliência total contra dados não-string.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_03_v2_108_0',
     version: 'v2.108.0',
     date: '03/11/2026',

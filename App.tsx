@@ -2133,8 +2133,9 @@ const App: React.FC = () => {
       let foundCategory = '';
       let fileName = '';
 
-      const rawParts = url.split('/');
-      const rawDecoded = decodeURIComponent(rawParts[rawParts.length - 1].split('?')[0]);
+      const urlStr = typeof url === 'string' ? url : (url && typeof url === 'object' ? ((url as any).url || (url as any).fileUrl || (url as any).path || '') : String(url || ''));
+      const rawParts = urlStr ? urlStr.split('/') : [];
+      const rawDecoded = rawParts.length > 0 ? decodeURIComponent(rawParts[rawParts.length - 1].split('?')[0]) : 'Anexo';
       fileName = rawDecoded.includes('_') ? rawDecoded.split('_').slice(2).join('_') : rawDecoded;
 
       // Find the category and remove the URL safely whether it's an Array or a String
@@ -4740,8 +4741,8 @@ const App: React.FC = () => {
         />
       </React.Suspense>
     );
-  }
-
+  }
+
   if (location.pathname === '/curso-embarcador' || location.pathname === '/curso') {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>

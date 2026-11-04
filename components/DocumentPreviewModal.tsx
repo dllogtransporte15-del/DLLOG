@@ -32,6 +32,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
       // Clean display name
       const cleanUrlName = (() => {
+        if (typeof fileUrl !== 'string') return '';
         try {
           const urlObj = new URL(fileUrl);
           const nameParam = urlObj.searchParams.get('name');
@@ -95,6 +96,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   if (!isOpen || !fileUrl) return null;
 
   const displayTitle = fileName || (() => {
+    if (typeof fileUrl !== 'string') return 'Documento';
     try {
       const urlObj = new URL(fileUrl);
       const nameParam = urlObj.searchParams.get('name');

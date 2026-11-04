@@ -9,7 +9,7 @@ import { autoFormatInput } from '../utils/formatters';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import SwapCargoModal from './SwapCargoModal';
 import { StatusPendingModal } from './StatusPendingModal';
-import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
+import { openDocumentInNewTab, normalizeDocumentUrl, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getShipmentCiotNumber } from '../utils';
 import { isDemoUser, isDeveloperUser } from '../auth';
 import { useToast } from '../hooks/useToast';
@@ -1384,7 +1384,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                         {shipment.documents && typeof shipment.documents === 'object' && Object.keys(shipment.documents).length > 0 && (() => {
                             const validEntries = Object.entries(shipment.documents).filter(([category, urls]) => {
                                 if (!category || isDocumentMetadataKey(category)) return false;
-                                const urlList = Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []);
+                                const urlList = Array.isArray(urls) ? urls : (urls ? [urls] : []);
                                 return urlList.some(url => isActualDocumentUrl(url));
                             });
 
@@ -1395,7 +1395,7 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                     <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Arquivos do Embarque</h3>
                                     <div className="space-y-4">
                                         {validEntries.map(([category, urls]) => {
-                                            const urlList = (Array.isArray(urls) ? urls : (typeof urls === 'string' ? [urls] : []))
+                                            const urlList = (Array.isArray(urls) ? urls : (urls ? [urls] : []))
                                                 .filter(url => isActualDocumentUrl(url));
                                             if (urlList.length === 0) return null;
 
@@ -1403,16 +1403,25 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                 <div key={category}>
                                                     <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">{category}</p>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        {urlList.map((url, idx) => {
-                                                            const urlParts = url.split('/');
+                                                        {urlList.map((rawUrlItem, idx) => {
+                                                            const docUrl = normalizeDocumentUrl(rawUrlItem) || (typeof rawUrlItem === 'string' ? rawUrlItem : (rawUrlItem && typeof rawUrlItem === 'object' ? ((rawUrlItem as any).url || (rawUrlItem as any).fileUrl || (rawUrlItem as any).path || '') : ''));
+                                                            if (!docUrl || typeof docUrl !== 'string') return null;
+
+                                                            let customName = '';
+                                                            if (rawUrlItem && typeof rawUrlItem === 'object' && ((rawUrlItem as any).name || (rawUrlItem as any).fileName)) {
+                                                                customName = String((rawUrlItem as any).name || (rawUrlItem as any).fileName).trim();
+                                                            }
+
+                                                            const urlParts = docUrl.split('/');
                                                             const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1] || '');
-                                                            const fileName = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : (rawFileName || `Anexo ${idx + 1}`);
+                                                            const cleanNameFromUrl = rawFileName.includes('_') ? rawFileName.split('_').slice(2).join('_') : rawFileName;
+                                                            const fileName = customName || cleanNameFromUrl || `Anexo ${idx + 1}`;
                                                             
                                                             return (
                                                                 <div key={idx} className="flex items-center gap-1 group">
                                                                     <button 
                                                                         type="button"
-                                                                        onClick={() => openDocumentInNewTab(url, fileName)}
+                                                                        onClick={() => openDocumentInNewTab(docUrl, fileName)}
                                                                         className="flex-1 flex items-center p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 rounded-md text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-left truncate cursor-pointer"
                                                                     >
                                                                         <FileTextIcon size={14} className="mr-2 flex-shrink-0" />
@@ -1420,12 +1429,13 @@ const ShipmentDetailsModal: React.FC<ShipmentDetailsModalProps> = ({
                                                                     </button>
                                                                     {onDeleteAttachment && !isDemo && (isDeveloperUser(currentUser) || currentUser?.profile === UserProfile.Desenvolvedor || currentUser?.profile === UserProfile.Admin || currentUser?.profile === UserProfile.Diretor || currentUser?.profile === UserProfile.Supervisor) && (
                                                                         <button
+                                                                            type="button"
                                                                             onClick={() => {
                                                                                 if (confirm(`Tem certeza que deseja excluir o anexo "${fileName}"?`)) {
-                                                                                    onDeleteAttachment(shipment.id, url);
+                                                                                    onDeleteAttachment(shipment.id, typeof rawUrlItem === 'string' ? rawUrlItem : docUrl);
                                                                                 }
                                                                             }}
-                                                                            className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                                                                            className="p-2 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors cursor-pointer"
                                                                             title="Excluir Anexo"
                                                                         >
                                                                             <Trash2 size={16} />

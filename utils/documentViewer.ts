@@ -148,9 +148,10 @@ export function isImageSource(urlOrFile: string | File, fileName?: string): bool
 export async function openDocumentInNewTab(urlOrFile?: string | File | null, rawFileName?: string) {
   if (!urlOrFile) return;
 
-  const isFile = typeof urlOrFile !== 'string';
-  const url = isFile ? URL.createObjectURL(urlOrFile) : normalizeDocumentUrl(urlOrFile) || urlOrFile;
-  const originalFileName = isFile ? urlOrFile.name : rawFileName;
+  const isFile = typeof urlOrFile !== 'string' && typeof File !== 'undefined' && urlOrFile instanceof File;
+  const url = isFile ? URL.createObjectURL(urlOrFile) : (normalizeDocumentUrl(urlOrFile) || (typeof urlOrFile === 'string' ? urlOrFile : ''));
+  if (!url || typeof url !== 'string') return;
+  const originalFileName = isFile ? urlOrFile.name : (rawFileName || (urlOrFile && typeof urlOrFile === 'object' && ((urlOrFile as any).name || (urlOrFile as any).fileName)));
 
   // Extrai nome limpo do documento
   const cleanName = (() => {
