@@ -177,6 +177,15 @@ interface NewShipmentRequestData extends Omit<Shipment, 'id' | 'orderId' | 'stat
   vehicleSetType?: VehicleSetType;
   vehicleBodyType?: VehicleBodyType;
   filesToAttach?: File[];
+  documents?: { [key: string]: any };
+  isComplementar?: boolean;
+  parentShipmentId?: string;
+  complementarOriginType?: string;
+  complementarCteNumber?: string;
+  complementarCompanyFreight?: number;
+  complementarDriverFreight?: number;
+  complementarNfeNumber?: string;
+  complementarNfeValue?: number;
 }
 
 const App: React.FC = () => {
@@ -1609,10 +1618,10 @@ const App: React.FC = () => {
     if (relatedCargo) {
       const cargoBalance = calculateCargoBalance(relatedCargo, shipments);
       if (data.shipmentTonnage > cargoBalance.availableVolume + 0.001) {
-        if (!isReembarque) {
+        if (!isReembarque && !data.isComplementar) {
           showToast(`SALDO TOTAL INSUFICIENTE: O lote possui apenas ${cargoBalance.availableVolume.toLocaleString('pt-BR')} ton disponíveis no saldo total. Não é permitido criar embarques de ${data.shipmentTonnage.toLocaleString('pt-BR')} ton.`, 'error');
           return;
-        } else {
+        } else if (isReembarque) {
           cargoAutoExpanded = true;
           extraVolumeAdded = Number((data.shipmentTonnage - Math.max(0, cargoBalance.availableVolume)).toFixed(2));
           autoExpandedVolume = Number((relatedCargo.totalVolume + extraVolumeAdded).toFixed(2));
@@ -1893,8 +1902,21 @@ const App: React.FC = () => {
       paymentMethod: data.paymentMethod,
       pixKey: data.pixKey,
       bankDetails: data.bankDetails,
-      advancePercentage: data.advancePercentage,
-      documents: Object.keys(documentsUrlMap).length > 0 ? documentsUrlMap : undefined,
+      advancePercentage: data.isComplementar ? 100 : data.advancePercentage,
+      advanceValue: data.isComplementar ? data.driverFreightValue : (data as any).advanceValue,
+      balanceToReceiveValue: data.isComplementar ? 0 : (data as any).balanceToReceiveValue,
+      isComplementar: data.isComplementar,
+      parentShipmentId: data.parentShipmentId,
+      complementarOriginType: data.complementarOriginType,
+      complementarCteNumber: data.complementarCteNumber,
+      complementarCompanyFreight: data.complementarCompanyFreight,
+      complementarDriverFreight: data.complementarDriverFreight,
+      complementarNfeNumber: data.complementarNfeNumber,
+      complementarNfeValue: data.complementarNfeValue,
+      nfeNumber: data.complementarNfeNumber || (data as any).nfeNumber,
+      nfeValue: data.complementarNfeValue !== undefined ? data.complementarNfeValue : (data as any).nfeValue,
+      cteNumber: data.complementarCteNumber || (data as any).cteNumber,
+      documents: data.documents ? { ...data.documents, ...(Object.keys(documentsUrlMap).length > 0 ? documentsUrlMap : {}) } : (Object.keys(documentsUrlMap).length > 0 ? documentsUrlMap : undefined),
       history: data.history ? data.history : [createHistoryLogLocal(historyMsg)],
       createdAt: new Date().toISOString(),
       createdById: currentUser.id,
@@ -1994,7 +2016,9 @@ const App: React.FC = () => {
 
     setCurrentPage('shipments');
     let toastMessage = `Novo embarque ${newShipmentId} criado com sucesso!`;
-    if (cargoAutoExpanded || shouldReactivateCargo) {
+    if (data.isComplementar) {
+      toastMessage = `Embarque Complementar ${newShipmentId} criado com sucesso (CT-e ${data.complementarCteNumber || ''}) e registrado como Finalizado no histórico!`;
+    } else if (cargoAutoExpanded || shouldReactivateCargo) {
       toastMessage = `Reembarque ${newShipmentId} criado com sucesso! Lote atualizado${cargoAutoExpanded ? ` com expansão de +${extraVolumeAdded} ton` : ''}${shouldReactivateCargo ? ' e reativado' : ''}.`;
     } else if (!productRequiresRisk) {
       if (!hasCompletedTrip) {

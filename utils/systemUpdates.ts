@@ -27,6 +27,45 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_05_v2_111_0',
+    version: 'v2.111.0',
+    date: '05/11/2026',
+    title: 'Nova Funcionalidade: Embarque Complementar nos Menus de Embarque',
+    summary: 'Implementada a ação "Embarque Complementar" diretamente abaixo da opção Reembarcar no menu de ações dos embarques. Permite cadastrar CT-e complementar referente a fretes anteriores (ex.: excedente de peso apurado na balança), definindo frete empresa complementar, frete motorista complementar, anexando comprovante de pagamento e registrando automaticamente um novo embarque já finalizado com vínculo direto ao embarque original.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Nova Ação "Embarque Complementar"',
+        description: 'Disponibilizada no menu de 3 pontos logo abaixo de "Reembarcar", permitindo complementar valores de frete, peso e documentos fiscais para embarques em andamento e já finalizados.'
+      },
+      {
+        category: 'feature',
+        title: 'Anexo e Leitor de Nota Fiscal (NF-e) no Embarque Complementar',
+        description: 'Adicionado campo dedicado para anexar o PDF ou XML da Nota Fiscal (DANFE) correspondente ao complemento, com leitura automática de número da NF, chave de acesso de 44 dígitos e valor da mercadoria.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sincronização Proporcional das Deduções & Isenção de Pedágio e CIOT',
+        description: 'Painel completo "Composição das Deduções" integrado ao Embarque Complementar, sincronizando proporcionalmente Imposto Federal, ICMS Destacado, Seguro Acidente/Roubo, Custo Fixo (0,35%), INSS Patronal, Comissão Vendedor, Custo Financeiro, Frete Motorista e Comissões Comercial/Agência/Embarcador. Vale-Pedágio e CIOT são mantidos estritamente em R$ 0,00 (não descontados no complementar).'
+      },
+      {
+        category: 'feature',
+        title: 'Modal Dedicado com Leitor de CT-e Complementar',
+        description: 'Janela para upload do CT-e complementar com extração automática do número, chave de acesso e valores de frete, motivo do complemento (ex.: Excedente de peso/tonelagem na balança), comprovante de pagamento do motorista e cálculo em tempo real da margem de lucro.'
+      },
+      {
+        category: 'improvement',
+        title: 'Criação Imediata como Finalizado e Vínculo no Histórico',
+        description: 'O embarque complementar herda automaticamente dados de rota, cliente, motorista e veículo do embarque original, sendo gravado com status Finalizado e registrando log cruzado no histórico de ambos os embarques.'
+      },
+      {
+        category: 'improvement',
+        title: 'Identificador Visual "Complementar (#PAI)" nas Listagens',
+        description: 'Badge visual destacado em roxo nas listagens web e mobile para identificação imediata dos embarques complementares e referência ao embarque original.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_04_v2_110_0',
     version: 'v2.110.0',
     date: '04/11/2026',

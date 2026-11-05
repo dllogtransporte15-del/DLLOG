@@ -698,6 +698,14 @@ export interface Shipment {
   financialCostRate?: number;
   financialCostDaysTerm?: number;
   financialCostMonthlyRate?: number;
+  isComplementar?: boolean;
+  parentShipmentId?: string;
+  complementarOriginType?: string;
+  complementarCteNumber?: string;
+  complementarCompanyFreight?: number;
+  complementarDriverFreight?: number;
+  complementarNfeNumber?: string;
+  complementarNfeValue?: number;
 }
 
 

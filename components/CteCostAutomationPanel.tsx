@@ -1662,20 +1662,27 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const totalSeguroAcidenteRoubo = insuranceTaxes;
 
   // 5. Seguro RCV (R$ 5,00 por veículo / viagem)
-  const seguroRcv = 5.00;
+  const isComplementar = Boolean(
+    shipment.isComplementar || 
+    (shipment.documents as any)?.is_complementar || 
+    (shipment.documents as any)?.isComplementar
+  );
+  const seguroRcv = isComplementar ? 0 : 5.00;
 
   // 8. Vale-Pedágio (Informativo da Carta Frete / TAG / Formulário / Embarque)
   const parsedPropToll = tollValue !== undefined && tollValue !== '' ? Number(tollValue) : undefined;
   // Prioridade: valor editado/corrigido no painel > valor digitado no formulário > tollValue do embarque (inclusive 0 = sem pedágio) > leitura automática > realProfitData
-  const toll = (customToll !== undefined && !isNaN(customToll))
-    ? customToll
-    : ((parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0)
-        ? parsedPropToll
-        : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
-            ? Number(shipment.tollValue)
-            : (autoToll !== undefined && autoToll > 0
-                ? autoToll
-                : (shipment.realProfitData?.toll || 0))));
+  const toll = isComplementar
+    ? 0
+    : (customToll !== undefined && !isNaN(customToll)
+        ? customToll
+        : (parsedPropToll !== undefined && !isNaN(parsedPropToll) && parsedPropToll > 0
+            ? parsedPropToll
+            : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
+                ? Number(shipment.tollValue)
+                : (autoToll !== undefined && autoToll > 0
+                    ? autoToll
+                    : (shipment.realProfitData?.toll || 0)))));
 
   const isExplicitPj = selectedRegime === 'Lucro Real / Presumido' || selectedRegime === 'Lucro Real' || selectedRegime === 'Lucro Presumido' || selectedRegime === 'Simples Nacional' || selectedRegime === 'MEI' || selectedRegime === 'PJ' || selectedRegime === 'ETC' || shipment.driverFreightType === 'PJ' || shipment.anttModality === 'ETC';
   const isShipmentPf = !isExplicitPj && (selectedRegime === 'PF' || selectedRegime === 'TAC' || shipment.driverFreightType === 'PF' || shipment.anttModality === 'TAC');
@@ -1923,9 +1930,11 @@ export const CteCostAutomationPanel: React.FC<CteCostAutomationPanelProps> = ({
   const baseCiotFreight = isShipmentPf
     ? Math.max(0, driverFreight - toll - inssRetidoPf - sestSenatRetidoPf)
     : Math.max(0, driverFreight - toll);
-  const ciotValue = isCiotManual && manualCiotValue !== undefined
-    ? Number(manualCiotValue)
-    : (baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0);
+  const ciotValue = isComplementar
+    ? 0
+    : (isCiotManual && manualCiotValue !== undefined
+        ? Number(manualCiotValue)
+        : (baseCiotFreight > 0 ? Number((baseCiotFreight * 0.0020).toFixed(2)) : 0));
 
   // 13. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixoValue = Number((cteGrossFreight * 0.0035).toFixed(2));

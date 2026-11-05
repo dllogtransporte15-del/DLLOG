@@ -14,6 +14,8 @@ import { TransferIcon } from './icons/TransferIcon';
 import { MoreVerticalIcon } from './icons/MoreVerticalIcon';
 import { Search, Filter, X, Trash2, RotateCcw, RotateCw, Clock, Package, AlertCircle, Smartphone, MapPin, ChevronLeft, ChevronRight, ArrowUpDown, FileText, Truck, User as UserIcon, UserCheck, Building, Pencil, Check, Loader2, ExternalLink, Paperclip, Copy, Repeat } from 'lucide-react';
 import { ReembarqueModal } from './ReembarqueModal';
+import { ComplementarShipmentModal, ComplementarShipmentPayload } from './ComplementarShipmentModal';
+import { FilePlus2 } from 'lucide-react';
 import { StatusPendingModal } from './StatusPendingModal';
 import { getShipmentCte, getShipmentCteEmissionDate, isCteApplicableForStatus, getCargoMapUrl } from '../utils';
 import { backfillShipmentFiscalNumbers, uploadShipmentAttachment, getShipmentAttachmentUrl, upsertShipment } from '../lib/db';
@@ -69,9 +71,10 @@ interface ShipmentTableProps {
   onFilterCteChange?: (val: string) => void;
   onCreateShipment?: (data: any) => Promise<void> | void;
   onReembarcar?: (shipment: Shipment) => void;
+  onEmbarqueComplementar?: (shipment: Shipment) => void;
 }
 
-const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange, onCreateShipment, onReembarcar }) => {
+const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargos, users, vehicles, onAttach, onEditPrice, onCancel, onTransfer, onShowHistory, onShowCargoDetails, canUserAdvanceStatus, onMarkArrival, onDelete, onRevertStatus, onOpenCadastroAntt, onUpdatePrice, onUpdateShipmentData, onAddAttachments, onOpenEditScheduledDateTime, currentUser, activeStatus, clients, products, stays = [], companyLogo, onDeleteAttachment, onSwapCargo, onPerformSwapCargo, tickets = [], filterCte = '', onFilterCteChange, onCreateShipment, onReembarcar, onEmbarqueComplementar }) => {
 
 
   const isDemo = isDemoUser(currentUser);
@@ -172,6 +175,119 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
     await onCreateShipment(payload);
     showToast(`Novo embarque programado com sucesso para o motorista ${reembarqueShipment.driverName}!`, 'success');
     setReembarqueShipment(null);
+  };
+
+  const [complementarShipment, setComplementarShipment] = useState<Shipment | null>(null);
+
+  const handleConfirmComplementar = async (data: ComplementarShipmentPayload) => {
+    if (!complementarShipment) return;
+    if (!onCreateShipment) {
+      showToast('Ação de criação de novo embarque não disponível nesta visualização.', 'error');
+      return;
+    }
+
+    const todayStr = data.paymentDate || new Date().toISOString().split('T')[0];
+    const nowTimeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const payload: any = {
+      isComplementar: true,
+      parentShipmentId: complementarShipment.id,
+      cargoId: complementarShipment.cargoId,
+      driverName: complementarShipment.driverName,
+      driverContact: complementarShipment.driverContact,
+      driverCpf: complementarShipment.driverCpf,
+      driverCnh: complementarShipment.driverCnh,
+      codigoAtua: complementarShipment.codigoAtua,
+      horsePlate: complementarShipment.horsePlate,
+      trailer1Plate: complementarShipment.trailer1Plate,
+      trailer2Plate: complementarShipment.trailer2Plate,
+      trailer3Plate: complementarShipment.trailer3Plate,
+      embarcadorId: complementarShipment.embarcadorId,
+      driverFreightType: complementarShipment.driverFreightType || 'PJ',
+      paymentMethod: complementarShipment.paymentMethod,
+      pixKey: complementarShipment.pixKey,
+      bankDetails: complementarShipment.bankDetails,
+      ownerName: complementarShipment.ownerName,
+      ownerContact: complementarShipment.ownerContact,
+      anttOwnerIdentifier: complementarShipment.anttOwnerIdentifier,
+      anttModality: complementarShipment.anttModality,
+      etcTaxRegime: complementarShipment.etcTaxRegime,
+      vehicleTag: complementarShipment.vehicleTag,
+      vehicleSetType: complementarShipment.vehicleSetType,
+      vehicleBodyType: complementarShipment.vehicleBodyType,
+      scheduledDate: todayStr,
+      scheduledTime: nowTimeStr,
+      shipmentTonnage: data.tonnage || 0,
+      loadedTonnage: data.tonnage || 0,
+      unloadedTonnage: data.tonnage || 0,
+      driverFreightValue: data.driverFreightValue,
+      driverFreightRateSnapshot: (data.tonnage && data.tonnage > 0) ? Number((data.driverFreightValue / data.tonnage).toFixed(2)) : undefined,
+      companyFreightRateSnapshot: (data.tonnage && data.tonnage > 0) ? Number((data.companyFreightValue / data.tonnage).toFixed(2)) : data.companyFreightValue,
+      advancePercentage: 100,
+      advanceValue: data.driverFreightValue,
+      balanceToReceiveValue: 0,
+      status: ShipmentStatus.Finalizado,
+      cteNumber: data.cteNumber,
+      complementarCteNumber: data.cteNumber,
+      complementarCompanyFreight: data.companyFreightValue,
+      complementarDriverFreight: data.driverFreightValue,
+      complementarOriginType: data.originType,
+      nfeNumber: data.nfNumber || complementarShipment.nfeNumber,
+      nfeValue: data.nfValue !== undefined ? data.nfValue : complementarShipment.nfeValue,
+      complementarNfeNumber: data.nfNumber,
+      complementarNfeValue: data.nfValue,
+      documents: {
+        'CT-e Complementar': data.cteFileUrl ? [data.cteFileUrl] : [],
+        'CT-e': data.cteFileUrl ? [data.cteFileUrl] : [],
+        'Nota Fiscal': data.nfFileUrl ? [data.nfFileUrl] : (complementarShipment.documents?.['Nota Fiscal'] || []),
+        'Nota Fiscal (NF-e)': data.nfFileUrl ? [data.nfFileUrl] : (complementarShipment.documents?.['Nota Fiscal (NF-e)'] || []),
+        'Nota Fiscal Complementar': data.nfFileUrl ? [data.nfFileUrl] : [],
+        'Comprovante de Pagamento': data.receiptFileUrl ? [data.receiptFileUrl] : [],
+        'Comprovante de Pagamento de Saldo': data.receiptFileUrl ? [data.receiptFileUrl] : [],
+        'Comprovante de Adiantamento': data.receiptFileUrl ? [data.receiptFileUrl] : [],
+        is_complementar: true,
+        parent_shipment_id: complementarShipment.id,
+        complementar_cte_number: data.cteNumber,
+        complementar_nfe_number: data.nfNumber,
+        complementar_nfe_value: data.nfValue,
+        complementar_company_freight: data.companyFreightValue,
+        complementar_driver_freight: data.driverFreightValue,
+        complementar_origin_type: data.originType,
+        nfe_number: data.nfNumber,
+        cte_number: data.cteNumber,
+        cteNumber: data.cteNumber,
+        real_profit_data: {
+          companyFreight: data.companyFreightValue,
+          driverFreight: data.driverFreightValue,
+          netMargin: Number((data.companyFreightValue - data.driverFreightValue).toFixed(2)),
+          notes: data.notes || `Embarque Complementar referente ao Embarque #${complementarShipment.id} (${data.originType}).`,
+        }
+      },
+      history: [
+        {
+          id: `log_comp_${Date.now()}`,
+          userId: currentUser.id,
+          timestamp: new Date().toISOString(),
+          description: `Embarque Complementar criado e finalizado referente ao Embarque anterior #${complementarShipment.id} (${complementarShipment.horsePlate} - ${complementarShipment.driverName}). Motivo: ${data.originType}. CT-e Complementar nº ${data.cteNumber}${data.nfNumber ? ` | NF nº ${data.nfNumber}` : ''}. Frete Empresa: R$ ${data.companyFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Frete Motorista Pago: R$ ${data.driverFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.${data.notes ? ` Obs: ${data.notes}` : ''}`
+        }
+      ]
+    };
+
+    await onCreateShipment(payload);
+
+    if (onUpdateShipmentData) {
+      const parentHistoryLog = {
+        id: `log_comp_ref_${Date.now()}`,
+        userId: currentUser.id,
+        timestamp: new Date().toISOString(),
+        description: `Gerado Embarque Complementar para este frete com CT-e Complementar nº ${data.cteNumber}${data.nfNumber ? ` | NF nº ${data.nfNumber}` : ''}. Motivo: ${data.originType}. Frete Empresa: R$ ${data.companyFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Frete Motorista: R$ ${data.driverFreightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+      };
+      await onUpdateShipmentData(complementarShipment.id, {
+        history: [...(complementarShipment.history || []), parentHistoryLog],
+      }, { silent: true });
+    }
+
+    setComplementarShipment(null);
   };
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -717,6 +833,14 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                       {currentUser?.profile !== UserProfile.Cliente && tickets.some(t => t.shipmentId === shipment.id && t.status !== TicketStatus.Fechado && t.status !== TicketStatus.Resolvido) && (
                         <span className="text-red-500 inline-flex items-center" title="Chamado(s) Aberto(s)">
                           <AlertCircle className="w-4 h-4" />
+                        </span>
+                      )}
+                      {(shipment.isComplementar || (shipment.documents as any)?.is_complementar) && (
+                        <span 
+                          className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 dark:border-purple-800 ml-1 inline-flex items-center"
+                          title={shipment.parentShipmentId ? `Complementar do Embarque #${shipment.parentShipmentId}` : 'Embarque Complementar'}
+                        >
+                          Complementar{shipment.parentShipmentId ? ` (#${shipment.parentShipmentId})` : ''}
                         </span>
                       )}
                     </div>
@@ -1307,8 +1431,16 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                             <AlertCircle className="w-4 h-4" />
                           </span>
                         )}
-                      </div>
-                      {cargo && (
+                        {(shipment.isComplementar || (shipment.documents as any)?.is_complementar) && (
+                        <span 
+                          className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 dark:border-purple-800 ml-1 inline-flex items-center"
+                          title={shipment.parentShipmentId ? `Complementar do Embarque #${shipment.parentShipmentId}` : 'Embarque Complementar'}
+                        >
+                          Complementar{shipment.parentShipmentId ? ` (#${shipment.parentShipmentId})` : ''}
+                        </span>
+                      )}
+                    </div>
+                    {cargo && (
                         <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                           <span>
                             Carga: 
@@ -1976,6 +2108,24 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
                                                                             }} 
                                                                         />
                                                                       )}
+                                                                      {/* Ação de Embarque Complementar (Disponível em Ag. Descarga, Valid. Ticket, Ag. Saldo e Finalizado) */}
+                                                                      {(shipment.status === ShipmentStatus.AguardandoDescarga ||
+                                                                        shipment.status === ShipmentStatus.ValidacaoTicket ||
+                                                                        shipment.status === ShipmentStatus.AguardandoPagamentoSaldo ||
+                                                                        shipment.status === ShipmentStatus.Finalizado) && (
+                                                                        <ActionMenuItem 
+                                                                            icon={FilePlus2} 
+                                                                            text="Embarque Complementar" 
+                                                                            onClick={() => {
+                                                                                setOpenActionMenu(null);
+                                                                                if (onEmbarqueComplementar) {
+                                                                                    onEmbarqueComplementar(shipment);
+                                                                                } else {
+                                                                                    setComplementarShipment(shipment);
+                                                                                }
+                                                                            }} 
+                                                                        />
+                                                                      )}
                                                                       {isActionable && onCancel && (currentUser.profile !== UserProfile.Fiscal || shipment.status === ShipmentStatus.AguardandoSeguradora) && <ActionMenuItem icon={XIcon} text="Cancelar Embarque" onClick={() => onCancel(shipment)} isDestructive />}
                                                                   </>
                                                               )}
@@ -2070,6 +2220,19 @@ const ShipmentTable: React.FC<ShipmentTableProps> = ({ shipments, drivers, cargo
         products={products}
         currentUser={currentUser}
         onConfirmReembarque={handleConfirmReembarque}
+      />
+    )}
+
+    {/* Modal de Embarque Complementar */}
+    {complementarShipment && (
+      <ComplementarShipmentModal
+        isOpen={Boolean(complementarShipment)}
+        onClose={() => setComplementarShipment(null)}
+        shipment={complementarShipment}
+        cargos={cargos}
+        clients={clients}
+        currentUser={currentUser}
+        onConfirmComplementar={handleConfirmComplementar}
       />
     )}
 

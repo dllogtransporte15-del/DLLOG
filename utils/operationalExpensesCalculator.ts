@@ -235,15 +235,23 @@ export function calculateShipmentExpenses(
     ? manualFederalTax
     : (isExportCargo ? 0 : impostoFederalMercadoInterno);
 
+  const isComplementar = Boolean(
+    shipment.isComplementar || 
+    (shipment.documents as any)?.is_complementar || 
+    (shipment.documents as any)?.isComplementar
+  );
+
   // 7. INSS Patronal / CPRB (4% sobre Frete Motorista - Pedágio se PF, Isento se PJ)
-  // shipment.tollValue é a fonte oficial: quando definido (inclusive 0 = sem pedágio), não cai nos fallbacks de documentos
-  const rawToll = (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue)))
-    ? Number(shipment.tollValue)
-    : (Number(shipment.realProfitData?.toll) ||
-       Number((shipment.documents as any)?.toll_value) ||
-       Number((shipment.documents as any)?.valor_pedagio) ||
-       Number((shipment.documents as any)?.financeiro?.valorPedagio) ||
-       0);
+  // No complementar, pedágio é sempre 0 e NÃO é descontado
+  const rawToll = isComplementar
+    ? 0
+    : (shipment.tollValue !== undefined && shipment.tollValue !== null && !isNaN(Number(shipment.tollValue))
+        ? Number(shipment.tollValue)
+        : (Number(shipment.realProfitData?.toll) ||
+           Number((shipment.documents as any)?.toll_value) ||
+           Number((shipment.documents as any)?.valor_pedagio) ||
+           Number((shipment.documents as any)?.financeiro?.valorPedagio) ||
+           0));
   const toll = (!isNaN(rawToll) && rawToll >= 0 && rawToll <= 25000) ? rawToll : 0;
   const baseInssPatronal = Math.max(0, driverFreight - toll);
   const inssPatronal = isShipmentPf && baseInssPatronal > 0 
@@ -270,7 +278,7 @@ export function calculateShipmentExpenses(
   const insuranceRoubo = insuranceBaseValue > 0 
     ? Number((insuranceBaseValue * config.insuranceRouboRate).toFixed(2)) 
     : 0;
-  const insuranceRcv = config.insuranceRcvPerLoad;
+  const insuranceRcv = isComplementar ? 0 : config.insuranceRcvPerLoad;
   const totalInsurance = Number((insuranceAcidente + insuranceRoubo + insuranceRcv).toFixed(2));
 
   // 10. CIOT (0,20% s/ Frete Líquido do Motorista: deduz pedágio e, para TAC/PF, retenções de INSS e SEST/SENAT)
@@ -281,9 +289,12 @@ export function calculateShipmentExpenses(
   }
   const isCiotManual = Boolean((shipment.realProfitData as any)?.isCiotManual);
   const manualCiot = (shipment.realProfitData as any)?.ciot;
-  const ciot = isCiotManual && manualCiot !== undefined
-    ? Number(manualCiot)
-    : (baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0);
+  // No complementar, CIOT é SEMPRE R$ 0,00 (NÃO é descontado no Complementar)
+  const ciot = isComplementar
+    ? 0
+    : (isCiotManual && manualCiot !== undefined
+        ? Number(manualCiot)
+        : (baseCiot > 0 ? Number((baseCiot * config.ciotRate).toFixed(2)) : 0));
 
   // 11. Custo Fixo (0,35% s/ Frete Bruto)
   const custoFixo = companyFreight > 0 
@@ -338,7 +349,9 @@ export function calculateShipmentExpenses(
     (shipment.status as string) === 'Ag. Seguradora';
 
   let riskCost = 0;
-  if (!isRiskRequired) {
+  if (isComplementar) {
+    riskCost = 0; // Consulta GR já realizada no embarque principal
+  } else if (!isRiskRequired) {
     riskCost = (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) ? Number(shipment.riskQueryCost) : 0;
   } else if (shipment.riskQueryCost !== undefined && shipment.riskQueryCost !== null && Number(shipment.riskQueryCost) > 0) {
     riskCost = Number(shipment.riskQueryCost);
