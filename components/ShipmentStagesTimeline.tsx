@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { openDocumentInNewTab, isActualDocumentUrl, isDocumentMetadataKey } from '../utils/documentViewer';
 import { findProductForCargo, checkRequiresRiskManagement } from '../utils';
+import { isShipment100PercentAdvance, isShipment0PercentAdvance } from '../utils/freightCalculation';
 import { useToast } from '../hooks/useToast';
 import { 
   dispatchShipmentWhatsAppTrigger, 
@@ -178,9 +179,8 @@ export const ShipmentStagesTimeline: React.FC<ShipmentStagesTimelineProps> = ({
   const isClientUser = currentUser?.profile === UserProfile.Cliente || (currentUser?.profile as string) === 'Cliente';
 
   const visibleStageDefinitions = React.useMemo(() => {
-    const is0PctAdv = shipment.advancePercentage === 0;
-    const is100PctAdv = (shipment.advancePercentage !== undefined && shipment.advancePercentage >= 100) ||
-                        (shipment.balanceToReceiveValue !== undefined && shipment.balanceToReceiveValue <= 0.001 && shipment.advanceValue !== undefined && shipment.advanceValue > 0);
+    const is0PctAdv = isShipment0PercentAdvance(shipment);
+    const is100PctAdv = isShipment100PercentAdvance(shipment);
     
     const omitSaldo = isClientUser || (is100PctAdv && shipment.status !== ShipmentStatus.AguardandoPagamentoSaldo);
     const omitAdiantamento = is0PctAdv && shipment.status !== ShipmentStatus.AguardandoAdiantamento;

@@ -13,7 +13,7 @@ import { DocumentExtractedDataModal } from './DocumentExtractedDataModal';
 import { CteCostAutomationPanel } from './CteCostAutomationPanel';
 import { ShipmentStagesTimeline } from './ShipmentStagesTimeline';
 import { CancelAndSubstituteCteModal } from './CancelAndSubstituteCteModal';
-import { calculateAdvanceAndBalance, calculateTacTaxDeductions } from '../utils/freightCalculation';
+import { calculateAdvanceAndBalance, calculateTacTaxDeductions, isShipment100PercentAdvance, isShipment0PercentAdvance } from '../utils/freightCalculation';
 import { calculateFreightBalance } from '../utils/freightBalanceCalculator';
 import { RdoNacionalModal } from './RdoNacionalModal';
 import { SigaGrModal } from './SigaGrModal';
@@ -1209,6 +1209,12 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
   const hasUnresolvedTomadorDivergence = !!tomadorDivergenceInfo && tomadorDecision === 'unresolved';
   const hasUnresolvedAdvanceDivergence = isAguardandoAdiantamento && !!advanceDivergenceInfo && Math.abs((Number(advanceValue) || 0) - (cartaFreteExtractedAdvance || 0)) > 1.00;
   const hasUnresolvedFiscalDivergence = hasUnresolvedWeightDivergence || hasUnresolvedFreightDivergence || hasUnresolvedCompanyFreightDivergence || hasUnresolvedIcmsDivergence || hasUnresolvedTollDivergence || hasUnresolvedTomadorDivergence;
+
+  const existingAdiantamentoDocs = shipment.documents?.['Comprovante de Adiantamento'];
+  const hasExistingAdiantamentoReceipt = (Array.isArray(existingAdiantamentoDocs) && existingAdiantamentoDocs.length > 0) || (typeof existingAdiantamentoDocs === 'string' && isActualDocumentUrl(existingAdiantamentoDocs)) || Boolean((shipment.documents as any)?.comprovante_adiantamento);
+  const hasAttachedAdiantamentoReceipt = singleFiles.length > 0;
+  const hasAgAdiantamentoReceipt = hasAttachedAdiantamentoReceipt || hasExistingAdiantamentoReceipt;
+  const isMissingAdiantamentoReceipt = isAguardandoAdiantamento && !hasAgAdiantamentoReceipt;
 
   const hasDocForCategory = React.useCallback((catName: 'CT-e' | 'MDF-e' | 'Carta Frete'): boolean => {
     const newFiles = multiFiles[catName];
@@ -2480,15 +2486,26 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       filesToAttach = multiFiles;
     } else {
       const existingDocs = shipment.documents?.[documentName];
-      const hasExistingDoc = Array.isArray(existingDocs) && existingDocs.length > 0;
+      const hasExistingDoc = (Array.isArray(existingDocs) && existingDocs.length > 0) || (typeof existingDocs === 'string' && isActualDocumentUrl(existingDocs));
       const isRiskModal = shipment.status === ShipmentStatus.AguardandoSeguradora;
       const isReprovedGr = isRiskModal && grStatus !== 'aprovado';
+      const is100PctSaldo = shipment.status === ShipmentStatus.AguardandoPagamentoSaldo && isShipment100PercentAdvance(shipment);
 
       if (shipment.status === ShipmentStatus.Finalizado) {
         filesToAttach = singleFiles.length > 0 ? { [documentName || 'Comprovante de Pagamento de Saldo']: singleFiles } : {};
       } else {
         const hasExtraAttached = (multiFiles['CIOT'] && multiFiles['CIOT'].length > 0) || (multiFiles['Ciot'] && multiFiles['Ciot'].length > 0) || (multiFiles['XML do CT-e'] && multiFiles['XML do CT-e'].length > 0);
-        if (!isReprovedGr && singleFiles.length === 0 && !hasExistingDoc && !hasExtraAttached) {
+        
+        // Bloqueio rigoroso em Aguardando Adiantamento: obriga anexar ou possuir comprovante
+        if (shipment.status === ShipmentStatus.AguardandoAdiantamento) {
+          const hasAdvReceipt = singleFiles.length > 0 || hasExistingDoc || Boolean((shipment.documents as any)?.comprovante_adiantamento);
+          if (!hasAdvReceipt) {
+            setError('Para avançar de Aguardando Adiantamento, anexe obrigatoriamente o Comprovante de Pagamento do Adiantamento.');
+            return;
+          }
+        }
+
+        if (!isReprovedGr && !is100PctSaldo && singleFiles.length === 0 && !hasExistingDoc && !hasExtraAttached) {
           setError('Selecione ao menos um arquivo para anexar.');
           return;
         }
@@ -2637,8 +2654,8 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
           : (isCargoWithoutIcms
               ? ({ ...(shipment.realProfitData || {}), isIcmsExempt: true, icmsDifference: 0 } as any)
               : (icmsDecision === 'use_cte' && icmsDivergenceInfo ? ({ ...(shipment.realProfitData || {}), icmsDifference: icmsDivergenceInfo.cteIcms } as any) : undefined)),
-        advancePercentage: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advancePercentage) : undefined,
-        advanceValue: shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(advanceValue) : undefined,
+        advancePercentage: (shipment.status === ShipmentStatus.AguardandoAdiantamento || shipment.status === ShipmentStatus.AguardandoFiscal) && advancePercentage !== '' && advancePercentage !== undefined ? Number(advancePercentage) : undefined,
+        advanceValue: (shipment.status === ShipmentStatus.AguardandoAdiantamento || shipment.status === ShipmentStatus.AguardandoFiscal) && advanceValue !== '' && advanceValue !== undefined ? Number(advanceValue) : undefined,
         tollValue: (isAguardandoFiscal && tollDecision === 'use_doc' && tollDivergenceInfo) 
           ? tollDivergenceInfo.docToll 
           : (shipment.status === ShipmentStatus.AguardandoAdiantamento ? Number(tollValue || 0) : undefined),
@@ -4849,6 +4866,21 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                   </div>
                 )}
 
+                {/* Alerta de Embarque 100% no Adiantamento */}
+                {isShipment100PercentAdvance(shipment) && (
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-300 dark:border-emerald-700/80 flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                        Embarque 100% Quitado no Adiantamento (Saldo R$ 0,00)
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        O frete deste motorista foi 100% adiantado na contratação e não restam valores pendentes de saldo. O comprovante de quitação foi dispensado automaticamente. Clique em "Finalizar Embarque" para concluir.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <FileInput
                     label={documentName}
@@ -5570,7 +5602,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     onClick={handleSave}
                     disabled={
                       isSaving || 
-                      (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || 
+                      (shipment.status === ShipmentStatus.AguardandoAdiantamento && (!canSave || isMissingAdiantamentoReceipt)) || 
                       (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
                       (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
                       hasUnresolvedFiscalDivergence ||
@@ -5581,7 +5613,7 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                     }
                     className={`px-8 py-2 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center gap-2 ${(
                       isSaving || 
-                      (shipment.status === ShipmentStatus.AguardandoAdiantamento && !canSave) || 
+                      (shipment.status === ShipmentStatus.AguardandoAdiantamento && (!canSave || isMissingAdiantamentoReceipt)) || 
                       (shipment.status === ShipmentStatus.ValidacaoTicket && (!canValidateTicket || !isTicketValidated)) ||
                       (shipment.status === ShipmentStatus.PreCadastro && (!codigoAtua || !codigoAtua.trim())) ||
                       hasUnresolvedFiscalDivergence ||
@@ -5598,8 +5630,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
                       <>
                         <LoaderIcon className="w-4 h-4 animate-spin" /> Salvando...
                       </>
+                    ) : (shipment.status === ShipmentStatus.ValidacaoTicket && isShipment100PercentAdvance(shipment)) ? (
+                      'Salvar e Concluir Embarque (100% Adiantamento)'
+                    ) : (shipment.status === ShipmentStatus.AguardandoPagamentoSaldo && isShipment100PercentAdvance(shipment)) ? (
+                      'Finalizar Embarque (Saldo Quitado)'
                     ) : 'Salvar e Avançar'}
                   </button>
+                  {isMissingAdiantamentoReceipt && (
+                    <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-rose-950 text-rose-200 border border-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
+                      ⛔ Para avançar, anexe obrigatoriamente o Comprovante de Pagamento do Adiantamento.
+                    </div>
+                  )}
                   {hasMissingFiscalDocs && (
                     <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-rose-950 text-rose-200 border border-rose-700 text-[11px] font-semibold py-1.5 px-3 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none">
                       ⛔ Para avançar, anexe obrigatoriamente o CT-e, o MDF-e e a Carta Frete corretos em seus respectivos campos. Pendente: {missingFiscalDocs.join(', ')}

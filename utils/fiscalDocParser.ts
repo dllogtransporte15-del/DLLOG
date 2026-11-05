@@ -873,12 +873,14 @@ export function extractFreightContractValues(text: string): {
   advanceValue?: number;
   totalFreightValue?: number;
   advancePercentage?: number;
+  subtotalSaldoValue?: number;
 } {
   const res: {
     tollValue?: number;
     advanceValue?: number;
     totalFreightValue?: number;
     advancePercentage?: number;
+    subtotalSaldoValue?: number;
   } = {};
 
   if (!text) return res;
@@ -986,25 +988,46 @@ export function extractFreightContractValues(text: string): {
 
   // 4. Porcentagem do Adiantamento
   const pctPatterns = [
-    /Adiantamento[^\n%]*?(\d{1,2}(?:[.,]\d+)?)\s*%/i,
-    /(\d{1,2}(?:[.,]\d+)?)\s*%\s*(?:de\s*)?Adiantamento/i,
-    /%\s*(?:de\s*)?Adiantamento[^\d\n]*(\d{1,2}(?:[.,]\d+)?)/i,
+    /Adiantamento[^\n%]*?(\d{1,3}(?:[.,]\d+)?)\s*%/i,
+    /(\d{1,3}(?:[.,]\d+)?)\s*%\s*(?:de\s*)?Adiantamento/i,
+    /%\s*(?:de\s*)?Adiantamento[^\d\n]*(\d{1,3}(?:[.,]\d+)?)/i,
+    /(\d{1,3}(?:[.,]\d+)?)\s*%\s*(?:do\s+frete|no\s+adiantamento)/i,
+    /adiantamento\s*(?:de\s*)?100\s*%/i,
+    /100\s*%\s*(?:adiantamento|antecipado|no\s+adiantamento)/i,
+    /adiantamento\s*integral/i,
   ];
   for (const re of pctPatterns) {
     const m = text.match(re);
-    if (m && m[1]) {
-      const pct = parseFloat(m[1].replace(',', '.'));
-      if (!isNaN(pct) && pct > 0 && pct <= 100) {
-        res.advancePercentage = Math.round(pct);
+    if (m) {
+      if (m[0].toLowerCase().includes('100') || m[0].toLowerCase().includes('integral')) {
+        res.advancePercentage = 100;
         break;
+      }
+      if (m[1]) {
+        const pct = parseFloat(m[1].replace(',', '.'));
+        if (!isNaN(pct) && pct > 0 && pct <= 100) {
+          res.advancePercentage = Math.round(pct);
+          break;
+        }
       }
     }
   }
 
+  // Se o saldo explícito na Carta Frete for R$ 0,00 e houver adiantamento
+  const zeroSaldoMatch = text.match(/Saldo[^\d\n]*R?\$\s*0(?:[.,]00)?(?!\d)/i);
+  if (zeroSaldoMatch && (res.advanceValue || res.totalFreightValue)) {
+    res.advancePercentage = 100;
+    res.subtotalSaldoValue = 0;
+  }
+
   if (!res.advancePercentage && res.advanceValue && res.totalFreightValue && res.totalFreightValue > 0) {
-    const pct = Math.round((res.advanceValue / res.totalFreightValue) * 100);
-    if (pct > 0 && pct <= 100) {
-      res.advancePercentage = pct;
+    if (res.advanceValue >= res.totalFreightValue - 2.00 || (res.tollValue && res.advanceValue + res.tollValue >= res.totalFreightValue - 2.00)) {
+      res.advancePercentage = 100;
+    } else {
+      const pct = Math.round((res.advanceValue / res.totalFreightValue) * 100);
+      if (pct > 0 && pct <= 100) {
+        res.advancePercentage = pct;
+      }
     }
   }
 

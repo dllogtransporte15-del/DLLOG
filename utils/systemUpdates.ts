@@ -27,6 +27,35 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_04_v2_110_0',
+    version: 'v2.110.0',
+    date: '04/11/2026',
+    title: 'Blindagem e Correção das Transições de Status de Embarques (Adiantamento e Saldo 100%)',
+    summary: 'Investigação aprofundada e correção das regras de transição de status: blindado o status "Aguardando Adiantamento" para nunca pular sozinho para o próximo status sem comprovante anexado, e corrigida a regra de 100% no adiantamento para que o embarque avance diretamente da Validação de Ticket para Finalizado, sem parar indevidamente em Aguardando Saldo.',
+    items: [
+      {
+        category: 'fix',
+        title: 'Blindagem contra Avanço Prematuro em "Aguardando Adiantamento"',
+        description: 'O botão "Salvar e Avançar" agora exige estritamente a anexação do Comprovante de Pagamento de Adiantamento (ou comprovante já existente no cadastro). Nenhuma ação de visualização ou salvamento acidental consegue mais promover o embarque para as etapas seguintes sem o pagamento estar comprovado.'
+      },
+      {
+        category: 'fix',
+        title: 'Transição Correta de Embarques com 100% no Adiantamento para Finalizado',
+        description: 'Embarques cujo frete foi 100% pago no adiantamento agora pulam corretamente o status "Aguardando Pagamento de Saldo" e vão diretamente para "Finalizado" após a Validação do Ticket. A checagem foi recalculada considerando deduções tributárias de TAC/PF (INSS, SEST/SENAT, IRRF), impedindo que motoristas com saldo R$ 0,00 fiquem retidos indevidamente.'
+      },
+      {
+        category: 'fix',
+        title: 'Correção no Leitor de Carta Frete para 100% de Adiantamento',
+        description: 'Corrigida a expressão regular do extrator de documentos fiscais que limitava a porcentagem a 2 dígitos, garantindo o reconhecimento preciso de 100% de adiantamento, saldo R$ 0,00 e adiantamento integral.'
+      },
+      {
+        category: 'improvement',
+        title: 'Preservação de Dados de Adiantamento na Etapa Fiscal',
+        description: 'Os valores de porcentagem e adiantamento extraídos da Carta Frete na emissão fiscal agora são devidamente persistidos no cadastro do embarque, evitando redefinições indevidas para o padrão de 70%.'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_04_v2_109_0',
     version: 'v2.109.0',
     date: '04/11/2026',

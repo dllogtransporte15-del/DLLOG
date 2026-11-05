@@ -15,6 +15,7 @@ import type {
 } from '../../types';
 import { FinancialTransactionStatus, UserProfile, ShipmentStatus, INTERNAL_PROFILES } from '../../types';
 import { isDeveloperUser, isDemoUser } from '../../auth';
+import { isShipment100PercentAdvance } from '../../utils/freightCalculation';
 import {
   Landmark,
   Truck,
@@ -1315,7 +1316,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
       const cteNum = getShipmentCte(s);
       const effectiveDate = getShipmentEffectiveDate(s) || s.scheduledDate || todayStr;
 
-      const isPaid = s.status === ShipmentStatus.Finalizado || Boolean((s as any).balancePaymentReceiptUrl);
+      const is100PctAdvPaid = isShipment100PercentAdvance(s) && (Boolean(docs['Comprovante de Adiantamento']) || Boolean(docs.comprovante_adiantamento) || (s.advanceValue !== undefined && s.advanceValue > 0));
+      const isPaid = s.status === ShipmentStatus.Finalizado || Boolean((s as any).balancePaymentReceiptUrl) || is100PctAdvPaid;
       const displayStatus: 'Pendente' | 'Pago' | 'Atrasado' = isPaid ? 'Pago' : (effectiveDate < todayStr ? 'Atrasado' : 'Pendente');
 
       list.push({

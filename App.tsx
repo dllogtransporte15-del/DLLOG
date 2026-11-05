@@ -7,7 +7,7 @@ import type { Client, Owner, Driver, Vehicle, Product, Cargo, Shipment, User, Pa
 import { CargoStatus, ShipmentStatus, UserProfile, TicketStatus, TicketPriority, DriverClassification, VehicleSetType, VehicleBodyType, REQUIRED_DOCUMENT_MAP, OwnerType, FreightOfferStatus, DEFAULT_RISK_QUERY_OPTIONS, AnttModality, DriverPaymentMethod } from './types';
 import { formatId, isCteApplicableForStatus, getShipmentCte, getShipmentCteEmissionDate, findCargoById, findProductForCargo, checkRequiresRiskManagement } from './utils';
 import { extractFiscalDocNumbers, isCteDocType } from './utils/fiscalDocParser';
-import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES } from './utils/freightCalculation';
+import { calculateAdvanceAndBalance, ADVANCE_ELIGIBLE_STATUSES, isShipment100PercentAdvance, isShipment0PercentAdvance } from './utils/freightCalculation';
 import { INITIAL_PERMISSIONS, can, isDemoUser, isDeveloperUser, isAdminUser } from './auth';
 import { useToast } from './hooks/useToast';
 import { getExpedidoresRecebedores, saveExpedidorRecebedor, deleteExpedidorRecebedor, syncLocationsFromCargos } from './utils/locationStorage';
@@ -2273,8 +2273,7 @@ const App: React.FC = () => {
         nextStatus = ShipmentStatus.AguardandoFiscal;
     } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
         // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7/8 se explicitamente 0% de adiantamento)
-        const advPct = advancePercentage !== undefined ? advancePercentage : (originalShipment.advancePercentage !== undefined ? originalShipment.advancePercentage : 70);
-        const is0PercentAdvance = advPct === 0;
+        const is0PercentAdvance = isShipment0PercentAdvance(originalShipment, advancePercentage);
 
         if (is0PercentAdvance) {
             // Pula "6 - Ag. Adiantamento"
@@ -2285,7 +2284,18 @@ const App: React.FC = () => {
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
         // 6 - Ag. Adiantamento -> 7 - Ag. Agend. ou Troca/nfe apenas se a carga tiver "Exige Agendamento" ligada; senão vai direto para 8 - Ag. Descarga
-        nextStatus = cargoRequiresScheduling ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
+        // SEGURANÇA: Só pode avançar para o próximo status se houver comprovante de adiantamento anexado nesta ação ou já existente no cadastro!
+        const existingAdvReceipt = originalShipment.documents?.['Comprovante de Adiantamento'] || (originalShipment.documents as any)?.comprovante_adiantamento;
+        const hasAttachedReceipt = (filesToAttach['Comprovante de Adiantamento'] && filesToAttach['Comprovante de Adiantamento'].length > 0) ||
+                                   (filesToAttach['Comprovante de Pagamento de Adiantamento'] && filesToAttach['Comprovante de Pagamento de Adiantamento'].length > 0);
+        const hasExistingReceipt = Array.isArray(existingAdvReceipt) ? existingAdvReceipt.length > 0 : Boolean(existingAdvReceipt);
+
+        if (!hasAttachedReceipt && !hasExistingReceipt) {
+            console.warn(`[handleUpdateShipmentAttachment] Embarque ${originalShipment.id} tentou avançar de Aguardando Adiantamento sem comprovante anexado. Mantendo em Aguardando Adiantamento.`);
+            nextStatus = ShipmentStatus.AguardandoAdiantamento;
+        } else {
+            nextStatus = cargoRequiresScheduling ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
+        }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAgendamento) {
         // 7 - Ag. Agend. ou Troca/nfe -> 8 - Ag. Descarga
         nextStatus = ShipmentStatus.AguardandoDescarga;
@@ -2296,9 +2306,10 @@ const App: React.FC = () => {
         nextStatus = ShipmentStatus.ValidacaoTicket;
     } else if (originalShipment.status === ShipmentStatus.ValidacaoTicket) {
         // 9 - Valid. de Ticket -> 10 - Ag. Saldo (ou pula para 11 se 100% de adiantamento)
-        const is100PercentAdvance = (originalShipment.advancePercentage !== undefined && originalShipment.advancePercentage >= 100) || 
-                                     (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue <= 0.001 && originalShipment.advanceValue !== undefined && originalShipment.advanceValue > 0) ||
-                                     (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
+        const is100PercentAdvance = isShipment100PercentAdvance({
+          ...originalShipment,
+          ...(unloadedTonnage !== undefined ? { unloadedTonnage } : {}),
+        });
         if (is100PercentAdvance) {
             // Pula "10 - Ag. Saldo" e vai direto para "11 - Finalizado"
             nextStatus = ShipmentStatus.Finalizado;
@@ -2476,6 +2487,13 @@ const App: React.FC = () => {
         if (fiscalNums.advanceValue !== undefined) extractedAdvanceValue = fiscalNums.advanceValue;
         if (fiscalNums.advancePercentage !== undefined) extractedAdvancePercentage = fiscalNums.advancePercentage;
 
+        // Se o embarque estava em Ag. Fiscal e a Carta Frete extraiu adiantamento > 0 ou % > 0, garante que avança para Ag. Adiantamento
+        if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
+          if ((extractedAdvancePercentage !== undefined && extractedAdvancePercentage > 0) || (extractedAdvanceValue !== undefined && extractedAdvanceValue > 1.00)) {
+            nextStatus = ShipmentStatus.AguardandoAdiantamento;
+          }
+        }
+
         const docLogs = [
           (canExtractCte && fiscalNums.cteNumber) ? `CT-e nº ${fiscalNums.cteNumber}` : null,
           (canExtractCte && fiscalNums.cteEmissionDate) ? `Emissão: ${fiscalNums.cteEmissionDate}` : null,
@@ -2628,6 +2646,16 @@ const App: React.FC = () => {
     let finalNetBalanceValue = netBalanceValue ?? originalShipment.netBalanceValue;
     let finalIsBreakageWaived = isBreakageWaived !== undefined ? isBreakageWaived : originalShipment.isBreakageWaived;
 
+    // Se o adiantamento for de 100%, zera saldo a receber e saldo líquido com precisão estrita
+    if (finalAdvancePercentage !== undefined && finalAdvancePercentage >= 100) {
+      finalBalanceToReceive = 0;
+      finalNetBalanceValue = 0;
+      updatedDocuments.porcentagem_adiantamento = 100;
+      updatedDocuments.advance_percentage = 100;
+      updatedDocuments.saldo = 0;
+      updatedDocuments.saldo_motorista = 0;
+    }
+
     if (isBreakageWaived) {
         historyLogs.push(`Quebra de carga abonada (sem aplicação de desconto).`);
     } else if (discountValue !== undefined && discountValue > 0) {
@@ -2772,9 +2800,7 @@ const App: React.FC = () => {
         const commentMsg = `Chamado criado automaticamente após o envio do comprovante de descarga pelo motorista ${currentUser.name}.`;
         const assignedToId = originalShipment.embarcadorId || '';
 
-        const is100PercentAdvance = (originalShipment.advancePercentage !== undefined && originalShipment.advancePercentage >= 100) || 
-                                     (originalShipment.balanceToReceiveValue !== undefined && originalShipment.balanceToReceiveValue <= 0.001 && originalShipment.advanceValue !== undefined && originalShipment.advanceValue > 0) ||
-                                     (originalShipment.advanceValue !== undefined && originalShipment.driverFreightValue !== undefined && (originalShipment.advanceValue + (originalShipment.tollValue || 0) >= originalShipment.driverFreightValue - 0.01));
+        const is100PercentAdvance = isShipment100PercentAdvance(originalShipment);
         const targetStatusText = is100PercentAdvance ? '"Finalizado"' : '"Ag. Saldo"';
 
         try {
@@ -4438,11 +4464,8 @@ const App: React.FC = () => {
 
     // Ordem estrita de reversão: 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
     const getStrictPreviousStatus = (status: ShipmentStatus, s: Shipment): ShipmentStatus | null => {
-      const is100PctAdv = (s.advancePercentage !== undefined && s.advancePercentage >= 100) || 
-                          (s.balanceToReceiveValue !== undefined && s.balanceToReceiveValue <= 0.001 && s.advanceValue !== undefined && s.advanceValue > 0) ||
-                          (s.advanceValue !== undefined && s.driverFreightValue !== undefined && (s.advanceValue + (s.tollValue || 0) >= s.driverFreightValue - 0.01));
-      
-      const is0PctAdv = s.advancePercentage === 0;
+      const is100PctAdv = isShipment100PercentAdvance(s);
+      const is0PctAdv = isShipment0PercentAdvance(s);
 
       switch (status) {
         case ShipmentStatus.Finalizado: // 11
