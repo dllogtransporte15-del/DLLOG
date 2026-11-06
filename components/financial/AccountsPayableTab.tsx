@@ -56,6 +56,7 @@ import {
   ShieldAlert,
   Paperclip,
   Upload,
+  UploadCloud,
   FileCheck,
   History,
   CheckSquare,
@@ -84,6 +85,7 @@ import { PayrollDocsModal } from './PayrollDocsModal';
 import { AccountsPayableSettlementModal, type SettlingAccountItem } from './AccountsPayableSettlementModal';
 import { InvoicesManagementTab } from './InvoicesManagementTab';
 import { calculateBoletoLateFees } from '../../utils/invoiceExtractionService';
+import { parseHoleriteFile, type ParsedHoleriteData } from '../../utils/holeriteParser';
 
 export const formatMonthKeyToLabel = (monthKey: string): string => {
   if (!monthKey) return '-';
@@ -408,7 +410,11 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const [costCenter, setCostCenter] = useState('Operacional');
   const [notes, setNotes] = useState('');
   // Tipo do Lançamento Avulso: despesa comum ou Vale / Adiantamento Salarial de colaborador da Folha
-  const [manualEntryType, setManualEntryType] = useState<'despesa' | 'vale'>('despesa');
+  const [manualEntryType, setManualEntryType] = useState<'despesa' | 'vale' | 'folha'>('despesa');
+  const [holeriteFile, setHoleriteFile] = useState<File | null>(null);
+  const [isReadingHolerite, setIsReadingHolerite] = useState<boolean>(false);
+  const [parsedHolerite, setParsedHolerite] = useState<ParsedHoleriteData | null>(null);
+  const [holeriteFileUrl, setHoleriteFileUrl] = useState<string>('');
   const [manualValeUserId, setManualValeUserId] = useState('');
   const [manualValeMonthKey, setManualValeMonthKey] = useState('');
   const [manualInstallmentsCount, setManualInstallmentsCount] = useState<number>(1);
@@ -2828,6 +2834,9 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
     setAmount('');
     setSupplierName('');
     setNotes('');
+    setHoleriteFile(null);
+    setParsedHolerite(null);
+    setHoleriteFileUrl('');
     setDueDate(new Date().toISOString().split('T')[0]);
     setManualInstallmentsCount(opts?.installmentsCount || 1);
     if (opts?.asVale) {
@@ -2846,7 +2855,8 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
   const handleSubmitManual = (e: React.FormEvent) => {
     e.preventDefault();
     const isVale = manualEntryType === 'vale';
-    if (!amount || !dueDate || (!isVale && !description)) return;
+    const isFolha = manualEntryType === 'folha';
+    if (!amount || !dueDate || (!isVale && !isFolha && !description)) return;
 
     const parsedAmount = parseBrazilianCurrency(amount);
     if (parsedAmount <= 0) {
@@ -2924,6 +2934,46 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
           'success'
         );
       }
+    } else if (isFolha) {
+      const folhaUser = payrollUsers.find(u => u.id === manualValeUserId);
+      if (!folhaUser) {
+        alert('Selecione o colaborador correspondente à Folha de Pagamento.');
+        return;
+      }
+      const folhaMonth = manualValeMonthKey || currentMonthPrefix;
+      const pix = folhaUser.phone || folhaUser.corporateEmail || folhaUser.email || '';
+      const baseDesc = description.trim() || `Folha de Pagamento - ${formatMonthKeyToLabel(folhaMonth)}`;
+
+      const folhaNotes = [
+        `[FOLHA_DE_PAGAMENTO_${folhaMonth}]`,
+        `Colaborador: ${folhaUser.name}`,
+        `Competência: ${formatMonthKeyToLabel(folhaMonth)}`,
+        pix ? `PIX: ${pix}` : '',
+        parsedHolerite?.grossSalary ? `Proventos: ${formatBrl(parsedHolerite.grossSalary)}` : '',
+        parsedHolerite?.totalDiscounts ? `Descontos: ${formatBrl(parsedHolerite.totalDiscounts)}` : '',
+        notes ? `Obs: ${notes}` : '',
+      ].filter(Boolean).join(' | ');
+
+      onAddTransaction({
+        type: 'payable',
+        description: `${baseDesc} (${folhaUser.name})`,
+        amount: parsedAmount,
+        dueDate,
+        status: FinancialTransactionStatus.Pendente,
+        category: 'Folha de Pagamento',
+        costCenter: 'Administrativo / RH',
+        supplierOrClientName: folhaUser.name,
+        notes: folhaNotes,
+        ownerId: folhaUser.id,
+        attachmentUrl: holeriteFileUrl || undefined,
+        holeriteUrl: holeriteFileUrl || undefined,
+        holeriteFileName: holeriteFile?.name || undefined,
+      });
+
+      showToast(
+        `Folha de Pagamento de ${formatBrl(parsedAmount)} para ${folhaUser.name} (${formatMonthKeyToLabel(folhaMonth)}) lançada como Pendente. Ao quitar, anexe o comprovante final para baixa.`,
+        'success'
+      );
     } else {
       if (count > 1) {
         const baseAmount = Math.floor((parsedAmount / count) * 100) / 100;
@@ -5464,7 +5514,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-blue-600" />
-                {manualEntryType === 'vale' ? 'Novo Lançamento Avulso - Vale / Adiantamento' : 'Novo Lançamento Avulso - Contas a Pagar'}
+                {manualEntryType === 'vale' ? 'Novo Lançamento Avulso - Vale / Adiantamento' : manualEntryType === 'folha' ? 'Novo Lançamento Avulso - Folha de Pagamento / Holerite' : 'Novo Lançamento Avulso - Contas a Pagar'}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -5478,7 +5528,7 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
               {/* Tipo de Lançamento Avulso */}
               <div>
                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Tipo de Lançamento *</label>
-                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
                   <button
                     type="button"
                     onClick={() => setManualEntryType('despesa')}
@@ -5502,7 +5552,22 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                       : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
                   >
                     <Wallet className="w-3.5 h-3.5" />
-                    <span>Vale / Adiantamento Salarial</span>
+                    <span>Vale / Adiantamento</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualEntryType('folha');
+                      if (!manualValeMonthKey) {
+                        setManualValeMonthKey(payrollSelectedMonth === 'last' ? lastMonthPrefix : currentMonthPrefix);
+                      }
+                    }}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${manualEntryType === 'folha'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Folha / Holerite</span>
                   </button>
                 </div>
               </div>
@@ -5610,6 +5675,194 @@ export const AccountsPayableTab: React.FC<AccountsPayableTabProps> = ({
                         {manualInstallmentsCount > 1
                           ? `Serão geradas ${manualInstallmentsCount} parcelas como Pendentes. Cada parcela só abaterá na folha do respectivo mês após Dar Baixa (Pago) com comprovante anexado.`
                           : 'O vale fica Pendente em Contas a Pagar. Somente após Dar Baixa (Pago) e anexar o comprovante ele será somado em (-) Adiantamentos na Folha.'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {manualEntryType === 'folha' && (() => {
+                const selFolhaUser = payrollUsers.find(u => u.id === manualValeUserId);
+                const folhaPix = selFolhaUser ? (selFolhaUser.phone || selFolhaUser.corporateEmail || selFolhaUser.email || '') : '';
+                const monthOptions = Array.from(new Set([
+                  lastMonthPrefix,
+                  currentMonthPrefix,
+                  addMonthsToMonthKey(currentMonthPrefix, 1),
+                  addMonthsToMonthKey(currentMonthPrefix, 2),
+                  ...(manualValeMonthKey ? [manualValeMonthKey] : []),
+                ])).sort();
+
+                const compMonth = manualValeMonthKey || currentMonthPrefix;
+                const userValesInMonth = (transactions || []).filter(t =>
+                  t.type === 'payable' &&
+                  isValeTransaction(t) &&
+                  t.status !== FinancialTransactionStatus.Cancelado &&
+                  getValeDiscountMonthKey(t) === compMonth &&
+                  (
+                    (t.ownerId && t.ownerId === manualValeUserId) ||
+                    (!t.ownerId && selFolhaUser && t.supplierOrClientName?.toLowerCase().includes(selFolhaUser.name.toLowerCase()))
+                  )
+                );
+
+                const totalValesInMonth = userValesInMonth.reduce((acc, t) => acc + (t.amount || 0), 0);
+                const grossOrNetParsed = parseBrazilianCurrency(amount);
+                const liquidBalance = Math.max(0, grossOrNetParsed - totalValesInMonth);
+
+                const handleHoleriteUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+
+                  setHoleriteFile(file);
+                  setIsReadingHolerite(true);
+
+                  try {
+                    const parsed = await parseHoleriteFile(file, payrollUsers);
+                    setParsedHolerite(parsed);
+
+                    if (parsed.matchedUserId) {
+                      setManualValeUserId(parsed.matchedUserId);
+                    }
+                    if (parsed.referenceMonth) {
+                      setManualValeMonthKey(parsed.referenceMonth);
+                    }
+                    if (parsed.netSalary && parsed.netSalary > 0) {
+                      setAmount(parsed.netSalary.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                    }
+                    if (parsed.paymentDate) {
+                      setDueDate(parsed.paymentDate);
+                    }
+
+                    try {
+                      const uploaded = await uploadInvoiceAttachmentToStorage(
+                        file,
+                        `holerite_${Date.now()}`,
+                        'comprovante',
+                        file.name,
+                        file.type
+                      );
+                      if (uploaded) {
+                        setHoleriteFileUrl(uploaded);
+                      }
+                    } catch (uploadErr) {
+                      console.warn('Fallback upload holerite:', uploadErr);
+                    }
+
+                    showToast(`Holerite lido com sucesso! ${parsed.employeeName ? `Colaborador: ${parsed.employeeName}` : ''} ${parsed.netSalary ? `| Líquido: ${formatBrl(parsed.netSalary)}` : ''}`, 'success');
+                  } catch (err: any) {
+                    console.error('Erro na leitura do holerite:', err);
+                    showToast('Não foi possível ler todos os dados do holerite automaticamente. Preencha manualmente se necessário.', 'warning');
+                  } finally {
+                    setIsReadingHolerite(false);
+                  }
+                };
+
+                return (
+                  <div className="p-3.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/60 space-y-3">
+                    {/* Upload Box do Holerite */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Anexar Holerite / Contracheque (PDF ou Imagem)
+                      </label>
+                      <div className="relative border-2 border-dashed border-purple-300 dark:border-purple-700 hover:border-purple-500 rounded-xl p-3 bg-white/70 dark:bg-slate-900/60 text-center transition-all cursor-pointer">
+                        <input
+                          type="file"
+                          accept=".pdf,image/*"
+                          onChange={handleHoleriteUpload}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        {isReadingHolerite ? (
+                          <div className="flex items-center justify-center gap-2 py-2 text-purple-600 dark:text-purple-400 font-bold text-xs">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Lendo e extraindo dados do holerite...</span>
+                          </div>
+                        ) : holeriteFile ? (
+                          <div className="flex items-center justify-between px-2 py-1">
+                            <div className="flex items-center gap-2 text-left">
+                              <FileCheck className="w-5 h-5 text-emerald-600" />
+                              <div>
+                                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-xs">{holeriteFile.name}</p>
+                                <p className="text-[10px] text-emerald-600 font-semibold">Holerite anexado e analisado</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-purple-600 hover:underline">Trocar</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-1">
+                            <UploadCloud className="w-6 h-6 text-purple-500 mb-1" />
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                              Clique ou arraste o arquivo do Holerite aqui
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Leitura automática de colaborador, competência e valor líquido</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Colaborador Responsável *</label>
+                        <select
+                          required
+                          value={manualValeUserId}
+                          onChange={(e) => setManualValeUserId(e.target.value)}
+                          className="w-full px-2.5 py-2 rounded-xl text-xs border border-purple-300 dark:border-purple-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-purple-500 font-medium"
+                        >
+                          <option value="">Selecione o colaborador...</option>
+                          {payrollUsers.map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({getUserRegime(u)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mês de Competência *</label>
+                        <select
+                          required
+                          value={manualValeMonthKey || currentMonthPrefix}
+                          onChange={(e) => setManualValeMonthKey(e.target.value)}
+                          className="w-full px-2.5 py-2 rounded-xl text-xs border border-purple-300 dark:border-purple-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-purple-500 font-medium"
+                        >
+                          {monthOptions.map(mk => (
+                            <option key={mk} value={mk}>
+                              {formatMonthKeyToLabel(mk)}
+                              {mk === currentMonthPrefix ? ' (Mês Atual)' : mk === lastMonthPrefix ? ' (Mês Anterior)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Resumo de Vales Concedidos & Saldo a Pagar */}
+                    {manualValeUserId && (
+                      <div className="p-2.5 rounded-xl bg-purple-100/90 dark:bg-purple-950/80 border border-purple-300 dark:border-purple-800 text-[11px] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-600 dark:text-slate-400">Total Líquido Holerite:</span>
+                          <span className="font-bold font-mono text-slate-900 dark:text-white">{formatBrl(grossOrNetParsed)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                            (-) Vales / Adiantamentos no Mês ({userValesInMonth.length}):
+                          </span>
+                          <span className="font-bold font-mono text-amber-700 dark:text-amber-400">- {formatBrl(totalValesInMonth)}</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-purple-200 dark:border-purple-800 text-xs font-black text-purple-900 dark:text-purple-200">
+                          <span>Saldo Restante a Pagar na Folha:</span>
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400">{formatBrl(liquidBalance)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {folhaPix && (
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                        Chave PIX cadastrada: <strong className="text-slate-800 dark:text-slate-200 font-mono">{folhaPix}</strong>
+                      </div>
+                    )}
+
+                    <div className="flex items-start gap-1.5 text-[11px] text-purple-800 dark:text-purple-300 leading-snug">
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        O lançamento da folha ficará como <strong>Pendente</strong> em Contas a Pagar. Ao efetuar o pagamento final, anexe o comprovante bancário/PIX para dar baixa e finalizar o fechamento do mês.
                       </span>
                     </div>
                   </div>

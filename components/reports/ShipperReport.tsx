@@ -28,7 +28,14 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { addPdfLogo } from '../../utils/pdfGenerator';
 import MultiSelectDropdown from '../MultiSelectDropdown';
-import { hasCteAttached, isCteApplicableForStatus, getShipmentCte, isShipmentEligibleForCommission } from '../../utils';
+import { 
+  hasCteAttached, 
+  isCteApplicableForStatus, 
+  getShipmentCte, 
+  isShipmentEligibleForCommission,
+  canViewPredictedCommission,
+  isShipmentPredictedForCommission
+} from '../../utils';
 
 interface ShipperReportProps {
   shipments: Shipment[];
@@ -49,6 +56,9 @@ interface OperatorStats {
   cancelado: number;
   effectiveTonnage: number;
   commission: number;
+  predictedCommission: number;
+  efetivadosCount: number;
+  predictedCount: number;
   completionRate: number;
 }
 
@@ -113,38 +123,50 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
         return creatorIds.map(creatorId => {
             const creator = users.find(u => u.id === creatorId);
             const creatorRate = Number(creator?.shipperCommissionRatePerTon) || 0;
-            const creatorShipments = shipments.filter(s => 
+            const operatorCteShipments = shipments.filter(s => 
                 (s.embarcadorId === creatorId || s.createdById === creatorId) &&
                 s.status !== ShipmentStatus.Cancelado &&
-                isShipmentEligibleForCommission(s) &&
                 hasCteAttached(s)
             );
           
-            const stats = creatorShipments.reduce((acc, shipment) => {
+            let finalizadoCount = 0;
+            let canceladoCount = 0;
+            let emAndamentoCount = 0;
+            let effectiveTonnage = 0;
+            let commissionEfetivada = 0;
+            let predictedCommission = 0;
+            let efetivadosCount = 0;
+            let predictedCount = 0;
+
+            operatorCteShipments.forEach(shipment => {
                 if (shipment.status === ShipmentStatus.Finalizado) {
-                  acc.finalizado += 1;
+                    finalizadoCount += 1;
                 } else if (shipment.status === ShipmentStatus.Cancelado) {
-                  acc.cancelado += 1;
+                    canceladoCount += 1;
                 } else {
-                  acc.emAndamento += 1;
+                    emAndamentoCount += 1;
                 }
 
-                const isEffective = shipment.status !== ShipmentStatus.Cancelado && hasCteAttached(shipment);
+                const tons = Number(shipment.shipmentTonnage) || 0;
+                const rateToUse = shipment.shipperCommissionRatePerTon !== undefined 
+                    ? Number(shipment.shipperCommissionRatePerTon) 
+                    : creatorRate;
+                const commValue = tons * rateToUse;
 
-                if (isEffective) {
-                    const tons = Number(shipment.shipmentTonnage) || 0;
-                    acc.effectiveTonnage += tons;
-                    const rateToUse = shipment.shipperCommissionRatePerTon !== undefined 
-                        ? Number(shipment.shipperCommissionRatePerTon) 
-                        : creatorRate;
-                    acc.commission += tons * rateToUse;
+                // Efetivado: Descarregado a partir de Aguardando Saldo ou Finalizado
+                if (isShipmentEligibleForCommission(shipment)) {
+                    efetivadosCount += 1;
+                    effectiveTonnage += tons;
+                    commissionEfetivada += commValue;
+                } else if (isShipmentPredictedForCommission(shipment)) {
+                    // Previsto: Em trânsito antes da descarga
+                    predictedCount += 1;
+                    predictedCommission += commValue;
                 }
-
-                return acc;
-            }, { finalizado: 0, cancelado: 0, emAndamento: 0, effectiveTonnage: 0, commission: 0 });
+            });
     
-            const total = stats.finalizado + stats.emAndamento;
-            const completionRate = total > 0 ? (stats.finalizado / total) * 100 : 0;
+            const total = finalizadoCount + emAndamentoCount;
+            const completionRate = total > 0 ? (finalizadoCount / total) * 100 : 0;
 
             return {
                 id: creatorId,
@@ -152,7 +174,14 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
                 ratePerTon: creatorRate,
                 total,
                 completionRate,
-                ...stats,
+                finalizado: finalizadoCount,
+                cancelado: canceladoCount,
+                emAndamento: emAndamentoCount,
+                effectiveTonnage,
+                commission: commissionEfetivada,
+                predictedCommission,
+                efetivadosCount,
+                predictedCount,
             };
         }).filter(item => {
             if (!isDeveloperUser(currentUser) && (item.id === 'USR-001' || item.id === 'USR-292')) return false;
@@ -172,6 +201,9 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             acc.inProgressShipments += op.emAndamento;
             acc.effectiveTonnage += op.effectiveTonnage;
             acc.totalCommission += op.commission;
+            acc.totalPredictedCommission += op.predictedCommission;
+            acc.totalEfetivados += op.efetivadosCount;
+            acc.totalPredictedShipments += op.predictedCount;
             return acc;
         }, {
             totalOperators: 0,
@@ -179,7 +211,10 @@ const ShipperReport: React.FC<ShipperReportProps> = ({ shipments, cargos, client
             finalizedShipments: 0,
             inProgressShipments: 0,
             effectiveTonnage: 0,
-            totalCommission: 0
+            totalCommission: 0,
+            totalPredictedCommission: 0,
+            totalEfetivados: 0,
+            totalPredictedShipments: 0
         });
     }, [operatorStats]);
 

@@ -1,5 +1,5 @@
-import type { Shipment, Cargo, FinancialTransaction, Client } from '../types';
-import { ShipmentStatus } from '../types';
+import type { Shipment, Cargo, FinancialTransaction, Client, User } from '../types';
+import { ShipmentStatus, UserProfile } from '../types';
 import type { StayRecord } from './toolStorage';
 import { isStayForShipment } from '../utils';
 
@@ -362,24 +362,52 @@ export function formatBrl(val: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 }
 
+import { isDeveloperUser } from '../auth';
+
+/**
+ * Perfis autorizados a visualizar o campo e indicadores de "Comissão Prevista"
+ * (Administrador do Sistema, Desenvolvedor, Comercial/Gerente Comercial e Diretor).
+ * Os demais usuários (ex: Agenciadores, Embarcadores, etc.) visualizam estritamente
+ * a comissão efetivada após o veículo estar descarregado (Ag. Saldo em diante).
+ */
+export function canViewPredictedCommission(user?: User | null): boolean {
+  if (!user) return false;
+  if (isDeveloperUser(user)) return true;
+  const p = user.profile;
+  return p === UserProfile.Admin || 
+         p === UserProfile.Desenvolvedor || 
+         p === UserProfile.Comercial || 
+         p === UserProfile.GerenteComercial || 
+         p === UserProfile.Diretor ||
+         (typeof p === 'string' && (
+           p.toLowerCase().includes('admin') || 
+           p.toLowerCase().includes('desenvolvedor') || 
+           p.toLowerCase().includes('developer') || 
+           p.toLowerCase().includes('comercial') || 
+           p.toLowerCase().includes('diretor')
+         ));
+}
+
 /**
  * Status que comprovam que o veículo já descarregou e o frete está apto
- * para apuração e contabilização de comissão na Folha e no Financeiro.
+ * para apuração e contabilização de comissão efetiva na Folha e no Financeiro:
+ * Exclusivamente a partir do status "Aguardando Pagamento de Saldo" (após validação de ticket e descarga comprovada)
+ * ou "Finalizado" (inclusive quando o frete foi 100% no adiantamento).
  */
 export const COMMISSION_ELIGIBLE_STATUSES: ShipmentStatus[] = [
-  ShipmentStatus.ValidacaoTicket,          // "Valid. de Ticket" (Marco inicial de descarga)
   ShipmentStatus.AguardandoPagamentoSaldo, // "Ag. Saldo"
   ShipmentStatus.Finalizado                // "Finalizado"
 ];
 
 /**
- * Status de trânsito após carregamento efetivado (veículo carregou e está em trânsito)
+ * Status de trânsito após carregamento efetivado (veículo carregou e está em trânsito antes de descarregar e conferir saldo)
  */
 export const END_OF_MONTH_TRANSIT_STATUSES: ShipmentStatus[] = [
   ShipmentStatus.AguardandoFiscal,       // "Ag. Fiscal"
   ShipmentStatus.AguardandoAdiantamento, // "Ag. Adiantamento"
   ShipmentStatus.AguardandoAgendamento,   // "Ag. Agend. ou Troca/nfe"
-  ShipmentStatus.AguardandoDescarga      // "Ag. Descarga"
+  ShipmentStatus.AguardandoDescarga,     // "Ag. Descarga"
+  ShipmentStatus.ValidacaoTicket         // "Valid. de Ticket" (etapa de conferência de balança antes da liberação do saldo)
 ];
 
 /**
@@ -460,22 +488,20 @@ export function isShipmentLoadedAtEndOfMonth(shipmentOrDate: any): boolean {
   return !isNaN(day) && day >= 20;
 }
 
-const DISCHARGE_STATUS_SET = new Set<string>([
-  ShipmentStatus.ValidacaoTicket,
+export const DISCHARGE_STATUS_SET = new Set<string>([
   ShipmentStatus.AguardandoPagamentoSaldo,
   ShipmentStatus.Finalizado,
-  'Valid. de Ticket',
-  'ValidacaoTicket',
   'Ag. Saldo',
   'AguardandoPagamentoSaldo',
   'Finalizado'
 ]);
 
-const TRANSIT_STATUS_SET = new Set<string>([
+export const TRANSIT_STATUS_SET = new Set<string>([
   ShipmentStatus.AguardandoFiscal,
   ShipmentStatus.AguardandoAdiantamento,
   ShipmentStatus.AguardandoAgendamento,
   ShipmentStatus.AguardandoDescarga,
+  ShipmentStatus.ValidacaoTicket,
   'Ag. Fiscal',
   'AguardandoFiscal',
   'Ag. Adiantamento',
@@ -483,8 +509,44 @@ const TRANSIT_STATUS_SET = new Set<string>([
   'Ag. Agend. ou Troca/nfe',
   'AguardandoAgendamento',
   'Ag. Descarga',
-  'AguardandoDescarga'
+  'AguardandoDescarga',
+  'Valid. de Ticket',
+  'ValidacaoTicket',
+  'Validação de Ticket',
+  'Validação de Ticket e Peso'
 ]);
+
+/**
+ * Retorna true se o embarque é previsto para apuração de comissão (em trânsito antes de descarregar e conferir saldo).
+ * Exibido no campo "Comissão Prevista" para Administradores, Desenvolvedor, Comercial e Diretores.
+ */
+export function isShipmentPredictedForCommission(
+  shipmentOrStatus: any,
+  targetMonthKey?: string
+): boolean {
+  if (!shipmentOrStatus) return false;
+  if (typeof shipmentOrStatus === 'object') {
+    const s = shipmentOrStatus;
+    const status = s.status;
+    if (!status || status === ShipmentStatus.Cancelado || String(status) === 'Cancelado') return false;
+    const statusStr = String(status);
+
+    if (DISCHARGE_STATUS_SET.has(statusStr)) return false;
+
+    if (TRANSIT_STATUS_SET.has(statusStr)) {
+      if (targetMonthKey) {
+        const effYmd = getShipmentEffectiveYmd(s);
+        if (effYmd && !effYmd.startsWith(targetMonthKey)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+  const statusStr = String(shipmentOrStatus);
+  return TRANSIT_STATUS_SET.has(statusStr);
+}
 
 /**
  * Retorna true se o embarque se enquadra na Exceção de Virada de Mês:

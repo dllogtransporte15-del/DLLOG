@@ -981,6 +981,10 @@ export interface FinancialTransaction {
   ownerId?: string;
   
   notes?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  holeriteUrl?: string;
+  holeriteFileName?: string;
   isReconciled?: boolean;
   reconciledAt?: string;
   ofxCheckNum?: string;

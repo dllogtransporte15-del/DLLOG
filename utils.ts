@@ -888,5 +888,7 @@ export {
   getShipmentEffectiveYmd,
   isShipmentLoadedAtEndOfMonth,
   isShipmentEligibleByEndOfMonthException,
-  isShipmentEligibleForCommission 
+  isShipmentEligibleForCommission,
+  canViewPredictedCommission,
+  isShipmentPredictedForCommission
 } from './utils/financialCalculations';

@@ -2297,18 +2297,19 @@ const App: React.FC = () => {
         nextStatus = ShipmentStatus.AguardandoFiscal;
     } else if (originalShipment.status === ShipmentStatus.AguardandoFiscal) {
         // 5 - Ag. Fiscal -> 6 - Ag. Adiantamento (ou pula para 7/8 se explicitamente 0% de adiantamento)
+        const isComplementar = Boolean(originalShipment.isComplementar || (originalShipment.documents as any)?.is_complementar);
         const is0PercentAdvance = isShipment0PercentAdvance(originalShipment, advancePercentage);
 
         if (is0PercentAdvance) {
             // Pula "6 - Ag. Adiantamento"
-            // Para em "7 - Ag. Agend. ou Troca/nfe" apenas se a carga tiver "Exige Agendamento" ligada; caso contrário vai direto para "8 - Ag. Descarga"
-            nextStatus = cargoRequiresScheduling ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
+            // Para complementar, vai direto para Aguardando Descarga
+            nextStatus = (cargoRequiresScheduling && !isComplementar) ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
         } else {
             nextStatus = ShipmentStatus.AguardandoAdiantamento;
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAdiantamento) {
         // 6 - Ag. Adiantamento -> 7 - Ag. Agend. ou Troca/nfe apenas se a carga tiver "Exige Agendamento" ligada; senão vai direto para 8 - Ag. Descarga
-        // SEGURANÇA: Só pode avançar para o próximo status se houver comprovante de adiantamento anexado nesta ação ou já existente no cadastro!
+        const isComplementar = Boolean(originalShipment.isComplementar || (originalShipment.documents as any)?.is_complementar);
         const existingAdvReceipt = originalShipment.documents?.['Comprovante de Adiantamento'] || (originalShipment.documents as any)?.comprovante_adiantamento;
         const hasAttachedReceipt = (filesToAttach['Comprovante de Adiantamento'] && filesToAttach['Comprovante de Adiantamento'].length > 0) ||
                                    (filesToAttach['Comprovante de Pagamento de Adiantamento'] && filesToAttach['Comprovante de Pagamento de Adiantamento'].length > 0);
@@ -2318,7 +2319,7 @@ const App: React.FC = () => {
             console.warn(`[handleUpdateShipmentAttachment] Embarque ${originalShipment.id} tentou avançar de Aguardando Adiantamento sem comprovante anexado. Mantendo em Aguardando Adiantamento.`);
             nextStatus = ShipmentStatus.AguardandoAdiantamento;
         } else {
-            nextStatus = cargoRequiresScheduling ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
+            nextStatus = (cargoRequiresScheduling && !isComplementar) ? ShipmentStatus.AguardandoAgendamento : ShipmentStatus.AguardandoDescarga;
         }
     } else if (originalShipment.status === ShipmentStatus.AguardandoAgendamento) {
         // 7 - Ag. Agend. ou Troca/nfe -> 8 - Ag. Descarga
@@ -2326,8 +2327,19 @@ const App: React.FC = () => {
     } else if (currentUser.profile === UserProfile.Motorista && originalShipment.status === ShipmentStatus.AguardandoDescarga) {
         nextStatus = ShipmentStatus.AguardandoDescarga;
     } else if (originalShipment.status === ShipmentStatus.AguardandoDescarga) {
-        // 8 - Ag. Descarga -> 9 - Valid. de Ticket
-        nextStatus = ShipmentStatus.ValidacaoTicket;
+        const isComplementar = Boolean(originalShipment.isComplementar || (originalShipment.documents as any)?.is_complementar);
+        if (isComplementar) {
+            // Para complementar, o comprovante de descarga já foi conferido no original.
+            // Se foi 100% adiantamento, pula Aguardando Saldo e vai direto para Finalizado!
+            const is100PercentAdvance = isShipment100PercentAdvance({
+              ...originalShipment,
+              ...(unloadedTonnage !== undefined ? { unloadedTonnage } : {}),
+            });
+            nextStatus = is100PercentAdvance ? ShipmentStatus.Finalizado : ShipmentStatus.AguardandoPagamentoSaldo;
+        } else {
+            // 8 - Ag. Descarga -> 9 - Valid. de Ticket
+            nextStatus = ShipmentStatus.ValidacaoTicket;
+        }
     } else if (originalShipment.status === ShipmentStatus.ValidacaoTicket) {
         // 9 - Valid. de Ticket -> 10 - Ag. Saldo (ou pula para 11 se 100% de adiantamento)
         const is100PercentAdvance = isShipment100PercentAdvance({

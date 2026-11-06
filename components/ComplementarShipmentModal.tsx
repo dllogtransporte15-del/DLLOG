@@ -76,6 +76,9 @@ export interface ComplementarShipmentPayload {
   nfNumber?: string;
   nfKey?: string;
   nfValue?: number;
+  advancePercentage?: number;
+  isFederalTaxManual?: boolean;
+  manualFederalTaxValue?: number;
   deductions?: ComplementarDeductions;
 }
 
@@ -139,6 +142,15 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
   const [notes, setNotes] = useState<string>('');
   const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
+  // Edição Manual de Imposto Federal
+  const [isFederalTaxManual, setIsFederalTaxManual] = useState<boolean>(false);
+  const [customFederalTax, setCustomFederalTax] = useState<string>('');
+
+  // Porcentagem de Adiantamento (0% pula direto para descarga; 100% pula saldo)
+  const [advancePercentage, setAdvancePercentage] = useState<number>(() => {
+    return (shipment?.advancePercentage !== undefined && shipment.advancePercentage !== null) ? Number(shipment.advancePercentage) : 0;
+  });
+
   // Visualização das Deduções
   const [showDeductions, setShowDeductions] = useState<boolean>(true);
 
@@ -160,6 +172,7 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
   const liveExpenses = useMemo(() => {
     if (!shipment) return null;
 
+    const parsedManualTax = parseFloat(customFederalTax.replace(/\./g, '').replace(',', '.'));
     const dummyShipment: Shipment = {
       ...shipment,
       id: `${shipment.id}-COMP`,
@@ -173,6 +186,8 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
       ciotNumber: undefined,
       nfeValue: nfValNum,
       nfeNumber: nfNumber.trim() || undefined,
+      federalTax: (isFederalTaxManual && !isNaN(parsedManualTax)) ? parsedManualTax : undefined,
+      isFederalTaxManual: isFederalTaxManual,
       realProfitData: {
         freightDifference: Math.max(0, companyValNum - driverValNum),
         freightDifferenceMarginPercent: companyValNum > 0 ? ((companyValNum - driverValNum) / companyValNum) * 100 : 0,
@@ -185,11 +200,13 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
         driverFreight: driverValNum,
         toll: 0,
         ciot: 0,
+        federalTax: (isFederalTaxManual && !isNaN(parsedManualTax)) ? parsedManualTax : undefined,
+        isFederalTaxManual: isFederalTaxManual,
       } as RealProfitData
     };
 
     return calculateShipmentExpenses(dummyShipment, relatedCargo);
-  }, [shipment, relatedCargo, companyValNum, driverValNum, tonnageNum, nfValNum, nfNumber]);
+  }, [shipment, relatedCargo, companyValNum, driverValNum, tonnageNum, nfValNum, nfNumber, isFederalTaxManual, customFederalTax]);
 
   // Handler de seleção e extração do CT-e Complementar
   const handleCteFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -365,6 +382,7 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
       };
 
       // 5. Confirmar a criação do novo embarque complementar
+      const parsedManualTax = parseFloat(customFederalTax.replace(/\./g, '').replace(',', '.'));
       await onConfirmComplementar({
         cteNumber: cleanCteNum,
         companyFreightValue: companyValNum,
@@ -379,7 +397,13 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
         nfNumber: nfNumber.trim() || undefined,
         nfKey: nfKey.trim() || undefined,
         nfValue: nfValNum,
-        deductions,
+        advancePercentage: Number(advancePercentage) || 0,
+        isFederalTaxManual,
+        manualFederalTaxValue: (isFederalTaxManual && !isNaN(parsedManualTax)) ? parsedManualTax : undefined,
+        deductions: {
+          ...deductions,
+          impostoFederal: (isFederalTaxManual && !isNaN(parsedManualTax)) ? parsedManualTax : deductions.impostoFederal,
+        },
       });
 
       onClose();
@@ -410,7 +434,7 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
                   Lançar Embarque Complementar
                 </h3>
                 <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                  Status: Finalizado (Direto no Histórico)
+                  Status: Aguardando Fiscal
                 </span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -824,17 +848,47 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
 
             {showDeductions && liveExpenses && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
-                {/* Imposto Federal */}
+                {/* Imposto Federal (com Edição Manual Liberada) */}
                 <div className="p-2.5 bg-slate-50 dark:bg-slate-900/60 rounded-lg border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate">Imposto Federal</span>
-                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 shrink-0">
-                      {liveExpenses.impostoFederal > 0 ? (shipment.etcTaxRegime === 'Simples Nacional' ? '3,40% Simples' : 'Proporcional') : 'Isento'}
+                    <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
+                      <span>Imposto Federal</span>
+                      {isFederalTaxManual && (
+                        <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Manual</span>
+                      )}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isFederalTaxManual) {
+                          setIsFederalTaxManual(true);
+                          setCustomFederalTax(liveExpenses.impostoFederal > 0 ? liveExpenses.impostoFederal.toFixed(2).replace('.', ',') : '');
+                        } else {
+                          setIsFederalTaxManual(false);
+                          setCustomFederalTax('');
+                        }
+                      }}
+                      className="text-[9px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                    >
+                      {isFederalTaxManual ? 'Auto' : 'Editar'}
+                    </button>
                   </div>
-                  <div className={`text-xs font-bold font-mono ${liveExpenses.impostoFederal > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
-                    {liveExpenses.impostoFederal > 0 ? `- ${formatBrl(liveExpenses.impostoFederal)}` : 'R$ 0,00'}
-                  </div>
+                  {isFederalTaxManual ? (
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="text-[10px] text-slate-400 font-mono">R$</span>
+                      <input
+                        type="text"
+                        value={customFederalTax}
+                        onChange={(e) => setCustomFederalTax(e.target.value)}
+                        placeholder="0,00"
+                        className="w-full px-1.5 py-0.5 text-xs font-bold font-mono text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-950 border border-purple-400 rounded outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className={`text-xs font-bold font-mono ${liveExpenses.impostoFederal > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
+                      {liveExpenses.impostoFederal > 0 ? `- ${formatBrl(liveExpenses.impostoFederal)}` : 'R$ 0,00'}
+                    </div>
+                  )}
                 </div>
 
                 {/* ICMS Destacado */}
@@ -1188,7 +1242,7 @@ export const ComplementarShipmentModal: React.FC<ComplementarShipmentModalProps>
               </>
             ) : (
               <>
-                <Check className="w-4 h-4" /> Gerar Embarque Complementar e Finalizar
+                <Check className="w-4 h-4" /> Gerar Embarque Complementar (Ag. Fiscal)
               </>
             )}
           </button>

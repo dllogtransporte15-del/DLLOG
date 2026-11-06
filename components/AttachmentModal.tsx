@@ -1248,21 +1248,29 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
     return hasDocForCategory(catName);
   }, [multiFiles, detectedDocTypes, hasDocForCategory]);
 
+  const isComplementar = Boolean(
+    shipment.isComplementar ||
+    (shipment.documents as any)?.is_complementar ||
+    (shipment.documents as any)?.isComplementar
+  );
+
   const missingFiscalDocs = React.useMemo(() => {
     if (!isAguardandoFiscal) return [];
     const missing: string[] = [];
     if (!hasValidDocForCategory('CT-e')) missing.push('CT-e');
-    if (!hasValidDocForCategory('MDF-e')) missing.push('MDF-e');
-    if (!hasValidDocForCategory('Carta Frete')) missing.push('Carta Frete');
+    if (!isComplementar) {
+      if (!hasValidDocForCategory('MDF-e')) missing.push('MDF-e');
+      if (!hasValidDocForCategory('Carta Frete')) missing.push('Carta Frete');
+    }
     return missing;
-  }, [isAguardandoFiscal, hasValidDocForCategory]);
+  }, [isAguardandoFiscal, hasValidDocForCategory, isComplementar]);
 
   const hasMissingFiscalDocs = isAguardandoFiscal && missingFiscalDocs.length > 0;
 
   const fiscalAttachmentMismatches = React.useMemo(() => {
     if (!isAguardandoFiscal) return [];
     const errors: { field: string; fileName: string; detectedType: string; message: string }[] = [];
-    ['CT-e', 'MDF-e', 'Carta Frete'].forEach(cat => {
+    (isComplementar ? (['CT-e'] as ('CT-e' | 'MDF-e' | 'Carta Frete')[]) : (['CT-e', 'MDF-e', 'Carta Frete'] as ('CT-e' | 'MDF-e' | 'Carta Frete')[])).forEach(cat => {
       const files = multiFiles[cat] || [];
       files.forEach(f => {
         const mismatch = detectAttachmentMismatch(f, cat, detectedDocTypes[f.name]);
@@ -2437,7 +2445,9 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       }
       if (isAguardandoFiscal) {
         if (hasMissingFiscalDocs) {
-          const msg = `Para avançar, anexe obrigatoriamente o CT-e, o MDF-e e a Carta Frete corretos em seus respectivos campos. Documentos pendentes: ${missingFiscalDocs.join(', ')}.`;
+          const msg = isComplementar
+            ? 'Para avançar o embarque complementar, anexe obrigatoriamente o CT-e complementar no campo correspondente.'
+            : `Para avançar, anexe obrigatoriamente o CT-e, o MDF-e e a Carta Frete corretos em seus respectivos campos. Documentos pendentes: ${missingFiscalDocs.join(', ')}.`;
           showToast(`⛔ ${msg}`, 'error', 9000);
           setError(msg);
           return;
@@ -2555,9 +2565,17 @@ const AttachmentModal: React.FC<AttachmentModalProps> = ({
       return;
     }
 
-    if (shipment.status === ShipmentStatus.AguardandoDescarga && (!unloadedTonnage || Number(unloadedTonnage) <= 0)) {
-      showToast('O peso descarregado é obrigatório para informar a entrega.', 'warning');
-      return;
+    if (shipment.status === ShipmentStatus.AguardandoDescarga) {
+      if (isComplementar && (!unloadedTonnage || Number(unloadedTonnage) <= 0)) {
+        // Herda peso carregado do complementar automaticamente se não alterado
+        const defaultWeight = Number(shipment.shipmentTonnage) || Number(loadedTonnage) || 0;
+        if (defaultWeight > 0) {
+          setUnloadedTonnage(defaultWeight);
+        }
+      } else if (!unloadedTonnage || Number(unloadedTonnage) <= 0) {
+        showToast('O peso descarregado é obrigatório para informar a entrega.', 'warning');
+        return;
+      }
     }
 
     if (shipment.status === ShipmentStatus.ValidacaoTicket) {

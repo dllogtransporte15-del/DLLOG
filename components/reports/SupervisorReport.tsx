@@ -5,7 +5,7 @@ import { isDeveloperUser, isDemoUser } from '../../auth';
 import { UsersIcon } from '../icons/UsersIcon';
 import { StayRecord } from '../../utils/toolStorage';
 import { calculateShipmentExpenses } from '../../utils/operationalExpensesCalculator';
-import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached, isShipmentEligibleForCommission, COMMISSION_ELIGIBLE_STATUSES } from '../../utils';
+import { getShipmentCte, getShipmentEffectiveDate, isCteApplicableForStatus, isStayForShipment, hasCteAttached, isShipmentEligibleForCommission, COMMISSION_ELIGIBLE_STATUSES, canViewPredictedCommission, isShipmentPredictedForCommission } from '../../utils';
 import { 
   Building2, 
   CheckCircle2, 
@@ -319,20 +319,30 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     userAgencyProfitMap, 
     userAgencyCommissionMap, 
     userAgencyShipmentCountMap,
+    userAgencyPredictedCommissionMap,
     memberProfitMap,
     memberCommissionMap,
-    memberShipmentCountMap
+    memberShipmentCountMap,
+    memberPredictedCommissionMap
   } = useMemo(() => {
     const commMap = new Map<string, number>();
     const profitMap = new Map<string, number>();
     const countMap = new Map<string, number>();
 
+    const predictedCommMap = new Map<string, number>();
+    const predictedProfitMap = new Map<string, number>();
+    const predictedCountMap = new Map<string, number>();
+
     const memProfit = new Map<string, number>();
     const memComm = new Map<string, number>();
     const memCount = new Map<string, number>();
+    const memPredictedComm = new Map<string, number>();
     
     shipments.forEach(s => {
-      if (s.status === ShipmentStatus.Cancelado || !isShipmentEligibleForCommission(s)) return;
+      if (s.status === ShipmentStatus.Cancelado) return;
+      const isEligible = isShipmentEligibleForCommission(s);
+      const isPredicted = isShipmentPredictedForCommission(s);
+      if (!isEligible && !isPredicted) return;
       
       const cteVal = getShipmentCte(s);
       const hasCte = Boolean(cteVal && cteVal !== '-' && cteVal.trim() !== '');
@@ -375,11 +385,6 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
 
       const leader = userMap.get(targetLeaderId);
 
-      // Soma do Lucro Real e Contagem da Agência Líder
-      profitMap.set(targetLeaderId, (profitMap.get(targetLeaderId) || 0) + opProfit);
-      countMap.set(targetLeaderId, (countMap.get(targetLeaderId) || 0) + 1);
-
-      // Comissão de agenciamento
       const isAgencyEnabled = s.agencyCommissionEnabled !== false && (s.agencyCommissionEnabled === true || Boolean(leader?.profile === UserProfile.Agenciador));
       let calculatedCommVal = 0;
       if (isAgencyEnabled) {
@@ -387,21 +392,30 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
           ? s.agencyCommissionPercentage 
           : (leader?.agencyCommissionPercentage ?? 30);
         calculatedCommVal = opProfit > 0 ? Number((opProfit * (pct / 100)).toFixed(2)) : 0;
-        commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + calculatedCommVal);
+      }
+
+      if (isEligible) {
+        profitMap.set(targetLeaderId, (profitMap.get(targetLeaderId) || 0) + opProfit);
+        countMap.set(targetLeaderId, (countMap.get(targetLeaderId) || 0) + 1);
+        if (calculatedCommVal > 0) {
+          commMap.set(targetLeaderId, (commMap.get(targetLeaderId) || 0) + calculatedCommVal);
+        }
+      } else if (isPredicted) {
+        predictedProfitMap.set(targetLeaderId, (predictedProfitMap.get(targetLeaderId) || 0) + opProfit);
+        predictedCountMap.set(targetLeaderId, (predictedCountMap.get(targetLeaderId) || 0) + 1);
+        if (calculatedCommVal > 0) {
+          predictedCommMap.set(targetLeaderId, (predictedCommMap.get(targetLeaderId) || 0) + calculatedCommVal);
+        }
       }
 
       // Registro individual para o membro/operador que fez o embarque
       const directOperatorId = s.embarcadorId || s.createdById || cargo?.createdById;
       if (directOperatorId) {
-        memProfit.set(directOperatorId, (memProfit.get(directOperatorId) || 0) + opProfit);
-        memCount.set(directOperatorId, (memCount.get(directOperatorId) || 0) + 1);
-
         const directUser = userMap.get(directOperatorId);
         const isOperatorRole = directUser?.profile === UserProfile.Agenciador && directUser?.agencyRole === 'embarque';
 
         let directCommVal = 0;
         if (isOperatorRole) {
-          // O operador recebe a porcentagem definida em seu cadastro (ex: 1% a 20%)
           const opRate = directUser.operatorCommissionPercentage !== undefined 
             ? directUser.operatorCommissionPercentage 
             : (directUser.agencyCommissionPercentage !== undefined && directUser.agencyCommissionPercentage < (leader?.agencyCommissionPercentage ?? 30) ? directUser.agencyCommissionPercentage : 0);
@@ -410,8 +424,14 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
           directCommVal = calculatedCommVal;
         }
 
-        if (directCommVal > 0) {
-          memComm.set(directOperatorId, (memComm.get(directOperatorId) || 0) + directCommVal);
+        if (isEligible) {
+          memProfit.set(directOperatorId, (memProfit.get(directOperatorId) || 0) + opProfit);
+          memCount.set(directOperatorId, (memCount.get(directOperatorId) || 0) + 1);
+          if (directCommVal > 0) {
+            memComm.set(directOperatorId, (memComm.get(directOperatorId) || 0) + directCommVal);
+          }
+        } else if (isPredicted && directCommVal > 0) {
+          memPredictedComm.set(directOperatorId, (memPredictedComm.get(directOperatorId) || 0) + directCommVal);
         }
       }
     });
@@ -420,6 +440,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
       userAgencyCommissionMap: commMap, 
       userAgencyProfitMap: profitMap, 
       userAgencyShipmentCountMap: countMap,
+      userAgencyPredictedCommissionMap: predictedCommMap,
+      userAgencyPredictedProfitMap: predictedProfitMap,
+      userAgencyPredictedCountMap: predictedCountMap,
+      memberPredictedCommissionMap: memPredictedComm,
       memberProfitMap: memProfit,
       memberCommissionMap: memComm,
       memberShipmentCountMap: memCount
@@ -783,6 +807,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
     ? (currentUser?.id ? (memberCommissionMap.get(currentUser.id) || 0) : 0)
     : (effectiveLeaderId ? (userAgencyCommissionMap.get(effectiveLeaderId) || 0) : 0);
 
+  const currentAgencyPredictedCommission = isCurrentUserAgenciadorEmbarque
+    ? (currentUser?.id ? (memberPredictedCommissionMap.get(currentUser.id) || 0) : 0)
+    : (effectiveLeaderId ? (userAgencyPredictedCommissionMap.get(effectiveLeaderId) || 0) : 0);
+
   return (
     <div className="space-y-6">
       {/* HEADER TITLE */}
@@ -846,8 +874,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
           />
 
           <StatCard 
-            title="Comissão a Receber" 
-            subtitle={isCurrentUserAgenciadorEmbarque ? `Taxa individual: ${currentOperatorRate}% sobre o seu lucro real gerado` : `Taxa de comissão: ${leaderUser?.agencyCommissionPercentage ?? 30}% sobre o lucro real`}
+            title="Comissão Efetivada" 
+            subtitle={canViewPredictedCommission(currentUser) && currentAgencyPredictedCommission > 0
+              ? `Prevista: ${currentAgencyPredictedCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+              : (isCurrentUserAgenciadorEmbarque ? `Taxa individual: ${currentOperatorRate}% sobre o lucro real gerado` : `Taxa: ${leaderUser?.agencyCommissionPercentage ?? 30}% sobre o lucro real`)}
             value={currentAgencyCommission} 
             icon={<ShieldCheck className="w-6 h-6 text-emerald-500 dark:text-emerald-400"/>} 
             subtitleColor="text-emerald-600 dark:text-emerald-300 font-bold"
@@ -914,7 +944,10 @@ const SupervisorReport: React.FC<CommercialReportProps> = ({
                   <th className="p-4">Status Comissão</th>
                   <th className="p-4">Fixo (R$)</th>
                   <th className="p-4">Comissões (%)</th>
-                  <th className="p-4 text-right">Valor a Receber</th>
+                  {canViewPredictedCommission(currentUser) && (
+                    <th className="p-4 text-right text-amber-600 dark:text-amber-400 font-bold">Comissão Prevista</th>
+                  )}
+                  <th className="p-4 text-right">Comissão Efetivada</th>
                   <th className="p-4 text-center">Ações</th>
                 </tr>
               </thead>

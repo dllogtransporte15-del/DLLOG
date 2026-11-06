@@ -27,6 +27,30 @@ export interface SystemRelease {
  */
 export const SYSTEM_RELEASES: SystemRelease[] = [
   {
+    id: 'rel_2026_11_06_v2_112_0',
+    version: 'v2.112.0',
+    date: '06/11/2026',
+    title: 'Comissão Prevista Restrita, Folha de Pagamento no Contas a Pagar e Fluxo de Embarque Complementar',
+    summary: 'Ajustada a regra de comissão de agenciadores/embarcadores para efetivação a partir do status Aguardando Pagamento de Saldo, com exibição de Comissão Prevista restrita a Administrador, Desenvolvedor, Comercial e Diretor. Integrada a gestão de Folha de Pagamento em lançamentos avulsos com leitor de holerite e controle de vales. Aperfeiçoado o fluxo do Embarque Complementar com edição de Imposto Federal, seleção de adiantamento e transição direta em Aguardando Fiscal com exigência exclusiva de CT-e.',
+    items: [
+      {
+        category: 'feature',
+        title: 'Comissão Efetivada e Visibilidade Restrita de Comissão Prevista',
+        description: 'A comissão de agenciadores e embarcadores agora é formalmente efetivada a partir de "Aguardando Pagamento de Saldo" (após validação de ticket e descarga). O valor de "Comissão Prevista" para embarques em trânsito é exibido exclusivamente para Administrador, Desenvolvedor, Comercial e Diretor, mantendo a regra de virada de mês vinculada à data de faturamento.'
+      },
+      {
+        category: 'feature',
+        title: 'Folha de Pagamento & Leitor de Holerites no Contas a Pagar',
+        description: 'Adicionado o tipo "Folha / Holerite" em Lançamentos Avulsos no Contas a Pagar. Conta com leitor inteligente de holerites para preenchimento automático do colaborador, competência e valor líquido, apuração e dedução em tempo real dos vales/adiantamentos do mês e registro como pendente até a liquidação com comprovante.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fluxo Fiscal & Transições do Embarque Complementar',
+        description: 'Permitida a edição manual do Imposto Federal no modal de complemento e seleção da % de adiantamento. O embarque complementar agora nasce em "Aguardando Fiscal", exigindo unicamente o CT-e complementar (dispensando MDF-e e Carta Frete), e avança com inteligência pulando etapas de acordo com o percentual de adiantamento definido (0% pula adiantamento; 100% liquida e finaliza direto na descarga).'
+      }
+    ]
+  },
+  {
     id: 'rel_2026_11_05_v2_111_0',
     version: 'v2.111.0',
     date: '05/11/2026',
